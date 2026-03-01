@@ -5,7 +5,26 @@ Monorepo for a Navidrome/OpenSubsonic client stack.
 ## Workspace
 
 - `packages/opensubsonic-types`: OpenAPI snapshot + generated TypeScript types.
-- `packages/db`: Shared DB layer and album sync logic.
+- `packages/db`: Shared DB layer with consumer API (`Database.sync/getAlbumList/getAlbumById`).
+
+## Consumer API example
+
+```ts
+import { Database, createBetterSqliteAdapter } from "@muswag/db";
+
+const db = new Database(createBetterSqliteAdapter("./muswag.db"));
+
+await db.sync({
+  connection: {
+    baseUrl: "http://127.0.0.1:4533",
+    username: "admin",
+    password: "adminpass",
+    clientName: "muswag"
+  }
+});
+
+const albums = await db.getAlbumList();
+```
 
 ## Quick start
 

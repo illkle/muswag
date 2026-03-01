@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { SubsonicFailureError } from "../../src/errors.js";
-import { fetchAlbumList2Page } from "../../src/navidrome/client.js";
+import { Database, createBetterSqliteAdapter } from "../../src/index.js";
 
-describe("subsonic response failures", () => {
-  it("throws typed error when status is failed", async () => {
-    const fetchImpl: typeof fetch = async () =>
+describe("Database sync failures", () => {
+  it("throws on failed Subsonic envelope", async () => {
+    const database = new Database(createBetterSqliteAdapter(":memory:"));
+
+    const failedFetch: typeof fetch = async () =>
       new Response(
         JSON.stringify({
           "subsonic-response": {
@@ -25,22 +26,15 @@ describe("subsonic response failures", () => {
       );
 
     await expect(
-      fetchAlbumList2Page({
+      database.sync({
         connection: {
           baseUrl: "http://127.0.0.1:4533",
           username: "admin",
           password: "password",
           clientName: "muswag-test"
         },
-        offset: 0,
-        size: 10,
-        fetchImpl
+        fetchImpl: failedFetch
       })
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<SubsonicFailureError>>({
-        name: "SubsonicFailureError",
-        code: 70
-      })
-    );
+    ).rejects.toThrow("Wrong username or password");
   });
 });

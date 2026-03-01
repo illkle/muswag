@@ -1,21 +1,33 @@
 # @muswag/db
 
-Shared DB package for syncing OpenSubsonic/Navidrome data.
+Shared consumer-facing database package for OpenSubsonic/Navidrome sync.
 
-## What it provides
+## Consumer API
 
-- `DbAdapter` abstraction for cross-platform database backends.
-- `createBetterSqliteAdapter(filename)` for current JS SQLite usage.
-- `migrate(db)` to create required tables.
-- `syncAlbums(options)` to perform full album reconcile sync.
+```ts
+import { Database, createBetterSqliteAdapter } from "@muswag/db";
 
-## Sync behavior
+const adapter = createBetterSqliteAdapter("./app.db");
+const db = new Database(adapter);
 
-- Uses Subsonic query auth (`u`, `t`, `s`, `v`, `c`, `f=json`).
-- Fetches albums via `getAlbumList2` (paged, `alphabeticalByName`).
-- Upserts current albums and deletes stale rows not present remotely.
+await db.sync({
+  connection: {
+    baseUrl: "http://127.0.0.1:4533",
+    username: "admin",
+    password: "adminpass",
+    clientName: "muswag"
+  }
+});
 
-## Testing
+const albums = await db.getAlbumList();
+const album = await db.getAlbumById(albums[0]!.id);
+```
 
-- Unit tests: `pnpm -C packages/db test`
-- Integration tests (Docker/Testcontainers): `pnpm -C packages/db test:integration`
+## Typed models
+
+`AlbumSchema` and `GetAlbumListOptionsSchema` are exported (Zod), and TypeScript types are inferred from them.
+
+## Commands
+
+- `pnpm -C packages/db test`
+- `pnpm -C packages/db test:integration`

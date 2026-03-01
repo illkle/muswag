@@ -1,10 +1,36 @@
 import type { AlbumID3 } from "@muswag/opensubsonic-types";
 
-import type { AlbumRow, DbAdapter, SyncAlbumsOptions, SyncAlbumsResult } from "./public-api.js";
+import type { DatabaseSyncOptions, DbAdapter, NavidromeConnection, SyncAlbumsResult } from "./public-api.js";
 import { migrate } from "./migrate.js";
 import { fetchAlbumList2Page } from "./navidrome/client.js";
 
 type RawAlbum = Partial<AlbumID3> & Record<string, unknown>;
+type AlbumRow = {
+  id: string;
+  name: string;
+  artist: string | null;
+  artistId: string | null;
+  coverArt: string | null;
+  songCount: number;
+  duration: number;
+  playCount: number | null;
+  year: number | null;
+  genre: string | null;
+  created: string;
+  starred: string | null;
+  played: string | null;
+  userRating: number | null;
+  sortName: string | null;
+  musicBrainzId: string | null;
+  isCompilation: boolean | null;
+  rawJson: string;
+  syncedAt: string;
+};
+
+type SyncAlbumsOptions = DatabaseSyncOptions & {
+  db: DbAdapter;
+  connection: NavidromeConnection;
+};
 
 const UPSERT_ALBUM_SQL = `
 INSERT INTO albums (
@@ -124,7 +150,7 @@ function requireInteger(value: unknown, field: string): number {
   return result;
 }
 
-export function normalizeAlbumForStorage(rawAlbum: RawAlbum, syncedAt: string): AlbumRow {
+function normalizeAlbumForStorage(rawAlbum: RawAlbum, syncedAt: string): AlbumRow {
   const id = requireString(rawAlbum.id, "id");
   const name =
     toNullableString(rawAlbum.name) ??

@@ -1,57 +1,110 @@
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { describe, expect, it } from "vitest";
 
-import { createBetterSqliteAdapter } from "../../src/adapters/better-sqlite3.js";
-import { fetchAlbumList2Page } from "../../src/navidrome/client.js";
-import type { NavidromeConnection } from "../../src/public-api.js";
-import { syncAlbums } from "../../src/sync-albums.js";
+import { AlbumSchema, Database, createBetterSqliteAdapter, type NavidromeConnection } from "../../src/index.js";
+import { librarySetA, librarySetB, type AlbumFixture } from "../fixtures/library-sets.js";
 
-const dockerProbe = spawnSync("docker", ["info"], {
-  stdio: "ignore"
-});
-const dockerAvailable = dockerProbe.status === 0;
+const dockerAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
+const ffmpegAvailable = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
 
-if (!dockerAvailable) {
-  console.warn("Skipping integration tests: Docker daemon unavailable.");
+if (!dockerAvailable || !ffmpegAvailable) {
+  console.warn(
+    `Skipping integration tests: ${!dockerAvailable ? "Docker" : "ffmpeg"} unavailable.`
+  );
 }
 
-const describeIfDocker = dockerAvailable ? describe : describe.skip;
-
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const fixtureSetA = path.resolve(currentDir, "../fixtures/music_set_a");
-const fixtureSetB = path.resolve(currentDir, "../fixtures/music_set_b");
+const describeIfReady = dockerAvailable && ffmpegAvailable ? describe : describe.skip;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForAlbums(connection: NavidromeConnection, timeoutMs = 90_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+function sanitizePathPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._ -]/g, "_");
+}
 
-  while (Date.now() < deadline) {
-    try {
-      const page = await fetchAlbumList2Page({
-        connection,
-        offset: 0,
-        size: 5
-      });
-      if (page.albums.length > 0) {
-        return;
-      }
-    } catch {
-      // Navidrome may still be starting up/scanning.
-    }
+function runFfmpeg(args: string[]): void {
+  const result = spawnSync("ffmpeg", args, {
+    encoding: "utf8"
+  });
 
-    await sleep(1_000);
+  if (result.status !== 0) {
+    throw new Error(`ffmpeg failed with code ${result.status}: ${result.stderr}`);
   }
+}
 
-  throw new Error(`Timed out after ${timeoutMs}ms waiting for Navidrome scan results`);
+async function generateLibrary(rootDir: string, albums: AlbumFixture[]): Promise<void> {
+  for (const album of albums) {
+    const albumDir = path.join(rootDir, sanitizePathPart(album.artist), sanitizePathPart(album.album));
+    await mkdir(albumDir, { recursive: true });
+
+    for (const song of album.songs) {
+      const filename = `${String(song.track).padStart(2, "0")} - ${sanitizePathPart(song.title)}.mp3`;
+      const outputPath = path.join(albumDir, filename);
+
+      const args = [
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `sine=frequency=${400 + song.track * 30}:duration=${song.durationSec}`,
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
+        "-codec:a",
+        "libmp3lame",
+        "-q:a",
+        "4",
+        "-id3v2_version",
+        "3",
+        "-write_id3v1",
+        "1",
+        "-metadata",
+        `title=${song.title}`,
+        "-metadata",
+        `artist=${song.artist ?? album.artist}`,
+        "-metadata",
+        `album=${album.album}`,
+        "-metadata",
+        `album_artist=${album.albumArtist}`,
+        "-metadata",
+        `track=${song.track}/${album.songs.length}`,
+        "-metadata",
+        `disc=${album.disc}/1`,
+        "-metadata",
+        `date=${album.year}`,
+        "-metadata",
+        `genre=${album.genre}`,
+        "-metadata",
+        `composer=${album.composer}`,
+        "-metadata",
+        `comment=${album.comment}`,
+        "-metadata",
+        `musicbrainz_albumid=${album.musicBrainzAlbumId}`,
+        "-metadata",
+        `musicbrainz_artistid=${album.musicBrainzArtistId}`,
+        "-metadata",
+        `musicbrainz_releasegroupid=${album.musicBrainzReleaseGroupId}`,
+        "-metadata",
+        `musicbrainz_trackid=${song.musicBrainzTrackId}`
+      ];
+
+      if (album.compilation) {
+        args.push("-metadata", "compilation=1");
+      }
+
+      args.push(outputPath);
+      runFfmpeg(args);
+    }
+  }
 }
 
 async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
@@ -75,7 +128,7 @@ async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
         return;
       }
 
-      lastError = `HTTP ${response.status} ${await response.text()}`;
+      lastError = `HTTP ${response.status}: ${await response.text()}`;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
@@ -88,16 +141,37 @@ async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
   );
 }
 
-async function withNavidromeFixture(
-  fixturePath: string,
+async function waitForServerScan(connection: NavidromeConnection, timeoutMs = 120_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const probeDatabase = new Database(createBetterSqliteAdapter(":memory:"));
+
+  while (Date.now() < deadline) {
+    try {
+      const result = await probeDatabase.sync({ connection });
+      if (result.fetched > 0) {
+        return;
+      }
+    } catch {
+      // Navidrome may still be starting up.
+    }
+
+    await sleep(1_000);
+  }
+
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for Navidrome to scan media`);
+}
+
+async function withNavidromeLibrary(
+  albums: AlbumFixture[],
   callback: (connection: NavidromeConnection) => Promise<void>
 ): Promise<void> {
   const hostRoot = await mkdtemp(path.join(tmpdir(), "muswag-navidrome-"));
   const musicDir = path.join(hostRoot, "music");
   const dataDir = path.join(hostRoot, "data");
 
-  await cp(fixturePath, musicDir, { recursive: true });
+  await mkdir(musicDir, { recursive: true });
   await mkdir(dataDir, { recursive: true });
+  await generateLibrary(musicDir, albums);
 
   let container: StartedTestContainer | undefined;
 
@@ -118,19 +192,17 @@ async function withNavidromeFixture(
       .withWaitStrategy(Wait.forListeningPorts())
       .start();
 
-    const baseUrl = `http://${container.getHost()}:${container.getMappedPort(4533)}`;
-
-    await createAdmin(baseUrl);
-
     const connection: NavidromeConnection = {
-      baseUrl,
+      baseUrl: `http://${container.getHost()}:${container.getMappedPort(4533)}`,
       username: "admin",
       password: "adminpass",
       clientName: "muswag-integration",
       protocolVersion: "1.16.1"
     };
 
-    await waitForAlbums(connection);
+    await createAdmin(connection.baseUrl);
+    await waitForServerScan(connection);
+
     await callback(connection);
   } finally {
     if (container) {
@@ -141,43 +213,70 @@ async function withNavidromeFixture(
   }
 }
 
-describeIfDocker("navidrome sync integration", () => {
-  it("syncs albums from Navidrome and is idempotent", async () => {
-    const db = createBetterSqliteAdapter(":memory:");
+describeIfReady("navidrome sync integration", () => {
+  it("syncs 5 albums with rich ID3 tags and remains idempotent", async () => {
+    const consumerDb = new Database(createBetterSqliteAdapter(":memory:"));
 
-    await withNavidromeFixture(fixtureSetA, async (connection) => {
-      const first = await syncAlbums({ db, connection });
-      expect(first.fetched).toBeGreaterThan(0);
-      expect(first.inserted).toBeGreaterThan(0);
+    await withNavidromeLibrary(librarySetA, async (connection) => {
+      const first = await consumerDb.sync({ connection });
+      expect(first.fetched).toBe(5);
+      expect(first.inserted).toBe(5);
 
-      const second = await syncAlbums({ db, connection });
+      const albums = await consumerDb.getAlbumList();
+      const parsedAlbums = AlbumSchema.array().parse(albums);
+
+      expect(parsedAlbums).toHaveLength(5);
+
+      for (const album of parsedAlbums) {
+        expect(album.songCount).toBeGreaterThanOrEqual(1);
+        expect(album.songCount).toBeLessThanOrEqual(3);
+        expect(album.artist).not.toBeNull();
+        expect(album.genre).not.toBeNull();
+        expect(album.year).not.toBeNull();
+        expect(album.duration).toBeGreaterThan(0);
+      }
+
+      const oneAlbum = await consumerDb.getAlbumById(parsedAlbums[0]!.id);
+      expect(oneAlbum).not.toBeNull();
+      expect(oneAlbum?.songCount).toBeGreaterThanOrEqual(1);
+      expect(oneAlbum?.songCount).toBeLessThanOrEqual(3);
+
+      const second = await consumerDb.sync({ connection });
       expect(second.inserted).toBe(0);
       expect(second.deleted).toBe(0);
-
-      const countRow = await db.queryOne<{ count: number }>("SELECT COUNT(*) AS count FROM albums");
-      expect(Number(countRow?.count ?? 0)).toBeGreaterThan(0);
+      expect(second.fetched).toBe(5);
     });
   });
 
-  it("reconciles deletions when remote album set changes", async () => {
-    const db = createBetterSqliteAdapter(":memory:");
+  it("reconciles album deletions when server library changes", async () => {
+    const consumerDb = new Database(createBetterSqliteAdapter(":memory:"));
 
-    await withNavidromeFixture(fixtureSetA, async (connectionA) => {
-      const first = await syncAlbums({ db, connection: connectionA });
-      expect(first.fetched).toBeGreaterThan(0);
+    await withNavidromeLibrary(librarySetA, async (connectionA) => {
+      const resultA = await consumerDb.sync({ connection: connectionA });
+      expect(resultA.fetched).toBe(5);
     });
 
-    const beforeIds = (await db.query<{ id: string }>("SELECT id FROM albums ORDER BY id")).map((row) => row.id);
-    expect(beforeIds.length).toBeGreaterThan(0);
+    const beforeIds = new Set((await consumerDb.getAlbumList()).map((album) => album.id));
 
-    await withNavidromeFixture(fixtureSetB, async (connectionB) => {
-      const second = await syncAlbums({ db, connection: connectionB });
-      expect(second.deleted).toBeGreaterThan(0);
-      expect(second.fetched).toBeGreaterThan(0);
+    await withNavidromeLibrary(librarySetB, async (connectionB) => {
+      const resultB = await consumerDb.sync({ connection: connectionB });
+      expect(resultB.fetched).toBe(5);
+      expect(resultB.deleted).toBeGreaterThan(0);
     });
 
-    const afterIds = (await db.query<{ id: string }>("SELECT id FROM albums ORDER BY id")).map((row) => row.id);
-    expect(afterIds.length).toBeGreaterThan(0);
-    expect(afterIds).not.toEqual(beforeIds);
+    const afterAlbums = AlbumSchema.array().parse(await consumerDb.getAlbumList());
+    expect(afterAlbums).toHaveLength(5);
+
+    const afterIds = new Set(afterAlbums.map((album) => album.id));
+    const hasNewAlbumIds = [...afterIds].some((id) => !beforeIds.has(id));
+
+    expect(hasNewAlbumIds).toBe(true);
+
+    for (const album of afterAlbums) {
+      expect(album.songCount).toBeGreaterThanOrEqual(1);
+      expect(album.songCount).toBeLessThanOrEqual(3);
+      expect(album.artist).not.toBeNull();
+      expect(album.genre).not.toBeNull();
+    }
   });
 });
