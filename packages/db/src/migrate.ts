@@ -35,7 +35,7 @@ const migrationStatements = [
       id TEXT PRIMARY KEY
     )
   `,
-  `CREATE INDEX IF NOT EXISTS idx_albums_artist_id ON albums(artist_id)`
+  `CREATE INDEX IF NOT EXISTS idx_albums_artist_id ON albums(artist_id)`,
 ];
 
 export async function migrate(db: DbAdapter): Promise<void> {

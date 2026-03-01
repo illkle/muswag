@@ -4,11 +4,11 @@ export {
   AlbumSchema,
   GetAlbumListOptionsSchema,
   type Album,
-  type GetAlbumListOptions
+  type GetAlbumListOptions,
 } from "./schemas.js";
 export type {
   DatabaseSyncOptions,
   DbAdapter,
   NavidromeConnection,
-  SyncAlbumsResult
+  SyncAlbumsResult,
 } from "./public-api.js";

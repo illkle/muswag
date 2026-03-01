@@ -14,7 +14,7 @@ export function createSubsonicToken(password: string, salt: string): string {
 
 export function buildAuthQueryParams(
   connection: NavidromeConnection,
-  salt = createSubsonicSalt()
+  salt = createSubsonicSalt(),
 ): URLSearchParams {
   const params = new URLSearchParams();
   const protocolVersion = connection.protocolVersion ?? DEFAULT_PROTOCOL_VERSION;
@@ -33,7 +33,7 @@ export function buildAuthenticatedUrl(
   connection: NavidromeConnection,
   endpoint: string,
   additionalParams: Record<string, string>,
-  salt = createSubsonicSalt()
+  salt = createSubsonicSalt(),
 ): URL {
   const normalizedBase = connection.baseUrl.endsWith("/")
     ? connection.baseUrl

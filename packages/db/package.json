@@ -13,6 +13,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "format": "oxfmt --write src test vitest.config.ts vitest.integration.config.ts",
+    "format:check": "oxfmt --check src test vitest.config.ts vitest.integration.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"

@@ -18,7 +18,7 @@ type SqlLike = {
 const schema = {
   albums: albumsTable,
   syncState: syncStateTable,
-  syncAlbumIds: syncAlbumIdsTable
+  syncAlbumIds: syncAlbumIdsTable,
 };
 
 export const dbq = drizzle(async () => ({ rows: [] }), { schema });
@@ -27,7 +27,7 @@ function compile(query: SqlLike): CompiledSql {
   const compiled = query.toSQL();
   return {
     sql: compiled.sql,
-    params: compiled.params as readonly unknown[]
+    params: compiled.params as readonly unknown[],
   };
 }
 

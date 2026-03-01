@@ -5,6 +5,20 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "lint": {
+      "outputs": []
+    },
+    "lint:fix": {
+      "cache": false,
+      "outputs": []
+    },
+    "format": {
+      "cache": false,
+      "outputs": []
+    },
+    "format:check": {
+      "outputs": []
+    },
     "typecheck": {
       "dependsOn": ["^build", "^typecheck"],
       "outputs": []

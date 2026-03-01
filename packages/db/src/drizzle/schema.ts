@@ -19,14 +19,14 @@ export const albumsTable = sqliteTable("albums", {
   musicBrainzId: text("music_brainz_id"),
   isCompilation: integer("is_compilation"),
   rawJson: text("raw_json").notNull(),
-  syncedAt: text("synced_at").notNull()
+  syncedAt: text("synced_at").notNull(),
 });
 
 export const syncStateTable = sqliteTable("sync_state", {
   key: text("key").primaryKey(),
-  value: text("value").notNull()
+  value: text("value").notNull(),
 });
 
 export const syncAlbumIdsTable = sqliteTable("sync_album_ids", {
-  id: text("id").primaryKey()
+  id: text("id").primaryKey(),
 });

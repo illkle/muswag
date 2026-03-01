@@ -6,7 +6,12 @@ import path from "node:path";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { describe, expect, it } from "vitest";
 
-import { AlbumSchema, Database, createBetterSqliteAdapter, type NavidromeConnection } from "../../src/index.js";
+import {
+  AlbumSchema,
+  Database,
+  createBetterSqliteAdapter,
+  type NavidromeConnection,
+} from "../../src/index.js";
 import { librarySetA, librarySetB, type AlbumFixture } from "../fixtures/library-sets.js";
 
 const dockerAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
@@ -14,7 +19,7 @@ const ffmpegAvailable = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).s
 
 if (!dockerAvailable || !ffmpegAvailable) {
   console.warn(
-    `Skipping integration tests: ${!dockerAvailable ? "Docker" : "ffmpeg"} unavailable.`
+    `Skipping integration tests: ${!dockerAvailable ? "Docker" : "ffmpeg"} unavailable.`,
   );
 }
 
@@ -30,7 +35,7 @@ function sanitizePathPart(value: string): string {
 
 function runFfmpeg(args: string[]): void {
   const result = spawnSync("ffmpeg", args, {
-    encoding: "utf8"
+    encoding: "utf8",
   });
 
   if (result.status !== 0) {
@@ -40,7 +45,11 @@ function runFfmpeg(args: string[]): void {
 
 async function generateLibrary(rootDir: string, albums: AlbumFixture[]): Promise<void> {
   for (const album of albums) {
-    const albumDir = path.join(rootDir, sanitizePathPart(album.artist), sanitizePathPart(album.album));
+    const albumDir = path.join(
+      rootDir,
+      sanitizePathPart(album.artist),
+      sanitizePathPart(album.album),
+    );
     await mkdir(albumDir, { recursive: true });
 
     for (const song of album.songs) {
@@ -94,7 +103,7 @@ async function generateLibrary(rootDir: string, albums: AlbumFixture[]): Promise
         "-metadata",
         `musicbrainz_releasegroupid=${album.musicBrainzReleaseGroupId}`,
         "-metadata",
-        `musicbrainz_trackid=${song.musicBrainzTrackId}`
+        `musicbrainz_trackid=${song.musicBrainzTrackId}`,
       ];
 
       if (album.compilation) {
@@ -116,12 +125,12 @@ async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
       const response = await fetch(`${baseUrl}/auth/createAdmin`, {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
         },
         body: JSON.stringify({
           username: "admin",
-          password: "adminpass"
-        })
+          password: "adminpass",
+        }),
       });
 
       if (response.ok || response.status === 403) {
@@ -137,11 +146,14 @@ async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
   }
 
   throw new Error(
-    `Failed to create admin user within ${timeoutMs}ms${lastError ? `: ${lastError}` : ""}`
+    `Failed to create admin user within ${timeoutMs}ms${lastError ? `: ${lastError}` : ""}`,
   );
 }
 
-async function waitForServerScan(connection: NavidromeConnection, timeoutMs = 120_000): Promise<void> {
+async function waitForServerScan(
+  connection: NavidromeConnection,
+  timeoutMs = 120_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   const probeDatabase = new Database(createBetterSqliteAdapter(":memory:"));
 
@@ -163,7 +175,7 @@ async function waitForServerScan(connection: NavidromeConnection, timeoutMs = 12
 
 async function withNavidromeLibrary(
   albums: AlbumFixture[],
-  callback: (connection: NavidromeConnection) => Promise<void>
+  callback: (connection: NavidromeConnection) => Promise<void>,
 ): Promise<void> {
   const hostRoot = await mkdtemp(path.join(tmpdir(), "muswag-navidrome-"));
   const musicDir = path.join(hostRoot, "music");
@@ -183,11 +195,11 @@ async function withNavidromeLibrary(
         ND_DATAFOLDER: "/data",
         ND_SCANNER_SCANONSTARTUP: "true",
         ND_SCANNER_SCHEDULE: "0",
-        ND_LOGLEVEL: "info"
+        ND_LOGLEVEL: "info",
       })
       .withBindMounts([
         { source: musicDir, target: "/music", mode: "ro" },
-        { source: dataDir, target: "/data", mode: "rw" }
+        { source: dataDir, target: "/data", mode: "rw" },
       ])
       .withWaitStrategy(Wait.forListeningPorts())
       .start();
@@ -197,7 +209,7 @@ async function withNavidromeLibrary(
       username: "admin",
       password: "adminpass",
       clientName: "muswag-integration",
-      protocolVersion: "1.16.1"
+      protocolVersion: "1.16.1",
     };
 
     await createAdmin(connection.baseUrl);

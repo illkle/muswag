@@ -1,7 +1,12 @@
 import type { AlbumID3 } from "@muswag/opensubsonic-types";
 import { eq, notInArray, sql } from "drizzle-orm";
 
-import type { DatabaseSyncOptions, DbAdapter, NavidromeConnection, SyncAlbumsResult } from "./public-api.js";
+import type {
+  DatabaseSyncOptions,
+  DbAdapter,
+  NavidromeConnection,
+  SyncAlbumsResult,
+} from "./public-api.js";
 import { migrate } from "./migrate.js";
 import { fetchAlbumList2Page } from "./navidrome/client.js";
 import { dbq, execQuery, queryOne } from "./drizzle/query.js";
@@ -140,7 +145,7 @@ function normalizeAlbumForStorage(rawAlbum: RawAlbum, syncedAt: string): AlbumRo
     musicBrainzId: toNullableString(rawAlbum.musicBrainzId),
     isCompilation: toNullableBoolean(rawAlbum.isCompilation),
     rawJson: JSON.stringify(rawAlbum),
-    syncedAt
+    syncedAt,
   };
 }
 
@@ -168,7 +173,7 @@ async function upsertAlbum(tx: DbAdapter, album: AlbumRow): Promise<void> {
       musicBrainzId: album.musicBrainzId,
       isCompilation: compilation,
       rawJson: album.rawJson,
-      syncedAt: album.syncedAt
+      syncedAt: album.syncedAt,
     })
     .onConflictDoUpdate({
       target: albumsTable.id,
@@ -190,8 +195,8 @@ async function upsertAlbum(tx: DbAdapter, album: AlbumRow): Promise<void> {
         musicBrainzId: album.musicBrainzId,
         isCompilation: compilation,
         rawJson: album.rawJson,
-        syncedAt: album.syncedAt
-      }
+        syncedAt: album.syncedAt,
+      },
     });
   await execQuery(tx, query);
 }
@@ -227,17 +232,17 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
         ? {
             connection: options.connection,
             offset,
-            size: pageSize
+            size: pageSize,
           }
         : {
             connection: options.connection,
             offset,
             size: pageSize,
-            fetchImpl: options.fetchImpl
+            fetchImpl: options.fetchImpl,
           };
 
     const page = await fetchAlbumList2Page({
-      ...fetchPageOptions
+      ...fetchPageOptions,
     });
 
     pages += 1;
@@ -286,16 +291,16 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
     .where(notInArray(albumsTable.id, missingIdsSubquery));
   const deleteCountRow = await queryOne<Record<string, unknown>>(options.db, countStaleQuery);
   const deletedRaw =
-    deleteCountRow?.count ??
-    deleteCountRow?.["count(*)"] ??
-    deleteCountRow?.["count"];
+    deleteCountRow?.count ?? deleteCountRow?.["count(*)"] ?? deleteCountRow?.["count"];
   const deleted = Number(deletedRaw ?? 0);
 
   const finishedAt = new Date().toISOString();
 
   await options.db.transaction(async (tx) => {
     const txMissingIdsSubquery = dbq.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
-    const deleteQuery = dbq.delete(albumsTable).where(notInArray(albumsTable.id, txMissingIdsSubquery));
+    const deleteQuery = dbq
+      .delete(albumsTable)
+      .where(notInArray(albumsTable.id, txMissingIdsSubquery));
     await execQuery(tx, deleteQuery);
 
     const syncStateUpsert = dbq
@@ -303,7 +308,7 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
       .values({ key: "albums_last_synced_at", value: finishedAt })
       .onConflictDoUpdate({
         target: syncStateTable.key,
-        set: { value: finishedAt }
+        set: { value: finishedAt },
       });
     await execQuery(tx, syncStateUpsert);
 
@@ -317,6 +322,6 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
     deleted,
     pages,
     startedAt,
-    finishedAt
+    finishedAt,
   };
 }

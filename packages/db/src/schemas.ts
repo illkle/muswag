@@ -18,14 +18,14 @@ export const AlbumSchema = z.object({
   sortName: z.string().nullable(),
   musicBrainzId: z.string().nullable(),
   isCompilation: z.boolean().nullable(),
-  syncedAt: z.string()
+  syncedAt: z.string(),
 });
 
 export type Album = z.infer<typeof AlbumSchema>;
 
 export const GetAlbumListOptionsSchema = z.object({
   limit: z.number().int().positive().max(5000).optional(),
-  offset: z.number().int().nonnegative().optional()
+  offset: z.number().int().nonnegative().optional(),
 });
 
 export type GetAlbumListOptions = z.infer<typeof GetAlbumListOptionsSchema>;

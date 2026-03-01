@@ -13,16 +13,16 @@ describe("Database sync failures", () => {
             status: "failed",
             error: {
               code: 70,
-              message: "Wrong username or password"
-            }
-          }
+              message: "Wrong username or password",
+            },
+          },
         }),
         {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        }
+            "content-type": "application/json",
+          },
+        },
       );
 
     await expect(
@@ -31,10 +31,10 @@ describe("Database sync failures", () => {
           baseUrl: "http://127.0.0.1:4533",
           username: "admin",
           password: "password",
-          clientName: "muswag-test"
+          clientName: "muswag-test",
         },
-        fetchImpl: failedFetch
-      })
+        fetchImpl: failedFetch,
+      }),
     ).rejects.toThrow("Wrong username or password");
   });
 });

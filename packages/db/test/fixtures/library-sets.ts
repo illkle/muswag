@@ -41,15 +41,15 @@ export const librarySetA: AlbumFixture[] = [
         title: "Morning Grid",
         track: 1,
         durationSec: 1.2,
-        musicBrainzTrackId: "11111111-1111-4111-8111-111111111114"
+        musicBrainzTrackId: "11111111-1111-4111-8111-111111111114",
       },
       {
         title: "Cloud Cursor",
         track: 2,
         durationSec: 1.3,
-        musicBrainzTrackId: "11111111-1111-4111-8111-111111111115"
-      }
-    ]
+        musicBrainzTrackId: "11111111-1111-4111-8111-111111111115",
+      },
+    ],
   },
   {
     artist: "Neon Harbor",
@@ -69,21 +69,21 @@ export const librarySetA: AlbumFixture[] = [
         title: "Subway Sparks",
         track: 1,
         durationSec: 1.1,
-        musicBrainzTrackId: "22222222-2222-4222-8222-222222222224"
+        musicBrainzTrackId: "22222222-2222-4222-8222-222222222224",
       },
       {
         title: "Late Bus",
         track: 2,
         durationSec: 1.1,
-        musicBrainzTrackId: "22222222-2222-4222-8222-222222222225"
+        musicBrainzTrackId: "22222222-2222-4222-8222-222222222225",
       },
       {
         title: "Window Rain",
         track: 3,
         durationSec: 1.4,
-        musicBrainzTrackId: "22222222-2222-4222-8222-222222222226"
-      }
-    ]
+        musicBrainzTrackId: "22222222-2222-4222-8222-222222222226",
+      },
+    ],
   },
   {
     artist: "The Cassettes",
@@ -103,9 +103,9 @@ export const librarySetA: AlbumFixture[] = [
         title: "Single Lantern",
         track: 1,
         durationSec: 1.2,
-        musicBrainzTrackId: "33333333-3333-4333-8333-333333333334"
-      }
-    ]
+        musicBrainzTrackId: "33333333-3333-4333-8333-333333333334",
+      },
+    ],
   },
   {
     artist: "Various Artists",
@@ -126,16 +126,16 @@ export const librarySetA: AlbumFixture[] = [
         track: 1,
         durationSec: 1.0,
         artist: "Mira Holt",
-        musicBrainzTrackId: "44444444-4444-4444-8444-444444444444"
+        musicBrainzTrackId: "44444444-4444-4444-8444-444444444444",
       },
       {
         title: "Poolside Thread",
         track: 2,
         durationSec: 1.3,
         artist: "June Pixel",
-        musicBrainzTrackId: "44444444-4444-4444-8444-444444444445"
-      }
-    ]
+        musicBrainzTrackId: "44444444-4444-4444-8444-444444444445",
+      },
+    ],
   },
   {
     artist: "Quartz Bloom",
@@ -155,22 +155,22 @@ export const librarySetA: AlbumFixture[] = [
         title: "Hex Bloom",
         track: 1,
         durationSec: 1.2,
-        musicBrainzTrackId: "55555555-5555-4555-8555-555555555554"
+        musicBrainzTrackId: "55555555-5555-4555-8555-555555555554",
       },
       {
         title: "Vector Pulse",
         track: 2,
         durationSec: 1.2,
-        musicBrainzTrackId: "55555555-5555-4555-8555-555555555555"
+        musicBrainzTrackId: "55555555-5555-4555-8555-555555555555",
       },
       {
         title: "Ribbon Loop",
         track: 3,
         durationSec: 1.3,
-        musicBrainzTrackId: "55555555-5555-4555-8555-555555555556"
-      }
-    ]
-  }
+        musicBrainzTrackId: "55555555-5555-4555-8555-555555555556",
+      },
+    ],
+  },
 ];
 
 export const librarySetB: AlbumFixture[] = [
@@ -192,15 +192,15 @@ export const librarySetB: AlbumFixture[] = [
         title: "North Arc",
         track: 1,
         durationSec: 1.1,
-        musicBrainzTrackId: "66666666-6666-4666-8666-666666666664"
+        musicBrainzTrackId: "66666666-6666-4666-8666-666666666664",
       },
       {
         title: "Frozen Wake",
         track: 2,
         durationSec: 1.4,
-        musicBrainzTrackId: "66666666-6666-4666-8666-666666666665"
-      }
-    ]
+        musicBrainzTrackId: "66666666-6666-4666-8666-666666666665",
+      },
+    ],
   },
   {
     artist: "Signal Cartel",
@@ -220,9 +220,9 @@ export const librarySetB: AlbumFixture[] = [
         title: "Coal Streets",
         track: 1,
         durationSec: 1.2,
-        musicBrainzTrackId: "77777777-7777-4777-8777-777777777774"
-      }
-    ]
+        musicBrainzTrackId: "77777777-7777-4777-8777-777777777774",
+      },
+    ],
   },
   {
     artist: "Glass Forest",
@@ -242,21 +242,21 @@ export const librarySetB: AlbumFixture[] = [
         title: "Slow Prism",
         track: 1,
         durationSec: 1.0,
-        musicBrainzTrackId: "88888888-8888-4888-8888-888888888884"
+        musicBrainzTrackId: "88888888-8888-4888-8888-888888888884",
       },
       {
         title: "Moss Array",
         track: 2,
         durationSec: 1.3,
-        musicBrainzTrackId: "88888888-8888-4888-8888-888888888885"
+        musicBrainzTrackId: "88888888-8888-4888-8888-888888888885",
       },
       {
         title: "Final Lens",
         track: 3,
         durationSec: 1.5,
-        musicBrainzTrackId: "88888888-8888-4888-8888-888888888886"
-      }
-    ]
+        musicBrainzTrackId: "88888888-8888-4888-8888-888888888886",
+      },
+    ],
   },
   {
     artist: "Mono River",
@@ -276,9 +276,9 @@ export const librarySetB: AlbumFixture[] = [
         title: "Satin Static",
         track: 1,
         durationSec: 1.1,
-        musicBrainzTrackId: "99999999-9999-4999-8999-999999999994"
-      }
-    ]
+        musicBrainzTrackId: "99999999-9999-4999-8999-999999999994",
+      },
+    ],
   },
   {
     artist: "Night Courier",
@@ -298,14 +298,14 @@ export const librarySetB: AlbumFixture[] = [
         title: "Transit Fold",
         track: 1,
         durationSec: 1.1,
-        musicBrainzTrackId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"
+        musicBrainzTrackId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4",
       },
       {
         title: "Postal Glow",
         track: 2,
         durationSec: 1.2,
-        musicBrainzTrackId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5"
-      }
-    ]
-  }
+        musicBrainzTrackId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
+      },
+    ],
+  },
 ];

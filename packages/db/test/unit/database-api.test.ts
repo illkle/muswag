@@ -6,7 +6,7 @@ import {
   Database,
   createBetterSqliteAdapter,
   type Album,
-  type DatabaseSyncOptions
+  type DatabaseSyncOptions,
 } from "../../src/index.js";
 
 function makeAlbumList2Response(albums: Array<Record<string, unknown>>): Response {
@@ -16,16 +16,16 @@ function makeAlbumList2Response(albums: Array<Record<string, unknown>>): Respons
         status: "ok",
         version: "1.16.1",
         albumList2: {
-          album: albums
-        }
-      }
+          album: albums,
+        },
+      },
     }),
     {
       status: 200,
       headers: {
-        "content-type": "application/json"
-      }
-    }
+        "content-type": "application/json",
+      },
+    },
   );
 }
 
@@ -48,8 +48,8 @@ describe("Database consumer API", () => {
           duration: 120,
           year: 2022,
           genre: "Indie",
-          created: "2026-02-01T00:00:00Z"
-        }
+          created: "2026-02-01T00:00:00Z",
+        },
       ]);
     };
 
@@ -59,9 +59,9 @@ describe("Database consumer API", () => {
         username: "alice",
         password: "secret",
         clientName: "muswag-test",
-        protocolVersion: "1.16.1"
+        protocolVersion: "1.16.1",
       },
-      fetchImpl
+      fetchImpl,
     };
 
     const syncResult = await database.sync(options);
@@ -105,7 +105,7 @@ describe("Database consumer API", () => {
           artist: "Artist A",
           songCount: 2,
           duration: 120,
-          created: "2026-02-01T00:00:00Z"
+          created: "2026-02-01T00:00:00Z",
         },
         {
           id: "b1",
@@ -113,8 +113,8 @@ describe("Database consumer API", () => {
           artist: "Artist B",
           songCount: 3,
           duration: 180,
-          created: "2026-02-01T00:00:00Z"
-        }
+          created: "2026-02-01T00:00:00Z",
+        },
       ]);
 
     const run2Fetch: typeof fetch = async () =>
@@ -125,15 +125,15 @@ describe("Database consumer API", () => {
           artist: "Artist A",
           songCount: 2,
           duration: 120,
-          created: "2026-02-01T00:00:00Z"
-        }
+          created: "2026-02-01T00:00:00Z",
+        },
       ]);
 
     const connection = {
       baseUrl: "http://127.0.0.1:4533",
       username: "admin",
       password: "adminpass",
-      clientName: "muswag-test"
+      clientName: "muswag-test",
     };
 
     const first = await database.sync({ connection, fetchImpl: run1Fetch });

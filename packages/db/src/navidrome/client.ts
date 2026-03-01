@@ -46,18 +46,22 @@ export async function fetchAlbumList2Page({
   connection,
   offset,
   size,
-  fetchImpl = fetch
+  fetchImpl = fetch,
 }: FetchAlbumList2PageOptions): Promise<FetchAlbumList2PageResult> {
   const url = buildAuthenticatedUrl(connection, "rest/getAlbumList2", {
     type: "alphabeticalByName",
     size: String(size),
-    offset: String(offset)
+    offset: String(offset),
   });
 
   const response = await fetchImpl(url);
 
   if (!response.ok) {
-    throw new SubsonicRequestError(url.toString(), response.status, await readFailureBody(response));
+    throw new SubsonicRequestError(
+      url.toString(),
+      response.status,
+      await readFailureBody(response),
+    );
   }
 
   const payload = (await response.json()) as GetAlbumList2Response;
@@ -65,7 +69,11 @@ export async function fetchAlbumList2Page({
   const envelope = asObject(payloadRecord?.["subsonic-response"]);
 
   if (!envelope) {
-    throw new SubsonicRequestError(url.toString(), response.status, "Missing subsonic-response envelope");
+    throw new SubsonicRequestError(
+      url.toString(),
+      response.status,
+      "Missing subsonic-response envelope",
+    );
   }
 
   if (envelope.status === "failed") {
@@ -79,12 +87,12 @@ export async function fetchAlbumList2Page({
     throw new SubsonicRequestError(
       url.toString(),
       response.status,
-      `Unexpected Subsonic status: ${String(envelope.status)}`
+      `Unexpected Subsonic status: ${String(envelope.status)}`,
     );
   }
 
   const albumList2 = asObject(envelope.albumList2);
   return {
-    albums: toAlbums(albumList2?.album)
+    albums: toAlbums(albumList2?.album),
   };
 }

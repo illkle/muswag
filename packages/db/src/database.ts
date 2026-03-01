@@ -5,7 +5,12 @@ import { dbq, queryAll, queryOne } from "./drizzle/query.js";
 import { albumsTable } from "./drizzle/schema.js";
 import { migrate } from "./migrate.js";
 import type { DatabaseSyncOptions, DbAdapter, SyncAlbumsResult } from "./public-api.js";
-import { AlbumSchema, GetAlbumListOptionsSchema, type Album, type GetAlbumListOptions } from "./schemas.js";
+import {
+  AlbumSchema,
+  GetAlbumListOptionsSchema,
+  type Album,
+  type GetAlbumListOptions,
+} from "./schemas.js";
 import { syncAlbums } from "./sync-albums.js";
 
 function getRecordValue(input: Record<string, unknown>, keys: string[]): unknown {
@@ -59,8 +64,7 @@ function requiredInt(input: Record<string, unknown>, keys: string[]): number {
 function mapRowToAlbum(input: unknown): Album {
   const row = z.record(z.unknown()).parse(input);
   const isCompilationRaw = nullableInt(row, ["isCompilationRaw", "is_compilation"]);
-  const isCompilation =
-    isCompilationRaw === null ? null : isCompilationRaw === 1 ? true : false;
+  const isCompilation = isCompilationRaw === null ? null : isCompilationRaw === 1 ? true : false;
 
   return AlbumSchema.parse({
     id: requiredString(row, ["id"]),
@@ -80,7 +84,7 @@ function mapRowToAlbum(input: unknown): Album {
     sortName: nullableString(row, ["sortName", "sort_name"]),
     musicBrainzId: nullableString(row, ["musicBrainzId", "music_brainz_id"]),
     isCompilation,
-    syncedAt: requiredString(row, ["syncedAt", "synced_at"])
+    syncedAt: requiredString(row, ["syncedAt", "synced_at"]),
   });
 }
 
@@ -96,12 +100,12 @@ export class Database {
       options.pageSize === undefined
         ? {
             db: this.adapter,
-            connection: options.connection
+            connection: options.connection,
           }
         : {
             db: this.adapter,
             connection: options.connection,
-            pageSize: options.pageSize
+            pageSize: options.pageSize,
           };
 
     const syncOptions =
@@ -109,7 +113,7 @@ export class Database {
         ? baseOptions
         : {
             ...baseOptions,
-            fetchImpl: options.fetchImpl
+            fetchImpl: options.fetchImpl,
           };
 
     return syncAlbums(syncOptions);
@@ -141,7 +145,7 @@ export class Database {
         sortName: albumsTable.sortName,
         musicBrainzId: albumsTable.musicBrainzId,
         isCompilationRaw: albumsTable.isCompilation,
-        syncedAt: albumsTable.syncedAt
+        syncedAt: albumsTable.syncedAt,
       })
       .from(albumsTable)
       .orderBy(asc(albumsTable.name), asc(albumsTable.id))
@@ -176,7 +180,7 @@ export class Database {
         sortName: albumsTable.sortName,
         musicBrainzId: albumsTable.musicBrainzId,
         isCompilationRaw: albumsTable.isCompilation,
-        syncedAt: albumsTable.syncedAt
+        syncedAt: albumsTable.syncedAt,
       })
       .from(albumsTable)
       .where(eq(albumsTable.id, albumId))
