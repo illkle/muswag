@@ -20,6 +20,7 @@
   "dependencies": {
     "@muswag/opensubsonic-types": "workspace:*",
     "better-sqlite3": "^11.8.1",
+    "drizzle-orm": "^0.44.6",
     "zod": "^3.25.76"
   },
   "devDependencies": {

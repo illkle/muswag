@@ -1,8 +1,11 @@
 import type { AlbumID3 } from "@muswag/opensubsonic-types";
+import { eq, notInArray, sql } from "drizzle-orm";
 
 import type { DatabaseSyncOptions, DbAdapter, NavidromeConnection, SyncAlbumsResult } from "./public-api.js";
 import { migrate } from "./migrate.js";
 import { fetchAlbumList2Page } from "./navidrome/client.js";
+import { dbq, execQuery, queryOne } from "./drizzle/query.js";
+import { albumsTable, syncAlbumIdsTable, syncStateTable } from "./drizzle/schema.js";
 
 type RawAlbum = Partial<AlbumID3> & Record<string, unknown>;
 type AlbumRow = {
@@ -31,51 +34,6 @@ type SyncAlbumsOptions = DatabaseSyncOptions & {
   db: DbAdapter;
   connection: NavidromeConnection;
 };
-
-const UPSERT_ALBUM_SQL = `
-INSERT INTO albums (
-  id,
-  name,
-  artist,
-  artist_id,
-  cover_art,
-  song_count,
-  duration,
-  play_count,
-  year,
-  genre,
-  created,
-  starred,
-  played,
-  user_rating,
-  sort_name,
-  music_brainz_id,
-  is_compilation,
-  raw_json,
-  synced_at
-) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-)
-ON CONFLICT(id) DO UPDATE SET
-  name = excluded.name,
-  artist = excluded.artist,
-  artist_id = excluded.artist_id,
-  cover_art = excluded.cover_art,
-  song_count = excluded.song_count,
-  duration = excluded.duration,
-  play_count = excluded.play_count,
-  year = excluded.year,
-  genre = excluded.genre,
-  created = excluded.created,
-  starred = excluded.starred,
-  played = excluded.played,
-  user_rating = excluded.user_rating,
-  sort_name = excluded.sort_name,
-  music_brainz_id = excluded.music_brainz_id,
-  is_compilation = excluded.is_compilation,
-  raw_json = excluded.raw_json,
-  synced_at = excluded.synced_at
-`;
 
 function toNullableString(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -187,27 +145,55 @@ function normalizeAlbumForStorage(rawAlbum: RawAlbum, syncedAt: string): AlbumRo
 }
 
 async function upsertAlbum(tx: DbAdapter, album: AlbumRow): Promise<void> {
-  await tx.exec(UPSERT_ALBUM_SQL, [
-    album.id,
-    album.name,
-    album.artist,
-    album.artistId,
-    album.coverArt,
-    album.songCount,
-    album.duration,
-    album.playCount,
-    album.year,
-    album.genre,
-    album.created,
-    album.starred,
-    album.played,
-    album.userRating,
-    album.sortName,
-    album.musicBrainzId,
-    album.isCompilation === null ? null : album.isCompilation ? 1 : 0,
-    album.rawJson,
-    album.syncedAt
-  ]);
+  const compilation = album.isCompilation === null ? null : album.isCompilation ? 1 : 0;
+
+  const query = dbq
+    .insert(albumsTable)
+    .values({
+      id: album.id,
+      name: album.name,
+      artist: album.artist,
+      artistId: album.artistId,
+      coverArt: album.coverArt,
+      songCount: album.songCount,
+      duration: album.duration,
+      playCount: album.playCount,
+      year: album.year,
+      genre: album.genre,
+      created: album.created,
+      starred: album.starred,
+      played: album.played,
+      userRating: album.userRating,
+      sortName: album.sortName,
+      musicBrainzId: album.musicBrainzId,
+      isCompilation: compilation,
+      rawJson: album.rawJson,
+      syncedAt: album.syncedAt
+    })
+    .onConflictDoUpdate({
+      target: albumsTable.id,
+      set: {
+        name: album.name,
+        artist: album.artist,
+        artistId: album.artistId,
+        coverArt: album.coverArt,
+        songCount: album.songCount,
+        duration: album.duration,
+        playCount: album.playCount,
+        year: album.year,
+        genre: album.genre,
+        created: album.created,
+        starred: album.starred,
+        played: album.played,
+        userRating: album.userRating,
+        sortName: album.sortName,
+        musicBrainzId: album.musicBrainzId,
+        isCompilation: compilation,
+        rawJson: album.rawJson,
+        syncedAt: album.syncedAt
+      }
+    });
+  await execQuery(tx, query);
 }
 
 function resolvePageSize(requested: number | undefined): number {
@@ -233,7 +219,7 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
   let offset = 0;
 
   await migrate(options.db);
-  await options.db.exec("DELETE FROM sync_album_ids");
+  await execQuery(options.db, dbq.delete(syncAlbumIdsTable));
 
   for (;;) {
     const fetchPageOptions =
@@ -261,7 +247,13 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
     await options.db.transaction(async (tx) => {
       for (const rawAlbum of page.albums) {
         const album = normalizeAlbumForStorage(rawAlbum, syncedAt);
-        const existing = await tx.queryOne<{ id: string }>("SELECT id FROM albums WHERE id = ?", [album.id]);
+
+        const existsQuery = dbq
+          .select({ id: albumsTable.id })
+          .from(albumsTable)
+          .where(eq(albumsTable.id, album.id))
+          .limit(1);
+        const existing = await queryOne<{ id: string }>(tx, existsQuery);
 
         if (existing) {
           updated += 1;
@@ -270,7 +262,12 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
         }
 
         await upsertAlbum(tx, album);
-        await tx.exec("INSERT INTO sync_album_ids (id) VALUES (?) ON CONFLICT(id) DO NOTHING", [album.id]);
+
+        const touchedIdsQuery = dbq
+          .insert(syncAlbumIdsTable)
+          .values({ id: album.id })
+          .onConflictDoNothing();
+        await execQuery(tx, touchedIdsQuery);
       }
     });
 
@@ -281,20 +278,36 @@ export async function syncAlbums(options: SyncAlbumsOptions): Promise<SyncAlbums
     offset += pageSize;
   }
 
-  const deleteCountRow = await options.db.queryOne<{ count: number }>(
-    "SELECT COUNT(*) AS count FROM albums WHERE id NOT IN (SELECT id FROM sync_album_ids)"
-  );
-  const deleted = Number(deleteCountRow?.count ?? 0);
+  const missingIdsSubquery = dbq.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
+
+  const countStaleQuery = dbq
+    .select({ count: sql<number>`count(*)` })
+    .from(albumsTable)
+    .where(notInArray(albumsTable.id, missingIdsSubquery));
+  const deleteCountRow = await queryOne<Record<string, unknown>>(options.db, countStaleQuery);
+  const deletedRaw =
+    deleteCountRow?.count ??
+    deleteCountRow?.["count(*)"] ??
+    deleteCountRow?.["count"];
+  const deleted = Number(deletedRaw ?? 0);
 
   const finishedAt = new Date().toISOString();
 
   await options.db.transaction(async (tx) => {
-    await tx.exec("DELETE FROM albums WHERE id NOT IN (SELECT id FROM sync_album_ids)");
-    await tx.exec(
-      "INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      ["albums_last_synced_at", finishedAt]
-    );
-    await tx.exec("DELETE FROM sync_album_ids");
+    const txMissingIdsSubquery = dbq.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
+    const deleteQuery = dbq.delete(albumsTable).where(notInArray(albumsTable.id, txMissingIdsSubquery));
+    await execQuery(tx, deleteQuery);
+
+    const syncStateUpsert = dbq
+      .insert(syncStateTable)
+      .values({ key: "albums_last_synced_at", value: finishedAt })
+      .onConflictDoUpdate({
+        target: syncStateTable.key,
+        set: { value: finishedAt }
+      });
+    await execQuery(tx, syncStateUpsert);
+
+    await execQuery(tx, dbq.delete(syncAlbumIdsTable));
   });
 
   return {

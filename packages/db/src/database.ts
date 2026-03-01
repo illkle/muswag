@@ -1,63 +1,86 @@
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { dbq, queryAll, queryOne } from "./drizzle/query.js";
+import { albumsTable } from "./drizzle/schema.js";
 import { migrate } from "./migrate.js";
 import type { DatabaseSyncOptions, DbAdapter, SyncAlbumsResult } from "./public-api.js";
 import { AlbumSchema, GetAlbumListOptionsSchema, type Album, type GetAlbumListOptions } from "./schemas.js";
 import { syncAlbums } from "./sync-albums.js";
 
-const AlbumQueryRowSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  artist: z.string().nullable(),
-  artistId: z.string().nullable(),
-  coverArt: z.string().nullable(),
-  songCount: z.number().int(),
-  duration: z.number().int(),
-  playCount: z.number().int().nullable(),
-  year: z.number().int().nullable(),
-  genre: z.string().nullable(),
-  created: z.string(),
-  starred: z.string().nullable(),
-  played: z.string().nullable(),
-  userRating: z.number().int().nullable(),
-  sortName: z.string().nullable(),
-  musicBrainzId: z.string().nullable(),
-  isCompilationRaw: z.number().int().nullable(),
-  syncedAt: z.string()
-});
+function getRecordValue(input: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (key in input) {
+      return input[key];
+    }
+  }
+  return undefined;
+}
 
-type AlbumQueryRow = z.infer<typeof AlbumQueryRowSchema>;
+function nullableString(input: Record<string, unknown>, keys: string[]): string | null {
+  const value = getRecordValue(input, keys);
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return typeof value === "string" ? value : null;
+}
 
-const SELECT_ALBUM_COLUMNS = `
-  id,
-  name,
-  artist,
-  artist_id AS artistId,
-  cover_art AS coverArt,
-  song_count AS songCount,
-  duration,
-  play_count AS playCount,
-  year,
-  genre,
-  created,
-  starred,
-  played,
-  user_rating AS userRating,
-  sort_name AS sortName,
-  music_brainz_id AS musicBrainzId,
-  is_compilation AS isCompilationRaw,
-  synced_at AS syncedAt
-`;
+function nullableInt(input: Record<string, unknown>, keys: string[]): number | null {
+  const value = getRecordValue(input, keys);
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }
+  return null;
+}
+
+function requiredString(input: Record<string, unknown>, keys: string[]): string {
+  const value = nullableString(input, keys);
+  if (value === null || value.length === 0) {
+    throw new Error(`Missing required string field: ${keys.join(" | ")}`);
+  }
+  return value;
+}
+
+function requiredInt(input: Record<string, unknown>, keys: string[]): number {
+  const value = nullableInt(input, keys);
+  if (value === null) {
+    throw new Error(`Missing required integer field: ${keys.join(" | ")}`);
+  }
+  return value;
+}
 
 function mapRowToAlbum(input: unknown): Album {
-  const row: AlbumQueryRow = AlbumQueryRowSchema.parse(input);
-
+  const row = z.record(z.unknown()).parse(input);
+  const isCompilationRaw = nullableInt(row, ["isCompilationRaw", "is_compilation"]);
   const isCompilation =
-    row.isCompilationRaw === null ? null : row.isCompilationRaw === 1 ? true : false;
+    isCompilationRaw === null ? null : isCompilationRaw === 1 ? true : false;
 
   return AlbumSchema.parse({
-    ...row,
-    isCompilation
+    id: requiredString(row, ["id"]),
+    name: requiredString(row, ["name"]),
+    artist: nullableString(row, ["artist"]),
+    artistId: nullableString(row, ["artistId", "artist_id"]),
+    coverArt: nullableString(row, ["coverArt", "cover_art"]),
+    songCount: requiredInt(row, ["songCount", "song_count"]),
+    duration: requiredInt(row, ["duration"]),
+    playCount: nullableInt(row, ["playCount", "play_count"]),
+    year: nullableInt(row, ["year"]),
+    genre: nullableString(row, ["genre"]),
+    created: requiredString(row, ["created"]),
+    starred: nullableString(row, ["starred"]),
+    played: nullableString(row, ["played"]),
+    userRating: nullableInt(row, ["userRating", "user_rating"]),
+    sortName: nullableString(row, ["sortName", "sort_name"]),
+    musicBrainzId: nullableString(row, ["musicBrainzId", "music_brainz_id"]),
+    isCompilation,
+    syncedAt: requiredString(row, ["syncedAt", "synced_at"])
   });
 }
 
@@ -99,11 +122,33 @@ export class Database {
 
     await migrate(this.adapter);
 
-    const rows = await this.adapter.query<unknown>(
-      `SELECT ${SELECT_ALBUM_COLUMNS} FROM albums ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
+    const query = dbq
+      .select({
+        id: albumsTable.id,
+        name: albumsTable.name,
+        artist: albumsTable.artist,
+        artistId: albumsTable.artistId,
+        coverArt: albumsTable.coverArt,
+        songCount: albumsTable.songCount,
+        duration: albumsTable.duration,
+        playCount: albumsTable.playCount,
+        year: albumsTable.year,
+        genre: albumsTable.genre,
+        created: albumsTable.created,
+        starred: albumsTable.starred,
+        played: albumsTable.played,
+        userRating: albumsTable.userRating,
+        sortName: albumsTable.sortName,
+        musicBrainzId: albumsTable.musicBrainzId,
+        isCompilationRaw: albumsTable.isCompilation,
+        syncedAt: albumsTable.syncedAt
+      })
+      .from(albumsTable)
+      .orderBy(asc(albumsTable.name), asc(albumsTable.id))
+      .limit(limit)
+      .offset(offset);
 
+    const rows = await queryAll<unknown>(this.adapter, query);
     return rows.map(mapRowToAlbum);
   }
 
@@ -112,11 +157,32 @@ export class Database {
 
     await migrate(this.adapter);
 
-    const row = await this.adapter.queryOne<unknown>(
-      `SELECT ${SELECT_ALBUM_COLUMNS} FROM albums WHERE id = ? LIMIT 1`,
-      [albumId]
-    );
+    const query = dbq
+      .select({
+        id: albumsTable.id,
+        name: albumsTable.name,
+        artist: albumsTable.artist,
+        artistId: albumsTable.artistId,
+        coverArt: albumsTable.coverArt,
+        songCount: albumsTable.songCount,
+        duration: albumsTable.duration,
+        playCount: albumsTable.playCount,
+        year: albumsTable.year,
+        genre: albumsTable.genre,
+        created: albumsTable.created,
+        starred: albumsTable.starred,
+        played: albumsTable.played,
+        userRating: albumsTable.userRating,
+        sortName: albumsTable.sortName,
+        musicBrainzId: albumsTable.musicBrainzId,
+        isCompilationRaw: albumsTable.isCompilation,
+        syncedAt: albumsTable.syncedAt
+      })
+      .from(albumsTable)
+      .where(eq(albumsTable.id, albumId))
+      .limit(1);
 
+    const row = await queryOne<unknown>(this.adapter, query);
     return row ? mapRowToAlbum(row) : null;
   }
 }
