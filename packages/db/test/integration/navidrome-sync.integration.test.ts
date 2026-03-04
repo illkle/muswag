@@ -3,16 +3,40 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import BetterSqlite3 from "better-sqlite3";
+import { asc, eq } from "drizzle-orm";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { describe, expect, it } from "vitest";
 
+import { SyncManager } from "../../src/database.js";
+import { withBetterSqlite } from "../../src/drizzle/bettersqliteadapter.js";
 import {
-  AlbumSchema,
-  Database,
-  createBetterSqliteAdapter,
-  type NavidromeConnection,
-} from "../../src/index.js";
+  albumArtistRolesTable,
+  albumArtistsTable,
+  albumDiscTitlesTable,
+  albumGenresTable,
+  albumMoodsTable,
+  albumRecordLabelsTable,
+  albumsTable,
+  albumReleaseTypesTable,
+  createDrizzleDb,
+  DBZodValidators,
+  type DrizzleDb,
+  syncAlbumIdsTable,
+  syncStateTable,
+} from "../../src/drizzle/schema.js";
 import { librarySetA, librarySetB, type AlbumFixture } from "../fixtures/library-sets.js";
+
+interface NavidromeConnection {
+  baseUrl: string;
+  username: string;
+  password: string;
+}
+
+function createBetterSqliteAdapter() {
+  const db = new BetterSqlite3(":memory:");
+  return createDrizzleDb(withBetterSqlite(db));
+}
 
 const dockerAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 const ffmpegAvailable = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
@@ -150,16 +174,18 @@ async function createAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
   );
 }
 
-async function waitForServerScan(
-  connection: NavidromeConnection,
-  timeoutMs = 120_000,
-): Promise<void> {
+async function waitForServerScan(connection: NavidromeConnection, timeoutMs = 120_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  const probeDatabase = new Database(createBetterSqliteAdapter(":memory:"));
+  const probeDatabase = new SyncManager(createBetterSqliteAdapter());
+  await probeDatabase.connect({
+    url: connection.baseUrl,
+    username: connection.username,
+    password: connection.password,
+  });
 
   while (Date.now() < deadline) {
     try {
-      const result = await probeDatabase.sync({ connection });
+      const result = await probeDatabase.sync();
       if (result.fetched > 0) {
         return;
       }
@@ -208,13 +234,10 @@ async function withNavidromeLibrary(
       baseUrl: `http://${container.getHost()}:${container.getMappedPort(4533)}`,
       username: "admin",
       password: "adminpass",
-      clientName: "muswag-integration",
-      protocolVersion: "1.16.1",
     };
 
     await createAdmin(connection.baseUrl);
     await waitForServerScan(connection);
-
     await callback(connection);
   } finally {
     if (container) {
@@ -225,70 +248,233 @@ async function withNavidromeLibrary(
   }
 }
 
-describeIfReady("navidrome sync integration", () => {
-  it("syncs 5 albums with rich ID3 tags and remains idempotent", async () => {
-    const consumerDb = new Database(createBetterSqliteAdapter(":memory:"));
+async function readFullState(db: DrizzleDb) {
+  const albums = DBZodValidators.albumsTable.array().parse(
+    await db.select().from(albumsTable).orderBy(asc(albumsTable.id)),
+  );
+  const albumRecordLabels = DBZodValidators.albumRecordLabelsTable.array().parse(
+    await db
+      .select()
+      .from(albumRecordLabelsTable)
+      .orderBy(asc(albumRecordLabelsTable.albumId), asc(albumRecordLabelsTable.position)),
+  );
+  const albumGenres = DBZodValidators.albumGenresTable.array().parse(
+    await db
+      .select()
+      .from(albumGenresTable)
+      .orderBy(asc(albumGenresTable.albumId), asc(albumGenresTable.position)),
+  );
+  const albumArtists = DBZodValidators.albumArtistsTable.array().parse(
+    await db
+      .select()
+      .from(albumArtistsTable)
+      .orderBy(asc(albumArtistsTable.albumId), asc(albumArtistsTable.position)),
+  );
+  const albumArtistRoles = DBZodValidators.albumArtistRolesTable.array().parse(
+    await db
+      .select()
+      .from(albumArtistRolesTable)
+      .orderBy(
+        asc(albumArtistRolesTable.albumId),
+        asc(albumArtistRolesTable.artistPosition),
+        asc(albumArtistRolesTable.position),
+      ),
+  );
+  const albumReleaseTypes = DBZodValidators.albumReleaseTypesTable.array().parse(
+    await db
+      .select()
+      .from(albumReleaseTypesTable)
+      .orderBy(asc(albumReleaseTypesTable.albumId), asc(albumReleaseTypesTable.position)),
+  );
+  const albumMoods = DBZodValidators.albumMoodsTable.array().parse(
+    await db
+      .select()
+      .from(albumMoodsTable)
+      .orderBy(asc(albumMoodsTable.albumId), asc(albumMoodsTable.position)),
+  );
+  const albumDiscTitles = DBZodValidators.albumDiscTitlesTable.array().parse(
+    await db
+      .select()
+      .from(albumDiscTitlesTable)
+      .orderBy(asc(albumDiscTitlesTable.albumId), asc(albumDiscTitlesTable.position)),
+  );
+  const syncState = DBZodValidators.syncStateTable.array().parse(
+    await db.select().from(syncStateTable).orderBy(asc(syncStateTable.key)),
+  );
+  const syncAlbumIds = DBZodValidators.syncAlbumIdsTable.array().parse(
+    await db.select().from(syncAlbumIdsTable).orderBy(asc(syncAlbumIdsTable.id)),
+  );
 
+  return {
+    albums,
+    albumRecordLabels,
+    albumGenres,
+    albumArtists,
+    albumArtistRoles,
+    albumReleaseTypes,
+    albumMoods,
+    albumDiscTitles,
+    syncState,
+    syncAlbumIds,
+  };
+}
+
+function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullState>>): void {
+  const albumIds = new Set(state.albums.map((row) => row.id));
+  const artistKeys = new Set(state.albumArtists.map((row) => `${row.albumId}:${row.position}`));
+
+  for (const row of state.albumRecordLabels) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumGenres) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumArtists) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumReleaseTypes) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumMoods) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumDiscTitles) {
+    expect(albumIds.has(row.albumId)).toBe(true);
+  }
+  for (const row of state.albumArtistRoles) {
+    expect(artistKeys.has(`${row.albumId}:${row.artistPosition}`)).toBe(true);
+  }
+}
+
+describeIfReady("navidrome sync integration", () => {
+  it("syncs albums and remains idempotent across all album-related tables", async () => {
     await withNavidromeLibrary(librarySetA, async (connection) => {
-      const first = await consumerDb.sync({ connection });
+      const drizzleDb = createBetterSqliteAdapter();
+      const consumerDb = new SyncManager(drizzleDb);
+
+      await consumerDb.connect({
+        url: connection.baseUrl,
+        username: connection.username,
+        password: connection.password,
+      });
+
+      const first = await consumerDb.sync();
       expect(first.fetched).toBe(5);
       expect(first.inserted).toBe(5);
+      expect(first.updated).toBe(0);
+      expect(first.deleted).toBe(0);
 
-      const albums = await consumerDb.getAlbumList();
-      const parsedAlbums = AlbumSchema.array().parse(albums);
+      const firstState = await readFullState(drizzleDb);
+      expect(firstState.albums).toHaveLength(5);
+      expect(firstState.syncAlbumIds).toHaveLength(0);
+      assertNoDanglingRelations(firstState);
 
-      expect(parsedAlbums).toHaveLength(5);
+      const firstSyncState = firstState.syncState.find((row) => row.key === "albums_last_synced_at");
+      expect(firstSyncState).toBeDefined();
+      expect(firstSyncState?.value.length).toBeGreaterThan(0);
 
-      for (const album of parsedAlbums) {
-        expect(album.songCount).toBeGreaterThanOrEqual(1);
-        expect(album.songCount).toBeLessThanOrEqual(3);
-        expect(album.artist).not.toBeNull();
-        expect(album.genre).not.toBeNull();
-        expect(album.year).not.toBeNull();
-        expect(album.duration).toBeGreaterThan(0);
-      }
-
-      const oneAlbum = await consumerDb.getAlbumById(parsedAlbums[0]!.id);
-      expect(oneAlbum).not.toBeNull();
-      expect(oneAlbum?.songCount).toBeGreaterThanOrEqual(1);
-      expect(oneAlbum?.songCount).toBeLessThanOrEqual(3);
-
-      const second = await consumerDb.sync({ connection });
-      expect(second.inserted).toBe(0);
-      expect(second.deleted).toBe(0);
+      const second = await consumerDb.sync();
       expect(second.fetched).toBe(5);
+      expect(second.inserted).toBe(0);
+      expect(second.updated).toBe(5);
+      expect(second.deleted).toBe(0);
+
+      const secondState = await readFullState(drizzleDb);
+      expect(secondState.syncAlbumIds).toHaveLength(0);
+      assertNoDanglingRelations(secondState);
+
+      expect(secondState.albums).toEqual(firstState.albums);
+      expect(secondState.albumRecordLabels).toEqual(firstState.albumRecordLabels);
+      expect(secondState.albumGenres).toEqual(firstState.albumGenres);
+      expect(secondState.albumArtists).toEqual(firstState.albumArtists);
+      expect(secondState.albumArtistRoles).toEqual(firstState.albumArtistRoles);
+      expect(secondState.albumReleaseTypes).toEqual(firstState.albumReleaseTypes);
+      expect(secondState.albumMoods).toEqual(firstState.albumMoods);
+      expect(secondState.albumDiscTitles).toEqual(firstState.albumDiscTitles);
+
+      const secondSyncState = secondState.syncState.find(
+        (row) => row.key === "albums_last_synced_at",
+      );
+      expect(secondSyncState).toBeDefined();
+      expect(secondSyncState?.value).not.toBe(firstSyncState?.value);
     });
   });
 
   it("reconciles album deletions when server library changes", async () => {
-    const consumerDb = new Database(createBetterSqliteAdapter(":memory:"));
+    const drizzleDb = createBetterSqliteAdapter();
+    const consumerDb = new SyncManager(drizzleDb);
 
     await withNavidromeLibrary(librarySetA, async (connectionA) => {
-      const resultA = await consumerDb.sync({ connection: connectionA });
+      await consumerDb.connect({
+        url: connectionA.baseUrl,
+        username: connectionA.username,
+        password: connectionA.password,
+      });
+      const resultA = await consumerDb.sync();
       expect(resultA.fetched).toBe(5);
+      expect(resultA.deleted).toBe(0);
     });
 
-    const beforeIds = new Set((await consumerDb.getAlbumList()).map((album) => album.id));
+    const beforeState = await readFullState(drizzleDb);
+    const beforeIds = new Set(beforeState.albums.map((album) => album.id));
 
     await withNavidromeLibrary(librarySetB, async (connectionB) => {
-      const resultB = await consumerDb.sync({ connection: connectionB });
+      await consumerDb.connect({
+        url: connectionB.baseUrl,
+        username: connectionB.username,
+        password: connectionB.password,
+      });
+      const resultB = await consumerDb.sync();
       expect(resultB.fetched).toBe(5);
       expect(resultB.deleted).toBeGreaterThan(0);
     });
 
-    const afterAlbums = AlbumSchema.array().parse(await consumerDb.getAlbumList());
-    expect(afterAlbums).toHaveLength(5);
+    const afterState = await readFullState(drizzleDb);
+    const afterIds = new Set(afterState.albums.map((album) => album.id));
 
-    const afterIds = new Set(afterAlbums.map((album) => album.id));
+    expect(afterState.albums).toHaveLength(5);
+    expect(afterState.syncAlbumIds).toHaveLength(0);
+    assertNoDanglingRelations(afterState);
+
     const hasNewAlbumIds = [...afterIds].some((id) => !beforeIds.has(id));
-
     expect(hasNewAlbumIds).toBe(true);
 
-    for (const album of afterAlbums) {
-      expect(album.songCount).toBeGreaterThanOrEqual(1);
-      expect(album.songCount).toBeLessThanOrEqual(3);
-      expect(album.artist).not.toBeNull();
-      expect(album.genre).not.toBeNull();
+    for (const beforeAlbum of beforeState.albums) {
+      const stillExists = afterState.albums.some((album) => album.id === beforeAlbum.id);
+      if (stillExists) {
+        continue;
+      }
+
+      const childLabels = afterState.albumRecordLabels.filter(
+        (row) => row.albumId === beforeAlbum.id,
+      );
+      const childGenres = afterState.albumGenres.filter((row) => row.albumId === beforeAlbum.id);
+      const childArtists = afterState.albumArtists.filter((row) => row.albumId === beforeAlbum.id);
+      const childRoles = afterState.albumArtistRoles.filter(
+        (row) => row.albumId === beforeAlbum.id,
+      );
+      const childReleaseTypes = afterState.albumReleaseTypes.filter(
+        (row) => row.albumId === beforeAlbum.id,
+      );
+      const childMoods = afterState.albumMoods.filter((row) => row.albumId === beforeAlbum.id);
+      const childDiscTitles = afterState.albumDiscTitles.filter(
+        (row) => row.albumId === beforeAlbum.id,
+      );
+
+      expect(childLabels).toHaveLength(0);
+      expect(childGenres).toHaveLength(0);
+      expect(childArtists).toHaveLength(0);
+      expect(childRoles).toHaveLength(0);
+      expect(childReleaseTypes).toHaveLength(0);
+      expect(childMoods).toHaveLength(0);
+      expect(childDiscTitles).toHaveLength(0);
     }
+
+    const syncStateRow = await drizzleDb
+      .select()
+      .from(syncStateTable)
+      .where(eq(syncStateTable.key, "albums_last_synced_at"))
+      .limit(1);
+    expect(syncStateRow).toHaveLength(1);
   });
 });
