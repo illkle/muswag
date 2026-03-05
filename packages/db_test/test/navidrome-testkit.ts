@@ -269,7 +269,7 @@ export async function waitForNavidromeScan(
   const probeDatabase = new SyncManager(createInMemoryDrizzleDb());
   const probeConnectStartedAt = Date.now();
   console.info("scan:probe-connect:start", { baseUrl: connection.baseUrl });
-  await probeDatabase.connect({
+  await probeDatabase.login({
     url: connection.baseUrl,
     username: connection.username,
     password: connection.password,

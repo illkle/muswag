@@ -137,8 +137,8 @@ describeIfReady("navidrome sync integration", () => {
       const drizzleDb = createInMemoryDrizzleDb();
       const consumerDb = new SyncManager(drizzleDb);
 
-      console.info("consumer:connect:first", { baseUrl: connection.baseUrl });
-      await consumerDb.connect({
+      console.info("consumer:login:first", { baseUrl: connection.baseUrl });
+      await consumerDb.login({
         url: connection.baseUrl,
         username: connection.username,
         password: connection.password,
@@ -213,8 +213,8 @@ describeIfReady("navidrome sync integration", () => {
     const consumerDb = new SyncManager(drizzleDb);
 
     await withNavidromeLibrary(librarySetA, async (connectionA) => {
-      console.info("consumer:connect:library-a", { baseUrl: connectionA.baseUrl });
-      await consumerDb.connect({
+      console.info("consumer:login:library-a", { baseUrl: connectionA.baseUrl });
+      await consumerDb.login({
         url: connectionA.baseUrl,
         username: connectionA.username,
         password: connectionA.password,
@@ -235,8 +235,8 @@ describeIfReady("navidrome sync integration", () => {
     const beforeIds = new Set(beforeState.albums.map((album) => album.id));
 
     await withNavidromeLibrary(librarySetB, async (connectionB) => {
-      console.info("consumer:connect:library-b", { baseUrl: connectionB.baseUrl });
-      await consumerDb.connect({
+      console.info("consumer:login:library-b", { baseUrl: connectionB.baseUrl });
+      await consumerDb.login({
         url: connectionB.baseUrl,
         username: connectionB.username,
         password: connectionB.password,

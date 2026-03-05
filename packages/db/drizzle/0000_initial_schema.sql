@@ -96,3 +96,10 @@ CREATE TABLE IF NOT EXISTS `sync_state` (
 CREATE TABLE IF NOT EXISTS `sync_album_ids` (
   `id` text PRIMARY KEY NOT NULL
 );
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `user_credentials` (
+  `id` integer PRIMARY KEY NOT NULL,
+  `url` text NOT NULL,
+  `username` text NOT NULL,
+  `password` text NOT NULL
+);

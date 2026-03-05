@@ -17,9 +17,9 @@ type UsernamePasswordAuth = {
 };
 
 function App() {
-  const connectMutation = useMutation({
+  const loginMutation = useMutation({
     mutationFn: async (v: UsernamePasswordAuth) => {
-      return SM.connect(v);
+      return SM.login(v);
     },
   });
 
@@ -46,12 +46,12 @@ function App() {
       password: "",
     } satisfies UsernamePasswordAuth,
     onSubmit: async ({ value }) => {
-      await connectMutation.mutateAsync(value);
+      await loginMutation.mutateAsync(value);
     },
   });
 
-  const errorMessage = (() => {
-    const error = connectMutation.error;
+  const loginErrorMessage = (() => {
+    const error = loginMutation.error;
 
     if (error instanceof Error) {
       return error.message;
@@ -144,21 +144,21 @@ function App() {
                 )}
               </form.Field>
 
-              <Button type="submit" className="w-full" disabled={connectMutation.isPending}>
-                {connectMutation.isPending ? "Connecting..." : "Connect"}
+              <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
+                {loginMutation.isPending ? "Connecting..." : "Connect"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        {connectMutation.isError ? (
+        {loginMutation.isError ? (
           <Alert variant="destructive">
             <AlertTitle>Connection failed</AlertTitle>
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>{loginErrorMessage}</AlertDescription>
           </Alert>
         ) : null}
 
-        {connectMutation.isSuccess ? (
+        {loginMutation.isSuccess ? (
           <Alert>
             <AlertTitle>Connected</AlertTitle>
             <AlertDescription>
@@ -174,7 +174,11 @@ function App() {
         {syncMutation.isError ? (
           <Alert variant="destructive">
             <AlertTitle>Sync failed</AlertTitle>
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>
+              {syncMutation.error instanceof Error
+                ? syncMutation.error.message
+                : "Sync failed. Check your login state and try again."}
+            </AlertDescription>
           </Alert>
         ) : null}
 

@@ -158,6 +158,13 @@ export const syncAlbumIdsTable = sqliteTable("sync_album_ids", {
   id: text("id").primaryKey(),
 });
 
+export const userCredentialsTable = sqliteTable("user_credentials", {
+  id: integer("id").primaryKey(),
+  url: text("url").notNull(),
+  username: text("username").notNull(),
+  password: text("password").notNull(),
+});
+
 export const albumsRelations = relations(albumsTable, ({ many }) => ({
   recordLabels: many(albumRecordLabelsTable),
   genres: many(albumGenresTable),
@@ -229,6 +236,7 @@ const schema = {
   albumDiscTitles: albumDiscTitlesTable,
   syncState: syncStateTable,
   syncAlbumIds: syncAlbumIdsTable,
+  userCredentials: userCredentialsTable,
 };
 
 export const dbq = drizzle(async () => ({ rows: [] }), { schema });
@@ -250,4 +258,5 @@ export const DBZodValidators = {
   albumDiscTitlesTable: createSelectSchema(albumDiscTitlesTable),
   syncStateTable: createSelectSchema(syncStateTable),
   syncAlbumIdsTable: createSelectSchema(syncAlbumIdsTable),
+  userCredentialsTable: createSelectSchema(userCredentialsTable),
 };
