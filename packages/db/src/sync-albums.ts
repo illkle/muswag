@@ -73,49 +73,6 @@ function normalizeGenreValue(value: unknown): string {
   return String(value);
 }
 
-function parseTimestamp(value: unknown): Date | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      return null;
-    }
-    const timestamp = value < 1_000_000_000_000 ? value * 1000 : value;
-    const parsed = new Date(timestamp);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  if (typeof value === "string") {
-    const numericValue = Number(value);
-    if (Number.isFinite(numericValue)) {
-      const timestamp = numericValue < 1_000_000_000_000 ? numericValue * 1000 : numericValue;
-      const parsedNumeric = new Date(timestamp);
-      if (!Number.isNaN(parsedNumeric.getTime())) {
-        return parsedNumeric;
-      }
-    }
-
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  return null;
-}
-
-function parseRequiredTimestamp(value: unknown, fieldName: string, albumId: string): Date {
-  const parsed = parseTimestamp(value);
-  if (parsed) {
-    return parsed;
-  }
-  throw new Error(`Invalid ${fieldName} timestamp for album "${albumId}"`);
-}
-
 async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void> {
   await tx.delete(albumRecordLabelsTable).where(eq(albumRecordLabelsTable.albumId, album.id));
   await tx.delete(albumGenresTable).where(eq(albumGenresTable.albumId, album.id));
@@ -158,7 +115,7 @@ async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void
         coverArt: item.coverArt ?? null,
         artistImageUrl: item.artistImageUrl ?? null,
         albumCount: item.albumCount ?? null,
-        starred: parseTimestamp(item.starred),
+        starred: item.starred,
         musicBrainzId: item.musicBrainzId ?? null,
         sortName: item.sortName ?? null,
       })),
@@ -226,8 +183,6 @@ function persistPage(
 
     await db.transaction(async (tx) => {
       for (const album of albums) {
-        const created = parseRequiredTimestamp(album.created, "created", album.id);
-        const starred = parseTimestamp(album.starred);
         const existing = await tx
           .select({ id: albumsTable.id })
           .from(albumsTable)
@@ -243,53 +198,12 @@ function persistPage(
         await tx
           .insert(albumsTable)
           .values({
-            id: album.id,
-            name: album.name,
-            version: album.version ?? null,
-            artist: album.artist ?? null,
-            artistId: album.artistId ?? null,
-            coverArt: album.coverArt ?? null,
-            songCount: album.songCount,
-            duration: album.duration,
-            playCount: album.playCount ?? null,
-            created,
-            starred,
-            year: album.year ?? null,
-            genre: album.genre ?? null,
-            played: album.played ?? null,
-            userRating: album.userRating ?? null,
-            musicBrainzId: album.musicBrainzId ?? null,
-            displayArtist: album.displayArtist ?? null,
-            sortName: album.sortName ?? null,
-            originalReleaseDate: album.originalReleaseDate ?? null,
-            releaseDate: album.releaseDate ?? null,
-            isCompilation: album.isCompilation ?? null,
-            explicitStatus: album.explicitStatus ?? null,
+            ...album,
           })
           .onConflictDoUpdate({
             target: albumsTable.id,
             set: {
-              name: album.name,
-              version: album.version ?? null,
-              artist: album.artist ?? null,
-              artistId: album.artistId ?? null,
-              coverArt: album.coverArt ?? null,
-              songCount: album.songCount,
-              duration: album.duration,
-              playCount: album.playCount ?? null,
-              created,
-              starred,
-              year: album.year ?? null,
-              genre: album.genre ?? null,
-              played: album.played ?? null,
-              userRating: album.userRating ?? null,
-              musicBrainzId: album.musicBrainzId ?? null,
-              displayArtist: album.displayArtist ?? null,
-              sortName: album.sortName ?? null,
-              originalReleaseDate: album.originalReleaseDate ?? null,
-              releaseDate: album.releaseDate ?? null,
-              isCompilation: album.isCompilation ?? null,
-              explicitStatus: album.explicitStatus ?? null,
+              ...album,
             },
           });
 

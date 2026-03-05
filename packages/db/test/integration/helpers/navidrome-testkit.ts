@@ -10,7 +10,6 @@ import { SyncManager } from "../../../src/database.js";
 import { withBetterSqlite } from "../../../src/drizzle/bettersqliteadapter.js";
 import { createDrizzleDb, type DrizzleDb } from "../../../src/drizzle/schema.js";
 import type { AlbumFixture } from "../../fixtures/library-sets.js";
-import type { IntegrationLogger } from "./integration-log.js";
 
 export interface NavidromeConnection {
   baseUrl: string;
@@ -26,7 +25,6 @@ export interface NavidromeDependencyStatus {
 }
 
 export interface NavidromeLibraryOptions {
-  logger: IntegrationLogger;
   adminTimeoutMs?: number;
   scanTimeoutMs?: number;
 }
@@ -63,17 +61,29 @@ function sanitizePathPart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._ -]/g, "_");
 }
 
-function runFfmpeg(args: string[], logger: IntegrationLogger): void {
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    };
+  }
+
+  return { errorMessage: String(error) };
+}
+
+function runFfmpeg(args: string[]): void {
   const outputPath = args.at(-1);
   const startedAt = Date.now();
-  logger.logInfo("ffmpeg:start", { outputPath });
+  console.info("ffmpeg:start", { outputPath });
 
   const result = spawnSync("ffmpeg", args, {
     encoding: "utf8",
   });
 
   if (result.status !== 0) {
-    logger.logError("ffmpeg:failed", {
+    console.error("ffmpeg:failed", {
       outputPath,
       durationMs: Date.now() - startedAt,
       status: result.status,
@@ -82,7 +92,7 @@ function runFfmpeg(args: string[], logger: IntegrationLogger): void {
     throw new Error(`ffmpeg failed with code ${result.status}: ${result.stderr}`);
   }
 
-  logger.logInfo("ffmpeg:done", {
+  console.info("ffmpeg:done", {
     outputPath,
     durationMs: Date.now() - startedAt,
   });
@@ -91,10 +101,9 @@ function runFfmpeg(args: string[], logger: IntegrationLogger): void {
 export async function generateFakeMp3Library(
   rootDir: string,
   albums: AlbumFixture[],
-  logger: IntegrationLogger,
 ): Promise<void> {
   const generationStartedAt = Date.now();
-  logger.logInfo("library:generate:start", {
+  console.info("library:generate:start", {
     rootDir,
     albumCount: albums.length,
   });
@@ -167,10 +176,10 @@ export async function generateFakeMp3Library(
       }
 
       args.push(outputPath);
-      runFfmpeg(args, logger);
+      runFfmpeg(args);
     }
 
-    logger.logInfo("library:album:done", {
+    console.info("library:album:done", {
       album: album.album,
       artist: album.artist,
       trackCount: album.songs.length,
@@ -178,7 +187,7 @@ export async function generateFakeMp3Library(
     });
   }
 
-  logger.logInfo("library:generate:done", {
+  console.info("library:generate:done", {
     rootDir,
     albumCount: albums.length,
     durationMs: Date.now() - generationStartedAt,
@@ -187,11 +196,10 @@ export async function generateFakeMp3Library(
 
 export async function createNavidromeAdmin(
   baseUrl: string,
-  logger: IntegrationLogger,
   timeoutMs = 60_000,
 ): Promise<void> {
   const startedAt = Date.now();
-  logger.logInfo("admin:create:start", { baseUrl, timeoutMs });
+  console.info("admin:create:start", { baseUrl, timeoutMs });
   const deadline = Date.now() + timeoutMs;
   let lastError: string | null = null;
   let attempts = 0;
@@ -211,7 +219,7 @@ export async function createNavidromeAdmin(
       });
 
       if (response.ok || response.status === 403) {
-        logger.logInfo("admin:create:ready", {
+        console.info("admin:create:ready", {
           baseUrl,
           attempts,
           status: response.status,
@@ -221,7 +229,7 @@ export async function createNavidromeAdmin(
       }
 
       lastError = `HTTP ${response.status}: ${await response.text()}`;
-      logger.logWarn("admin:create:retry", {
+      console.warn("admin:create:retry", {
         baseUrl,
         attempts,
         status: response.status,
@@ -229,7 +237,7 @@ export async function createNavidromeAdmin(
       });
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      logger.logWarn("admin:create:retry", {
+      console.warn("admin:create:retry", {
         baseUrl,
         attempts,
         lastError,
@@ -239,7 +247,7 @@ export async function createNavidromeAdmin(
     await sleep(1_000);
   }
 
-  logger.logError("admin:create:timeout", {
+  console.error("admin:create:timeout", {
     baseUrl,
     attempts,
     timeoutMs,
@@ -253,30 +261,33 @@ export async function createNavidromeAdmin(
 
 export async function waitForNavidromeScan(
   connection: NavidromeConnection,
-  logger: IntegrationLogger,
   timeoutMs = 15_000,
 ): Promise<void> {
   const startedAt = Date.now();
-  logger.logInfo("scan:wait:start", {
+  console.info("scan:wait:start", {
     baseUrl: connection.baseUrl,
     timeoutMs,
   });
   const deadline = Date.now() + timeoutMs;
   const probeDatabase = new SyncManager(createInMemoryDrizzleDb());
-  await logger.timeStep("scan:probe-connect", () =>
-    probeDatabase.connect({
-      url: connection.baseUrl,
-      username: connection.username,
-      password: connection.password,
-    }),
-  );
+  const probeConnectStartedAt = Date.now();
+  console.info("scan:probe-connect:start", { baseUrl: connection.baseUrl });
+  await probeDatabase.connect({
+    url: connection.baseUrl,
+    username: connection.username,
+    password: connection.password,
+  });
+  console.info("scan:probe-connect:done", {
+    baseUrl: connection.baseUrl,
+    durationMs: Date.now() - probeConnectStartedAt,
+  });
   let attempts = 0;
 
   while (Date.now() < deadline) {
     attempts += 1;
     try {
       const result = await probeDatabase.sync();
-      logger.logInfo("scan:probe-sync", {
+      console.info("scan:probe-sync", {
         attempt: attempts,
         fetched: result.fetched,
         inserted: result.inserted,
@@ -284,7 +295,7 @@ export async function waitForNavidromeScan(
         deleted: result.deleted,
       });
       if (result.fetched > 0) {
-        logger.logInfo("scan:wait:ready", {
+        console.info("scan:wait:ready", {
           baseUrl: connection.baseUrl,
           attempts,
           durationMs: Date.now() - startedAt,
@@ -293,16 +304,16 @@ export async function waitForNavidromeScan(
       }
     } catch (error) {
       // Navidrome may still be starting up.
-      logger.logWarn("scan:probe-sync:retry", {
+      console.warn("scan:probe-sync:retry", {
         attempt: attempts,
-        ...logger.serializeError(error),
+        ...serializeError(error),
       });
     }
 
     await sleep(1_000);
   }
 
-  logger.logError("scan:wait:timeout", {
+  console.error("scan:wait:timeout", {
     baseUrl: connection.baseUrl,
     attempts,
     timeoutMs,
@@ -314,78 +325,65 @@ export async function waitForNavidromeScan(
 export async function withNavidromeLibrary(
   albums: AlbumFixture[],
   callback: (connection: NavidromeConnection) => Promise<void>,
-  options: NavidromeLibraryOptions,
+  options: NavidromeLibraryOptions = {},
 ): Promise<void> {
-  const { logger, adminTimeoutMs, scanTimeoutMs } = options;
+  const { adminTimeoutMs, scanTimeoutMs } = options;
 
-  const hostRoot = await logger.timeStep("tempdir:create", () =>
-    mkdtemp(path.join(tmpdir(), "muswag-navidrome-")),
-  );
+  const hostRoot = await mkdtemp(path.join(tmpdir(), "muswag-navidrome-"));
   const musicDir = path.join(hostRoot, "music");
   const dataDir = path.join(hostRoot, "data");
+  console.info("tempdir:create", { hostRoot, musicDir, dataDir });
 
-  await logger.timeStep("filesystem:init", async () => {
-    await mkdir(musicDir, { recursive: true });
-    await mkdir(dataDir, { recursive: true });
-  });
-  await logger.timeStep(
-    "library:generate",
-    () => generateFakeMp3Library(musicDir, albums, logger),
-    {
-      albumCount: albums.length,
-    },
-  );
+  await mkdir(musicDir, { recursive: true });
+  await mkdir(dataDir, { recursive: true });
+  console.info("filesystem:init", { musicDir, dataDir });
+  await generateFakeMp3Library(musicDir, albums);
 
   let container: StartedTestContainer | undefined;
 
   try {
-    container = await logger.timeStep("container:start", () =>
-      new GenericContainer("deluan/navidrome:latest")
-        .withExposedPorts(4533)
-        .withEnvironment({
-          ND_MUSICFOLDER: "/music",
-          ND_DATAFOLDER: "/data",
-          ND_SCANNER_SCANONSTARTUP: "true",
-          ND_SCANNER_SCHEDULE: "0",
-          ND_LOGLEVEL: "info",
-        })
-        .withBindMounts([
-          { source: musicDir, target: "/music", mode: "ro" },
-          { source: dataDir, target: "/data", mode: "rw" },
-        ])
-        .withWaitStrategy(Wait.forListeningPorts())
-        .start(),
-    );
+    console.info("container:start");
+    container = await new GenericContainer("deluan/navidrome:latest")
+      .withExposedPorts(4533)
+      .withEnvironment({
+        ND_MUSICFOLDER: "/music",
+        ND_DATAFOLDER: "/data",
+        ND_SCANNER_SCANONSTARTUP: "true",
+        ND_SCANNER_SCHEDULE: "0",
+        ND_LOGLEVEL: "info",
+      })
+      .withBindMounts([
+        { source: musicDir, target: "/music", mode: "ro" },
+        { source: dataDir, target: "/data", mode: "rw" },
+      ])
+      .withWaitStrategy(Wait.forListeningPorts())
+      .start();
 
     const connection: NavidromeConnection = {
       baseUrl: `http://${container.getHost()}:${container.getMappedPort(4533)}`,
       username: ADMIN_USERNAME,
       password: ADMIN_PASSWORD,
     };
-    logger.logInfo("container:ready", {
+    console.info("container:ready", {
       baseUrl: connection.baseUrl,
       hostRoot,
       musicDir,
       dataDir,
     });
 
-    await logger.timeStep("admin:create", () =>
-      createNavidromeAdmin(connection.baseUrl, logger, adminTimeoutMs),
-    );
-    await logger.timeStep("scan:wait", () =>
-      waitForNavidromeScan(connection, logger, scanTimeoutMs),
-    );
-    await logger.timeStep("test:callback", () => callback(connection), {
-      baseUrl: connection.baseUrl,
-    });
+    await createNavidromeAdmin(connection.baseUrl, adminTimeoutMs);
+    await waitForNavidromeScan(connection, scanTimeoutMs);
+    console.info("test:callback:start", { baseUrl: connection.baseUrl });
+    await callback(connection);
+    console.info("test:callback:done", { baseUrl: connection.baseUrl });
   } finally {
     if (container) {
       const runningContainer = container;
-      await logger.timeStep("container:stop", () => runningContainer.stop());
+      await runningContainer.stop();
+      console.info("container:stop");
     }
 
-    await logger.timeStep("tempdir:cleanup", () => rm(hostRoot, { recursive: true, force: true }), {
-      hostRoot,
-    });
+    await rm(hostRoot, { recursive: true, force: true });
+    console.info("tempdir:cleanup", { hostRoot });
   }
 }

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  subsonic-api:
+    hash: 9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7
+    path: patches/subsonic-api.patch
+
 importers:
 
   .:
@@ -40,7 +45,7 @@ importers:
         version: 3.19.19
       subsonic-api:
         specifier: ^3.2.0
-        version: 3.2.0
+        version: 3.2.0(patch_hash=9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -2761,7 +2766,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  subsonic-api@3.2.0: {}
+  subsonic-api@3.2.0(patch_hash=9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7): {}
 
   tar-fs@2.1.4:
     dependencies:

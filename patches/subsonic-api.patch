@@ -1,0 +1,144 @@
+diff --git a/lib/types.d.ts b/lib/types.d.ts
+index 48c8c2e18f866dc0b8d35cae2082377eeef49441..05d91251ea32f963193683d5eb642975e2c7408e 100644
+--- a/lib/types.d.ts
++++ b/lib/types.d.ts
+@@ -2,14 +2,14 @@ export interface AlbumID3 {
+     artist?: string;
+     artistId?: string;
+     coverArt?: string;
+-    created: Date;
++    created: string;
+     duration: number;
+     genre?: string;
+     id: string;
+     name: string;
+     playCount?: number;
+     songCount: number;
+-    starred?: Date;
++    starred?: string;
+     year?: number;
+     version?: string;
+     played?: string;
+@@ -62,7 +62,7 @@ export interface Artist {
+     averageRating?: number;
+     id: string;
+     name: string;
+-    starred?: Date;
++    starred?: string;
+     userRating?: number;
+ }
+ export interface ArtistID3 {
+@@ -71,7 +71,7 @@ export interface ArtistID3 {
+     coverArt?: string;
+     id: string;
+     name: string;
+-    starred?: Date;
++    starred?: string;
+     musicBrainzId?: string;
+     sortName?: string;
+     roles?: string[];
+@@ -104,9 +104,9 @@ export interface AudioTrack {
+ }
+ export type AverageRating = number;
+ export interface Bookmark {
+-    changed: Date;
++    changed: string;
+     comment?: string;
+-    created: Date;
++    created: string;
+     position: number;
+     username: string;
+     entry: Child;
+@@ -136,7 +136,7 @@ export interface Child {
+     bookmarkPosition?: number;
+     contentType?: string;
+     coverArt?: string;
+-    created?: Date;
++    created?: string;
+     discNumber?: number;
+     duration?: number;
+     genre?: string;
+@@ -149,7 +149,7 @@ export interface Child {
+     path?: string;
+     playCount?: number;
+     size?: number;
+-    starred?: Date;
++    starred?: string;
+     suffix?: string;
+     title: string;
+     track?: number;
+@@ -193,7 +193,7 @@ export interface Directory {
+     name: string;
+     parent?: string;
+     playCount?: number;
+-    starred?: Date;
++    starred?: string;
+     userRating?: number;
+     child?: Child[];
+ }
+@@ -245,8 +245,8 @@ export interface JukeboxStatus {
+ }
+ export interface License {
+     email?: string;
+-    licenseExpires?: Date;
+-    trialExpires?: Date;
++    licenseExpires?: string;
++    trialExpires?: string;
+     valid: boolean;
+ }
+ export interface Lyrics {
+@@ -275,10 +275,10 @@ export interface NowPlayingEntry extends Child {
+     username: string;
+ }
+ export interface Playlist {
+-    changed: Date;
++    changed: string;
+     comment?: string;
+     coverArt?: string;
+-    created: Date;
++    created: string;
+     duration: number;
+     id: string;
+     name: string;
+@@ -294,7 +294,7 @@ export interface PlaylistWithSongs extends Playlist {
+     entry?: Child[];
+ }
+ export interface PlayQueue {
+-    changed: Date;
++    changed: string;
+     changedBy: string;
+     current?: number | string;
+     position?: number;
+@@ -315,7 +315,7 @@ export interface PodcastChannel {
+ export interface PodcastEpisode extends Child {
+     channelId: string;
+     description?: string;
+-    publishDate?: Date;
++    publishDate?: string;
+     status: PodcastStatus;
+     streamId?: string;
+ }
+@@ -350,11 +350,11 @@ export interface SearchResult3 {
+     song?: Child[];
+ }
+ export interface Share {
+-    created: Date;
++    created: string;
+     description?: string;
+-    expires?: Date;
++    expires?: string;
+     id: string;
+-    lastVisited?: Date;
++    lastVisited?: string;
+     url: string;
+     username: string;
+     visitCount: number;
+@@ -387,7 +387,7 @@ export interface TopSongs {
+ }
+ export interface User {
+     adminRole: boolean;
+-    avatarLastChanged?: Date;
++    avatarLastChanged?: string;
+     commentRole: boolean;
+     coverArtRole: boolean;
+     downloadRole: boolean;

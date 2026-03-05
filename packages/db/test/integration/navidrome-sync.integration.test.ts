@@ -17,15 +17,11 @@ import {
   syncStateTable,
 } from "../../src/drizzle/schema.js";
 import { librarySetA, librarySetB } from "../fixtures/library-sets.js";
-import { createIntegrationLogger, type LogFields } from "./helpers/integration-log.js";
 import {
   checkNavidromeDependencies,
   createInMemoryDrizzleDb,
   withNavidromeLibrary,
 } from "./helpers/navidrome-testkit.js";
-
-const logger = createIntegrationLogger("navidrome-integration");
-const { logInfo, timeStep } = logger;
 
 const dependencies = checkNavidromeDependencies();
 if (!dependencies.ready) {
@@ -33,7 +29,7 @@ if (!dependencies.ready) {
     `Skipping integration tests: ${dependencies.missingDependencies.join(" and ")} unavailable.`,
   );
 }
-logInfo("dependency-check", {
+console.info("dependency-check", {
   dockerAvailable: dependencies.dockerAvailable,
   ffmpegAvailable: dependencies.ffmpegAvailable,
 });
@@ -125,7 +121,7 @@ async function readFullState(db: DrizzleDb) {
   };
 }
 
-function summarizeState(state: Awaited<ReturnType<typeof readFullState>>): LogFields {
+function summarizeState(state: Awaited<ReturnType<typeof readFullState>>) {
   return {
     albums: state.albums.length,
     albumRecordLabels: state.albumRecordLabels.length,
@@ -169,7 +165,7 @@ function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullStat
 
 describeIfReady("navidrome sync integration", () => {
   it("syncs albums and remains idempotent across all album-related tables", async () => {
-    logInfo("test:start", {
+    console.info("test:start", {
       test: "syncs albums and remains idempotent across all album-related tables",
     });
     await withNavidromeLibrary(
@@ -178,16 +174,15 @@ describeIfReady("navidrome sync integration", () => {
         const drizzleDb = createInMemoryDrizzleDb();
         const consumerDb = new SyncManager(drizzleDb);
 
-        await timeStep("consumer:connect:first", () =>
-          consumerDb.connect({
-            url: connection.baseUrl,
-            username: connection.username,
-            password: connection.password,
-          }),
-        );
+        console.info("consumer:connect:first", { baseUrl: connection.baseUrl });
+        await consumerDb.connect({
+          url: connection.baseUrl,
+          username: connection.username,
+          password: connection.password,
+        });
 
-        const first = await timeStep("consumer:sync:first", () => consumerDb.sync());
-        logInfo("consumer:sync:first:result", {
+        const first = await consumerDb.sync();
+        console.info("consumer:sync:first:result", {
           fetched: first.fetched,
           inserted: first.inserted,
           updated: first.updated,
@@ -198,8 +193,8 @@ describeIfReady("navidrome sync integration", () => {
         expect(first.updated).toBe(0);
         expect(first.deleted).toBe(0);
 
-        const firstState = await timeStep("state:read:first", () => readFullState(drizzleDb));
-        logInfo("state:first:summary", summarizeState(firstState));
+        const firstState = await readFullState(drizzleDb);
+        console.info("state:first:summary", summarizeState(firstState));
         expect(firstState.albums).toHaveLength(5);
         expect(firstState.syncAlbumIds).toHaveLength(0);
         assertNoDanglingRelations(firstState);
@@ -210,8 +205,8 @@ describeIfReady("navidrome sync integration", () => {
         expect(firstSyncState).toBeDefined();
         expect(firstSyncState?.value.length).toBeGreaterThan(0);
 
-        const second = await timeStep("consumer:sync:second", () => consumerDb.sync());
-        logInfo("consumer:sync:second:result", {
+        const second = await consumerDb.sync();
+        console.info("consumer:sync:second:result", {
           fetched: second.fetched,
           inserted: second.inserted,
           updated: second.updated,
@@ -222,8 +217,8 @@ describeIfReady("navidrome sync integration", () => {
         expect(second.updated).toBe(5);
         expect(second.deleted).toBe(0);
 
-        const secondState = await timeStep("state:read:second", () => readFullState(drizzleDb));
-        logInfo("state:second:summary", summarizeState(secondState));
+        const secondState = await readFullState(drizzleDb);
+        console.info("state:second:summary", summarizeState(secondState));
         expect(secondState.syncAlbumIds).toHaveLength(0);
         assertNoDanglingRelations(secondState);
 
@@ -242,15 +237,14 @@ describeIfReady("navidrome sync integration", () => {
         expect(secondSyncState).toBeDefined();
         expect(secondSyncState?.value).not.toBe(firstSyncState?.value);
       },
-      { logger },
     );
-    logInfo("test:done", {
+    console.info("test:done", {
       test: "syncs albums and remains idempotent across all album-related tables",
     });
   });
 
   it("reconciles album deletions when server library changes", async () => {
-    logInfo("test:start", {
+    console.info("test:start", {
       test: "reconciles album deletions when server library changes",
     });
     const drizzleDb = createInMemoryDrizzleDb();
@@ -259,15 +253,14 @@ describeIfReady("navidrome sync integration", () => {
     await withNavidromeLibrary(
       librarySetA,
       async (connectionA) => {
-        await timeStep("consumer:connect:library-a", () =>
-          consumerDb.connect({
-            url: connectionA.baseUrl,
-            username: connectionA.username,
-            password: connectionA.password,
-          }),
-        );
-        const resultA = await timeStep("consumer:sync:library-a", () => consumerDb.sync());
-        logInfo("consumer:sync:library-a:result", {
+        console.info("consumer:connect:library-a", { baseUrl: connectionA.baseUrl });
+        await consumerDb.connect({
+          url: connectionA.baseUrl,
+          username: connectionA.username,
+          password: connectionA.password,
+        });
+        const resultA = await consumerDb.sync();
+        console.info("consumer:sync:library-a:result", {
           fetched: resultA.fetched,
           inserted: resultA.inserted,
           updated: resultA.updated,
@@ -276,25 +269,23 @@ describeIfReady("navidrome sync integration", () => {
         expect(resultA.fetched).toBe(5);
         expect(resultA.deleted).toBe(0);
       },
-      { logger },
     );
 
-    const beforeState = await timeStep("state:read:before", () => readFullState(drizzleDb));
-    logInfo("state:before:summary", summarizeState(beforeState));
+    const beforeState = await readFullState(drizzleDb);
+    console.info("state:before:summary", summarizeState(beforeState));
     const beforeIds = new Set(beforeState.albums.map((album) => album.id));
 
     await withNavidromeLibrary(
       librarySetB,
       async (connectionB) => {
-        await timeStep("consumer:connect:library-b", () =>
-          consumerDb.connect({
-            url: connectionB.baseUrl,
-            username: connectionB.username,
-            password: connectionB.password,
-          }),
-        );
-        const resultB = await timeStep("consumer:sync:library-b", () => consumerDb.sync());
-        logInfo("consumer:sync:library-b:result", {
+        console.info("consumer:connect:library-b", { baseUrl: connectionB.baseUrl });
+        await consumerDb.connect({
+          url: connectionB.baseUrl,
+          username: connectionB.username,
+          password: connectionB.password,
+        });
+        const resultB = await consumerDb.sync();
+        console.info("consumer:sync:library-b:result", {
           fetched: resultB.fetched,
           inserted: resultB.inserted,
           updated: resultB.updated,
@@ -303,11 +294,10 @@ describeIfReady("navidrome sync integration", () => {
         expect(resultB.fetched).toBe(5);
         expect(resultB.deleted).toBeGreaterThan(0);
       },
-      { logger },
     );
 
-    const afterState = await timeStep("state:read:after", () => readFullState(drizzleDb));
-    logInfo("state:after:summary", summarizeState(afterState));
+    const afterState = await readFullState(drizzleDb);
+    console.info("state:after:summary", summarizeState(afterState));
     const afterIds = new Set(afterState.albums.map((album) => album.id));
 
     expect(afterState.albums).toHaveLength(5);
@@ -354,7 +344,7 @@ describeIfReady("navidrome sync integration", () => {
       .where(eq(syncStateTable.key, "albums_last_synced_at"))
       .limit(1);
     expect(syncStateRow).toHaveLength(1);
-    logInfo("test:done", {
+    console.info("test:done", {
       test: "reconciles album deletions when server library changes",
     });
   });
