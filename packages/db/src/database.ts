@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { sql } from "drizzle-orm";
+import { migrate } from "drizzle-orm/sqlite-proxy/migrator";
 import { Data, Effect } from "effect";
 import SubsonicAPI from "subsonic-api";
 
@@ -40,91 +44,7 @@ export class SyncManagerSyncError extends Data.TaggedError("SyncManagerSyncError
   cause: unknown;
 }> {}
 
-const SCHEMA_STATEMENTS = [
-  "PRAGMA foreign_keys = ON",
-  `CREATE TABLE IF NOT EXISTS albums (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    version TEXT,
-    artist TEXT,
-    artist_id TEXT,
-    cover_art TEXT,
-    song_count INTEGER NOT NULL,
-    duration INTEGER NOT NULL,
-    play_count INTEGER,
-    created INTEGER NOT NULL,
-    starred INTEGER,
-    year INTEGER,
-    genre TEXT,
-    played TEXT,
-    user_rating INTEGER,
-    music_brainz_id TEXT,
-    display_artist TEXT,
-    sort_name TEXT,
-    original_release_date TEXT,
-    release_date TEXT,
-    is_compilation INTEGER,
-    explicit_status TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_record_labels (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_genres (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    value TEXT NOT NULL,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_artists (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    cover_art TEXT,
-    artist_image_url TEXT,
-    album_count INTEGER,
-    starred INTEGER,
-    music_brainz_id TEXT,
-    sort_name TEXT,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_artist_roles (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    artist_position INTEGER NOT NULL,
-    position INTEGER NOT NULL,
-    role TEXT NOT NULL,
-    PRIMARY KEY (album_id, artist_position, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_release_types (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    value TEXT NOT NULL,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_moods (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    value TEXT NOT NULL,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS album_disc_titles (
-    album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    disc INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    PRIMARY KEY (album_id, position)
-  )`,
-  `CREATE TABLE IF NOT EXISTS sync_state (
-    key TEXT PRIMARY KEY NOT NULL,
-    value TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS sync_album_ids (
-    id TEXT PRIMARY KEY NOT NULL
-  )`,
-] as const;
+const migrationsFolder = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../drizzle");
 
 export class SyncManager {
   private readonly db: DrizzleDb;
@@ -144,9 +64,19 @@ export class SyncManager {
 
     return Effect.tryPromise({
       try: async () => {
-        for (const statement of SCHEMA_STATEMENTS) {
-          await this.db.run(sql.raw(statement));
-        }
+        await this.db.run(sql.raw("PRAGMA foreign_keys = ON"));
+        await migrate(
+          this.db,
+          async (migrationQueries) => {
+            for (const query of migrationQueries) {
+              if (query.trim().length === 0) {
+                continue;
+              }
+              await this.db.run(sql.raw(query));
+            }
+          },
+          { migrationsFolder },
+        );
         this.schemaReady = true;
       },
       catch: (cause) =>
