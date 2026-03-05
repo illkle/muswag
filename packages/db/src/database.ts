@@ -1,29 +1,49 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/sqlite-proxy/migrator";
 import { Data, Effect } from "effect";
 import SubsonicAPI from "subsonic-api";
 
-import { DrizzleDb } from "./drizzle/schema.js";
-import { syncAlbums, SyncAlbumsResult } from "./sync-albums.js";
+import type { DrizzleDb } from "./drizzle/schema.js";
+import { syncAlbums, type SyncAlbumsResult } from "./sync-albums.js";
 
 type UsernamePasswordAuth = {
   username: string;
   password: string;
-  apiKey?: never;
 };
 
-type ApiKeyAuth = {
-  apiKey: string;
-  username?: never;
-  password?: never;
-};
+const INITIAL_SCHEMA_URL = new URL("../drizzle/0000_initial_schema.sql", import.meta.url);
+const INITIAL_SCHEMA_BREAKPOINT = "\n--> statement-breakpoint\n";
+const NODE_FS_PROMISES = "node:fs/promises";
+
+let initialSchemaStatementsPromise: Promise<string[]> | undefined;
+
+async function loadInitialSchemaSql(): Promise<string> {
+  if (INITIAL_SCHEMA_URL.protocol === "file:") {
+    const { readFile } = await import(NODE_FS_PROMISES);
+    return readFile(INITIAL_SCHEMA_URL, "utf8");
+  }
+
+  const response = await fetch(INITIAL_SCHEMA_URL);
+  if (!response.ok) {
+    throw new Error(`Failed to load schema migration: ${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
+
+async function getInitialSchemaStatements(): Promise<string[]> {
+  initialSchemaStatementsPromise ??= loadInitialSchemaSql().then((schemaSql) =>
+    schemaSql
+      .split(INITIAL_SCHEMA_BREAKPOINT)
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0),
+  );
+
+  return initialSchemaStatementsPromise;
+}
 
 export type SyncConnection = {
   url: string;
-} & (UsernamePasswordAuth | ApiKeyAuth);
+} & UsernamePasswordAuth;
 
 export class SyncManagerConnectionError extends Data.TaggedError("SyncManagerConnectionError")<{
   message: string;
@@ -44,8 +64,6 @@ export class SyncManagerSyncError extends Data.TaggedError("SyncManagerSyncError
   cause: unknown;
 }> {}
 
-const migrationsFolder = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../drizzle");
-
 export class SyncManager {
   readonly db: DrizzleDb;
   private api: SubsonicAPI | null;
@@ -65,18 +83,10 @@ export class SyncManager {
     return Effect.tryPromise({
       try: async () => {
         await this.db.run(sql.raw("PRAGMA foreign_keys = ON"));
-        await migrate(
-          this.db,
-          async (migrationQueries) => {
-            for (const query of migrationQueries) {
-              if (query.trim().length === 0) {
-                continue;
-              }
-              await this.db.run(sql.raw(query));
-            }
-          },
-          { migrationsFolder },
-        );
+        const statements = await getInitialSchemaStatements();
+        for (const statement of statements) {
+          await this.db.run(statement);
+        }
         this.schemaReady = true;
       },
       catch: (cause) =>
@@ -92,10 +102,7 @@ export class SyncManager {
     const program = Effect.gen(function* () {
       const api = new SubsonicAPI({
         url: connection.url,
-        auth:
-          "apiKey" in connection
-            ? { apiKey: connection.apiKey }
-            : { username: connection.username, password: connection.password },
+        auth: { username: connection.username, password: connection.password },
       });
 
       yield* Effect.retry(

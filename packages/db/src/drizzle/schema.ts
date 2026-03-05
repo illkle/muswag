@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
-import { AsyncRemoteCallback, drizzle, RemoteCallback } from "drizzle-orm/sqlite-proxy";
+import { drizzle } from "drizzle-orm/sqlite-proxy";
+import type { AsyncRemoteCallback, RemoteCallback } from "drizzle-orm/sqlite-proxy";
 import { customType, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createSelectSchema } from "drizzle-zod";
 

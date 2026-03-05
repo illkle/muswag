@@ -11,10 +11,10 @@ import {
   albumRecordLabelsTable,
   albumsTable,
   albumReleaseTypesTable,
-  DrizzleDb,
   syncAlbumIdsTable,
   syncStateTable,
 } from "./drizzle/schema.js";
+import type { DrizzleDb } from "./drizzle/schema.js";
 
 const ALBUM_PAGE_SIZE = 500;
 const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";

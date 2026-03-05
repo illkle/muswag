@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { SyncManager } from "../../src/database.js";
+import { SyncManager } from "@muswag/db";
 import {
   albumArtistRolesTable,
   albumArtistsTable,
@@ -14,13 +14,13 @@ import {
   type DrizzleDb,
   syncAlbumIdsTable,
   syncStateTable,
-} from "../../src/drizzle/schema.js";
-import { librarySetA, librarySetB } from "../fixtures/library-sets.js";
+} from "@muswag/db";
+import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
 import {
   checkNavidromeDependencies,
   createInMemoryDrizzleDb,
   withNavidromeLibrary,
-} from "./helpers/navidrome-testkit.js";
+} from "./navidrome-testkit.js";
 
 const dependencies = checkNavidromeDependencies();
 if (!dependencies.ready) {

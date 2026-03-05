@@ -1,0 +1,13 @@
+{
+  "extends": "@muswag/tsconfig/internal-package.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "outDir": "dist",
+    "paths": {
+      "@muswag/db": ["../db/src/index.ts"]
+    },
+    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json"
+  },
+  "include": ["test"],
+  "exclude": ["node_modules"]
+}

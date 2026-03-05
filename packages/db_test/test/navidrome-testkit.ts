@@ -6,10 +6,10 @@ import path from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { SyncManager } from "../../../src/database.js";
-import { withBetterSqlite } from "../../../src/drizzle/bettersqliteadapter.js";
-import { createDrizzleDb, type DrizzleDb } from "../../../src/drizzle/schema.js";
-import type { AlbumFixture } from "../../fixtures/library-sets.js";
+import { SyncManager } from "@muswag/db";
+import { withBetterSqlite } from "./bettersqliteadapter.js";
+import { createDrizzleDb, type DrizzleDb } from "@muswag/db";
+import type { AlbumFixture } from "./fixtures/library-sets.js";
 
 export interface NavidromeConnection {
   baseUrl: string;
@@ -194,10 +194,7 @@ export async function generateFakeMp3Library(
   });
 }
 
-export async function createNavidromeAdmin(
-  baseUrl: string,
-  timeoutMs = 60_000,
-): Promise<void> {
+export async function createNavidromeAdmin(baseUrl: string, timeoutMs = 60_000): Promise<void> {
   const startedAt = Date.now();
   console.info("admin:create:start", { baseUrl, timeoutMs });
   const deadline = Date.now() + timeoutMs;

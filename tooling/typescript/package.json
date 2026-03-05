@@ -1,0 +1,14 @@
+{
+  "name": "@muswag/tsconfig",
+  "version": "0.1.0",
+  "private": true,
+  "tsconfig": "./base.json",
+  "exports": {
+    ".": "./base.json",
+    "./base.json": "./base.json",
+    "./internal-package.json": "./internal-package.json"
+  },
+  "files": [
+    "*.json"
+  ]
+}

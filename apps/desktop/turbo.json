@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".output/**", "dist/**", ".nitro/**"]
+    },
+    "dev": {
+      "persistent": true,
+      "interactive": true
+    }
+  }
+}
