@@ -47,7 +47,7 @@ export class SyncManagerSyncError extends Data.TaggedError("SyncManagerSyncError
 const migrationsFolder = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../drizzle");
 
 export class SyncManager {
-  private readonly db: DrizzleDb;
+  readonly db: DrizzleDb;
   private api: SubsonicAPI | null;
   private schemaReady: boolean;
 
