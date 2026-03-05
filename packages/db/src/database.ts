@@ -3,13 +3,7 @@ import { Data, Effect } from "effect";
 import SubsonicAPI from "subsonic-api";
 
 import { DrizzleDb } from "./drizzle/schema.js";
-import {
-  syncAlbums,
-  SyncAlbumsApiError,
-  SyncAlbumsDatabaseError,
-  SyncAlbumsResult,
-  SyncAlbumsValidationError,
-} from "./sync-albums.js";
+import { syncAlbums, SyncAlbumsResult } from "./sync-albums.js";
 
 type UsernamePasswordAuth = {
   username: string;
@@ -58,8 +52,8 @@ const SCHEMA_STATEMENTS = [
     song_count INTEGER NOT NULL,
     duration INTEGER NOT NULL,
     play_count INTEGER,
-    created TEXT NOT NULL,
-    starred TEXT,
+    created INTEGER NOT NULL,
+    starred INTEGER,
     year INTEGER,
     genre TEXT,
     played TEXT,
@@ -81,7 +75,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS album_genres (
     album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
     position INTEGER NOT NULL,
-    name TEXT NOT NULL,
+    value TEXT NOT NULL,
     PRIMARY KEY (album_id, position)
   )`,
   `CREATE TABLE IF NOT EXISTS album_artists (
@@ -92,7 +86,7 @@ const SCHEMA_STATEMENTS = [
     cover_art TEXT,
     artist_image_url TEXT,
     album_count INTEGER,
-    starred TEXT,
+    starred INTEGER,
     music_brainz_id TEXT,
     sort_name TEXT,
     PRIMARY KEY (album_id, position)
@@ -198,11 +192,7 @@ export class SyncManager {
       yield* self.initializeSchema();
 
       if (!self.api) {
-        return yield* Effect.fail(
-          new SyncManagerNotConnectedError({
-            message: "SyncManager.connect() must be called before sync()",
-          }),
-        );
+        return yield* Effect.fail(new Error("SyncManager.connect() must be called before sync()"));
       }
 
       const api = self.api;
@@ -210,18 +200,7 @@ export class SyncManager {
       return yield* Effect.tryPromise({
         try: () => syncAlbums(self.db, api),
         catch: (cause) => {
-          if (
-            cause instanceof SyncAlbumsApiError ||
-            cause instanceof SyncAlbumsValidationError ||
-            cause instanceof SyncAlbumsDatabaseError
-          ) {
-            return cause;
-          }
-
-          return new SyncManagerSyncError({
-            message: "Album sync failed",
-            cause,
-          });
+          return new Error(`Album sync failed ${cause}`);
         },
       });
     });

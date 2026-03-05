@@ -1,7 +1,6 @@
 import { eq, notInArray, sql } from "drizzle-orm";
 import { Data, Effect } from "effect";
-import SubsonicAPI from "subsonic-api";
-import { z } from "zod";
+import SubsonicAPI, { type AlbumID3 } from "subsonic-api";
 
 import {
   albumArtistRolesTable,
@@ -20,91 +19,7 @@ import {
 const ALBUM_PAGE_SIZE = 500;
 const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 
-const itemDateSchema = z
-  .object({
-    year: z.number().int().optional(),
-    month: z.number().int().optional(),
-    day: z.number().int().optional(),
-  })
-  .strict();
-
-const recordLabelSchema = z
-  .object({
-    name: z.string(),
-  })
-  .strict();
-
-const itemGenreSchema = z
-  .object({
-    name: z.string(),
-  })
-  .strict();
-
-const albumArtistSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    coverArt: z.string().optional(),
-    artistImageUrl: z.string().optional(),
-    albumCount: z.number().int().optional(),
-    starred: z.string().optional(),
-    musicBrainzId: z.string().optional(),
-    sortName: z.string().optional(),
-    roles: z.array(z.string()).optional(),
-  })
-  .strict();
-
-const discTitleSchema = z
-  .object({
-    disc: z.number().int(),
-    title: z.string(),
-  })
-  .strict();
-
-const albumSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    version: z.string().optional(),
-    artist: z.string().optional(),
-    artistId: z.string().optional(),
-    coverArt: z.string().optional(),
-    songCount: z.number().int(),
-    duration: z.number().int(),
-    playCount: z.number().int().optional(),
-    created: z.string(),
-    starred: z.string().optional(),
-    year: z.number().int().optional(),
-    genre: z.string().optional(),
-    played: z.string().optional(),
-    userRating: z.number().int().optional(),
-    recordLabels: z.array(recordLabelSchema).optional(),
-    musicBrainzId: z.string().optional(),
-    genres: z.array(itemGenreSchema).optional(),
-    artists: z.array(albumArtistSchema).optional(),
-    displayArtist: z.string().optional(),
-    releaseTypes: z.array(z.string()).optional(),
-    moods: z.array(z.string()).optional(),
-    sortName: z.string().optional(),
-    originalReleaseDate: itemDateSchema.optional(),
-    releaseDate: itemDateSchema.optional(),
-    isCompilation: z.boolean().optional(),
-    explicitStatus: z.string().optional(),
-    discTitles: z.array(discTitleSchema).optional(),
-  })
-  .strict();
-
-const albumList2PageSchema = z
-  .object({
-    albumList2: z
-      .object({
-        album: z.array(albumSchema).optional(),
-      })
-      .optional(),
-  })
-  .passthrough();
-
-type Album = z.infer<typeof albumSchema>;
+type Album = AlbumID3;
 type SyncTransaction = Parameters<Parameters<DrizzleDb["transaction"]>[0]>[0];
 
 export interface SyncAlbumsResult {
@@ -118,11 +33,6 @@ export interface SyncAlbumsResult {
 }
 
 export class SyncAlbumsApiError extends Data.TaggedError("SyncAlbumsApiError")<{
-  message: string;
-  cause: unknown;
-}> {}
-
-export class SyncAlbumsValidationError extends Data.TaggedError("SyncAlbumsValidationError")<{
   message: string;
   cause: unknown;
 }> {}
@@ -146,18 +56,64 @@ function apiEffect<A>(message: string, run: () => Promise<A>) {
   });
 }
 
-function parseAlbumPage(
-  payload: unknown,
-  offset: number,
-): Effect.Effect<Album[], SyncAlbumsValidationError> {
-  return Effect.try({
-    try: () => albumList2PageSchema.parse(payload).albumList2?.album ?? [],
-    catch: (cause) =>
-      new SyncAlbumsValidationError({
-        message: `Album page response validation failed at offset ${offset}`,
-        cause,
-      }),
-  });
+function normalizeGenreValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string"
+  ) {
+    return value.name;
+  }
+
+  return String(value);
+}
+
+function parseTimestamp(value: unknown): Date | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    const timestamp = value < 1_000_000_000_000 ? value * 1000 : value;
+    const parsed = new Date(timestamp);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (typeof value === "string") {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      const timestamp = numericValue < 1_000_000_000_000 ? numericValue * 1000 : numericValue;
+      const parsedNumeric = new Date(timestamp);
+      if (!Number.isNaN(parsedNumeric.getTime())) {
+        return parsedNumeric;
+      }
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function parseRequiredTimestamp(value: unknown, fieldName: string, albumId: string): Date {
+  const parsed = parseTimestamp(value);
+  if (parsed) {
+    return parsed;
+  }
+  throw new Error(`Invalid ${fieldName} timestamp for album "${albumId}"`);
 }
 
 async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void> {
@@ -183,10 +139,10 @@ async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void
   const genres = album.genres ?? [];
   if (genres.length > 0) {
     await tx.insert(albumGenresTable).values(
-      genres.map((item, position) => ({
+      genres.map((value, position) => ({
         albumId: album.id,
         position,
-        name: item.name,
+        value: normalizeGenreValue(value),
       })),
     );
   }
@@ -202,7 +158,7 @@ async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void
         coverArt: item.coverArt ?? null,
         artistImageUrl: item.artistImageUrl ?? null,
         albumCount: item.albumCount ?? null,
-        starred: item.starred ?? null,
+        starred: parseTimestamp(item.starred),
         musicBrainzId: item.musicBrainzId ?? null,
         sortName: item.sortName ?? null,
       })),
@@ -270,6 +226,8 @@ function persistPage(
 
     await db.transaction(async (tx) => {
       for (const album of albums) {
+        const created = parseRequiredTimestamp(album.created, "created", album.id);
+        const starred = parseTimestamp(album.starred);
         const existing = await tx
           .select({ id: albumsTable.id })
           .from(albumsTable)
@@ -294,8 +252,8 @@ function persistPage(
             songCount: album.songCount,
             duration: album.duration,
             playCount: album.playCount ?? null,
-            created: album.created,
-            starred: album.starred ?? null,
+            created,
+            starred,
             year: album.year ?? null,
             genre: album.genre ?? null,
             played: album.played ?? null,
@@ -319,8 +277,8 @@ function persistPage(
               songCount: album.songCount,
               duration: album.duration,
               playCount: album.playCount ?? null,
-              created: album.created,
-              starred: album.starred ?? null,
+              created,
+              starred,
               year: album.year ?? null,
               genre: album.genre ?? null,
               played: album.played ?? null,
@@ -403,7 +361,7 @@ export async function syncAlbums(db: DrizzleDb, api: SubsonicAPI): Promise<SyncA
         { times: 2 },
       );
 
-      const albums = yield* parseAlbumPage(payload.albumList2, offset);
+      const albums = payload.albumList2?.album ?? [];
 
       pages += 1;
       fetched += albums.length;

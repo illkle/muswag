@@ -40,8 +40,8 @@ export const albumsTable = sqliteTable("albums", {
   songCount: integer("song_count").notNull(),
   duration: integer("duration").notNull(),
   playCount: integer("play_count"),
-  created: text("created").notNull(),
-  starred: text("starred"),
+  created: integer("created", { mode: "timestamp_ms" }).notNull(),
+  starred: integer("starred", { mode: "timestamp_ms" }),
   year: integer("year"),
   genre: text("genre"),
   played: text("played"),
@@ -74,7 +74,7 @@ export const albumGenresTable = sqliteTable(
       .notNull()
       .references(() => albumsTable.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    name: text("name").notNull(),
+    value: text("value").notNull(),
   },
   (table) => [primaryKey({ columns: [table.albumId, table.position] })],
 );
@@ -91,7 +91,7 @@ export const albumArtistsTable = sqliteTable(
     coverArt: text("cover_art"),
     artistImageUrl: text("artist_image_url"),
     albumCount: integer("album_count"),
-    starred: text("starred"),
+    starred: integer("starred", { mode: "timestamp_ms" }),
     musicBrainzId: text("music_brainz_id"),
     sortName: text("sort_name"),
   },
