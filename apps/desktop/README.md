@@ -9,6 +9,14 @@ pnpm install
 pnpm dev
 ```
 
+To prefill the login form on `/`, put these env vars in the repo root `.env` file, then start the desktop app:
+
+```bash
+VITE_DEFAULT_SUBSONIC_URL=https://demo.navidrome.org
+VITE_DEFAULT_SUBSONIC_USERNAME=admin
+VITE_DEFAULT_SUBSONIC_PASSWORD=admin
+```
+
 # Building For Production
 
 To build this application for production:
