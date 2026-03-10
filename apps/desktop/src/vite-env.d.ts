@@ -1,12 +1,10 @@
 /// <reference types="vite/client" />
 
 import type { ElectronAPI } from "@electron-toolkit/preload";
-import type { MuswagDesktopApi } from "./shared/sqlite";
 
 declare global {
   interface Window {
     electron: ElectronAPI;
-    api: MuswagDesktopApi;
   }
 
   interface ImportMetaEnv {

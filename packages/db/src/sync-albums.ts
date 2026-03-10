@@ -1,5 +1,4 @@
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
-import { Data, Effect } from "effect";
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3, type Child } from "subsonic-api";
 
 import {
@@ -23,7 +22,7 @@ import {
   syncAlbumIdsTable,
   syncStateTable,
 } from "./drizzle/schema.js";
-import type { DrizzleDb } from "./drizzle/schema.js";
+import type { AnyDrizzleDb } from "./drizzle/schema.js";
 
 const ALBUM_PAGE_SIZE = 500;
 const ALBUM_DETAIL_CONCURRENCY = 8;
@@ -32,7 +31,7 @@ const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 type Album = AlbumID3;
 type AlbumWithSongs = AlbumWithSongsID3;
 type Song = Child;
-type SyncTransaction = Parameters<Parameters<DrizzleDb["transaction"]>[0]>[0];
+type SyncTransaction = AnyDrizzleDb;
 
 export interface SyncAlbumsResult {
   fetched: number;
@@ -44,28 +43,18 @@ export interface SyncAlbumsResult {
   finishedAt: string;
 }
 
-export class SyncAlbumsApiError extends Data.TaggedError("SyncAlbumsApiError")<{
-  message: string;
-  cause: unknown;
-}> {}
+async function retry<A>(run: () => Promise<A>, times: number): Promise<A> {
+  let lastCause: unknown;
 
-export class SyncAlbumsDatabaseError extends Data.TaggedError("SyncAlbumsDatabaseError")<{
-  message: string;
-  cause: unknown;
-}> {}
+  for (let attempt = 0; attempt <= times; attempt += 1) {
+    try {
+      return await run();
+    } catch (cause) {
+      lastCause = cause;
+    }
+  }
 
-function dbEffect<A>(message: string, run: () => Promise<A>) {
-  return Effect.tryPromise({
-    try: run,
-    catch: (cause) => new SyncAlbumsDatabaseError({ message, cause }),
-  });
-}
-
-function apiEffect<A>(message: string, run: () => Promise<A>) {
-  return Effect.tryPromise({
-    try: run,
-    catch: (cause) => new SyncAlbumsApiError({ message, cause }),
-  });
+  throw lastCause ?? new Error("Retry operation failed");
 }
 
 function normalizeGenreValue(value: unknown): string {
@@ -157,46 +146,46 @@ function toSongRow(album: AlbumWithSongs, song: Song): typeof songsTable.$inferI
   };
 }
 
-async function persistAlbumRows(
+function persistAlbumRows(
   tx: SyncTransaction,
   album: Album,
   resetExistingRows: boolean,
-): Promise<void> {
+): void {
   if (resetExistingRows) {
-    await tx.delete(albumRecordLabelsTable).where(eq(albumRecordLabelsTable.albumId, album.id));
-    await tx.delete(albumGenresTable).where(eq(albumGenresTable.albumId, album.id));
-    await tx.delete(albumArtistRolesTable).where(eq(albumArtistRolesTable.albumId, album.id));
-    await tx.delete(albumArtistsTable).where(eq(albumArtistsTable.albumId, album.id));
-    await tx.delete(albumReleaseTypesTable).where(eq(albumReleaseTypesTable.albumId, album.id));
-    await tx.delete(albumMoodsTable).where(eq(albumMoodsTable.albumId, album.id));
-    await tx.delete(albumDiscTitlesTable).where(eq(albumDiscTitlesTable.albumId, album.id));
+    tx.delete(albumRecordLabelsTable).where(eq(albumRecordLabelsTable.albumId, album.id)).run();
+    tx.delete(albumGenresTable).where(eq(albumGenresTable.albumId, album.id)).run();
+    tx.delete(albumArtistRolesTable).where(eq(albumArtistRolesTable.albumId, album.id)).run();
+    tx.delete(albumArtistsTable).where(eq(albumArtistsTable.albumId, album.id)).run();
+    tx.delete(albumReleaseTypesTable).where(eq(albumReleaseTypesTable.albumId, album.id)).run();
+    tx.delete(albumMoodsTable).where(eq(albumMoodsTable.albumId, album.id)).run();
+    tx.delete(albumDiscTitlesTable).where(eq(albumDiscTitlesTable.albumId, album.id)).run();
   }
 
   const recordLabels = album.recordLabels ?? [];
   if (recordLabels.length > 0) {
-    await tx.insert(albumRecordLabelsTable).values(
+    tx.insert(albumRecordLabelsTable).values(
       recordLabels.map((item, position) => ({
         albumId: album.id,
         position,
         name: item.name,
       })),
-    );
+    ).run();
   }
 
   const genres = album.genres ?? [];
   if (genres.length > 0) {
-    await tx.insert(albumGenresTable).values(
+    tx.insert(albumGenresTable).values(
       genres.map((value, position) => ({
         albumId: album.id,
         position,
         value: normalizeGenreValue(value),
       })),
-    );
+    ).run();
   }
 
   const artists = album.artists ?? [];
   if (artists.length > 0) {
-    await tx.insert(albumArtistsTable).values(
+    tx.insert(albumArtistsTable).values(
       artists.map((item, position) => ({
         albumId: album.id,
         position,
@@ -209,7 +198,7 @@ async function persistAlbumRows(
         musicBrainzId: item.musicBrainzId ?? null,
         sortName: item.sortName ?? null,
       })),
-    );
+    ).run();
 
     for (const [artistPosition, artist] of artists.entries()) {
       const roles = artist.roles ?? [];
@@ -217,85 +206,86 @@ async function persistAlbumRows(
         continue;
       }
 
-      await tx.insert(albumArtistRolesTable).values(
+      tx.insert(albumArtistRolesTable).values(
         roles.map((role, position) => ({
           albumId: album.id,
           artistPosition,
           position,
           role,
         })),
-      );
+      ).run();
     }
   }
 
   const releaseTypes = album.releaseTypes ?? [];
   if (releaseTypes.length > 0) {
-    await tx.insert(albumReleaseTypesTable).values(
+    tx.insert(albumReleaseTypesTable).values(
       releaseTypes.map((value, position) => ({
         albumId: album.id,
         position,
         value,
       })),
-    );
+    ).run();
   }
 
   const moods = album.moods ?? [];
   if (moods.length > 0) {
-    await tx.insert(albumMoodsTable).values(
+    tx.insert(albumMoodsTable).values(
       moods.map((value, position) => ({
         albumId: album.id,
         position,
         value,
       })),
-    );
+    ).run();
   }
 
   const discTitles = album.discTitles ?? [];
   if (discTitles.length > 0) {
-    await tx.insert(albumDiscTitlesTable).values(
+    tx.insert(albumDiscTitlesTable).values(
       discTitles.map((item, position) => ({
         albumId: album.id,
         position,
         disc: item.disc,
         title: item.title,
       })),
-    );
+    ).run();
   }
 }
 
-async function persistSongRows(
+function persistSongRows(
   tx: SyncTransaction,
   album: AlbumWithSongs,
   resetExistingRows: boolean,
-): Promise<void> {
+): void {
   if (resetExistingRows) {
-    await tx.delete(songsTable).where(eq(songsTable.albumId, album.id));
+    tx.delete(songsTable).where(eq(songsTable.albumId, album.id)).run();
   }
 
   const songs = album.song ?? [];
   for (const song of songs) {
-    await tx
+    tx
       .insert(songsTable)
       .values(toSongRow(album, song))
       .onConflictDoUpdate({
         target: songsTable.id,
         set: toSongRow(album, song),
-      });
+      })
+      .run();
 
     const genres = song.genres ?? [];
     if (genres.length > 0) {
-      await tx.insert(songGenresTable).values(
+      tx.insert(songGenresTable).values(
         genres.map((value, position) => ({
           songId: song.id,
           position,
           value: normalizeGenreValue(value),
         })),
-      );
+      ).run();
     }
 
     const artists = song.artists ?? [];
     if (artists.length > 0) {
-      await tx.insert(songArtistsTable).values(
+      tx.insert(songArtistsTable).values(
         artists.map((item, position) => ({
           songId: song.id,
           position,
@@ -308,7 +298,7 @@ async function persistSongRows(
           musicBrainzId: item.musicBrainzId ?? null,
           sortName: item.sortName ?? null,
         })),
-      );
+      ).run();
 
       for (const [artistPosition, artist] of artists.entries()) {
         const roles = artist.roles ?? [];
@@ -316,20 +306,20 @@ async function persistSongRows(
           continue;
         }
 
-        await tx.insert(songArtistRolesTable).values(
+        tx.insert(songArtistRolesTable).values(
           roles.map((role, position) => ({
             songId: song.id,
             artistPosition,
             position,
             role,
           })),
-        );
+        ).run();
       }
     }
 
     const albumArtists = song.albumArtists ?? [];
     if (albumArtists.length > 0) {
-      await tx.insert(songAlbumArtistsTable).values(
+      tx.insert(songAlbumArtistsTable).values(
         albumArtists.map((item, position) => ({
           songId: song.id,
           position,
@@ -342,7 +332,7 @@ async function persistSongRows(
           musicBrainzId: item.musicBrainzId ?? null,
           sortName: item.sortName ?? null,
         })),
-      );
+      ).run();
 
       for (const [artistPosition, artist] of albumArtists.entries()) {
         const roles = artist.roles ?? [];
@@ -350,20 +340,20 @@ async function persistSongRows(
           continue;
         }
 
-        await tx.insert(songAlbumArtistRolesTable).values(
+        tx.insert(songAlbumArtistRolesTable).values(
           roles.map((role, position) => ({
             songId: song.id,
             artistPosition,
             position,
             role,
           })),
-        );
+        ).run();
       }
     }
 
     const contributors = song.contributors ?? [];
     if (contributors.length > 0) {
-      await tx.insert(songContributorsTable).values(
+      tx.insert(songContributorsTable).values(
         contributors.map((item, position) => ({
           songId: song.id,
           position,
@@ -378,22 +368,22 @@ async function persistSongRows(
           musicBrainzId: item.artist?.musicBrainzId ?? null,
           sortName: item.artist?.sortName ?? null,
         })),
-      );
+      ).run();
     }
 
     const moods = song.moods ?? [];
     if (moods.length > 0) {
-      await tx.insert(songMoodsTable).values(
+      tx.insert(songMoodsTable).values(
         moods.map((value, position) => ({
           songId: song.id,
           position,
           value,
         })),
-      );
+      ).run();
     }
 
     if (song.replayGain) {
-      await tx.insert(songReplayGainTable).values({
+      tx.insert(songReplayGainTable).values({
         songId: song.id,
         trackGain: song.replayGain.trackGain,
         albumGain: song.replayGain.albumGain,
@@ -401,7 +391,7 @@ async function persistSongRows(
         albumPeak: song.replayGain.albumPeak,
         baseGain: song.replayGain.baseGain,
         fallbackGain: song.replayGain.fallbackGain,
-      });
+      }).run();
     }
   }
 }
@@ -418,189 +408,164 @@ async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: Album): Promis
     }
   }
 
-  throw new SyncAlbumsApiError({
-    message: `Fetching album detail failed for ${album.id}`,
-    cause: lastCause,
-  });
+  throw lastCause ?? new Error(`Fetching album detail failed for ${album.id}`);
 }
 
-function fetchAlbumDetails(
+async function fetchAlbumDetails(
   api: SubsonicAPI,
   albums: Album[],
-): Effect.Effect<AlbumWithSongs[], SyncAlbumsApiError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const detailedAlbums = new Array<AlbumWithSongs>(albums.length);
-      let nextIndex = 0;
+): Promise<AlbumWithSongs[]> {
+  const detailedAlbums = new Array<AlbumWithSongs>(albums.length);
+  let nextIndex = 0;
 
-      const workerCount = Math.min(ALBUM_DETAIL_CONCURRENCY, albums.length);
-      await Promise.all(
-        Array.from({ length: workerCount }, async () => {
-          while (true) {
-            const currentIndex = nextIndex;
-            nextIndex += 1;
+  const workerCount = Math.min(ALBUM_DETAIL_CONCURRENCY, albums.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
 
-            if (currentIndex >= albums.length) {
-              return;
-            }
-
-            detailedAlbums[currentIndex] = await fetchAlbumDetailWithRetry(
-              api,
-              albums[currentIndex]!,
-            );
-          }
-        }),
-      );
-
-      return detailedAlbums;
-    },
-    catch: (cause) =>
-      cause instanceof SyncAlbumsApiError
-        ? cause
-        : new SyncAlbumsApiError({
-            message: "Fetching album details failed",
-            cause,
-          }),
-  });
-}
-
-function persistPage(
-  db: DrizzleDb,
-  albums: AlbumWithSongs[],
-): Effect.Effect<{ inserted: number; updated: number }, SyncAlbumsDatabaseError> {
-  return dbEffect("Persisting album page failed", async () => {
-    let inserted = 0;
-    let updated = 0;
-    const albumIds = albums.map((album) => album.id);
-    const existingIds =
-      albumIds.length === 0
-        ? new Set<string>()
-        : new Set(
-            (
-              await db
-                .select({ id: albumsTable.id })
-                .from(albumsTable)
-                .where(inArray(albumsTable.id, albumIds))
-            ).map((row) => row.id),
-          );
-
-    await db.transaction(async (tx) => {
-      for (const album of albums) {
-        const exists = existingIds.has(album.id);
-
-        if (exists) {
-          updated += 1;
-        } else {
-          inserted += 1;
+        if (currentIndex >= albums.length) {
+          return;
         }
 
-        const albumRow = toAlbumRow(album);
-        await tx
-          .insert(albumsTable)
-          .values(albumRow)
-          .onConflictDoUpdate({
-            target: albumsTable.id,
-            set: albumRow,
-          });
-
-        await tx.insert(syncAlbumIdsTable).values({ id: album.id }).onConflictDoNothing();
-        await persistAlbumRows(tx, album, exists);
-        await persistSongRows(tx, album, exists);
+        detailedAlbums[currentIndex] = await fetchAlbumDetailWithRetry(
+          api,
+          albums[currentIndex]!,
+        );
       }
+    }),
+  );
+
+  return detailedAlbums;
+}
+
+async function persistPage(
+  db: AnyDrizzleDb,
+  albums: AlbumWithSongs[],
+): Promise<{ inserted: number; updated: number }> {
+  let inserted = 0;
+  let updated = 0;
+  const albumIds = albums.map((album) => album.id);
+  const existingIds =
+    albumIds.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await db
+              .select({ id: albumsTable.id })
+              .from(albumsTable)
+              .where(inArray(albumsTable.id, albumIds))
+          ).map((row) => row.id),
+        );
+
+  db.transaction((tx) => {
+    for (const album of albums) {
+      const exists = existingIds.has(album.id);
+
+      if (exists) {
+        updated += 1;
+      } else {
+        inserted += 1;
+      }
+
+      const albumRow = toAlbumRow(album);
+      tx
+        .insert(albumsTable)
+        .values(albumRow)
+        .onConflictDoUpdate({
+          target: albumsTable.id,
+          set: albumRow,
+        })
+        .run();
+
+      tx.insert(syncAlbumIdsTable).values({ id: album.id }).onConflictDoNothing().run();
+      persistAlbumRows(tx, album, exists);
+      persistSongRows(tx, album, exists);
+    }
+  });
+
+  return { inserted, updated };
+}
+
+async function deleteMissingAlbums(db: AnyDrizzleDb): Promise<number> {
+  const existingIdsSubquery = db.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
+
+  const countRows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(albumsTable)
+    .where(notInArray(albumsTable.id, existingIdsSubquery));
+
+  const deleted = countRows[0]?.count ?? 0;
+
+  await db.delete(albumsTable).where(notInArray(albumsTable.id, existingIdsSubquery));
+
+  return deleted;
+}
+
+async function cleanupSyncState(
+  db: AnyDrizzleDb,
+  finishedAt: string,
+): Promise<void> {
+  await db
+    .insert(syncStateTable)
+    .values({ key: ALBUMS_LAST_SYNCED_AT_KEY, value: finishedAt })
+    .onConflictDoUpdate({
+      target: syncStateTable.key,
+      set: {
+        value: finishedAt,
+      },
     });
 
-    return { inserted, updated };
-  });
+  await db.delete(syncAlbumIdsTable);
 }
 
-function deleteMissingAlbums(db: DrizzleDb): Effect.Effect<number, SyncAlbumsDatabaseError> {
-  return dbEffect("Deleting stale albums failed", async () => {
-    const existingIdsSubquery = db.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
-
-    const countRows = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(albumsTable)
-      .where(notInArray(albumsTable.id, existingIdsSubquery));
-
-    const deleted = countRows[0]?.count ?? 0;
-
-    await db.delete(albumsTable).where(notInArray(albumsTable.id, existingIdsSubquery));
-
-    return deleted;
-  });
-}
-
-function cleanupSyncState(
-  db: DrizzleDb,
-  finishedAt: string,
-): Effect.Effect<void, SyncAlbumsDatabaseError> {
-  return dbEffect("Finalizing album sync state failed", async () => {
-    await db
-      .insert(syncStateTable)
-      .values({ key: ALBUMS_LAST_SYNCED_AT_KEY, value: finishedAt })
-      .onConflictDoUpdate({
-        target: syncStateTable.key,
-        set: {
-          value: finishedAt,
-        },
-      });
-
-    await db.delete(syncAlbumIdsTable);
-  });
-}
-
-export async function syncAlbums(db: DrizzleDb, api: SubsonicAPI): Promise<SyncAlbumsResult> {
+export async function syncAlbums(db: AnyDrizzleDb, api: SubsonicAPI): Promise<SyncAlbumsResult> {
   const startedAt = new Date().toISOString();
+  await db.delete(syncAlbumIdsTable);
 
-  const program = Effect.gen(function* () {
-    yield* dbEffect("Clearing sync album IDs failed", () => db.delete(syncAlbumIdsTable));
+  let fetched = 0;
+  let inserted = 0;
+  let updated = 0;
+  let pages = 0;
 
-    let fetched = 0;
-    let inserted = 0;
-    let updated = 0;
-    let pages = 0;
+  for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
+    const payload = await retry(
+      () =>
+        api.getAlbumList2({
+          type: "alphabeticalByArtist",
+          size: ALBUM_PAGE_SIZE,
+          offset,
+        }),
+      2,
+    );
 
-    for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
-      const payload = yield* Effect.retry(
-        apiEffect(`Fetching album page failed at offset ${offset}`, () =>
-          api.getAlbumList2({
-            type: "alphabeticalByArtist",
-            size: ALBUM_PAGE_SIZE,
-            offset,
-          }),
-        ),
-        { times: 2 },
-      );
+    const albums = payload.albumList2?.album ?? [];
+    const detailedAlbums = await fetchAlbumDetails(api, albums);
 
-      const albums = payload.albumList2?.album ?? [];
-      const detailedAlbums = yield* fetchAlbumDetails(api, albums);
+    pages += 1;
+    fetched += albums.length;
 
-      pages += 1;
-      fetched += albums.length;
+    const persisted = await persistPage(db, detailedAlbums);
+    inserted += persisted.inserted;
+    updated += persisted.updated;
 
-      const persisted = yield* persistPage(db, detailedAlbums);
-      inserted += persisted.inserted;
-      updated += persisted.updated;
-
-      if (albums.length < ALBUM_PAGE_SIZE) {
-        break;
-      }
+    if (albums.length < ALBUM_PAGE_SIZE) {
+      break;
     }
+  }
 
-    const deleted = yield* deleteMissingAlbums(db);
-    const finishedAt = new Date().toISOString();
-    yield* cleanupSyncState(db, finishedAt);
+  const deleted = await deleteMissingAlbums(db);
+  const finishedAt = new Date().toISOString();
+  await cleanupSyncState(db, finishedAt);
 
-    return {
-      fetched,
-      inserted,
-      updated,
-      deleted,
-      pages,
-      startedAt,
-      finishedAt,
-    };
-  });
-
-  return Effect.runPromise(program);
+  return {
+    fetched,
+    inserted,
+    updated,
+    deleted,
+    pages,
+    startedAt,
+    finishedAt,
+  };
 }

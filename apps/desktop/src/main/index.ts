@@ -3,12 +3,26 @@ import { dirname, join } from "node:path";
 
 import type { Database } from "better-sqlite3";
 import BetterSqlite3 from "better-sqlite3";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, shell } from "electron";
+import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
+import {
+  SyncManager,
+  createDrizzleDb,
+  getAlbumDetail,
+  getAlbums,
+  getSongs,
+  migrateDb,
+} from "@muswag/db";
 
-import type { SqliteQueryRequest, SqliteQueryResponse } from "../shared/sqlite";
+import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
 
 let sqlite: Database | undefined;
+let db: ReturnType<typeof createDrizzleDb> | undefined;
+let syncManager: SyncManager | undefined;
+
+const mainIpc = new IpcListener<MuswagMainIpc>();
+const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
 function getDatabasePath(): string {
   return join(app.getPath("userData"), "muswag.db");
@@ -23,33 +37,39 @@ function getDatabase(): Database {
   mkdirSync(dirname(databasePath), { recursive: true });
   sqlite = new BetterSqlite3(databasePath);
   sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
 
   return sqlite;
 }
 
-function runSqliteQuery({ sql, params, method }: SqliteQueryRequest): SqliteQueryResponse {
-  const statement = getDatabase().prepare(sql);
-
-  switch (method) {
-    case "all":
-    case "values":
-      return { rows: statement.raw(true).all(...params) as unknown[] };
-    case "get": {
-      const row = statement.raw(true).get(...params);
-      return { rows: row };
-    }
-    case "run": {
-      const result = statement.run(...params);
-      return {
-        rows: [
-          {
-            changes: result.changes,
-            lastInsertRowid: result.lastInsertRowid,
-          },
-        ],
-      };
-    }
+function broadcastSyncEvent(event: MuswagRendererIpc["sync:event"][0]): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    rendererIpc.send(window.webContents, "sync:event", event);
   }
+}
+
+function getDrizzleDb(): ReturnType<typeof createDrizzleDb> {
+  if (db) {
+    return db;
+  }
+
+  db = createDrizzleDb(getDatabase());
+  migrateDb(db);
+
+  return db;
+}
+
+function getSyncManager(): SyncManager {
+  if (syncManager) {
+    return syncManager;
+  }
+
+  syncManager = new SyncManager(getDrizzleDb());
+  syncManager.subscribe((event) => {
+    broadcastSyncEvent(event);
+  });
+
+  return syncManager;
 }
 
 function createWindow(): void {
@@ -91,7 +111,13 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  ipcMain.handle("sqlite:query", async (_, request: SqliteQueryRequest) => runSqliteQuery(request));
+  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) => getAlbumDetail(getDrizzleDb(), albumId));
+  mainIpc.handle("db:getAlbums", async () => getAlbums(getDrizzleDb()));
+  mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
+  mainIpc.handle("sync:getUserState", async () => getSyncManager().getUserState());
+  mainIpc.handle("sync:login", async (_, credentials) => getSyncManager().login(credentials));
+  mainIpc.handle("sync:logout", async () => getSyncManager().logout());
+  mainIpc.handle("sync:run", async () => getSyncManager().sync());
 
   createWindow();
 
@@ -109,6 +135,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  mainIpc.dispose();
+  db = undefined;
+  syncManager = undefined;
   sqlite?.close();
   sqlite = undefined;
 });

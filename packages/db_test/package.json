@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@muswag/db": "workspace:*",
+    "better-sqlite3-test": "npm:better-sqlite3@12.6.0",
     "drizzle-orm": "^0.44.6",
-    "better-sqlite3": "^11.8.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

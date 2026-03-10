@@ -1,13 +1,9 @@
 import { performance } from "node:perf_hooks";
 
-import BetterSqlite3 from "better-sqlite3";
+import BetterSqlite3 from "better-sqlite3-test";
 import { describe, expect, it } from "vitest";
 
-import { albumsTable, createDrizzleDb, songsTable, SyncManager } from "@muswag/db";
-import {
-  createSqliteQueryProfiler,
-  withProfiledBetterSqlite,
-} from "./bettersqliteadapter.js";
+import { albumsTable, createDrizzleDb, migrateDb, songsTable, SyncManager } from "@muswag/db";
 import {
   buildSyncBenchmarkLibrary,
   SYNC_BENCHMARK_ALBUM_COUNT,
@@ -94,10 +90,12 @@ describeBenchmark("navidrome sync benchmark", () => {
         benchmarkLibrary,
         async (connection) => {
           const sqlite = new BetterSqlite3(":memory:");
-          const dbProfiler = createSqliteQueryProfiler();
-          const benchmarkDb = new SyncManager(
-            createDrizzleDb(withProfiledBetterSqlite(sqlite, dbProfiler)),
-          );
+          sqlite.pragma("foreign_keys = ON");
+
+          const drizzleDb = createDrizzleDb(sqlite);
+          migrateDb(drizzleDb);
+
+          const benchmarkDb = new SyncManager(drizzleDb);
           try {
             await benchmarkDb.login({
               url: connection.baseUrl,
@@ -105,7 +103,6 @@ describeBenchmark("navidrome sync benchmark", () => {
               password: connection.password,
             });
 
-            dbProfiler.reset();
             const fetchProfiler = createFetchProfiler();
             let result: Awaited<ReturnType<typeof benchmarkDb.sync>>;
             const syncStartedAt = performance.now();
@@ -120,10 +117,6 @@ describeBenchmark("navidrome sync benchmark", () => {
               throw error;
             }
             const syncDurationMs = performance.now() - syncStartedAt;
-            const unaccountedTimeMs = Math.max(
-              syncDurationMs - fetchProfiler.totalTimeMs - dbProfiler.totalTimeMs,
-              0,
-            );
             const httpTimeByAddress = [...fetchProfiler.byAddress.entries()]
               .map(([address, metrics]) => ({
                 address,
@@ -144,9 +137,6 @@ describeBenchmark("navidrome sync benchmark", () => {
               httpRequestCount: fetchProfiler.requestCount,
               httpTimeMs: Number(fetchProfiler.totalTimeMs.toFixed(2)),
               httpTimeByAddress,
-              dbQueryCount: dbProfiler.totalCount,
-              dbTimeMs: Number(dbProfiler.totalTimeMs.toFixed(2)),
-              unaccountedTimeMs: Number(unaccountedTimeMs.toFixed(2)),
             };
 
             const syncedAlbums = await benchmarkDb.db.select({ id: albumsTable.id }).from(albumsTable);

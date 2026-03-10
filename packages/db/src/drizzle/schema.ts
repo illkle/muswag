@@ -1,14 +1,8 @@
 import { relations } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/sqlite-proxy";
-import type { AsyncRemoteCallback, RemoteCallback } from "drizzle-orm/sqlite-proxy";
-import {
-  customType,
-  integer,
-  primaryKey,
-  real,
-  sqliteTable,
-  text,
-} from "drizzle-orm/sqlite-core";
+import type { Database } from "better-sqlite3";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
+import { customType, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createSelectSchema } from "drizzle-zod";
 
 export type ItemDate = {
@@ -472,7 +466,7 @@ export const songReplayGainRelations = relations(songReplayGainTable, ({ one }) 
   }),
 }));
 
-const schema = {
+export const schema = {
   albums: albumsTable,
   albumRecordLabels: albumRecordLabelsTable,
   albumGenres: albumGenresTable,
@@ -495,10 +489,12 @@ const schema = {
   userCredentials: userCredentialsTable,
 };
 
-export const dbq = drizzle(async () => ({ rows: [] }), { schema });
+export type BetterSqliteDrizzleDb = BetterSQLite3Database<typeof schema>;
 
-export function createDrizzleDb(remoteCallback: RemoteCallback | AsyncRemoteCallback) {
-  return drizzle(remoteCallback, { schema });
+export type AnyDrizzleDb = BaseSQLiteDatabase<any, any, typeof schema>;
+
+export function createDrizzleDb(client: Database | string) {
+  return drizzle(client, { schema });
 }
 
 export type DrizzleDb = ReturnType<typeof createDrizzleDb>;

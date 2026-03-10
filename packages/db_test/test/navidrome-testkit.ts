@@ -3,11 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import BetterSqlite3 from "better-sqlite3";
+import BetterSqlite3 from "better-sqlite3-test";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { withBetterSqlite } from "./bettersqliteadapter.js";
-import { createDrizzleDb, type DrizzleDb } from "@muswag/db";
+import { createDrizzleDb, migrateDb, type DrizzleDb } from "@muswag/db";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
 
 export interface NavidromeConnection {
@@ -39,8 +38,13 @@ const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "adminpass";
 
 export function createInMemoryDrizzleDb(): DrizzleDb {
-  const db = new BetterSqlite3(":memory:");
-  return createDrizzleDb(withBetterSqlite(db));
+  const sqlite = new BetterSqlite3(":memory:");
+  sqlite.pragma("foreign_keys = ON");
+
+  const db = createDrizzleDb(sqlite);
+  migrateDb(db);
+
+  return db;
 }
 
 export function checkNavidromeDependencies(): NavidromeDependencyStatus {

@@ -1,4 +1,4 @@
-import BetterSqlite3 from "better-sqlite3";
+import BetterSqlite3 from "better-sqlite3-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { pingMock, getAlbumList2Mock } = vi.hoisted(() => ({
@@ -28,16 +28,19 @@ vi.mock("subsonic-api", () => ({
 import {
   SyncManager,
   createDrizzleDb,
+  migrateDb,
   syncStateTable,
   userCredentialsTable,
   type SyncCredentials,
   type SyncManagerEvent,
 } from "@muswag/db";
-import { withBetterSqlite } from "../bettersqliteadapter.js";
 
 function createInMemoryDrizzleDb() {
   const sqlite = new BetterSqlite3(":memory:");
-  const db = createDrizzleDb(withBetterSqlite(sqlite));
+  sqlite.pragma("foreign_keys = ON");
+
+  const db = createDrizzleDb(sqlite);
+  migrateDb(db);
 
   return { sqlite, db };
 }
@@ -178,10 +181,7 @@ describe("SyncManager", () => {
     const manager = new SyncManager(db);
 
     try {
-      await expect(manager.sync()).rejects.toMatchObject({
-        _tag: "SyncManagerNotLoggedInError",
-        message: "SyncManager.login() must be called before sync()",
-      });
+      await expect(manager.sync()).rejects.toThrow("SyncManager.login() must be called before sync()");
       expect(getAlbumList2Mock).not.toHaveBeenCalled();
     } finally {
       sqlite.close();

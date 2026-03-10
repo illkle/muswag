@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@muswag/db": dbEntry,
+      "better-sqlite3": "better-sqlite3-test",
     },
   },
   test: {

@@ -1,11 +1,24 @@
-import { SyncManager, createDrizzleDb } from "@muswag/db";
-import type { RemoteCallback } from "drizzle-orm/sqlite-proxy";
+import type { GetSongsInput, SyncCredentials, SyncManagerEvent } from "@muswag/db";
+import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
-export function withBetterSqlite(): RemoteCallback {
-  return (sql, params, method) =>
-    window.api.querySqlite({ sql, params, method }) as ReturnType<RemoteCallback>;
-}
+import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
 
-export const db = createDrizzleDb(withBetterSqlite());
+const mainIpc = new IpcEmitter<MuswagMainIpc>();
+const rendererIpc = new IpcListener<MuswagRendererIpc>();
 
-export const SM = new SyncManager(db);
+export const dbHooks = {
+  getAlbumDetail: (albumId: string) => mainIpc.invoke("db:getAlbumDetail", albumId),
+  getAlbums: () => mainIpc.invoke("db:getAlbums"),
+  getSongs: (input?: GetSongsInput) => mainIpc.invoke("db:getSongs", input),
+};
+
+export const SM = {
+  getUserState: () => mainIpc.invoke("sync:getUserState"),
+  login: (credentials: SyncCredentials) => mainIpc.invoke("sync:login", credentials),
+  logout: () => mainIpc.invoke("sync:logout"),
+  subscribe: (listener: (event: SyncManagerEvent) => void) =>
+    rendererIpc.on("sync:event", (_event, payload) => {
+      listener(payload);
+    }),
+  sync: () => mainIpc.invoke("sync:run"),
+};
