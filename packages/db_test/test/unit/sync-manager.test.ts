@@ -71,12 +71,14 @@ describe("SyncManager", () => {
         status: "logged_in",
         url: credentials.url,
         username: credentials.username,
+        lastSyncedAt: null,
       });
 
       await expect(manager.getUserState()).resolves.toEqual({
         status: "logged_in",
         url: credentials.url,
         username: credentials.username,
+        lastSyncedAt: null,
       });
 
       const storedCredentials = await db.select().from(userCredentialsTable);
@@ -100,6 +102,7 @@ describe("SyncManager", () => {
             status: "logged_in",
             url: credentials.url,
             username: credentials.username,
+            lastSyncedAt: null,
           },
         },
         {
@@ -154,6 +157,15 @@ describe("SyncManager", () => {
         {
           type: "db state synced",
           result,
+        },
+        {
+          type: "user update",
+          userState: {
+            status: "logged_in",
+            url: credentials.url,
+            username: credentials.username,
+            lastSyncedAt: result.finishedAt,
+          },
         },
       ]);
     } finally {

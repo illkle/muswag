@@ -14,7 +14,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:sync-benchmark": "MUSWAG_RUN_SYNC_BENCHMARK=1 vitest run --config vitest.integration.config.ts test/navidrome-sync-benchmark.integration.test.ts"
   },
   "dependencies": {
     "@muswag/db": "workspace:*",

@@ -8,15 +8,13 @@ export function useAppEvents() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    console.log("subscribe effect");
-
     return SM.subscribe((e) => {
-      console.log("event", e);
-      switch (e) {
-        case "data_invalidate":
+      switch (e.type) {
+        case "db state synced":
           void qc.invalidateQueries({ queryKey: appQueryKeys.data });
+          void qc.invalidateQueries({ queryKey: appQueryKeys.userState });
           break;
-        case "user_invalidate":
+        case "user update":
           void qc.invalidateQueries({ queryKey: appQueryKeys.userState });
           break;
       }

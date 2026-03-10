@@ -1,14 +1,16 @@
 import { eq, sql } from "drizzle-orm";
+import { Data } from "effect";
 import SubsonicAPI from "subsonic-api";
 
 import type { DrizzleDb } from "./drizzle/schema.js";
-import { userCredentialsTable } from "./drizzle/schema.js";
+import { syncStateTable, userCredentialsTable } from "./drizzle/schema.js";
 import { syncAlbums, type SyncAlbumsResult } from "./sync-albums.js";
 
 const INITIAL_SCHEMA_URL = new URL("../drizzle/0000_initial_schema.sql", import.meta.url);
 const INITIAL_SCHEMA_BREAKPOINT = "\n--> statement-breakpoint\n";
 const NODE_FS_PROMISES = "node:fs/promises";
 const USER_CREDENTIALS_ROW_ID = 1;
+const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 
 let initialSchemaStatementsPromise: Promise<string[]> | undefined;
 
@@ -18,10 +20,53 @@ export type SyncCredentials = {
   password: string;
 };
 
-type EventFromSyncManager = "user_invalidate" | "data_invalidate";
+export type SyncUserState =
+  | {
+      status: "logged_out";
+    }
+  | {
+      status: "logged_in";
+      url: string;
+      username: string;
+      lastSyncedAt: string | null;
+    };
 
-type SyncManagerListener = (event: EventFromSyncManager) => void;
+export type SyncManagerEvent =
+  | {
+      type: "db state synced";
+      result: SyncAlbumsResult;
+    }
+  | {
+      type: "user update";
+      userState: SyncUserState;
+    };
+
+type SyncManagerListener = (event: SyncManagerEvent) => void;
 type StoredCredentialsRow = typeof userCredentialsTable.$inferSelect;
+
+export class SyncManagerConnectionError extends Data.TaggedError("SyncManagerConnectionError")<{
+  message: string;
+  cause: unknown;
+}> {}
+
+export class SyncManagerSchemaError extends Data.TaggedError("SyncManagerSchemaError")<{
+  message: string;
+  cause: unknown;
+}> {}
+
+export class SyncManagerNotLoggedInError extends Data.TaggedError("SyncManagerNotLoggedInError")<{
+  message: string;
+}> {}
+
+export class SyncManagerSyncError extends Data.TaggedError("SyncManagerSyncError")<{
+  message: string;
+  cause: unknown;
+}> {}
+
+export class SyncManagerUserStateError extends Data.TaggedError("SyncManagerUserStateError")<{
+  message: string;
+  cause: unknown;
+}> {}
 
 async function loadInitialSchemaSql(): Promise<string> {
   if (INITIAL_SCHEMA_URL.protocol === "file:") {
@@ -48,6 +93,19 @@ async function getInitialSchemaStatements(): Promise<string[]> {
   return initialSchemaStatementsPromise;
 }
 
+function toPublicUserState(credentials: StoredCredentialsRow | SyncCredentials | null): SyncUserState {
+  if (!credentials) {
+    return { status: "logged_out" };
+  }
+
+  return {
+    status: "logged_in",
+    url: credentials.url,
+    username: credentials.username,
+    lastSyncedAt: null,
+  };
+}
+
 export class SyncManager {
   readonly db: DrizzleDb;
   private schemaReady: boolean;
@@ -67,9 +125,8 @@ export class SyncManager {
     };
   }
 
-  private emit(event: EventFromSyncManager): void {
-    console.log("emit event", event);
-    for (const listener of this.listeners) {
+  private emit(event: SyncManagerEvent): void {
+    for (const listener of [...this.listeners]) {
       try {
         listener(event);
       } catch (cause) {
@@ -83,12 +140,19 @@ export class SyncManager {
       return;
     }
 
-    await this.db.run(sql.raw("PRAGMA foreign_keys = ON"));
-    const statements = await getInitialSchemaStatements();
-    for (const statement of statements) {
-      await this.db.run(statement);
+    try {
+      await this.db.run(sql.raw("PRAGMA foreign_keys = ON"));
+      const statements = await getInitialSchemaStatements();
+      for (const statement of statements) {
+        await this.db.run(statement);
+      }
+      this.schemaReady = true;
+    } catch (cause) {
+      throw new SyncManagerSchemaError({
+        message: "Initializing SQLite schema failed",
+        cause,
+      });
     }
-    this.schemaReady = true;
   }
 
   private createApi(credentials: SyncCredentials): SubsonicAPI {
@@ -102,64 +166,135 @@ export class SyncManager {
   }
 
   private async verifyConnection(api: SubsonicAPI): Promise<void> {
+    let lastCause: unknown;
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         await api.ping();
         return;
-      } catch (cause) {}
+      } catch (cause) {
+        lastCause = cause;
+      }
     }
 
-    throw new Error("Subsonic connectivity check failed");
+    throw new SyncManagerConnectionError({
+      message: "Subsonic connectivity check failed",
+      cause: lastCause,
+    });
   }
 
   private async loadStoredCredentials(): Promise<StoredCredentialsRow | null> {
-    const rows = await this.db
-      .select()
-      .from(userCredentialsTable)
-      .where(eq(userCredentialsTable.id, USER_CREDENTIALS_ROW_ID))
-      .limit(1);
+    try {
+      const rows = await this.db
+        .select()
+        .from(userCredentialsTable)
+        .where(eq(userCredentialsTable.id, USER_CREDENTIALS_ROW_ID))
+        .limit(1);
 
-    return rows[0] ?? null;
+      return rows[0] ?? null;
+    } catch (cause) {
+      throw new SyncManagerUserStateError({
+        message: "Loading stored user credentials failed",
+        cause,
+      });
+    }
   }
 
-  async login(credentials: SyncCredentials) {
+  private async loadLastSyncedAt(): Promise<string | null> {
+    try {
+      const rows = await this.db
+        .select({ value: syncStateTable.value })
+        .from(syncStateTable)
+        .where(eq(syncStateTable.key, ALBUMS_LAST_SYNCED_AT_KEY))
+        .limit(1);
+
+      return rows[0]?.value ?? null;
+    } catch (cause) {
+      throw new SyncManagerUserStateError({
+        message: "Loading last sync timestamp failed",
+        cause,
+      });
+    }
+  }
+
+  async login(credentials: SyncCredentials): Promise<SyncUserState> {
     await this.initializeSchema();
 
     const api = this.createApi(credentials);
     await this.verifyConnection(api);
 
-    await this.db
-      .insert(userCredentialsTable)
-      .values({
-        id: USER_CREDENTIALS_ROW_ID,
-        url: credentials.url,
-        username: credentials.username,
-        password: credentials.password,
-      })
-      .onConflictDoUpdate({
-        target: userCredentialsTable.id,
-        set: {
+    try {
+      await this.db
+        .insert(userCredentialsTable)
+        .values({
+          id: USER_CREDENTIALS_ROW_ID,
           url: credentials.url,
           username: credentials.username,
           password: credentials.password,
-        },
+        })
+        .onConflictDoUpdate({
+          target: userCredentialsTable.id,
+          set: {
+            url: credentials.url,
+            username: credentials.username,
+            password: credentials.password,
+          },
+        });
+    } catch (cause) {
+      throw new SyncManagerUserStateError({
+        message: "Persisting user credentials failed",
+        cause,
       });
+    }
 
-    this.emit("user_invalidate");
+    const userState = toPublicUserState(credentials);
+    this.emit({
+      type: "user update",
+      userState,
+    });
+
+    return userState;
   }
 
-  async logout() {
+  async logout(): Promise<SyncUserState> {
     await this.initializeSchema();
 
-    await this.db.delete(userCredentialsTable);
+    const existing = await this.loadStoredCredentials();
 
-    this.emit("user_invalidate");
+    try {
+      await this.db.delete(userCredentialsTable);
+    } catch (cause) {
+      throw new SyncManagerUserStateError({
+        message: "Clearing stored user credentials failed",
+        cause,
+      });
+    }
+
+    const userState = toPublicUserState(null);
+    if (existing) {
+      this.emit({
+        type: "user update",
+        userState,
+      });
+    }
+
+    return userState;
   }
 
-  async getUserState() {
+  async getUserState(): Promise<SyncUserState> {
     await this.initializeSchema();
 
-    return await this.loadStoredCredentials();
+    const storedCredentials = await this.loadStoredCredentials();
+    if (!storedCredentials) {
+      return toPublicUserState(null);
+    }
+
+    return {
+      status: "logged_in",
+      url: storedCredentials.url,
+      username: storedCredentials.username,
+      lastSyncedAt: await this.loadLastSyncedAt(),
+    };
   }
 
   async sync(): Promise<SyncAlbumsResult> {
@@ -167,14 +302,31 @@ export class SyncManager {
 
     const storedCredentials = await this.loadStoredCredentials();
     if (!storedCredentials) {
-      throw new Error("SyncManager.login() must be called before sync()");
+      throw new SyncManagerNotLoggedInError({
+        message: "SyncManager.login() must be called before sync()",
+      });
     }
 
     const api = this.createApi(storedCredentials);
+    let result: SyncAlbumsResult;
 
-    const result = await syncAlbums(this.db, api);
+    try {
+      result = await syncAlbums(this.db, api);
+    } catch (cause) {
+      throw new SyncManagerSyncError({
+        message: "Album sync failed",
+        cause,
+      });
+    }
 
-    this.emit("data_invalidate");
+    this.emit({
+      type: "db state synced",
+      result,
+    });
+    this.emit({
+      type: "user update",
+      userState: await this.getUserState(),
+    });
 
     return result;
   }

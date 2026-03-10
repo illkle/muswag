@@ -1,6 +1,6 @@
 import { eq, notInArray, sql } from "drizzle-orm";
 import { Data, Effect } from "effect";
-import SubsonicAPI, { type AlbumID3 } from "subsonic-api";
+import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3, type Child } from "subsonic-api";
 
 import {
   albumArtistRolesTable,
@@ -11,6 +11,15 @@ import {
   albumRecordLabelsTable,
   albumsTable,
   albumReleaseTypesTable,
+  songAlbumArtistRolesTable,
+  songAlbumArtistsTable,
+  songArtistRolesTable,
+  songArtistsTable,
+  songContributorsTable,
+  songGenresTable,
+  songMoodsTable,
+  songReplayGainTable,
+  songsTable,
   syncAlbumIdsTable,
   syncStateTable,
 } from "./drizzle/schema.js";
@@ -20,6 +29,8 @@ const ALBUM_PAGE_SIZE = 500;
 const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 
 type Album = AlbumID3;
+type AlbumWithSongs = AlbumWithSongsID3;
+type Song = Child;
 type SyncTransaction = Parameters<Parameters<DrizzleDb["transaction"]>[0]>[0];
 
 export interface SyncAlbumsResult {
@@ -71,6 +82,78 @@ function normalizeGenreValue(value: unknown): string {
   }
 
   return String(value);
+}
+
+function toAlbumRow(album: Album): typeof albumsTable.$inferInsert {
+  return {
+    id: album.id,
+    name: album.name,
+    version: album.version ?? null,
+    artist: album.artist ?? null,
+    artistId: album.artistId ?? null,
+    coverArt: album.coverArt ?? null,
+    songCount: album.songCount,
+    duration: album.duration,
+    playCount: album.playCount ?? null,
+    created: album.created,
+    starred: album.starred ?? null,
+    year: album.year ?? null,
+    genre: album.genre ?? null,
+    played: album.played ?? null,
+    userRating: album.userRating ?? null,
+    musicBrainzId: album.musicBrainzId ?? null,
+    displayArtist: album.displayArtist ?? null,
+    sortName: album.sortName ?? null,
+    originalReleaseDate: album.originalReleaseDate ?? null,
+    releaseDate: album.releaseDate ?? null,
+    isCompilation: album.isCompilation ?? null,
+    explicitStatus: album.explicitStatus ?? null,
+  };
+}
+
+function toSongRow(album: AlbumWithSongs, song: Song): typeof songsTable.$inferInsert {
+  return {
+    id: song.id,
+    album: song.album ?? album.name,
+    albumId: song.albumId ?? album.id,
+    artist: song.artist ?? null,
+    artistId: song.artistId ?? null,
+    averageRating: song.averageRating ?? null,
+    bitRate: song.bitRate ?? null,
+    bookmarkPosition: song.bookmarkPosition ?? null,
+    contentType: song.contentType ?? null,
+    coverArt: song.coverArt ?? null,
+    created: song.created ?? null,
+    discNumber: song.discNumber ?? null,
+    duration: song.duration ?? null,
+    genre: song.genre ?? null,
+    isDir: song.isDir,
+    isVideo: song.isVideo ?? null,
+    originalHeight: song.originalHeight ?? null,
+    originalWidth: song.originalWidth ?? null,
+    parent: song.parent ?? null,
+    path: song.path ?? null,
+    playCount: song.playCount ?? null,
+    size: song.size ?? null,
+    starred: song.starred ?? null,
+    suffix: song.suffix ?? null,
+    title: song.title,
+    track: song.track ?? null,
+    transcodedContentType: song.transcodedContentType ?? null,
+    transcodedSuffix: song.transcodedSuffix ?? null,
+    type: song.type ?? null,
+    userRating: song.userRating ?? null,
+    year: song.year ?? null,
+    played: song.played ?? null,
+    bpm: song.bpm ?? null,
+    comment: song.comment ?? null,
+    sortName: song.sortName ?? null,
+    musicBrainzId: song.musicBrainzId ?? null,
+    displayArtist: song.displayArtist ?? null,
+    displayAlbumArtist: song.displayAlbumArtist ?? null,
+    displayComposer: song.displayComposer ?? null,
+    explicitStatus: song.explicitStatus ?? null,
+  };
 }
 
 async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void> {
@@ -173,9 +256,182 @@ async function persistAlbumRows(tx: SyncTransaction, album: Album): Promise<void
   }
 }
 
+async function deleteSongChildRows(tx: SyncTransaction, songId: string): Promise<void> {
+  await tx.delete(songGenresTable).where(eq(songGenresTable.songId, songId));
+  await tx.delete(songArtistRolesTable).where(eq(songArtistRolesTable.songId, songId));
+  await tx.delete(songArtistsTable).where(eq(songArtistsTable.songId, songId));
+  await tx.delete(songAlbumArtistRolesTable).where(eq(songAlbumArtistRolesTable.songId, songId));
+  await tx.delete(songAlbumArtistsTable).where(eq(songAlbumArtistsTable.songId, songId));
+  await tx.delete(songContributorsTable).where(eq(songContributorsTable.songId, songId));
+  await tx.delete(songMoodsTable).where(eq(songMoodsTable.songId, songId));
+  await tx.delete(songReplayGainTable).where(eq(songReplayGainTable.songId, songId));
+}
+
+async function persistSongRows(tx: SyncTransaction, album: AlbumWithSongs): Promise<void> {
+  await tx.delete(songsTable).where(eq(songsTable.albumId, album.id));
+
+  const songs = album.song ?? [];
+  for (const song of songs) {
+    await deleteSongChildRows(tx, song.id);
+
+    await tx
+      .insert(songsTable)
+      .values(toSongRow(album, song))
+      .onConflictDoUpdate({
+        target: songsTable.id,
+        set: toSongRow(album, song),
+      });
+
+    const genres = song.genres ?? [];
+    if (genres.length > 0) {
+      await tx.insert(songGenresTable).values(
+        genres.map((value, position) => ({
+          songId: song.id,
+          position,
+          value: normalizeGenreValue(value),
+        })),
+      );
+    }
+
+    const artists = song.artists ?? [];
+    if (artists.length > 0) {
+      await tx.insert(songArtistsTable).values(
+        artists.map((item, position) => ({
+          songId: song.id,
+          position,
+          id: item.id,
+          name: item.name,
+          coverArt: item.coverArt ?? null,
+          artistImageUrl: item.artistImageUrl ?? null,
+          albumCount: item.albumCount ?? null,
+          starred: item.starred ?? null,
+          musicBrainzId: item.musicBrainzId ?? null,
+          sortName: item.sortName ?? null,
+        })),
+      );
+
+      for (const [artistPosition, artist] of artists.entries()) {
+        const roles = artist.roles ?? [];
+        if (roles.length === 0) {
+          continue;
+        }
+
+        await tx.insert(songArtistRolesTable).values(
+          roles.map((role, position) => ({
+            songId: song.id,
+            artistPosition,
+            position,
+            role,
+          })),
+        );
+      }
+    }
+
+    const albumArtists = song.albumArtists ?? [];
+    if (albumArtists.length > 0) {
+      await tx.insert(songAlbumArtistsTable).values(
+        albumArtists.map((item, position) => ({
+          songId: song.id,
+          position,
+          id: item.id,
+          name: item.name,
+          coverArt: item.coverArt ?? null,
+          artistImageUrl: item.artistImageUrl ?? null,
+          albumCount: item.albumCount ?? null,
+          starred: item.starred ?? null,
+          musicBrainzId: item.musicBrainzId ?? null,
+          sortName: item.sortName ?? null,
+        })),
+      );
+
+      for (const [artistPosition, artist] of albumArtists.entries()) {
+        const roles = artist.roles ?? [];
+        if (roles.length === 0) {
+          continue;
+        }
+
+        await tx.insert(songAlbumArtistRolesTable).values(
+          roles.map((role, position) => ({
+            songId: song.id,
+            artistPosition,
+            position,
+            role,
+          })),
+        );
+      }
+    }
+
+    const contributors = song.contributors ?? [];
+    if (contributors.length > 0) {
+      await tx.insert(songContributorsTable).values(
+        contributors.map((item, position) => ({
+          songId: song.id,
+          position,
+          role: item.role,
+          subRole: item.subRole ?? null,
+          artistId: item.artist?.id ?? null,
+          artistName: item.artist?.name ?? null,
+          coverArt: item.artist?.coverArt ?? null,
+          artistImageUrl: item.artist?.artistImageUrl ?? null,
+          albumCount: item.artist?.albumCount ?? null,
+          starred: item.artist?.starred ?? null,
+          musicBrainzId: item.artist?.musicBrainzId ?? null,
+          sortName: item.artist?.sortName ?? null,
+        })),
+      );
+    }
+
+    const moods = song.moods ?? [];
+    if (moods.length > 0) {
+      await tx.insert(songMoodsTable).values(
+        moods.map((value, position) => ({
+          songId: song.id,
+          position,
+          value,
+        })),
+      );
+    }
+
+    if (song.replayGain) {
+      await tx.insert(songReplayGainTable).values({
+        songId: song.id,
+        trackGain: song.replayGain.trackGain,
+        albumGain: song.replayGain.albumGain,
+        trackPeak: song.replayGain.trackPeak,
+        albumPeak: song.replayGain.albumPeak,
+        baseGain: song.replayGain.baseGain,
+        fallbackGain: song.replayGain.fallbackGain,
+      });
+    }
+  }
+}
+
+function fetchAlbumDetails(
+  api: SubsonicAPI,
+  albums: Album[],
+): Effect.Effect<AlbumWithSongs[], SyncAlbumsApiError> {
+  return Effect.gen(function* () {
+    const detailedAlbums: AlbumWithSongs[] = [];
+
+    for (const album of albums) {
+      const detailedAlbum = yield* Effect.retry(
+        apiEffect(`Fetching album detail failed for ${album.id}`, async () => {
+          const payload = await api.getAlbum({ id: album.id });
+          return payload.album;
+        }),
+        { times: 2 },
+      );
+
+      detailedAlbums.push(detailedAlbum);
+    }
+
+    return detailedAlbums;
+  });
+}
+
 function persistPage(
   db: DrizzleDb,
-  albums: Album[],
+  albums: AlbumWithSongs[],
 ): Effect.Effect<{ inserted: number; updated: number }, SyncAlbumsDatabaseError> {
   return dbEffect("Persisting album page failed", async () => {
     let inserted = 0;
@@ -195,20 +451,18 @@ function persistPage(
           inserted += 1;
         }
 
+        const albumRow = toAlbumRow(album);
         await tx
           .insert(albumsTable)
-          .values({
-            ...album,
-          })
+          .values(albumRow)
           .onConflictDoUpdate({
             target: albumsTable.id,
-            set: {
-              ...album,
-            },
+            set: albumRow,
           });
 
         await tx.insert(syncAlbumIdsTable).values({ id: album.id }).onConflictDoNothing();
         await persistAlbumRows(tx, album);
+        await persistSongRows(tx, album);
       }
     });
 
@@ -276,11 +530,12 @@ export async function syncAlbums(db: DrizzleDb, api: SubsonicAPI): Promise<SyncA
       );
 
       const albums = payload.albumList2?.album ?? [];
+      const detailedAlbums = yield* fetchAlbumDetails(api, albums);
 
       pages += 1;
       fetched += albums.length;
 
-      const persisted = yield* persistPage(db, albums);
+      const persisted = yield* persistPage(db, detailedAlbums);
       inserted += persisted.inserted;
       updated += persisted.updated;
 

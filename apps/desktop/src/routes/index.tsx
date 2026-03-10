@@ -151,7 +151,7 @@ function App() {
     );
   }
 
-  if (!userStateQuery.data) {
+  if (!userStateQuery.data || userStateQuery.data.status === "logged_out") {
     return <LoginScreen />;
   }
 

@@ -1,12 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { SyncManager } from "@muswag/db";
 import { withBetterSqlite } from "./bettersqliteadapter.js";
 import { createDrizzleDb, type DrizzleDb } from "@muswag/db";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
@@ -27,6 +26,13 @@ export interface NavidromeDependencyStatus {
 export interface NavidromeLibraryOptions {
   adminTimeoutMs?: number;
   scanTimeoutMs?: number;
+  generation?: GenerateFakeMp3LibraryOptions;
+}
+
+export interface GenerateFakeMp3LibraryOptions {
+  mode?: "ffmpeg" | "tagged-template";
+  logPerTrack?: boolean;
+  logPerAlbum?: boolean;
 }
 
 const ADMIN_USERNAME = "admin";
@@ -73,10 +79,13 @@ function serializeError(error: unknown): Record<string, unknown> {
   return { errorMessage: String(error) };
 }
 
-function runFfmpeg(args: string[]): void {
+function runFfmpeg(args: string[], options: { log?: boolean } = {}): void {
+  const { log = true } = options;
   const outputPath = args.at(-1);
   const startedAt = Date.now();
-  console.info("ffmpeg:start", { outputPath });
+  if (log) {
+    console.info("ffmpeg:start", { outputPath });
+  }
 
   const result = spawnSync("ffmpeg", args, {
     encoding: "utf8",
@@ -92,21 +101,237 @@ function runFfmpeg(args: string[]): void {
     throw new Error(`ffmpeg failed with code ${result.status}: ${result.stderr}`);
   }
 
-  console.info("ffmpeg:done", {
-    outputPath,
-    durationMs: Date.now() - startedAt,
+  if (log) {
+    console.info("ffmpeg:done", {
+      outputPath,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+}
+
+function decodeSynchsafeInteger(buffer: Buffer): number {
+  const byte0 = buffer[0] ?? 0;
+  const byte1 = buffer[1] ?? 0;
+  const byte2 = buffer[2] ?? 0;
+  const byte3 = buffer[3] ?? 0;
+  return (byte0 << 21) | (byte1 << 14) | (byte2 << 7) | byte3;
+}
+
+function encodeSynchsafeInteger(value: number): Buffer {
+  return Buffer.from([
+    (value >> 21) & 0x7f,
+    (value >> 14) & 0x7f,
+    (value >> 7) & 0x7f,
+    value & 0x7f,
+  ]);
+}
+
+function stripId3Tags(buffer: Buffer): Buffer {
+  let start = 0;
+  let end = buffer.length;
+
+  if (buffer.length >= 10 && buffer.subarray(0, 3).toString("ascii") === "ID3") {
+    start = 10 + decodeSynchsafeInteger(buffer.subarray(6, 10));
+  }
+
+  if (end >= 128 && buffer.subarray(end - 128, end - 125).toString("ascii") === "TAG") {
+    end -= 128;
+  }
+
+  return buffer.subarray(start, end);
+}
+
+function encodeUtf16Text(value: string): Buffer {
+  return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(value, "utf16le")]);
+}
+
+function createTextFrame(frameId: string, value: string): Buffer {
+  const payload = Buffer.concat([Buffer.from([1]), encodeUtf16Text(value)]);
+  const header = Buffer.alloc(10);
+  header.write(frameId, 0, 4, "ascii");
+  header.writeUInt32BE(payload.length, 4);
+  return Buffer.concat([header, payload]);
+}
+
+function buildId3v23Tag(album: AlbumFixture, song: AlbumFixture["songs"][number]): Buffer {
+  const frames = [
+    createTextFrame("TIT2", song.title),
+    createTextFrame("TPE1", song.artist ?? album.artist),
+    createTextFrame("TALB", album.album),
+    createTextFrame("TPE2", album.albumArtist),
+    createTextFrame("TRCK", `${song.track}/${album.songs.length}`),
+    createTextFrame("TPOS", `${album.disc}/1`),
+    createTextFrame("TYER", String(album.year)),
+    createTextFrame("TCON", album.genre),
+    createTextFrame("TCOM", album.composer),
+  ];
+
+  if (album.compilation) {
+    frames.push(createTextFrame("TCMP", "1"));
+  }
+
+  const payload = Buffer.concat(frames);
+  const header = Buffer.alloc(10);
+  header.write("ID3", 0, 3, "ascii");
+  header[3] = 3;
+  header[4] = 0;
+  header[5] = 0;
+  encodeSynchsafeInteger(payload.length).copy(header, 6);
+  return Buffer.concat([header, payload]);
+}
+
+function logAlbumCompletion(
+  album: AlbumFixture,
+  albumStartedAt: number,
+  logPerAlbum: boolean,
+): void {
+  if (!logPerAlbum) {
+    return;
+  }
+
+  console.info("library:album:done", {
+    album: album.album,
+    artist: album.artist,
+    trackCount: album.songs.length,
+    durationMs: Date.now() - albumStartedAt,
   });
+}
+
+async function createTaggedTemplateMp3Library(
+  rootDir: string,
+  albums: AlbumFixture[],
+  logPerAlbum: boolean,
+): Promise<void> {
+  const templatePath = path.join(rootDir, ".template.mp3");
+  runFfmpeg(
+    [
+      "-loglevel",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "anullsrc=r=44100:cl=stereo",
+      "-t",
+      "1",
+      "-ac",
+      "2",
+      "-ar",
+      "44100",
+      "-codec:a",
+      "libmp3lame",
+      "-q:a",
+      "4",
+      "-map_metadata",
+      "-1",
+      templatePath,
+    ],
+    { log: false },
+  );
+
+  const templateBuffer = stripId3Tags(await readFile(templatePath));
+  await rm(templatePath, { force: true });
+
+  for (const album of albums) {
+    const albumStartedAt = Date.now();
+    const albumDir = path.join(
+      rootDir,
+      sanitizePathPart(album.artist),
+      sanitizePathPart(album.album),
+    );
+    await mkdir(albumDir, { recursive: true });
+
+    for (const song of album.songs) {
+      const filename = `${String(song.track).padStart(2, "0")} - ${sanitizePathPart(song.title)}.mp3`;
+      const outputPath = path.join(albumDir, filename);
+      const taggedMp3 = Buffer.concat([buildId3v23Tag(album, song), templateBuffer]);
+      await writeFile(outputPath, taggedMp3);
+    }
+
+    logAlbumCompletion(album, albumStartedAt, logPerAlbum);
+  }
+}
+
+interface SubsonicAlbumListResponse {
+  "subsonic-response"?: {
+    status?: string;
+    error?: {
+      code?: number;
+      message?: string;
+    };
+    albumList2?: {
+      album?: unknown[] | unknown;
+    };
+  };
+}
+
+async function fetchSubsonicAlbumList(
+  connection: NavidromeConnection,
+  size: number,
+  offset = 0,
+): Promise<unknown[] | unknown | undefined> {
+  const params = new URLSearchParams({
+    u: connection.username,
+    p: `enc:${Buffer.from(connection.password, "utf8").toString("hex")}`,
+    v: "1.16.1",
+    c: "muswag-db-test",
+    f: "json",
+    type: "alphabeticalByArtist",
+    size: String(size),
+    offset: String(offset),
+  });
+  const response = await fetch(`${connection.baseUrl}/rest/getAlbumList2.view?${params}`);
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as SubsonicAlbumListResponse;
+  const subsonicResponse = payload["subsonic-response"];
+  if (subsonicResponse?.status !== "ok") {
+    throw new Error(subsonicResponse?.error?.message ?? "Unknown Subsonic API error");
+  }
+
+  return subsonicResponse.albumList2?.album;
+}
+
+async function countScannedAlbums(connection: NavidromeConnection): Promise<number> {
+  const pageSize = 500;
+  let count = 0;
+
+  for (let offset = 0; ; offset += pageSize) {
+    const albums = await fetchSubsonicAlbumList(connection, pageSize, offset);
+    const pageCount = Array.isArray(albums) ? albums.length : albums ? 1 : 0;
+    count += pageCount;
+
+    if (pageCount < pageSize) {
+      return count;
+    }
+  }
 }
 
 export async function generateFakeMp3Library(
   rootDir: string,
   albums: AlbumFixture[],
+  options: GenerateFakeMp3LibraryOptions = {},
 ): Promise<void> {
+  const { mode = "ffmpeg", logPerTrack = true, logPerAlbum = true } = options;
   const generationStartedAt = Date.now();
   console.info("library:generate:start", {
     rootDir,
     albumCount: albums.length,
+    mode,
   });
+
+  if (mode === "tagged-template") {
+    await createTaggedTemplateMp3Library(rootDir, albums, logPerAlbum);
+    console.info("library:generate:done", {
+      rootDir,
+      albumCount: albums.length,
+      durationMs: Date.now() - generationStartedAt,
+    });
+    return;
+  }
 
   for (const album of albums) {
     const albumStartedAt = Date.now();
@@ -176,15 +401,10 @@ export async function generateFakeMp3Library(
       }
 
       args.push(outputPath);
-      runFfmpeg(args);
+      runFfmpeg(args, { log: logPerTrack });
     }
 
-    console.info("library:album:done", {
-      album: album.album,
-      artist: album.artist,
-      trackCount: album.songs.length,
-      durationMs: Date.now() - albumStartedAt,
-    });
+    logAlbumCompletion(album, albumStartedAt, logPerAlbum);
   }
 
   console.info("library:generate:done", {
@@ -258,40 +478,27 @@ export async function createNavidromeAdmin(baseUrl: string, timeoutMs = 60_000):
 
 export async function waitForNavidromeScan(
   connection: NavidromeConnection,
+  expectedAlbumCount = 1,
   timeoutMs = 15_000,
 ): Promise<void> {
   const startedAt = Date.now();
   console.info("scan:wait:start", {
     baseUrl: connection.baseUrl,
+    expectedAlbumCount,
     timeoutMs,
   });
   const deadline = Date.now() + timeoutMs;
-  const probeDatabase = new SyncManager(createInMemoryDrizzleDb());
-  const probeConnectStartedAt = Date.now();
-  console.info("scan:probe-connect:start", { baseUrl: connection.baseUrl });
-  await probeDatabase.login({
-    url: connection.baseUrl,
-    username: connection.username,
-    password: connection.password,
-  });
-  console.info("scan:probe-connect:done", {
-    baseUrl: connection.baseUrl,
-    durationMs: Date.now() - probeConnectStartedAt,
-  });
   let attempts = 0;
 
   while (Date.now() < deadline) {
     attempts += 1;
     try {
-      const result = await probeDatabase.sync();
-      console.info("scan:probe-sync", {
+      const albumCount = await countScannedAlbums(connection);
+      console.info("scan:probe-album-list", {
         attempt: attempts,
-        fetched: result.fetched,
-        inserted: result.inserted,
-        updated: result.updated,
-        deleted: result.deleted,
+        albumCount,
       });
-      if (result.fetched > 0) {
+      if (albumCount >= expectedAlbumCount) {
         console.info("scan:wait:ready", {
           baseUrl: connection.baseUrl,
           attempts,
@@ -301,7 +508,7 @@ export async function waitForNavidromeScan(
       }
     } catch (error) {
       // Navidrome may still be starting up.
-      console.warn("scan:probe-sync:retry", {
+      console.warn("scan:probe-album-list:retry", {
         attempt: attempts,
         ...serializeError(error),
       });
@@ -334,7 +541,7 @@ export async function withNavidromeLibrary(
   await mkdir(musicDir, { recursive: true });
   await mkdir(dataDir, { recursive: true });
   console.info("filesystem:init", { musicDir, dataDir });
-  await generateFakeMp3Library(musicDir, albums);
+  await generateFakeMp3Library(musicDir, albums, options.generation);
 
   let container: StartedTestContainer | undefined;
 
@@ -369,7 +576,7 @@ export async function withNavidromeLibrary(
     });
 
     await createNavidromeAdmin(connection.baseUrl, adminTimeoutMs);
-    await waitForNavidromeScan(connection, scanTimeoutMs);
+    await waitForNavidromeScan(connection, albums.length, scanTimeoutMs);
     console.info("test:callback:start", { baseUrl: connection.baseUrl });
     await callback(connection);
     console.info("test:callback:done", { baseUrl: connection.baseUrl });

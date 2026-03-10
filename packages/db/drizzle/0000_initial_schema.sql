@@ -88,6 +88,142 @@ CREATE TABLE IF NOT EXISTS `album_disc_titles` (
   FOREIGN KEY (`album_id`) REFERENCES `albums`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `songs` (
+  `id` text PRIMARY KEY NOT NULL,
+  `album` text NOT NULL,
+  `album_id` text NOT NULL,
+  `artist` text,
+  `artist_id` text,
+  `average_rating` integer,
+  `bit_rate` integer,
+  `bookmark_position` integer,
+  `content_type` text,
+  `cover_art` text,
+  `created` text,
+  `disc_number` integer,
+  `duration` integer,
+  `genre` text,
+  `is_dir` integer NOT NULL,
+  `is_video` integer,
+  `original_height` integer,
+  `original_width` integer,
+  `parent` text,
+  `path` text,
+  `play_count` integer,
+  `size` integer,
+  `starred` text,
+  `suffix` text,
+  `title` text NOT NULL,
+  `track` integer,
+  `transcoded_content_type` text,
+  `transcoded_suffix` text,
+  `type` text,
+  `user_rating` integer,
+  `year` integer,
+  `played` text,
+  `bpm` integer,
+  `comment` text,
+  `sort_name` text,
+  `music_brainz_id` text,
+  `display_artist` text,
+  `display_album_artist` text,
+  `display_composer` text,
+  `explicit_status` text,
+  FOREIGN KEY (`album_id`) REFERENCES `albums`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_genres` (
+  `song_id` text NOT NULL,
+  `position` integer NOT NULL,
+  `value` text NOT NULL,
+  PRIMARY KEY(`song_id`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_artists` (
+  `song_id` text NOT NULL,
+  `position` integer NOT NULL,
+  `id` text NOT NULL,
+  `name` text NOT NULL,
+  `cover_art` text,
+  `artist_image_url` text,
+  `album_count` integer,
+  `starred` text,
+  `music_brainz_id` text,
+  `sort_name` text,
+  PRIMARY KEY(`song_id`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_artist_roles` (
+  `song_id` text NOT NULL,
+  `artist_position` integer NOT NULL,
+  `position` integer NOT NULL,
+  `role` text NOT NULL,
+  PRIMARY KEY(`song_id`, `artist_position`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_album_artists` (
+  `song_id` text NOT NULL,
+  `position` integer NOT NULL,
+  `id` text NOT NULL,
+  `name` text NOT NULL,
+  `cover_art` text,
+  `artist_image_url` text,
+  `album_count` integer,
+  `starred` text,
+  `music_brainz_id` text,
+  `sort_name` text,
+  PRIMARY KEY(`song_id`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_album_artist_roles` (
+  `song_id` text NOT NULL,
+  `artist_position` integer NOT NULL,
+  `position` integer NOT NULL,
+  `role` text NOT NULL,
+  PRIMARY KEY(`song_id`, `artist_position`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_contributors` (
+  `song_id` text NOT NULL,
+  `position` integer NOT NULL,
+  `role` text NOT NULL,
+  `sub_role` text,
+  `artist_id` text,
+  `artist_name` text,
+  `cover_art` text,
+  `artist_image_url` text,
+  `album_count` integer,
+  `starred` text,
+  `music_brainz_id` text,
+  `sort_name` text,
+  PRIMARY KEY(`song_id`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_moods` (
+  `song_id` text NOT NULL,
+  `position` integer NOT NULL,
+  `value` text NOT NULL,
+  PRIMARY KEY(`song_id`, `position`),
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `song_replay_gain` (
+  `song_id` text PRIMARY KEY NOT NULL,
+  `track_gain` real,
+  `album_gain` real,
+  `track_peak` real,
+  `album_peak` real,
+  `base_gain` real,
+  `fallback_gain` real,
+  FOREIGN KEY (`song_id`) REFERENCES `songs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `sync_state` (
   `key` text PRIMARY KEY NOT NULL,
   `value` text NOT NULL

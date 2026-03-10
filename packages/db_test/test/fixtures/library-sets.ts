@@ -173,6 +173,65 @@ export const librarySetA: AlbumFixture[] = [
   },
 ];
 
+export const SYNC_BENCHMARK_ARTIST_COUNT = 250;
+export const SYNC_BENCHMARK_ALBUM_COUNT = 1_000;
+export const SYNC_BENCHMARK_SONGS_PER_ALBUM = 10;
+export const SYNC_BENCHMARK_SONG_COUNT =
+  SYNC_BENCHMARK_ALBUM_COUNT * SYNC_BENCHMARK_SONGS_PER_ALBUM;
+
+const benchmarkGenres = [
+  "Ambient",
+  "Electronic",
+  "Indie",
+  "Jazz",
+  "Pop",
+  "Rock",
+] as const;
+
+function padNumber(value: number, width: number): string {
+  return String(value).padStart(width, "0");
+}
+
+function createFixtureUuid(seed: number): string {
+  const hex = seed.toString(16).padStart(32, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+export function buildSyncBenchmarkLibrary(): AlbumFixture[] {
+  return Array.from({ length: SYNC_BENCHMARK_ALBUM_COUNT }, (_, albumIndex) => {
+    const artistIndex = albumIndex % SYNC_BENCHMARK_ARTIST_COUNT;
+    const artistNumber = artistIndex + 1;
+    const albumNumber = albumIndex + 1;
+    const genre = benchmarkGenres[albumIndex % benchmarkGenres.length] ?? benchmarkGenres[0];
+
+    return {
+      artist: `Benchmark Artist ${padNumber(artistNumber, 3)}`,
+      album: `Benchmark Album ${padNumber(albumNumber, 4)}`,
+      albumArtist: `Benchmark Artist ${padNumber(artistNumber, 3)}`,
+      year: 2000 + (albumIndex % 25),
+      genre,
+      composer: `Benchmark Composer ${padNumber((artistIndex % 50) + 1, 2)}`,
+      comment: `Sync benchmark fixture album ${padNumber(albumNumber, 4)}`,
+      disc: 1,
+      compilation: false,
+      musicBrainzAlbumId: createFixtureUuid(1_000_000 + albumIndex),
+      musicBrainzArtistId: createFixtureUuid(2_000_000 + artistIndex),
+      musicBrainzReleaseGroupId: createFixtureUuid(3_000_000 + albumIndex),
+      songs: Array.from({ length: SYNC_BENCHMARK_SONGS_PER_ALBUM }, (_, songIndex) => {
+        const trackNumber = songIndex + 1;
+        const globalSongIndex = albumIndex * SYNC_BENCHMARK_SONGS_PER_ALBUM + songIndex;
+
+        return {
+          title: `Benchmark Song ${padNumber(albumNumber, 4)}-${padNumber(trackNumber, 2)}`,
+          track: trackNumber,
+          durationSec: 1,
+          musicBrainzTrackId: createFixtureUuid(4_000_000 + globalSongIndex),
+        };
+      }),
+    };
+  });
+}
+
 export const librarySetB: AlbumFixture[] = [
   {
     artist: "Polar Grid",

@@ -7,11 +7,12 @@ function isSelectQuery(sql: string): boolean {
   return selectRegex.test(sql);
 }
 
-const sqlite = await Database.load("sqlite:muswag.db");
+const sqlitePromise = Database.load("sqlite:muswag.db");
 
 // https://github.com/tdwesten/tauri-drizzle-sqlite-proxy-demo/blob/main/src/db/database.ts
 export function withBetterSqlite(): RemoteCallback {
   return async (sql, params, method) => {
+    const sqlite = await sqlitePromise;
     let rows: any = [];
     let results = [];
 
