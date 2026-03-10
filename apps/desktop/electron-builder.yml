@@ -1,0 +1,20 @@
+appId: com.muswag.desktop
+productName: Muswag
+directories:
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/better-sqlite3/**
+win:
+  executableName: Muswag
+mac:
+  category: public.app-category.music
+  entitlementsInherit: build/entitlements.mac.plist
+linux:
+  category: AudioVideo
+  target:
+    - AppImage
+    - deb
+npmRebuild: false

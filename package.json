@@ -3,8 +3,8 @@
   "private": true,
   "packageManager": "pnpm@10.22.0",
   "scripts": {
-    "dev": "turbo run tauri:dev --filter=@muswag/desktop",
-    "dev:web": "turbo run dev --filter=@muswag/desktop",
+    "dev": "turbo run dev --filter=@muswag/desktop",
+    "dev:web": "pnpm --filter @muswag/desktop dev:renderer",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
@@ -27,6 +27,7 @@
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "cpu-features",
+      "electron",
       "esbuild",
       "msw",
       "protobufjs",

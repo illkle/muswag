@@ -6,40 +6,18 @@ import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tanstackRouter from "@tanstack/router-plugin/vite";
 
-const host = process.env.TAURI_DEV_HOST;
-
-const config = defineConfig({
+export const rendererConfig = defineConfig({
   clearScreen: false,
+  root: ".",
   server: {
-    // make sure this port matches the devUrl port in tauri.conf.json file
     port: 5173,
-    // Tauri expects a fixed port, fail if that port is not available
     strictPort: true,
-    // if the host Tauri is expecting is set, use it
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-
-    watch: {
-      // tell vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
   },
-  envPrefix: ["VITE_", "TAURI_ENV_*"],
+  envPrefix: ["VITE_"],
   build: {
-    // Tauri uses Chromium on Windows and WebKit on macOS and Linux
-    target: process.env.TAURI_ENV_PLATFORM == "windows" ? "chrome105" : "safari13",
-    // don't minify for debug builds
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
-    // produce sourcemaps for debug builds
-    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    outDir: "out/renderer",
+    target: "chrome124",
   },
-
   plugins: [
     devtools(),
     tsconfigPaths({ projects: ["./tsconfig.json"] }),
@@ -52,4 +30,4 @@ const config = defineConfig({
   ],
 });
 
-export default config;
+export default rendererConfig;

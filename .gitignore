@@ -5,6 +5,7 @@ node_modules
 .env.*
 *.log
 dist
+out
 coverage
 .DS_Store
 .cache
