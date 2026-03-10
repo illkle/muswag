@@ -1,4 +1,3 @@
-import { useAppEvents } from "#/components/app-state-provider";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
@@ -140,7 +139,6 @@ function LoginScreen() {
 }
 
 function App() {
-  useAppEvents();
   const userStateQuery = useQuery(userStateQueryOptions);
 
   if (userStateQuery.isLoading) {

@@ -9,10 +9,20 @@ import type {
   SyncUserState,
 } from "@muswag/db";
 
+import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
+
 export type MuswagMainIpc = {
   "db:getAlbumDetail": (albumId: string) => GetAlbumDetailResult;
   "db:getAlbums": () => GetAlbumsResult;
   "db:getSongs": (input?: GetSongsInput) => GetSongsResult;
+  "player:getState": () => PlayerState;
+  "player:next": () => PlayerState;
+  "player:pause": () => PlayerState;
+  "player:play": () => PlayerState;
+  "player:playQueue": (input: PlayQueueInput) => PlayerState;
+  "player:previous": () => PlayerState;
+  "player:seek": (positionSeconds: number) => PlayerState;
+  "player:toggle": () => PlayerState;
   "sync:getUserState": () => SyncUserState;
   "sync:login": (credentials: SyncCredentials) => SyncUserState;
   "sync:logout": () => SyncUserState;
@@ -20,5 +30,6 @@ export type MuswagMainIpc = {
 };
 
 export type MuswagRendererIpc = {
+  "player:event": [event: PlayerEvent];
   "sync:event": [event: SyncManagerEvent];
 };

@@ -6,7 +6,10 @@ function SidebarProvider({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sidebar-provider"
-      className={cn("min-h-screen bg-background md:grid md:grid-cols-[18rem_1fr]", className)}
+      className={cn(
+        "min-h-(--main-height) bg-background md:grid md:grid-cols-[18rem_1fr]",
+        className,
+      )}
       {...props}
     />
   );
@@ -17,7 +20,7 @@ function Sidebar({ className, ...props }: React.ComponentProps<"aside">) {
     <aside
       data-slot="sidebar"
       className={cn(
-        "border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:min-h-screen md:border-r md:border-b-0",
+        "border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:min-h-(--main-height) md:border-r md:border-b-0",
         className,
       )}
       {...props}

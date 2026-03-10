@@ -1,4 +1,6 @@
 import { Alert, AlertTitle, AlertDescription } from "#/components/ui/alert";
+import { PlayerPanel } from "#/components/player-panel";
+import { PlayerProvider } from "#/components/player-provider";
 import { Button } from "#/components/ui/button";
 import {
   SidebarProvider,
@@ -75,7 +77,9 @@ const AppSidebarWrapper = ({
         </SidebarContent>
       </Sidebar>
 
-      <SidebarInset>{children}</SidebarInset>
+      <SidebarInset className="grid h-(--main-height) grid-rows-[minmax(0,1fr)_auto]">
+        <div className="min-h-0 overflow-y-auto">{children}</div>
+      </SidebarInset>
     </SidebarProvider>
   );
 };
@@ -151,7 +155,10 @@ function SidebarServerMenu({
           <p className="text-xs text-sidebar-foreground/70">{formatLastSyncLabel(lastSyncedAt)}</p>
         </div>
         <ChevronDown
-          className={cn("size-4 text-sidebar-foreground/70 transition-transform", isOpen && "rotate-180")}
+          className={cn(
+            "size-4 text-sidebar-foreground/70 transition-transform",
+            isOpen && "rotate-180",
+          )}
         />
       </Button>
 
@@ -163,7 +170,12 @@ function SidebarServerMenu({
               {syncing ? "Syncing..." : "Sync now"}
             </Button>
 
-            <Button variant="ghost" className="w-full justify-center" onClick={onLogout} disabled={isBusy}>
+            <Button
+              variant="ghost"
+              className="w-full justify-center"
+              onClick={onLogout}
+              disabled={isBusy}
+            >
               <LogOut />
               {loggingOut ? "Logging out..." : "Log out"}
             </Button>
@@ -246,11 +258,14 @@ function RouteComponent() {
   }
 
   return (
-    <AppSidebarWrapper
-      url={userStateQuery.data.url}
-      lastSyncedAt={userStateQuery.data.lastSyncedAt}
-    >
-      <Outlet />
-    </AppSidebarWrapper>
+    <div>
+      <AppSidebarWrapper
+        url={userStateQuery.data.url}
+        lastSyncedAt={userStateQuery.data.lastSyncedAt}
+      >
+        <Outlet />
+      </AppSidebarWrapper>
+      <PlayerPanel />
+    </div>
   );
 }

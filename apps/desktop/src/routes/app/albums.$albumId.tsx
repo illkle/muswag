@@ -1,3 +1,4 @@
+import type { SongRecord } from "@muswag/db";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -6,12 +7,16 @@ import {
   Clock3,
   Disc3,
   FolderClock,
+  LoaderCircle,
   Music4,
+  PauseCircle,
+  PlayCircle,
   Tags,
   UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { usePlayer, usePlayerSelector } from "#/components/player-provider";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
 import { buttonVariants } from "#/components/ui/button";
@@ -19,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/com
 import { albumDetailQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
+import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -70,6 +76,14 @@ function formatTimestamp(value: string | null | undefined): string | null {
 function RouteComponent() {
   const { albumId } = Route.useParams();
   const albumQuery = useQuery(albumDetailQueryOptions(albumId));
+  const player = usePlayer();
+  const activeTrack = usePlayerSelector(
+    (state) => ({
+      currentTrackId: state.currentTrack?.id ?? null,
+      status: state.status,
+    }),
+    (left, right) => left.currentTrackId === right.currentTrackId && left.status === right.status,
+  );
 
   if (albumQuery.isLoading) {
     return (
@@ -154,6 +168,8 @@ function RouteComponent() {
       discTitle: discTitlesByNumber.get(discNumber) ?? null,
       songs: discSongs,
     }));
+  const albumQueue = songs.map(toQueueItem);
+  const queueIndexBySongId = new Map(albumQueue.map((song, index) => [song.id, index]));
 
   const detailItems = [
     {
@@ -316,28 +332,44 @@ function RouteComponent() {
               </div>
 
               <div className="divide-y divide-border/60">
-                {discSection.songs.map((song) => (
-                  <div
-                    key={song.id}
-                    className="grid gap-3 px-4 py-3 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center"
-                  >
-                    <div className="text-sm font-medium text-muted-foreground">
-                      {song.track ?? "•"}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{song.title}</p>
-                      {song.comment ? (
-                        <p className="truncate text-sm text-muted-foreground">{song.comment}</p>
-                      ) : null}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {song.displayArtist ?? song.artist ?? "Unknown artist"}
-                    </div>
-                    <div className="text-sm font-medium text-muted-foreground md:text-right">
-                      {formatDuration(song.duration)}
-                    </div>
-                  </div>
-                ))}
+                {discSection.songs.map((song) => {
+                  const queueIndex = queueIndexBySongId.get(song.id) ?? 0;
+                  const isActive = activeTrack.currentTrackId === song.id;
+
+                  return (
+                    <button
+                      key={song.id}
+                      type="button"
+                      className={cn(
+                        "grid w-full gap-3 px-4 py-3 text-left transition-colors md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center",
+                        "hover:bg-muted/55 focus-visible:bg-muted/60 focus-visible:outline-none",
+                        isActive && "bg-primary/6",
+                      )}
+                      onClick={() => {
+                        void player.playQueue({
+                          queue: albumQueue,
+                          startIndex: queueIndex,
+                        });
+                      }}
+                    >
+                      <div className="text-sm font-medium text-muted-foreground">
+                        {isActive ? renderTrackStateIcon(activeTrack.status) : (song.track ?? "•")}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={cn("truncate font-medium", isActive && "text-primary")}>{song.title}</p>
+                        {song.comment ? (
+                          <p className="truncate text-sm text-muted-foreground">{song.comment}</p>
+                        ) : null}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {song.displayArtist ?? song.artist ?? "Unknown artist"}
+                      </div>
+                      <div className="text-sm font-medium text-muted-foreground md:text-right">
+                        {formatDuration(song.duration)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -384,4 +416,30 @@ function TagCluster({
       </div>
     </div>
   );
+}
+
+function toQueueItem(song: SongRecord): PlayerQueueItem {
+  return {
+    id: song.id,
+    title: song.title,
+    albumId: song.albumId ?? null,
+    album: song.album ?? null,
+    artist: song.artist ?? null,
+    displayArtist: song.displayArtist ?? null,
+    duration: song.duration ?? null,
+    discNumber: song.discNumber ?? null,
+    track: song.track ?? null,
+  };
+}
+
+function renderTrackStateIcon(status: PlayerStatus): ReactNode {
+  if (status === "loading") {
+    return <LoaderCircle className="size-4 animate-spin text-primary" />;
+  }
+
+  if (status === "paused") {
+    return <PauseCircle className="size-4 text-primary" />;
+  }
+
+  return <PlayCircle className="size-4 text-primary" />;
 }
