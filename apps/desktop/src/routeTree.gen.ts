@@ -9,12 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as App_rootRouteImport } from './routes/app/__root'
+import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppAlbumsRouteImport } from './routes/app/albums'
 
-const App_rootRoute = App_rootRouteImport.update({
-  id: '/app/__root',
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -23,25 +24,25 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAlbumsRoute = AppAlbumsRouteImport.update({
-  id: '/app/albums',
-  path: '/app/albums',
-  getParentRoute: () => rootRouteImport,
+  id: '/albums',
+  path: '/albums',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/app': typeof App_rootRoute
+  '/app': typeof AppRouteWithChildren
   '/app/albums': typeof AppAlbumsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/app': typeof App_rootRoute
+  '/app': typeof AppRouteWithChildren
   '/app/albums': typeof AppAlbumsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/app/__root': typeof App_rootRoute
+  '/app': typeof AppRouteWithChildren
   '/app/albums': typeof AppAlbumsRoute
 }
 export interface FileRouteTypes {
@@ -49,22 +50,21 @@ export interface FileRouteTypes {
   fullPaths: '/' | '/app' | '/app/albums'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/app' | '/app/albums'
-  id: '__root__' | '/' | '/app/__root' | '/app/albums'
+  id: '__root__' | '/' | '/app' | '/app/albums'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  App_rootRoute: typeof App_rootRoute
-  AppAlbumsRoute: typeof AppAlbumsRoute
+  AppRoute: typeof AppRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/app/__root': {
-      id: '/app/__root'
+    '/app': {
+      id: '/app'
       path: '/app'
       fullPath: '/app'
-      preLoaderRoute: typeof App_rootRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -76,28 +76,28 @@ declare module '@tanstack/react-router' {
     }
     '/app/albums': {
       id: '/app/albums'
-      path: '/app/albums'
+      path: '/albums'
       fullPath: '/app/albums'
       preLoaderRoute: typeof AppAlbumsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppRouteChildren {
+  AppAlbumsRoute: typeof AppAlbumsRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAlbumsRoute: AppAlbumsRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  App_rootRoute: App_rootRoute,
-  AppAlbumsRoute: AppAlbumsRoute,
+  AppRoute: AppRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

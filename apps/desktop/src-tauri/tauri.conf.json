@@ -5,7 +5,7 @@
   "identifier": "com.muswag.desktop",
   "build": {
     "frontendDist": "../dist/client",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },

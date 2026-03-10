@@ -2,16 +2,7 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
-import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-} from "#/components/ui/sidebar";
 import {
   Table,
   TableBody,
@@ -21,16 +12,15 @@ import {
   TableRow,
 } from "#/components/ui/table";
 import { albumsQueryOptions, userStateQueryOptions } from "#/lib/app-state";
-import { SM } from "#/lib/db";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { CloudDownload, Disc3, LibraryBig, LogOut, RefreshCcw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { CloudDownload, Disc3 } from "lucide-react";
 import { getErrorMessage } from "#/lib/err";
 
 export const Route = createFileRoute("/app/albums")({
   component: RouteComponent,
 });
 
-function LibraryScreen({ url, username }: { url: string; username: string }) {
+function LibraryScreen({ username }: { username: string }) {
   const albumsQuery = useQuery(albumsQueryOptions);
 
   return (
@@ -124,5 +114,5 @@ function RouteComponent() {
     return <Navigate to="/" />;
   }
 
-  return <LibraryScreen url={userStateQuery.data.url} username={userStateQuery.data.username} />;
+  return <LibraryScreen username={userStateQuery.data.username} />;
 }

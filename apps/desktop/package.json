@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm with-env vite dev --port 3000",
+    "dev": "pnpm with-env vite --port 5173",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "oxlint .",
@@ -32,7 +32,6 @@
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-router-ssr-query": "latest",
-    "@tanstack/react-start": "latest",
     "@tanstack/router-plugin": "^1.132.0",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-sql": "^2.3.2",

@@ -4,23 +4,17 @@ import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import {
-  SidebarHeader,
-  SidebarProvider,
-  SidebarContent,
-  SidebarFooter,
-  SidebarInset,
-} from "#/components/ui/sidebar";
 import { userStateQueryOptions } from "#/lib/app-state";
 import { SM } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { url } from "inspector";
-import { Badge, LibraryBig, LogOut, RefreshCcw, ShieldCheck, Sidebar } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
-export const Route = createFileRoute("/")({ component: App });
+export const Route = createFileRoute("/")({
+  component: App,
+});
 
 type CredentialsForm = {
   url: string;
@@ -161,5 +155,5 @@ function App() {
     return <LoginScreen />;
   }
 
-  return <Navigate to="/app/albums"></Navigate>;
+  return <Navigate to="/app/albums" />;
 }

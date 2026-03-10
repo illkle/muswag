@@ -2,11 +2,9 @@ import { defineConfig } from "vite";
 import { devtools } from "@tanstack/devtools-vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { nitro } from "nitro/vite";
+import tanstackRouter from "@tanstack/router-plugin/vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -45,10 +43,10 @@ const config = defineConfig({
   plugins: [
     devtools(),
     tsconfigPaths({ projects: ["./tsconfig.json"] }),
-    nitro(),
     tailwindcss(),
-    tanstackStart({
-      spa: {},
+    tanstackRouter({
+      target: "react",
+      autoCodeSplitting: true,
     }),
     viteReact(),
   ],

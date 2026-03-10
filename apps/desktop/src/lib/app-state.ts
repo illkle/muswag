@@ -1,6 +1,6 @@
 import { albumsTable } from "@muswag/db";
 import { asc } from "drizzle-orm";
-import { QueryClient, queryOptions } from "@tanstack/react-query";
+import { queryOptions } from "@tanstack/react-query";
 
 import { db, SM } from "#/lib/db";
 

@@ -8,15 +8,16 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarInset,
+  Sidebar,
 } from "#/components/ui/sidebar";
 import { userStateQueryOptions } from "#/lib/app-state";
 import { SM } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Navigate, Outlet } from "@tanstack/react-router";
-import { Sidebar, LibraryBig, RefreshCcw, LogOut } from "lucide-react";
+import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
+import { LibraryBig, RefreshCcw, LogOut } from "lucide-react";
 
-export const Route = createFileRoute("/app/__root")({
+export const Route = createFileRoute("/app")({
   component: RouteComponent,
 });
 
