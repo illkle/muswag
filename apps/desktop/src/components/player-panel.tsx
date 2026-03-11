@@ -1,18 +1,11 @@
-import {
-  AlertCircle,
-  LoaderCircle,
-  Music4,
-  Pause,
-  Play,
-  SkipBack,
-  SkipForward,
-} from "lucide-react";
+import { LoaderCircle, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "#/components/ui/button";
 import { cn } from "#/lib/utils";
 
 import { usePlayer } from "./player-provider";
+import { Player } from "#/lib/db";
 
 export function PlayerPanel() {
   const player = usePlayer();
@@ -36,7 +29,7 @@ export function PlayerPanel() {
       return;
     }
 
-    await player.seek(nextValue);
+    await Player.seek(nextValue);
     setDraftPosition(null);
   };
 
@@ -70,7 +63,7 @@ export function PlayerPanel() {
             size="icon-sm"
             variant="ghost"
             onClick={() => {
-              void player.previous();
+              void Player.previous();
             }}
             disabled={!canGoPrevious}
             aria-label="Previous track"
@@ -83,11 +76,11 @@ export function PlayerPanel() {
             className="rounded-full"
             onClick={() => {
               if (player.state.status === "playing") {
-                void player.pause();
+                void Player.pause();
                 return;
               }
 
-              void player.play();
+              void Player.play();
             }}
             disabled={!currentTrack || player.state.status === "loading"}
             aria-label={player.state.status === "playing" ? "Pause playback" : "Play track"}
@@ -105,7 +98,7 @@ export function PlayerPanel() {
             size="icon-sm"
             variant="ghost"
             onClick={() => {
-              void player.next();
+              void Player.next();
             }}
             disabled={!canGoNext}
             aria-label="Next track"

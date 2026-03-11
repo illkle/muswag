@@ -1,6 +1,5 @@
 import { Alert, AlertTitle, AlertDescription } from "#/components/ui/alert";
 import { PlayerPanel } from "#/components/player-panel";
-import { PlayerProvider } from "#/components/player-provider";
 import { Button } from "#/components/ui/button";
 import {
   SidebarProvider,

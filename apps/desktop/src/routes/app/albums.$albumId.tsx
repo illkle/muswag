@@ -53,7 +53,9 @@ function formatItemDate(
     return null;
   }
 
-  const segments = [value.year, value.month, value.day].filter((part): part is number => part != null);
+  const segments = [value.year, value.month, value.day].filter(
+    (part): part is number => part != null,
+  );
   return segments.join("-");
 }
 
@@ -77,13 +79,8 @@ function RouteComponent() {
   const { albumId } = Route.useParams();
   const albumQuery = useQuery(albumDetailQueryOptions(albumId));
   const player = usePlayer();
-  const activeTrack = usePlayerSelector(
-    (state) => ({
-      currentTrackId: state.currentTrack?.id ?? null,
-      status: state.status,
-    }),
-    (left, right) => left.currentTrackId === right.currentTrackId && left.status === right.status,
-  );
+  const activeTrackId = usePlayerSelector((state) => state.currentTrack?.id ?? null);
+  const activeTrackStatus = usePlayerSelector((state) => state.status);
 
   if (albumQuery.isLoading) {
     return (
@@ -98,10 +95,7 @@ function RouteComponent() {
   if (albumQuery.isError) {
     return (
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-6 md:px-8 md:py-8">
-        <Link
-          to="/app/albums"
-          className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}
-        >
+        <Link to="/app/albums" className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}>
           <ArrowLeft className="size-4" />
           Back to albums
         </Link>
@@ -109,7 +103,10 @@ function RouteComponent() {
         <Alert variant="destructive">
           <AlertTitle>Album unavailable</AlertTitle>
           <AlertDescription>
-            {getErrorMessage(albumQuery.error, "The album details could not be read from the local database.")}
+            {getErrorMessage(
+              albumQuery.error,
+              "The album details could not be read from the local database.",
+            )}
           </AlertDescription>
         </Alert>
       </section>
@@ -119,10 +116,7 @@ function RouteComponent() {
   if (!albumQuery.data) {
     return (
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-6 md:px-8 md:py-8">
-        <Link
-          to="/app/albums"
-          className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}
-        >
+        <Link to="/app/albums" className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}>
           <ArrowLeft className="size-4" />
           Back to albums
         </Link>
@@ -151,7 +145,9 @@ function RouteComponent() {
     album.displayArtist ??
     album.artist ??
     (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
-  const discTitlesByNumber = new Map(discTitles.map((discTitle) => [discTitle.disc, discTitle.title]));
+  const discTitlesByNumber = new Map(
+    discTitles.map((discTitle) => [discTitle.disc, discTitle.title]),
+  );
   const songsByDisc = new Map<number, typeof songs>();
 
   for (const song of songs) {
@@ -200,10 +196,7 @@ function RouteComponent() {
 
   return (
     <section className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-6 md:px-8 md:py-8">
-      <Link
-        to="/app/albums"
-        className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}
-      >
+      <Link to="/app/albums" className={cn(buttonVariants({ variant: "ghost" }), "w-fit")}>
         <ArrowLeft className="size-4" />
         Back to albums
       </Link>
@@ -248,14 +241,8 @@ function RouteComponent() {
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard label="Primary genre" value={album.genre ?? genres[0]?.value ?? "-"} />
-              <StatCard
-                label="Record label"
-                value={recordLabels[0]?.name ?? "Unspecified"}
-              />
-              <StatCard
-                label="Release type"
-                value={releaseTypes[0]?.value ?? "Album"}
-              />
+              <StatCard label="Record label" value={recordLabels[0]?.name ?? "Unspecified"} />
+              <StatCard label="Release type" value={releaseTypes[0]?.value ?? "Album"} />
               <StatCard label="Rating" value={album.userRating ? `${album.userRating}/5` : "-"} />
             </div>
 
@@ -334,7 +321,7 @@ function RouteComponent() {
               <div className="divide-y divide-border/60">
                 {discSection.songs.map((song) => {
                   const queueIndex = queueIndexBySongId.get(song.id) ?? 0;
-                  const isActive = activeTrack.currentTrackId === song.id;
+                  const isActive = activeTrackId === song.id;
 
                   return (
                     <button
@@ -353,10 +340,12 @@ function RouteComponent() {
                       }}
                     >
                       <div className="text-sm font-medium text-muted-foreground">
-                        {isActive ? renderTrackStateIcon(activeTrack.status) : (song.track ?? "•")}
+                        {isActive ? renderTrackStateIcon(activeTrackStatus) : (song.track ?? "•")}
                       </div>
                       <div className="min-w-0">
-                        <p className={cn("truncate font-medium", isActive && "text-primary")}>{song.title}</p>
+                        <p className={cn("truncate font-medium", isActive && "text-primary")}>
+                          {song.title}
+                        </p>
                         {song.comment ? (
                           <p className="truncate text-sm text-muted-foreground">{song.comment}</p>
                         ) : null}
@@ -388,15 +377,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TagCluster({
-  icon,
-  label,
-  values,
-}: {
-  icon: ReactNode;
-  label: string;
-  values: string[];
-}) {
+function TagCluster({ icon, label, values }: { icon: ReactNode; label: string; values: string[] }) {
   if (values.length === 0) {
     return null;
   }

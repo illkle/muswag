@@ -1,51 +1,73 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContextSelector,
+  useHasParentContext,
+} from "@fluentui/react-context-selector";
+import { type ReactNode, useEffect, useState } from "react";
 
-import { playerActions, playerStore } from "#/lib/player-store";
+import { Player } from "#/lib/db";
 import type { PlayerState } from "#/shared/player";
+import { createDefaultPlayerState } from "#/shared/player";
 
-export function PlayerProvider({ children }: { children: React.ReactNode }) {
+type PlayerContextValue = {
+  state: PlayerState;
+};
+
+const defaultState = createDefaultPlayerState();
+
+const PlayerContext = createContext<PlayerContextValue>({
+  state: defaultState,
+});
+
+export function PlayerProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState(defaultState);
+
   useEffect(() => {
-    playerStore.initialize();
+    let isMounted = true;
+
+    void Player.getState()
+      .then((nextState) => {
+        if (isMounted) {
+          setState(nextState);
+        }
+      })
+      .catch((cause) => {
+        console.error(cause);
+      });
+
+    const unsubscribe = Player.subscribe((event) => {
+      if (isMounted && event.type === "state") {
+        setState(event.state);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
-  return children;
+  return <PlayerContext.Provider value={{ state }}>{children}</PlayerContext.Provider>;
 }
 
 export function usePlayer() {
-  const state = usePlayerSelector((nextState) => nextState);
+  useAssertPlayerProvider();
+
+  const state = useContextSelector(PlayerContext, (context) => context.state);
 
   return {
     state,
-    ...playerActions,
   };
 }
 
-export function usePlayerSelector<T>(
-  selector: (state: PlayerState) => T,
-  isEqual: (left: T, right: T) => boolean = Object.is,
-): T {
-  const [selectedState, setSelectedState] = useState(() => selector(playerStore.getState()));
-  const selectorRef = useRef(selector);
-  const isEqualRef = useRef(isEqual);
+export function usePlayerSelector<T>(selector: (state: PlayerState) => T): T {
+  useAssertPlayerProvider();
 
-  selectorRef.current = selector;
-  isEqualRef.current = isEqual;
+  return useContextSelector(PlayerContext, (context) => selector(context.state));
+}
 
-  useEffect(() => {
-    playerStore.initialize();
-
-    setSelectedState((previousState) => {
-      const nextSelectedState = selectorRef.current(playerStore.getState());
-      return isEqualRef.current(previousState, nextSelectedState) ? previousState : nextSelectedState;
-    });
-
-    return playerStore.subscribe(() => {
-      const nextSelectedState = selectorRef.current(playerStore.getState());
-      setSelectedState((previousState) =>
-        isEqualRef.current(previousState, nextSelectedState) ? previousState : nextSelectedState,
-      );
-    });
-  }, []);
-
-  return selectedState;
+function useAssertPlayerProvider(): void {
+  if (!useHasParentContext(PlayerContext)) {
+    throw new Error("PlayerProvider is missing.");
+  }
 }
