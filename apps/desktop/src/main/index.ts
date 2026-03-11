@@ -104,6 +104,12 @@ function createWindow(): void {
     height: 600,
     show: false,
     autoHideMenuBar: true,
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 14, y: 14 },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,

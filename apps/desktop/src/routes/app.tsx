@@ -14,7 +14,7 @@ import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, LibraryBig, LogOut, RefreshCcw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, LogOut, RefreshCcw } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 export const Route = createFileRoute("/app")({
@@ -36,22 +36,19 @@ const AppSidebarWrapper = ({
   const logoutMutation = useMutation({
     mutationFn: () => SM.logout(),
   });
+  const isMac = navigator.userAgent.toUpperCase().includes("MAC");
 
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground">
-                <LibraryBig className="size-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Muswag</p>
-                <p className="text-xs text-sidebar-foreground/70">Local library workspace</p>
-              </div>
-            </div>
-          </div>
+        <SidebarHeader
+          className={cn(
+            "app-drag-region flex items-center gap-2 py-4 pr-4",
+            isMac ? "pl-20" : "px-4",
+          )}
+        >
+          <AppNavigationControls />
+          <div className="flex-1" />
         </SidebarHeader>
 
         <SidebarContent>
@@ -82,6 +79,33 @@ const AppSidebarWrapper = ({
     </SidebarProvider>
   );
 };
+
+function AppNavigationControls() {
+  return (
+    <div className="app-no-drag flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label="Go back"
+        onClick={() => {
+          window.history.back();
+        }}
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label="Go forward"
+        onClick={() => {
+          window.history.forward();
+        }}
+      >
+        <ChevronRight className="size-4" />
+      </Button>
+    </div>
+  );
+}
 
 function SidebarServerMenu({
   url,
