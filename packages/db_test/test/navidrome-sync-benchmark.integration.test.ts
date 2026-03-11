@@ -1,4 +1,7 @@
 import { performance } from "node:perf_hooks";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import BetterSqlite3 from "better-sqlite3-test";
 import { describe, expect, it } from "vitest";
@@ -91,11 +94,12 @@ describeBenchmark("navidrome sync benchmark", () => {
         async (connection) => {
           const sqlite = new BetterSqlite3(":memory:");
           sqlite.pragma("foreign_keys = ON");
+          const coverArtDir = await mkdtemp(path.join(tmpdir(), "muswag-benchmark-cover-cache-"));
 
           const drizzleDb = createDrizzleDb(sqlite);
           migrateDb(drizzleDb);
 
-          const benchmarkDb = new SyncManager(drizzleDb);
+          const benchmarkDb = new SyncManager(drizzleDb, { coverArtDir });
           try {
             await benchmarkDb.login({
               url: connection.baseUrl,
@@ -148,6 +152,7 @@ describeBenchmark("navidrome sync benchmark", () => {
             expect(syncedAlbums).toHaveLength(SYNC_BENCHMARK_ALBUM_COUNT);
             expect(syncedSongs).toHaveLength(SYNC_BENCHMARK_SONG_COUNT);
           } finally {
+            await rm(coverArtDir, { recursive: true, force: true });
             sqlite.close();
           }
         },

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -16,6 +17,10 @@ export type SyncCredentials = {
   url: string;
   username: string;
   password: string;
+};
+
+export type SyncManagerOptions = {
+  coverArtDir?: string;
 };
 
 export type SyncUserState =
@@ -57,10 +62,12 @@ function toPublicUserState(credentials: StoredCredentialsRow | SyncCredentials |
 
 export class SyncManager {
   readonly db: AnyDrizzleDb;
+  readonly coverArtDir: string;
   private listeners: Set<SyncManagerListener>;
 
-  constructor(db: AnyDrizzleDb) {
+  constructor(db: AnyDrizzleDb, options: SyncManagerOptions = {}) {
     this.db = db;
+    this.coverArtDir = options.coverArtDir ?? join(process.cwd(), ".muswag", "album-covers");
     this.listeners = new Set();
   }
 
@@ -193,7 +200,9 @@ export class SyncManager {
     }
 
     const api = this.createApi(storedCredentials);
-    const result = await syncAlbums(this.db, api);
+    const result = await syncAlbums(this.db, api, {
+      coverArtDir: this.coverArtDir,
+    });
 
     this.emit({
       type: "db state synced",

@@ -39,6 +39,7 @@ export const albumsTable = sqliteTable("albums", {
   artist: text("artist"),
   artistId: text("artist_id"),
   coverArt: text("cover_art"),
+  coverArtPath: text("cover_art_path"),
   songCount: integer("song_count").notNull(),
   duration: integer("duration").notNull(),
   playCount: integer("play_count"),

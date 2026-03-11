@@ -8,6 +8,13 @@
       "when": 1772700000000,
       "tag": "0000_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "1",
+      "when": 1773316800000,
+      "tag": "0001_album_cover_paths",
+      "breakpoints": true
     }
   ]
 }

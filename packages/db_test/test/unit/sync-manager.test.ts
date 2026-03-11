@@ -1,4 +1,6 @@
 import BetterSqlite3 from "better-sqlite3-test";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { pingMock, getAlbumList2Mock } = vi.hoisted(() => ({
@@ -35,6 +37,8 @@ import {
   type SyncManagerEvent,
 } from "@muswag/db";
 
+const TEST_COVER_ART_DIR = path.join(tmpdir(), "muswag-sync-manager-test-covers");
+
 function createInMemoryDrizzleDb() {
   const sqlite = new BetterSqlite3(":memory:");
   sqlite.pragma("foreign_keys = ON");
@@ -55,7 +59,7 @@ describe("SyncManager", () => {
 
   it("persists login state in the database and emits user updates", async () => {
     const { sqlite, db } = createInMemoryDrizzleDb();
-    const manager = new SyncManager(db);
+    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
     const events: SyncManagerEvent[] = [];
     const credentials: SyncCredentials = {
       url: "https://demo.navidrome.org",
@@ -120,8 +124,8 @@ describe("SyncManager", () => {
 
   it("reads stored credentials from the database during sync and emits a sync event", async () => {
     const { sqlite, db } = createInMemoryDrizzleDb();
-    const loginManager = new SyncManager(db);
-    const syncManager = new SyncManager(db);
+    const loginManager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
+    const syncManager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
     const events: SyncManagerEvent[] = [];
     const credentials: SyncCredentials = {
       url: "https://demo.navidrome.org",
@@ -178,7 +182,7 @@ describe("SyncManager", () => {
 
   it("rejects sync when no user is logged in", async () => {
     const { sqlite, db } = createInMemoryDrizzleDb();
-    const manager = new SyncManager(db);
+    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
 
     try {
       await expect(manager.sync()).rejects.toThrow("SyncManager.login() must be called before sync()");

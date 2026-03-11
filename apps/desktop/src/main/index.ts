@@ -1,9 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import type { Database } from "better-sqlite3";
 import BetterSqlite3 from "better-sqlite3";
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import {
@@ -23,11 +24,27 @@ let db: ReturnType<typeof createDrizzleDb> | undefined;
 let syncManager: SyncManager | undefined;
 let mpvController: MpvController | undefined;
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "muswag-cover",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
 const mainIpc = new IpcListener<MuswagMainIpc>();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
 function getDatabasePath(): string {
   return join(app.getPath("userData"), "muswag.db");
+}
+
+function getCoverArtDirectory(): string {
+  return join(app.getPath("userData"), "album-covers");
 }
 
 function getDatabase(): Database {
@@ -73,7 +90,9 @@ function getSyncManager(): SyncManager {
     return syncManager;
   }
 
-  syncManager = new SyncManager(getDrizzleDb());
+  syncManager = new SyncManager(getDrizzleDb(), {
+    coverArtDir: getCoverArtDirectory(),
+  });
   syncManager.subscribe((event) => {
     broadcastSyncEvent(event);
   });
@@ -141,6 +160,15 @@ app.whenReady().then(() => {
 
   app.on("browser-window-created", (_, window) => {
     optimizer.watchWindowShortcuts(window);
+  });
+
+  protocol.handle("muswag-cover", (request) => {
+    const requestedPath = new URL(request.url).searchParams.get("path");
+    if (!requestedPath) {
+      return new Response("Missing path", { status: 400 });
+    }
+
+    return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
   mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) => getAlbumDetail(getDrizzleDb(), albumId));

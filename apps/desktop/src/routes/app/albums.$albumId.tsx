@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { usePlayer, usePlayerSelector } from "#/components/player-provider";
+import { usePlayer } from "#/components/player-provider";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { albumDetailQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";

@@ -205,6 +205,7 @@ async function createTaggedTemplateMp3Library(
   rootDir: string,
   albums: AlbumFixture[],
   logPerAlbum: boolean,
+  artworkBuffer: Buffer,
 ): Promise<void> {
   const templatePath = path.join(rootDir, ".template.mp3");
   runFfmpeg(
@@ -244,6 +245,7 @@ async function createTaggedTemplateMp3Library(
       sanitizePathPart(album.album),
     );
     await mkdir(albumDir, { recursive: true });
+    await writeAlbumArtwork(albumDir, artworkBuffer);
 
     for (const song of album.songs) {
       const filename = `${String(song.track).padStart(2, "0")} - ${sanitizePathPart(song.title)}.mp3`;
@@ -254,6 +256,34 @@ async function createTaggedTemplateMp3Library(
 
     logAlbumCompletion(album, albumStartedAt, logPerAlbum);
   }
+}
+
+async function createAlbumArtworkTemplate(rootDir: string): Promise<Buffer> {
+  const artworkPath = path.join(rootDir, ".cover-template.jpg");
+  runFfmpeg(
+    [
+      "-loglevel",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=0xc7673c:s=1200x1200",
+      "-frames:v",
+      "1",
+      artworkPath,
+    ],
+    { log: false },
+  );
+
+  const artworkBuffer = await readFile(artworkPath);
+  await rm(artworkPath, { force: true });
+  return artworkBuffer;
+}
+
+async function writeAlbumArtwork(albumDir: string, artworkBuffer: Buffer): Promise<void> {
+  await writeFile(path.join(albumDir, "cover.jpg"), artworkBuffer);
+  await writeFile(path.join(albumDir, "folder.jpg"), artworkBuffer);
 }
 
 interface SubsonicAlbumListResponse {
@@ -321,6 +351,7 @@ export async function generateFakeMp3Library(
 ): Promise<void> {
   const { mode = "ffmpeg", logPerTrack = true, logPerAlbum = true } = options;
   const generationStartedAt = Date.now();
+  const artworkBuffer = await createAlbumArtworkTemplate(rootDir);
   console.info("library:generate:start", {
     rootDir,
     albumCount: albums.length,
@@ -328,7 +359,7 @@ export async function generateFakeMp3Library(
   });
 
   if (mode === "tagged-template") {
-    await createTaggedTemplateMp3Library(rootDir, albums, logPerAlbum);
+    await createTaggedTemplateMp3Library(rootDir, albums, logPerAlbum, artworkBuffer);
     console.info("library:generate:done", {
       rootDir,
       albumCount: albums.length,
@@ -345,6 +376,7 @@ export async function generateFakeMp3Library(
       sanitizePathPart(album.album),
     );
     await mkdir(albumDir, { recursive: true });
+    await writeAlbumArtwork(albumDir, artworkBuffer);
 
     for (const song of album.songs) {
       const filename = `${String(song.track).padStart(2, "0")} - ${sanitizePathPart(song.title)}.mp3`;

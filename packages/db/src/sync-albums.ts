@@ -1,4 +1,7 @@
-import { eq, inArray, notInArray, sql } from "drizzle-orm";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { eq, inArray, notInArray } from "drizzle-orm";
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3, type Child } from "subsonic-api";
 
 import {
@@ -32,6 +35,16 @@ type Album = AlbumID3;
 type AlbumWithSongs = AlbumWithSongsID3;
 type Song = Child;
 type SyncTransaction = AnyDrizzleDb;
+type CoverArtPathResult = string | null | undefined;
+
+type SyncedAlbum = {
+  album: AlbumWithSongs;
+  coverArtPath: CoverArtPathResult;
+};
+
+export interface SyncAlbumsOptions {
+  coverArtDir: string;
+}
 
 export interface SyncAlbumsResult {
   fetched: number;
@@ -74,7 +87,7 @@ function normalizeGenreValue(value: unknown): string {
   return String(value);
 }
 
-function toAlbumRow(album: Album): typeof albumsTable.$inferInsert {
+function toAlbumRow(album: Album, coverArtPath: string | null): typeof albumsTable.$inferInsert {
   return {
     id: album.id,
     name: album.name,
@@ -82,6 +95,7 @@ function toAlbumRow(album: Album): typeof albumsTable.$inferInsert {
     artist: album.artist ?? null,
     artistId: album.artistId ?? null,
     coverArt: album.coverArt ?? null,
+    coverArtPath,
     songCount: album.songCount,
     duration: album.duration,
     playCount: album.playCount ?? null,
@@ -99,6 +113,103 @@ function toAlbumRow(album: Album): typeof albumsTable.$inferInsert {
     isCompilation: album.isCompilation ?? null,
     explicitStatus: album.explicitStatus ?? null,
   };
+}
+
+function encodeAlbumCoverFilename(id: string): string {
+  return encodeURIComponent(id);
+}
+
+function getAlbumCoverExtension(contentType: string | null): string {
+  if (!contentType) {
+    return ".jpg";
+  }
+
+  const normalized = contentType.split(";")[0]?.trim().toLowerCase();
+
+  switch (normalized) {
+    case "image/jpeg":
+    case "image/jpg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    case "image/avif":
+      return ".avif";
+    default:
+      return ".jpg";
+  }
+}
+
+async function removeAlbumCoverFiles(coverArtDir: string, albumId: string): Promise<void> {
+  await mkdir(coverArtDir, { recursive: true });
+  const filenamePrefix = `${encodeAlbumCoverFilename(albumId)}.`;
+  const entries = await readdir(coverArtDir, { withFileTypes: true });
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.startsWith(filenamePrefix))
+      .map((entry) => rm(join(coverArtDir, entry.name), { force: true })),
+  );
+}
+
+async function fetchAlbumCoverArt(
+  api: SubsonicAPI,
+  album: Album,
+  coverArtDir: string,
+): Promise<string | null> {
+  await mkdir(coverArtDir, { recursive: true });
+
+  if (!album.coverArt) {
+    await removeAlbumCoverFiles(coverArtDir, album.id);
+    return null;
+  }
+
+  const response = await api.getCoverArt({ id: album.coverArt });
+  if (!response.ok) {
+    throw new Error(`Fetching album cover failed for ${album.id}: HTTP ${response.status}`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.byteLength === 0) {
+    throw new Error(`Fetching album cover failed for ${album.id}: empty response body`);
+  }
+
+  const extension = getAlbumCoverExtension(response.headers.get("content-type"));
+  const outputPath = join(coverArtDir, `${encodeAlbumCoverFilename(album.id)}${extension}`);
+  await removeAlbumCoverFiles(coverArtDir, album.id);
+  await writeFile(outputPath, bytes);
+
+  return outputPath;
+}
+
+async function fetchAlbumCoverArtWithRetry(
+  api: SubsonicAPI,
+  album: Album,
+  coverArtDir: string,
+): Promise<CoverArtPathResult> {
+  if (!album.coverArt) {
+    await removeAlbumCoverFiles(coverArtDir, album.id);
+    return null;
+  }
+
+  let lastCause: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await fetchAlbumCoverArt(api, album, coverArtDir);
+    } catch (cause) {
+      lastCause = cause;
+    }
+  }
+
+  console.warn("Album cover fetch failed; preserving existing cached art if present.", {
+    albumId: album.id,
+    cause: lastCause,
+  });
+  return undefined;
 }
 
 function toSongRow(album: AlbumWithSongs, song: Song): typeof songsTable.$inferInsert {
@@ -414,8 +525,9 @@ async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: Album): Promis
 async function fetchAlbumDetails(
   api: SubsonicAPI,
   albums: Album[],
-): Promise<AlbumWithSongs[]> {
-  const detailedAlbums = new Array<AlbumWithSongs>(albums.length);
+  coverArtDir: string,
+): Promise<SyncedAlbum[]> {
+  const detailedAlbums = new Array<SyncedAlbum>(albums.length);
   let nextIndex = 0;
 
   const workerCount = Math.min(ALBUM_DETAIL_CONCURRENCY, albums.length);
@@ -429,10 +541,13 @@ async function fetchAlbumDetails(
           return;
         }
 
-        detailedAlbums[currentIndex] = await fetchAlbumDetailWithRetry(
-          api,
-          albums[currentIndex]!,
-        );
+        const listedAlbum = albums[currentIndex]!;
+        const detailedAlbum = await fetchAlbumDetailWithRetry(api, listedAlbum);
+        const coverArtPath = await fetchAlbumCoverArtWithRetry(api, detailedAlbum, coverArtDir);
+        detailedAlbums[currentIndex] = {
+          album: detailedAlbum,
+          coverArtPath,
+        };
       }
     }),
   );
@@ -442,26 +557,27 @@ async function fetchAlbumDetails(
 
 async function persistPage(
   db: AnyDrizzleDb,
-  albums: AlbumWithSongs[],
+  albums: SyncedAlbum[],
 ): Promise<{ inserted: number; updated: number }> {
   let inserted = 0;
   let updated = 0;
-  const albumIds = albums.map((album) => album.id);
-  const existingIds =
+  const albumIds = albums.map(({ album }) => album.id);
+  const existingAlbums =
     albumIds.length === 0
-      ? new Set<string>()
-      : new Set(
-          (
-            await db
-              .select({ id: albumsTable.id })
-              .from(albumsTable)
-              .where(inArray(albumsTable.id, albumIds))
-          ).map((row) => row.id),
-        );
+      ? []
+      : await db
+          .select({
+            id: albumsTable.id,
+            coverArtPath: albumsTable.coverArtPath,
+          })
+          .from(albumsTable)
+          .where(inArray(albumsTable.id, albumIds));
+  const existingAlbumsById = new Map(existingAlbums.map((row) => [row.id, row]));
 
   db.transaction((tx) => {
-    for (const album of albums) {
-      const exists = existingIds.has(album.id);
+    for (const { album, coverArtPath } of albums) {
+      const existingAlbum = existingAlbumsById.get(album.id);
+      const exists = existingAlbum !== undefined;
 
       if (exists) {
         updated += 1;
@@ -469,7 +585,9 @@ async function persistPage(
         inserted += 1;
       }
 
-      const albumRow = toAlbumRow(album);
+      const resolvedCoverArtPath =
+        coverArtPath === undefined ? existingAlbum?.coverArtPath ?? null : coverArtPath;
+      const albumRow = toAlbumRow(album, resolvedCoverArtPath);
       tx
         .insert(albumsTable)
         .values(albumRow)
@@ -488,19 +606,21 @@ async function persistPage(
   return { inserted, updated };
 }
 
-async function deleteMissingAlbums(db: AnyDrizzleDb): Promise<number> {
+async function deleteMissingAlbums(
+  db: AnyDrizzleDb,
+): Promise<Array<{ id: string; coverArtPath: string | null }>> {
   const existingIdsSubquery = db.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
-
-  const countRows = await db
-    .select({ count: sql<number>`count(*)` })
+  const albumsToDelete = await db
+    .select({
+      id: albumsTable.id,
+      coverArtPath: albumsTable.coverArtPath,
+    })
     .from(albumsTable)
     .where(notInArray(albumsTable.id, existingIdsSubquery));
 
-  const deleted = countRows[0]?.count ?? 0;
-
   await db.delete(albumsTable).where(notInArray(albumsTable.id, existingIdsSubquery));
 
-  return deleted;
+  return albumsToDelete;
 }
 
 async function cleanupSyncState(
@@ -520,9 +640,14 @@ async function cleanupSyncState(
   await db.delete(syncAlbumIdsTable);
 }
 
-export async function syncAlbums(db: AnyDrizzleDb, api: SubsonicAPI): Promise<SyncAlbumsResult> {
+export async function syncAlbums(
+  db: AnyDrizzleDb,
+  api: SubsonicAPI,
+  options: SyncAlbumsOptions,
+): Promise<SyncAlbumsResult> {
   const startedAt = new Date().toISOString();
   await db.delete(syncAlbumIdsTable);
+  await mkdir(options.coverArtDir, { recursive: true });
 
   let fetched = 0;
   let inserted = 0;
@@ -541,7 +666,7 @@ export async function syncAlbums(db: AnyDrizzleDb, api: SubsonicAPI): Promise<Sy
     );
 
     const albums = payload.albumList2?.album ?? [];
-    const detailedAlbums = await fetchAlbumDetails(api, albums);
+    const detailedAlbums = await fetchAlbumDetails(api, albums, options.coverArtDir);
 
     pages += 1;
     fetched += albums.length;
@@ -555,7 +680,11 @@ export async function syncAlbums(db: AnyDrizzleDb, api: SubsonicAPI): Promise<Sy
     }
   }
 
-  const deleted = await deleteMissingAlbums(db);
+  const deletedAlbumRows = await deleteMissingAlbums(db);
+  const deleted = deletedAlbumRows.length;
+  await Promise.all(
+    deletedAlbumRows.map((album) => removeAlbumCoverFiles(options.coverArtDir, album.id)),
+  );
   const finishedAt = new Date().toISOString();
   await cleanupSyncState(db, finishedAt);
 
