@@ -1,4 +1,4 @@
-import { createRouter as createTanStackRouter } from "@tanstack/react-router";
+import { createHashHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { QueryClient } from "@tanstack/react-query";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
@@ -6,6 +6,10 @@ import ReactDOM from "react-dom/client";
 import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
+import { scan } from "react-scan";
+scan({
+  enabled: true,
+});
 
 const queryClient = new QueryClient();
 
@@ -16,6 +20,7 @@ const router = createTanStackRouter({
   scrollRestoration: true,
   defaultPreload: "intent",
   defaultPreloadStaleTime: 0,
+  history: createHashHistory(),
 });
 
 setupRouterSsrQueryIntegration({

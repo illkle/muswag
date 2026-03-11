@@ -1,6 +1,7 @@
 import type {
   GetAlbumDetailResult,
   GetAlbumsResult,
+  GetSongByIdResult,
   GetSongsInput,
   GetSongsResult,
   SyncAlbumsResult,
@@ -14,6 +15,7 @@ import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
 export type MuswagMainIpc = {
   "db:getAlbumDetail": (albumId: string) => GetAlbumDetailResult;
   "db:getAlbums": () => GetAlbumsResult;
+  "db:getSongById": (songId: string) => GetSongByIdResult;
   "db:getSongs": (input?: GetSongsInput) => GetSongsResult;
   "player:getState": () => PlayerState;
   "player:next": () => PlayerState;

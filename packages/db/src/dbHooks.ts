@@ -52,7 +52,17 @@ export async function getSongs(db: AnyDrizzleDb, input: GetSongsInput = {}): Pro
   return db
     .select()
     .from(songsTable)
-    .orderBy(asc(songsTable.albumId), asc(songsTable.discNumber), asc(songsTable.track), asc(songsTable.title));
+    .orderBy(
+      asc(songsTable.albumId),
+      asc(songsTable.discNumber),
+      asc(songsTable.track),
+      asc(songsTable.title),
+    );
+}
+
+export async function getSongById(db: AnyDrizzleDb, songId: string): Promise<SongRecord | null> {
+  const rows = await db.select().from(songsTable).where(eq(songsTable.id, songId)).limit(1);
+  return rows[0] ?? null;
 }
 
 export async function getAlbumDetail(
@@ -66,8 +76,8 @@ export async function getAlbumDetail(
     return null;
   }
 
-  const [recordLabels, genres, artists, releaseTypes, moods, discTitles, songs] =
-    await Promise.all([
+  const [recordLabels, genres, artists, releaseTypes, moods, discTitles, songs] = await Promise.all(
+    [
       db
         .select()
         .from(albumRecordLabelsTable)
@@ -99,7 +109,8 @@ export async function getAlbumDetail(
         .where(eq(albumDiscTitlesTable.albumId, albumId))
         .orderBy(asc(albumDiscTitlesTable.position)),
       getSongs(db, { albumId }),
-    ]);
+    ],
+  );
 
   return {
     album,
@@ -115,4 +126,5 @@ export async function getAlbumDetail(
 
 export type GetAlbumsResult = Awaited<ReturnType<typeof getAlbums>>;
 export type GetSongsResult = Awaited<ReturnType<typeof getSongs>>;
+export type GetSongByIdResult = Awaited<ReturnType<typeof getSongById>>;
 export type GetAlbumDetailResult = Awaited<ReturnType<typeof getAlbumDetail>>;

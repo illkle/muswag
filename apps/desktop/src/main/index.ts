@@ -12,6 +12,7 @@ import {
   createDrizzleDb,
   getAlbumDetail,
   getAlbums,
+  getSongById,
   getSongs,
   migrateDb,
 } from "@muswag/db";
@@ -171,8 +172,13 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) => getAlbumDetail(getDrizzleDb(), albumId));
+  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) =>
+    getAlbumDetail(getDrizzleDb(), albumId),
+  );
   mainIpc.handle("db:getAlbums", async () => getAlbums(getDrizzleDb()));
+  mainIpc.handle("db:getSongById", async (_, songId: string) =>
+    getSongById(getDrizzleDb(), songId),
+  );
   mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
   mainIpc.handle("player:getState", async () => {
     logPlayerMain("ipc:player:getState");
@@ -240,7 +246,9 @@ app.on("before-quit", () => {
   sqlite = undefined;
 });
 
-function summarizePlayerEvent(event: MuswagRendererIpc["player:event"][0]): Record<string, unknown> {
+function summarizePlayerEvent(
+  event: MuswagRendererIpc["player:event"][0],
+): Record<string, unknown> {
   if (event.type !== "state") {
     return { type: event.type };
   }
@@ -248,10 +256,13 @@ function summarizePlayerEvent(event: MuswagRendererIpc["player:event"][0]): Reco
   return {
     type: event.type,
     status: event.state.status,
-    currentTrackId: event.state.currentTrack?.id ?? null,
-    currentTrackTitle: event.state.currentTrack?.title ?? null,
+    currentTrackId: event.state.currentTrackId,
     currentIndex: event.state.currentIndex,
     queueLength: event.state.queue.length,
+    canPlay: event.state.canPlay,
+    canGoForward: event.state.canGoForward,
+    canGoBack: event.state.canGoBack,
+    canSeek: event.state.canSeek,
     positionSeconds: roundSeconds(event.state.positionSeconds),
     durationSeconds: roundSeconds(event.state.durationSeconds),
     error: event.state.error,

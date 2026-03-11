@@ -5,8 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --top-height: 35px;
   --player-height: 80px;
-  --main-height: calc(100vh - var(--player-height));
+  --main-height: calc(100vh - var(--player-height) - var(--top-height));
 }
 
 @theme inline {

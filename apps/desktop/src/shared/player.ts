@@ -19,9 +19,13 @@ export interface PlayQueueInput {
 
 export interface PlayerState {
   status: PlayerStatus;
-  queue: PlayerQueueItem[];
+  queue: string[];
   currentIndex: number;
-  currentTrack: PlayerQueueItem | null;
+  currentTrackId: string | null;
+  canPlay: boolean;
+  canGoForward: boolean;
+  canGoBack: boolean;
+  canSeek: boolean;
   positionSeconds: number;
   durationSeconds: number | null;
   error: string | null;
@@ -38,7 +42,11 @@ export function createDefaultPlayerState(): PlayerState {
     status: "idle",
     queue: [],
     currentIndex: -1,
-    currentTrack: null,
+    currentTrackId: null,
+    canPlay: false,
+    canGoForward: false,
+    canGoBack: false,
+    canSeek: false,
     positionSeconds: 0,
     durationSeconds: null,
     error: null,

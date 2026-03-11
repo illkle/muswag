@@ -257,11 +257,7 @@ function toSongRow(album: AlbumWithSongs, song: Song): typeof songsTable.$inferI
   };
 }
 
-function persistAlbumRows(
-  tx: SyncTransaction,
-  album: Album,
-  resetExistingRows: boolean,
-): void {
+function persistAlbumRows(tx: SyncTransaction, album: Album, resetExistingRows: boolean): void {
   if (resetExistingRows) {
     tx.delete(albumRecordLabelsTable).where(eq(albumRecordLabelsTable.albumId, album.id)).run();
     tx.delete(albumGenresTable).where(eq(albumGenresTable.albumId, album.id)).run();
@@ -274,42 +270,48 @@ function persistAlbumRows(
 
   const recordLabels = album.recordLabels ?? [];
   if (recordLabels.length > 0) {
-    tx.insert(albumRecordLabelsTable).values(
-      recordLabels.map((item, position) => ({
-        albumId: album.id,
-        position,
-        name: item.name,
-      })),
-    ).run();
+    tx.insert(albumRecordLabelsTable)
+      .values(
+        recordLabels.map((item, position) => ({
+          albumId: album.id,
+          position,
+          name: item.name,
+        })),
+      )
+      .run();
   }
 
   const genres = album.genres ?? [];
   if (genres.length > 0) {
-    tx.insert(albumGenresTable).values(
-      genres.map((value, position) => ({
-        albumId: album.id,
-        position,
-        value: normalizeGenreValue(value),
-      })),
-    ).run();
+    tx.insert(albumGenresTable)
+      .values(
+        genres.map((value, position) => ({
+          albumId: album.id,
+          position,
+          value: normalizeGenreValue(value),
+        })),
+      )
+      .run();
   }
 
   const artists = album.artists ?? [];
   if (artists.length > 0) {
-    tx.insert(albumArtistsTable).values(
-      artists.map((item, position) => ({
-        albumId: album.id,
-        position,
-        id: item.id,
-        name: item.name,
-        coverArt: item.coverArt ?? null,
-        artistImageUrl: item.artistImageUrl ?? null,
-        albumCount: item.albumCount ?? null,
-        starred: item.starred,
-        musicBrainzId: item.musicBrainzId ?? null,
-        sortName: item.sortName ?? null,
-      })),
-    ).run();
+    tx.insert(albumArtistsTable)
+      .values(
+        artists.map((item, position) => ({
+          albumId: album.id,
+          position,
+          id: item.id,
+          name: item.name,
+          coverArt: item.coverArt ?? null,
+          artistImageUrl: item.artistImageUrl ?? null,
+          albumCount: item.albumCount ?? null,
+          starred: item.starred,
+          musicBrainzId: item.musicBrainzId ?? null,
+          sortName: item.sortName ?? null,
+        })),
+      )
+      .run();
 
     for (const [artistPosition, artist] of artists.entries()) {
       const roles = artist.roles ?? [];
@@ -317,49 +319,57 @@ function persistAlbumRows(
         continue;
       }
 
-      tx.insert(albumArtistRolesTable).values(
-        roles.map((role, position) => ({
-          albumId: album.id,
-          artistPosition,
-          position,
-          role,
-        })),
-      ).run();
+      tx.insert(albumArtistRolesTable)
+        .values(
+          roles.map((role, position) => ({
+            albumId: album.id,
+            artistPosition,
+            position,
+            role,
+          })),
+        )
+        .run();
     }
   }
 
   const releaseTypes = album.releaseTypes ?? [];
   if (releaseTypes.length > 0) {
-    tx.insert(albumReleaseTypesTable).values(
-      releaseTypes.map((value, position) => ({
-        albumId: album.id,
-        position,
-        value,
-      })),
-    ).run();
+    tx.insert(albumReleaseTypesTable)
+      .values(
+        releaseTypes.map((value, position) => ({
+          albumId: album.id,
+          position,
+          value,
+        })),
+      )
+      .run();
   }
 
   const moods = album.moods ?? [];
   if (moods.length > 0) {
-    tx.insert(albumMoodsTable).values(
-      moods.map((value, position) => ({
-        albumId: album.id,
-        position,
-        value,
-      })),
-    ).run();
+    tx.insert(albumMoodsTable)
+      .values(
+        moods.map((value, position) => ({
+          albumId: album.id,
+          position,
+          value,
+        })),
+      )
+      .run();
   }
 
   const discTitles = album.discTitles ?? [];
   if (discTitles.length > 0) {
-    tx.insert(albumDiscTitlesTable).values(
-      discTitles.map((item, position) => ({
-        albumId: album.id,
-        position,
-        disc: item.disc,
-        title: item.title,
-      })),
-    ).run();
+    tx.insert(albumDiscTitlesTable)
+      .values(
+        discTitles.map((item, position) => ({
+          albumId: album.id,
+          position,
+          disc: item.disc,
+          title: item.title,
+        })),
+      )
+      .run();
   }
 }
 
@@ -374,8 +384,7 @@ function persistSongRows(
 
   const songs = album.song ?? [];
   for (const song of songs) {
-    tx
-      .insert(songsTable)
+    tx.insert(songsTable)
       .values(toSongRow(album, song))
       .onConflictDoUpdate({
         target: songsTable.id,
@@ -385,31 +394,35 @@ function persistSongRows(
 
     const genres = song.genres ?? [];
     if (genres.length > 0) {
-      tx.insert(songGenresTable).values(
-        genres.map((value, position) => ({
-          songId: song.id,
-          position,
-          value: normalizeGenreValue(value),
-        })),
-      ).run();
+      tx.insert(songGenresTable)
+        .values(
+          genres.map((value, position) => ({
+            songId: song.id,
+            position,
+            value: normalizeGenreValue(value),
+          })),
+        )
+        .run();
     }
 
     const artists = song.artists ?? [];
     if (artists.length > 0) {
-      tx.insert(songArtistsTable).values(
-        artists.map((item, position) => ({
-          songId: song.id,
-          position,
-          id: item.id,
-          name: item.name,
-          coverArt: item.coverArt ?? null,
-          artistImageUrl: item.artistImageUrl ?? null,
-          albumCount: item.albumCount ?? null,
-          starred: item.starred ?? null,
-          musicBrainzId: item.musicBrainzId ?? null,
-          sortName: item.sortName ?? null,
-        })),
-      ).run();
+      tx.insert(songArtistsTable)
+        .values(
+          artists.map((item, position) => ({
+            songId: song.id,
+            position,
+            id: item.id,
+            name: item.name,
+            coverArt: item.coverArt ?? null,
+            artistImageUrl: item.artistImageUrl ?? null,
+            albumCount: item.albumCount ?? null,
+            starred: item.starred ?? null,
+            musicBrainzId: item.musicBrainzId ?? null,
+            sortName: item.sortName ?? null,
+          })),
+        )
+        .run();
 
       for (const [artistPosition, artist] of artists.entries()) {
         const roles = artist.roles ?? [];
@@ -417,33 +430,37 @@ function persistSongRows(
           continue;
         }
 
-        tx.insert(songArtistRolesTable).values(
-          roles.map((role, position) => ({
-            songId: song.id,
-            artistPosition,
-            position,
-            role,
-          })),
-        ).run();
+        tx.insert(songArtistRolesTable)
+          .values(
+            roles.map((role, position) => ({
+              songId: song.id,
+              artistPosition,
+              position,
+              role,
+            })),
+          )
+          .run();
       }
     }
 
     const albumArtists = song.albumArtists ?? [];
     if (albumArtists.length > 0) {
-      tx.insert(songAlbumArtistsTable).values(
-        albumArtists.map((item, position) => ({
-          songId: song.id,
-          position,
-          id: item.id,
-          name: item.name,
-          coverArt: item.coverArt ?? null,
-          artistImageUrl: item.artistImageUrl ?? null,
-          albumCount: item.albumCount ?? null,
-          starred: item.starred ?? null,
-          musicBrainzId: item.musicBrainzId ?? null,
-          sortName: item.sortName ?? null,
-        })),
-      ).run();
+      tx.insert(songAlbumArtistsTable)
+        .values(
+          albumArtists.map((item, position) => ({
+            songId: song.id,
+            position,
+            id: item.id,
+            name: item.name,
+            coverArt: item.coverArt ?? null,
+            artistImageUrl: item.artistImageUrl ?? null,
+            albumCount: item.albumCount ?? null,
+            starred: item.starred ?? null,
+            musicBrainzId: item.musicBrainzId ?? null,
+            sortName: item.sortName ?? null,
+          })),
+        )
+        .run();
 
       for (const [artistPosition, artist] of albumArtists.entries()) {
         const roles = artist.roles ?? [];
@@ -451,58 +468,66 @@ function persistSongRows(
           continue;
         }
 
-        tx.insert(songAlbumArtistRolesTable).values(
-          roles.map((role, position) => ({
-            songId: song.id,
-            artistPosition,
-            position,
-            role,
-          })),
-        ).run();
+        tx.insert(songAlbumArtistRolesTable)
+          .values(
+            roles.map((role, position) => ({
+              songId: song.id,
+              artistPosition,
+              position,
+              role,
+            })),
+          )
+          .run();
       }
     }
 
     const contributors = song.contributors ?? [];
     if (contributors.length > 0) {
-      tx.insert(songContributorsTable).values(
-        contributors.map((item, position) => ({
-          songId: song.id,
-          position,
-          role: item.role,
-          subRole: item.subRole ?? null,
-          artistId: item.artist?.id ?? null,
-          artistName: item.artist?.name ?? null,
-          coverArt: item.artist?.coverArt ?? null,
-          artistImageUrl: item.artist?.artistImageUrl ?? null,
-          albumCount: item.artist?.albumCount ?? null,
-          starred: item.artist?.starred ?? null,
-          musicBrainzId: item.artist?.musicBrainzId ?? null,
-          sortName: item.artist?.sortName ?? null,
-        })),
-      ).run();
+      tx.insert(songContributorsTable)
+        .values(
+          contributors.map((item, position) => ({
+            songId: song.id,
+            position,
+            role: item.role,
+            subRole: item.subRole ?? null,
+            artistId: item.artist?.id ?? null,
+            artistName: item.artist?.name ?? null,
+            coverArt: item.artist?.coverArt ?? null,
+            artistImageUrl: item.artist?.artistImageUrl ?? null,
+            albumCount: item.artist?.albumCount ?? null,
+            starred: item.artist?.starred ?? null,
+            musicBrainzId: item.artist?.musicBrainzId ?? null,
+            sortName: item.artist?.sortName ?? null,
+          })),
+        )
+        .run();
     }
 
     const moods = song.moods ?? [];
     if (moods.length > 0) {
-      tx.insert(songMoodsTable).values(
-        moods.map((value, position) => ({
-          songId: song.id,
-          position,
-          value,
-        })),
-      ).run();
+      tx.insert(songMoodsTable)
+        .values(
+          moods.map((value, position) => ({
+            songId: song.id,
+            position,
+            value,
+          })),
+        )
+        .run();
     }
 
     if (song.replayGain) {
-      tx.insert(songReplayGainTable).values({
-        songId: song.id,
-        trackGain: song.replayGain.trackGain,
-        albumGain: song.replayGain.albumGain,
-        trackPeak: song.replayGain.trackPeak,
-        albumPeak: song.replayGain.albumPeak,
-        baseGain: song.replayGain.baseGain,
-        fallbackGain: song.replayGain.fallbackGain,
-      }).run();
+      tx.insert(songReplayGainTable)
+        .values({
+          songId: song.id,
+          trackGain: song.replayGain.trackGain,
+          albumGain: song.replayGain.albumGain,
+          trackPeak: song.replayGain.trackPeak,
+          albumPeak: song.replayGain.albumPeak,
+          baseGain: song.replayGain.baseGain,
+          fallbackGain: song.replayGain.fallbackGain,
+        })
+        .run();
     }
   }
 }
@@ -586,10 +611,9 @@ async function persistPage(
       }
 
       const resolvedCoverArtPath =
-        coverArtPath === undefined ? existingAlbum?.coverArtPath ?? null : coverArtPath;
+        coverArtPath === undefined ? (existingAlbum?.coverArtPath ?? null) : coverArtPath;
       const albumRow = toAlbumRow(album, resolvedCoverArtPath);
-      tx
-        .insert(albumsTable)
+      tx.insert(albumsTable)
         .values(albumRow)
         .onConflictDoUpdate({
           target: albumsTable.id,
@@ -623,10 +647,7 @@ async function deleteMissingAlbums(
   return albumsToDelete;
 }
 
-async function cleanupSyncState(
-  db: AnyDrizzleDb,
-  finishedAt: string,
-): Promise<void> {
+async function cleanupSyncState(db: AnyDrizzleDb, finishedAt: string): Promise<void> {
   await db
     .insert(syncStateTable)
     .values({ key: ALBUMS_LAST_SYNCED_AT_KEY, value: finishedAt })

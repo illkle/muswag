@@ -4,13 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { usePlayer } from "#/components/player-provider";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
+import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 import { albumDetailQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
-import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 import { Player } from "#/lib/db";
+import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -39,7 +39,9 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 function RouteComponent() {
   const { albumId } = Route.useParams();
   const albumQuery = useQuery(albumDetailQueryOptions(albumId));
-  const player = usePlayer();
+
+  const currentTrackId = usePlayerCurrentTrackId();
+  const playerStatus = usePlayerStatus();
 
   if (albumQuery.isLoading) {
     return (
@@ -171,7 +173,7 @@ function RouteComponent() {
                   <div className="divide-y divide-border/60">
                     {discSection.songs.map((song) => {
                       const queueIndex = queueIndexBySongId.get(song.id) ?? 0;
-                      const isActive = player.state.currentTrack?.id === song.id;
+                      const isActive = currentTrackId === song.id;
 
                       return (
                         <button
@@ -190,9 +192,7 @@ function RouteComponent() {
                           }}
                         >
                           <div className="text-sm font-medium text-muted-foreground">
-                            {isActive
-                              ? renderTrackStateIcon(player.state.status)
-                              : (song.track ?? "•")}
+                            {isActive ? renderTrackStateIcon(playerStatus) : (song.track ?? "•")}
                           </div>
                           <div className="min-w-0">
                             <p className={cn("truncate font-medium", isActive && "text-primary")}>

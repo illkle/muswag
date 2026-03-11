@@ -18,7 +18,7 @@ const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
 const SOCKET_CONNECT_ATTEMPTS = 50;
 const SOCKET_CONNECT_DELAY_MS = 100;
-const POSITION_BROADCAST_INTERVAL_MS = 250;
+const POSITION_BROADCAST_INTERVAL_MS = 500;
 
 type CommandResponse = {
   data?: unknown;
@@ -46,6 +46,7 @@ export class MpvController {
   private readonly pendingCommands = new Map<number, CommandResolver>();
 
   private operationChain: Promise<void> = Promise.resolve();
+  private playbackQueue: PlayerQueueItem[] = [];
   private state = createDefaultPlayerState();
   private mpvProcess: ChildProcess | undefined;
   private socket: Socket | undefined;
@@ -55,6 +56,7 @@ export class MpvController {
   private lastKnownPause = false;
   private isDisposing = false;
   private lastBroadcastAt = 0;
+  private lastTimePosLogAt = 0;
   private scheduledProgressBroadcast: NodeJS.Timeout | undefined;
 
   constructor(options: MpvControllerOptions) {
@@ -69,6 +71,7 @@ export class MpvController {
   }
 
   getState(): PlayerState {
+    this.refreshComputedState();
     return clonePlayerState(this.state);
   }
 
@@ -89,9 +92,10 @@ export class MpvController {
       });
       if (input.queue.length === 0) {
         await this.stopPlayback();
+        this.playbackQueue = [];
         this.state.queue = [];
         this.state.currentIndex = -1;
-        this.syncCurrentTrack();
+        this.syncCurrentTrackId();
         this.state.status = "idle";
         this.state.error = null;
         this.state.positionSeconds = 0;
@@ -100,30 +104,31 @@ export class MpvController {
         return this.getState();
       }
 
-      const startIndex = clampIndex(input.startIndex, input.queue.length);
-      this.state.queue = input.queue.map(cloneQueueItem);
+      this.playbackQueue = input.queue.map(cloneQueueItem);
+      const startIndex = clampIndex(input.startIndex, this.playbackQueue.length);
+      this.state.queue = this.playbackQueue.map((item) => item.id);
       this.state.currentIndex = startIndex;
-      this.syncCurrentTrack();
+      this.syncCurrentTrackId();
       this.state.positionSeconds = 0;
-      this.state.durationSeconds = this.state.currentTrack?.duration ?? null;
+      this.state.durationSeconds = this.getCurrentQueueItem()?.duration ?? null;
       this.state.error = null;
       this.state.status = "loading";
       this.broadcast();
 
-      await this.playCurrentTrack();
+      await this.playCurrentTrack({ resumePlayback: true });
       return this.getState();
     });
   }
 
   async play(): Promise<PlayerState> {
     return this.enqueue(async () => {
-      logMpvDebug("action:play", summarizeState(this.state));
-      if (!this.state.currentTrack) {
+      logMpvDebug("action:play");
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
       if (this.state.status === "ended") {
-        await this.playCurrentTrack();
+        await this.playCurrentTrack({ resumePlayback: true });
         return this.getState();
       }
 
@@ -134,8 +139,8 @@ export class MpvController {
 
   async pause(): Promise<PlayerState> {
     return this.enqueue(async () => {
-      logMpvDebug("action:pause", summarizeState(this.state));
-      if (!this.state.currentTrack) {
+      logMpvDebug("action:pause");
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
@@ -146,13 +151,13 @@ export class MpvController {
 
   async toggle(): Promise<PlayerState> {
     return this.enqueue(async () => {
-      logMpvDebug("action:toggle", summarizeState(this.state));
-      if (!this.state.currentTrack) {
+      logMpvDebug("action:toggle");
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
       if (this.state.status === "ended") {
-        await this.playCurrentTrack();
+        await this.playCurrentTrack({ resumePlayback: true });
         return this.getState();
       }
 
@@ -164,7 +169,7 @@ export class MpvController {
   async seek(positionSeconds: number): Promise<PlayerState> {
     return this.enqueue(async () => {
       logMpvDebug("action:seek", { positionSeconds });
-      if (!this.state.currentTrack) {
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
@@ -175,8 +180,8 @@ export class MpvController {
 
   async next(): Promise<PlayerState> {
     return this.enqueue(async () => {
-      logMpvDebug("action:next", summarizeState(this.state));
-      if (!this.state.currentTrack) {
+      logMpvDebug("action:next");
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
@@ -184,23 +189,24 @@ export class MpvController {
         return this.getState();
       }
 
+      const resumePlayback = this.state.status !== "paused";
       this.state.currentIndex += 1;
-      this.syncCurrentTrack();
+      this.syncCurrentTrackId();
       this.state.positionSeconds = 0;
-      this.state.durationSeconds = this.state.currentTrack?.duration ?? null;
+      this.state.durationSeconds = this.getCurrentQueueItem()?.duration ?? null;
       this.state.status = "loading";
       this.state.error = null;
       this.broadcast();
 
-      await this.playCurrentTrack();
+      await this.playCurrentTrack({ resumePlayback });
       return this.getState();
     });
   }
 
   async previous(): Promise<PlayerState> {
     return this.enqueue(async () => {
-      logMpvDebug("action:previous", summarizeState(this.state));
-      if (!this.state.currentTrack) {
+      logMpvDebug("action:previous");
+      if (!this.state.currentTrackId) {
         return this.getState();
       }
 
@@ -214,15 +220,16 @@ export class MpvController {
         return this.getState();
       }
 
+      const resumePlayback = this.state.status !== "paused";
       this.state.currentIndex -= 1;
-      this.syncCurrentTrack();
+      this.syncCurrentTrackId();
       this.state.positionSeconds = 0;
-      this.state.durationSeconds = this.state.currentTrack?.duration ?? null;
+      this.state.durationSeconds = this.getCurrentQueueItem()?.duration ?? null;
       this.state.status = "loading";
       this.state.error = null;
       this.broadcast();
 
-      await this.playCurrentTrack();
+      await this.playCurrentTrack({ resumePlayback });
       return this.getState();
     });
   }
@@ -267,8 +274,9 @@ export class MpvController {
   }
 
   private broadcast(): void {
+    this.refreshComputedState();
     this.lastBroadcastAt = Date.now();
-    logMpvDebug("broadcast:state", summarizeState(this.state));
+    logMpvDebug("broadcast:state");
     const event: PlayerEvent = {
       type: "state",
       state: this.getState(),
@@ -281,8 +289,26 @@ export class MpvController {
     }
   }
 
-  private syncCurrentTrack(): void {
-    this.state.currentTrack = this.state.queue[this.state.currentIndex] ?? null;
+  private syncCurrentTrackId(): void {
+    this.state.currentTrackId = this.playbackQueue[this.state.currentIndex]?.id ?? null;
+  }
+
+  private getCurrentQueueItem(): PlayerQueueItem | null {
+    return this.playbackQueue[this.state.currentIndex] ?? null;
+  }
+
+  private refreshComputedState(): void {
+    const hasTrack = this.state.currentTrackId !== null;
+    const durationSeconds = this.state.durationSeconds ?? this.getCurrentQueueItem()?.duration ?? 0;
+
+    this.state.canPlay = hasTrack && this.state.status !== "loading";
+    this.state.canGoForward =
+      hasTrack &&
+      this.state.currentIndex >= 0 &&
+      this.state.currentIndex < this.state.queue.length - 1;
+    this.state.canGoBack =
+      hasTrack && (this.state.currentIndex > 0 || this.state.positionSeconds > 0);
+    this.state.canSeek = hasTrack && durationSeconds > 0;
   }
 
   private applyError(cause: unknown): void {
@@ -294,15 +320,20 @@ export class MpvController {
     this.broadcast();
   }
 
-  private async playCurrentTrack(): Promise<void> {
-    const currentTrack = this.state.currentTrack;
+  private async playCurrentTrack(options: { resumePlayback?: boolean } = {}): Promise<void> {
+    const currentTrack = this.getCurrentQueueItem();
     if (!currentTrack) {
       return;
     }
 
     try {
       const credentials = await this.loadCredentials();
-      const streamUrl = buildStreamUrl(credentials.url, credentials.username, credentials.password, currentTrack.id);
+      const streamUrl = buildStreamUrl(
+        credentials.url,
+        credentials.username,
+        credentials.password,
+        currentTrack.id,
+      );
       logMpvDebug("track:load", {
         trackId: currentTrack.id,
         title: currentTrack.title,
@@ -310,6 +341,10 @@ export class MpvController {
       });
 
       await this.ensureReady();
+      if (options.resumePlayback) {
+        this.lastKnownPause = false;
+        await this.command(["set_property", "pause", false]);
+      }
       await this.command(["loadfile", streamUrl, "replace"]);
 
       this.state.positionSeconds = 0;
@@ -584,11 +619,13 @@ export class MpvController {
     }
 
     if (payload.event === "property-change") {
-      logMpvDebug("mpv:incoming:event", {
-        event: payload.event,
-        name: payload.name,
-        data: payload.data,
-      });
+      if (payload.name !== "time-pos" || this.shouldLogTimePosUpdate()) {
+        logMpvDebug("mpv:incoming:event", {
+          event: payload.event,
+          name: payload.name,
+          data: payload.data,
+        });
+      }
       this.handlePropertyChange(payload.name, payload.data);
       return;
     }
@@ -608,12 +645,12 @@ export class MpvController {
         void this.enqueue(async () => {
           if (this.state.currentIndex < this.state.queue.length - 1) {
             this.state.currentIndex += 1;
-            this.syncCurrentTrack();
+            this.syncCurrentTrackId();
             this.state.positionSeconds = 0;
-            this.state.durationSeconds = this.state.currentTrack?.duration ?? null;
+            this.state.durationSeconds = this.getCurrentQueueItem()?.duration ?? null;
             this.state.status = "loading";
             this.broadcast();
-            await this.playCurrentTrack();
+            await this.playCurrentTrack({ resumePlayback: true });
             return;
           }
 
@@ -626,7 +663,10 @@ export class MpvController {
   }
 
   private handlePropertyChange(name: unknown, value: unknown): void {
-    logMpvDebug("mpv:property-change", { name, value });
+    if (name !== "time-pos") {
+      logMpvDebug("mpv:property-change", { name, value });
+    }
+
     if (name === "pause") {
       this.lastKnownPause = value === true;
 
@@ -645,7 +685,8 @@ export class MpvController {
     }
 
     if (name === "duration") {
-      this.state.durationSeconds = typeof value === "number" ? value : this.state.currentTrack?.duration ?? null;
+      this.state.durationSeconds =
+        typeof value === "number" ? value : (this.getCurrentQueueItem()?.duration ?? null);
       this.broadcast();
     }
   }
@@ -674,6 +715,16 @@ export class MpvController {
       this.scheduledProgressBroadcast = undefined;
       this.broadcast();
     }, POSITION_BROADCAST_INTERVAL_MS - elapsed);
+  }
+
+  private shouldLogTimePosUpdate(): boolean {
+    const now = Date.now();
+    if (now - this.lastTimePosLogAt < POSITION_BROADCAST_INTERVAL_MS) {
+      return false;
+    }
+
+    this.lastTimePosLogAt = now;
+    return true;
   }
 
   private async rawCommand(command: unknown[]): Promise<CommandResponse> {
@@ -710,16 +761,18 @@ function cloneQueueItem(item: PlayerQueueItem): PlayerQueueItem {
 function clonePlayerState(state: PlayerState): PlayerState {
   return {
     ...state,
-    queue: state.queue.map(cloneQueueItem),
-    currentTrack: state.currentTrack ? cloneQueueItem(state.currentTrack) : null,
+    queue: [...state.queue],
   };
 }
 
-function buildStreamUrl(baseUrl: string, username: string, password: string, songId: string): string {
+function buildStreamUrl(
+  baseUrl: string,
+  username: string,
+  password: string,
+  songId: string,
+): string {
   const salt = randomBytes(16).toString("hex");
-  const token = createHash("md5")
-    .update(`${password}${salt}`)
-    .digest("hex");
+  const token = createHash("md5").update(`${password}${salt}`).digest("hex");
   const url = new URL("stream.view", getRestBaseUrl(baseUrl));
 
   url.searchParams.set("id", songId);
@@ -734,7 +787,9 @@ function buildStreamUrl(baseUrl: string, username: string, password: string, son
 
 function getRestBaseUrl(baseUrl: string): string {
   const normalizedBaseUrl = baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`;
-  const ensuredTrailingSlash = normalizedBaseUrl.endsWith("/") ? normalizedBaseUrl : `${normalizedBaseUrl}/`;
+  const ensuredTrailingSlash = normalizedBaseUrl.endsWith("/")
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}/`;
 
   if (ensuredTrailingSlash.endsWith("/rest/")) {
     return ensuredTrailingSlash;
@@ -749,28 +804,6 @@ export function getDefaultMpvIpcPath(baseDirectory: string): string {
   }
 
   return join(baseDirectory, `muswag-mpv-${process.pid}.sock`);
-}
-
-function summarizeState(state: PlayerState): Record<string, unknown> {
-  return {
-    status: state.status,
-    currentIndex: state.currentIndex,
-    currentTrackId: state.currentTrack?.id ?? null,
-    currentTrackTitle: state.currentTrack?.title ?? null,
-    queueLength: state.queue.length,
-    positionSeconds: roundSeconds(state.positionSeconds),
-    durationSeconds: roundSeconds(state.durationSeconds),
-    error: state.error,
-    mpvAvailable: state.mpvAvailable,
-  };
-}
-
-function roundSeconds(value: number | null | undefined): number | null {
-  if (value == null) {
-    return null;
-  }
-
-  return Math.round(value * 100) / 100;
 }
 
 function sanitizeStreamUrl(streamUrl: string): string {

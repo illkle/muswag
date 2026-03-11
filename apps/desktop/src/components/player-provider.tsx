@@ -1,73 +1,61 @@
-import {
-  createContext,
-  useContextSelector,
-  useHasParentContext,
-} from "@fluentui/react-context-selector";
-import { type ReactNode, useEffect, useState } from "react";
-
 import { Player } from "#/lib/db";
-import type { PlayerState } from "#/shared/player";
 import { createDefaultPlayerState } from "#/shared/player";
-
-type PlayerContextValue = {
-  state: PlayerState;
-};
+import { createStore, useStore } from "@tanstack/react-store";
 
 const defaultState = createDefaultPlayerState();
 
-const PlayerContext = createContext<PlayerContextValue>({
-  state: defaultState,
+const PlayerStore = createStore(defaultState);
+
+void Player.getState()
+  .then((nextState) => {
+    PlayerStore.setState(() => nextState);
+  })
+  .catch((cause) => {
+    console.error(cause);
+  });
+
+Player.subscribe((event) => {
+  if (event.type === "state") {
+    PlayerStore.setState(() => event.state);
+  }
 });
 
-export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState(defaultState);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    void Player.getState()
-      .then((nextState) => {
-        if (isMounted) {
-          setState(nextState);
-        }
-      })
-      .catch((cause) => {
-        console.error(cause);
-      });
-
-    const unsubscribe = Player.subscribe((event) => {
-      if (isMounted && event.type === "state") {
-        setState(event.state);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  return <PlayerContext.Provider value={{ state }}>{children}</PlayerContext.Provider>;
+export function usePlayerCurrentIndex() {
+  return useStore(PlayerStore, (v) => v.currentIndex);
 }
 
-export function usePlayer() {
-  useAssertPlayerProvider();
-
-  const state = useContextSelector(PlayerContext, (context) => context.state);
-
-  return {
-    state,
-  };
+export function usePlayerQueue() {
+  return useStore(PlayerStore, (v) => v.queue);
 }
 
-export function usePlayerSelector<T>(selector: (state: PlayerState) => T): T {
-  useAssertPlayerProvider();
-
-  return useContextSelector(PlayerContext, (context) => selector(context.state));
+export function usePlayerCurrentTrackId() {
+  return useStore(PlayerStore, (v) => v.currentTrackId);
 }
 
-function useAssertPlayerProvider(): void {
-  if (!useHasParentContext(PlayerContext)) {
-    throw new Error("PlayerProvider is missing.");
-  }
+export function usePlayerStatus() {
+  return useStore(PlayerStore, (v) => v.status);
+}
+
+export function usePlayerCanPlay() {
+  return useStore(PlayerStore, (v) => v.canPlay);
+}
+
+export function usePlayerCanGoForward() {
+  return useStore(PlayerStore, (v) => v.canGoForward);
+}
+
+export function usePlayerCanGoBack() {
+  return useStore(PlayerStore, (v) => v.canGoBack);
+}
+
+export function usePlayerCanSeek() {
+  return useStore(PlayerStore, (v) => v.canSeek);
+}
+
+export function usePlayerDuration() {
+  return useStore(PlayerStore, (v) => v.durationSeconds);
+}
+
+export function usePlayerPositionSeconds() {
+  return useStore(PlayerStore, (v) => v.positionSeconds);
 }

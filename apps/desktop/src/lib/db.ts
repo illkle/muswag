@@ -10,6 +10,7 @@ const rendererIpc = new IpcListener<MuswagRendererIpc>();
 export const dbHooks = {
   getAlbumDetail: (albumId: string) => mainIpc.invoke("db:getAlbumDetail", albumId),
   getAlbums: () => mainIpc.invoke("db:getAlbums"),
+  getSongById: (songId: string) => mainIpc.invoke("db:getSongById", songId),
   getSongs: (input?: GetSongsInput) => mainIpc.invoke("db:getSongs", input),
 };
 

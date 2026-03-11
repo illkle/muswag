@@ -47,7 +47,9 @@ export type SyncManagerEvent =
 type SyncManagerListener = (event: SyncManagerEvent) => void;
 type StoredCredentialsRow = typeof userCredentialsTable.$inferSelect;
 
-function toPublicUserState(credentials: StoredCredentialsRow | SyncCredentials | null): SyncUserState {
+function toPublicUserState(
+  credentials: StoredCredentialsRow | SyncCredentials | null,
+): SyncUserState {
   if (!credentials) {
     return { status: "logged_out" };
   }

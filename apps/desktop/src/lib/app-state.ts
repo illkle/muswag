@@ -8,6 +8,7 @@ export const appQueryKeys = {
   userState: ["app", "user"] as const,
   albums: ["app", "data", "albums"] as const,
   albumDetail: (albumId: string) => ["app", "data", "albums", albumId] as const,
+  song: (songId: string) => ["app", "data", "songs", songId] as const,
 };
 
 export const userStateQueryOptions = queryOptions({
@@ -24,4 +25,10 @@ export const albumDetailQueryOptions = (albumId: string) =>
   queryOptions({
     queryKey: appQueryKeys.albumDetail(albumId),
     queryFn: () => dbHooks.getAlbumDetail(albumId),
+  });
+
+export const songQueryOptions = (songId: string) =>
+  queryOptions({
+    queryKey: appQueryKeys.song(songId),
+    queryFn: () => dbHooks.getSongById(songId),
   });

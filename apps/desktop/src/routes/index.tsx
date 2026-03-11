@@ -153,5 +153,5 @@ function App() {
     return <LoginScreen />;
   }
 
-  return <Navigate to="/app/albums" />;
+  return <Navigate to="/app/albums" replace />;
 }
