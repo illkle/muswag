@@ -1,4 +1,4 @@
-import { Player } from "#/lib/db";
+import { PlayerIPC } from "#/lib/db";
 import { createDefaultPlayerState } from "#/shared/player";
 import { createStore, useStore } from "@tanstack/react-store";
 
@@ -6,7 +6,7 @@ const defaultState = createDefaultPlayerState();
 
 const PlayerStore = createStore(defaultState);
 
-void Player.getState()
+void PlayerIPC.getState()
   .then((nextState) => {
     PlayerStore.setState(() => nextState);
   })
@@ -14,7 +14,7 @@ void Player.getState()
     console.error(cause);
   });
 
-Player.subscribe((event) => {
+PlayerIPC.subscribe((event) => {
   if (event.type === "state") {
     PlayerStore.setState(() => event.state);
   }

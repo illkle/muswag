@@ -19,10 +19,12 @@
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt --write src test vitest.config.ts vitest.integration.config.ts",
     "format:check": "oxfmt --check src test vitest.config.ts vitest.integration.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "drizzle-orm": "^0.44.6",
+    "drizzle-orm": "catalog:",
+    "drizzle-kit": "catalog:",
     "drizzle-zod": "^0.8.3",
     "subsonic-api": "^3.2.0",
     "zod": "^3.25.76"

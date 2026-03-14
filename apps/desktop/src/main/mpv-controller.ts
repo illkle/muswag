@@ -12,7 +12,7 @@ import { userCredentialsTable } from "@muswag/shared";
 
 import type { PlayQueueInput, PlayerEvent, PlayerQueueItem, PlayerState } from "../shared/player";
 import { createDefaultPlayerState } from "../shared/player";
-import { DB_E } from "./drizzleSqlite";
+import type { DB_E } from "./drizzleSqlite";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";

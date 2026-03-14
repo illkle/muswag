@@ -23,6 +23,7 @@ function getDatabase(): Database {
   }
 
   const databasePath = getDatabasePath();
+  console.log("db path", databasePath);
   mkdirSync(dirname(databasePath), { recursive: true });
   sqlite = new BetterSqlite3(databasePath);
   sqlite.pragma("journal_mode = WAL");

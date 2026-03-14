@@ -26,13 +26,7 @@ vi.mock("subsonic-api", () => ({
   },
 }));
 
-import {
-  SyncManager,
-  syncStateTable,
-  userCredentialsTable,
-  type SyncCredentials,
-  type SyncManagerEvent,
-} from "@muswag/shared";
+import { SyncEvent, SyncManager, userCredentialsTable } from "@muswag/shared";
 import { createInMemoryDrizzleDb } from "test/navidrome-testkit";
 
 const TEST_COVER_ART_DIR = path.join(tmpdir(), "muswag-sync-manager-test-covers");
@@ -48,8 +42,8 @@ describe("SyncManager", () => {
   it("persists login state in the database and emits user updates", async () => {
     const db = createInMemoryDrizzleDb();
     const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
-    const events: SyncManagerEvent[] = [];
-    const credentials: SyncCredentials = {
+    const events: SyncEvent[] = [];
+    const credentials = {
       url: "https://demo.navidrome.org",
       username: "alice",
       password: "secret",
@@ -59,71 +53,57 @@ describe("SyncManager", () => {
       events.push(event);
     });
 
-    await expect(manager.getUserState()).resolves.toEqual({ status: "logged_out" });
+    await expect(manager.getUserState()).resolves.toBeNull();
 
     await expect(manager.login(credentials)).resolves.toEqual({
-      status: "logged_in",
       url: credentials.url,
       username: credentials.username,
-      lastSyncedAt: null,
+      password: credentials.password,
+      lastSync: null,
     });
 
     await expect(manager.getUserState()).resolves.toEqual({
-      status: "logged_in",
       url: credentials.url,
       username: credentials.username,
-      lastSyncedAt: null,
+      password: credentials.password,
+      lastSync: null,
     });
 
     const storedCredentials = await db.select().from(userCredentialsTable);
     expect(storedCredentials).toEqual([
       {
         id: 1,
+        lastSync: null,
         url: credentials.url,
         username: credentials.username,
         password: credentials.password,
       },
     ]);
 
-    await expect(manager.logout()).resolves.toEqual({ status: "logged_out" });
-    await expect(manager.getUserState()).resolves.toEqual({ status: "logged_out" });
+    await expect(manager.logout()).resolves.toBeNull();
+    await expect(manager.getUserState()).resolves.toBeNull();
     await expect(db.select().from(userCredentialsTable)).resolves.toEqual([]);
 
-    expect(events).toEqual([
-      {
-        type: "user update",
-        userState: {
-          status: "logged_in",
-          url: credentials.url,
-          username: credentials.username,
-          lastSyncedAt: null,
-        },
-      },
-      {
-        type: "user update",
-        userState: { status: "logged_out" },
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 
-  it("reads stored credentials from the database during sync and emits a sync event", async () => {
+  it("syncs after login and emits a sync progress event", async () => {
     const db = createInMemoryDrizzleDb();
-    const loginManager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
-    const syncManager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
-    const events: SyncManagerEvent[] = [];
-    const credentials: SyncCredentials = {
+    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
+    const events: SyncEvent[] = [];
+    const credentials = {
       url: "https://demo.navidrome.org",
       username: "alice",
       password: "secret",
     };
 
-    await loginManager.login(credentials);
+    await manager.login(credentials);
 
-    syncManager.subscribe((event) => {
+    manager.subscribe((event) => {
       events.push(event);
     });
 
-    const result = await syncManager.sync();
+    const result = await manager.sync();
 
     expect(result).toMatchObject({
       fetched: 0,
@@ -135,29 +115,10 @@ describe("SyncManager", () => {
     expect(Number.isNaN(Date.parse(result.startedAt))).toBe(false);
     expect(Number.isNaN(Date.parse(result.finishedAt))).toBe(false);
 
-    const syncState = await db.select().from(syncStateTable);
-    expect(syncState).toEqual([
-      {
-        key: "albums_last_synced_at",
-        value: result.finishedAt,
-      },
-    ]);
+    expect(events).toEqual([{ process: "Albums", count: 0 }]);
 
-    expect(events).toEqual([
-      {
-        type: "db state synced",
-        result,
-      },
-      {
-        type: "user update",
-        userState: {
-          status: "logged_in",
-          url: credentials.url,
-          username: credentials.username,
-          lastSyncedAt: result.finishedAt,
-        },
-      },
-    ]);
+    const u = await manager.getUserState();
+    expect(u?.lastSync).toEqual(result.startedAt);
   });
 
   it("rejects sync when no user is logged in", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
@@ -8,41 +8,80 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { albumsQueryOptions, userStateQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
 import type { AlbumRecord } from "@muswag/shared";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { chunk } from "lodash-es";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
 });
 
-function AlbumList({ albums }: { albums: AlbumRecord[] }) {
-  const navigate = useNavigate();
+const AlbumItem = ({ album, onClick }: { album: AlbumRecord; onClick: () => void }) => {
   return (
-    <div className="grid grid-cols-6 gap-2 p-2 items-start justify-start ">
-      {albums?.map((album) => (
-        <button
-          key={album.id}
-          className="cursor-pointer text-left flex flex-col p-1 justify-start align-bottom hover:bg-accent rounded transition"
-          tabIndex={0}
-          onClick={() => {
-            void navigate({
-              to: "/app/albums/$albumId",
-              params: { albumId: album.id },
-            });
-          }}
-        >
-          <AlbumCover
-            albumId={album.id}
-            artist={album.artist ?? album.displayArtist ?? "Unknown artist"}
-            coverArtPath={album.coverArtPath}
-            title={album.name}
-          />
+    <button
+      key={album.id}
+      className="cursor-pointer h-64 text-left flex flex-col p-1 justify-start align-bottom hover:bg-accent rounded transition"
+      tabIndex={0}
+      onClick={onClick}
+    >
+      <AlbumCover albumId={album.id} coverArtPath={album.coverArtPath} title={album.name} />
 
-          <p className="truncate text-xs mt-2 line-clamp-2">
-            {album.artist ?? album.displayArtist ?? "Unknown artist"}
-          </p>
-          <h2 className="line-clamp-2 text-xs font-semibold">{album.name}</h2>
-          <p className="text-xs text-muted-foreground">{album.year}</p>
-        </button>
-      ))}
+      <p className="truncate text-xs mt-2 line-clamp-2">
+        {album.artist ?? album.displayArtist ?? "Unknown artist"}
+      </p>
+      <h2 className="line-clamp-2 text-xs font-semibold">{album.name}</h2>
+      <p className="text-xs text-muted-foreground">{album.year}</p>
+    </button>
+  );
+};
+
+function AlbumList({ albums }: { albums: AlbumRecord[] }) {
+  const parentRef = useRef(null);
+  const navigate = useNavigate();
+
+  const chunked = useMemo(() => chunk(albums, 7), [albums]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: chunked.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 256,
+    overscan: 2,
+  });
+
+  return (
+    <div ref={parentRef} className="overflow-y-auto">
+      <div
+        style={{
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.index}
+            style={{
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+            className="absolute top-0 left-0 w-full grid grid-cols-7"
+          >
+            {chunked[virtualRow.index]?.map((a) => {
+              return (
+                <AlbumItem
+                  key={a.id}
+                  album={a}
+                  onClick={() => {
+                    void navigate({
+                      to: "/app/albums/$albumId",
+                      params: { albumId: a.id },
+                    });
+                  }}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -91,44 +130,47 @@ function LibraryScreen() {
 }
 
 function AlbumCover({
-  artist,
   coverArtPath,
   title,
 }: {
   albumId: string;
-  artist: string;
   coverArtPath: string | null;
   title: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const coverSrc = coverArtPath ? toCoverArtUrl(coverArtPath) : null;
 
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!coverSrc) return;
+    let cancelled = false;
+    const img = new Image();
+    img.src = coverSrc;
+    img.onload = () => {
+      if (!cancelled) setLoadedSrc(coverSrc);
+    };
+
+    return () => {
+      cancelled = true;
+    };
+  }, [coverSrc]);
+
   return (
     <div className="relative aspect-square overflow-hidden rounded">
-      {coverSrc && !imageFailed ? (
+      {!imageFailed && loadedSrc ? (
         <img
-          src={coverSrc}
+          src={loadedSrc}
           alt={`${title} cover art`}
-          className="size-full object-cover"
+          className="size-full relative z-10 object-cover fade-in-0 animate-in"
+          decoding="async"
           loading="lazy"
           onError={() => {
             setImageFailed(true);
           }}
         />
       ) : null}
-
-      {!coverSrc || imageFailed ? (
-        <div
-          className={`flex size-full flex-col justify-between p-5 text-white`}
-          aria-hidden="true"
-        >
-          <Disc3 className="size-8 opacity-85" />
-          <div>
-            <p className="line-clamp-2 text-lg font-semibold">{title}</p>
-            <p className="mt-1 text-sm text-white/80">{artist}</p>
-          </div>
-        </div>
-      ) : null}
+      <div className="size-full absolute top-0 border border-border bg-muted "> </div>
     </div>
   );
 }
@@ -140,7 +182,7 @@ function toCoverArtUrl(coverArtPath: string): string {
 function RouteComponent() {
   const userStateQuery = useQuery(userStateQueryOptions);
 
-  if (!userStateQuery.data || userStateQuery.data.status === "logged_out") {
+  if (!userStateQuery.data) {
     return <Navigate to="/" />;
   }
 

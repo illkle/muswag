@@ -1,10 +1,10 @@
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
-import { userStateQueryOptions } from "#/lib/app-state";
-import { SM } from "#/lib/db";
+import { appQueryKeys, userStateQueryOptions } from "#/lib/app-state";
+import { SyncManagerIPC } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
@@ -12,15 +12,22 @@ import { useMemo } from "react";
 const ServerInfo = () => {
   const userStateQuery = useQuery(userStateQueryOptions);
 
+  const qc = useQueryClient();
   const syncMutation = useMutation({
-    mutationFn: () => SM.sync(),
+    mutationFn: () => SyncManagerIPC.sync(),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
+    },
   });
   const logoutMutation = useMutation({
-    mutationFn: () => SM.logout(),
+    mutationFn: () => SyncManagerIPC.logout(),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
+    },
   });
 
   const hostName = useMemo(() => {
-    if (userStateQuery.data?.status != "logged_in") {
+    if (!userStateQuery.data) {
       return "";
     }
 
@@ -29,7 +36,7 @@ const ServerInfo = () => {
     return url.hostname;
   }, [userStateQuery.data]);
 
-  if (userStateQuery.data?.status !== "logged_in") {
+  if (!userStateQuery.data) {
     console.warn("No user data in ServerInfo component");
     return null;
   }
@@ -40,12 +47,9 @@ const ServerInfo = () => {
         {hostName} <ChevronDown size={14} className="" />
       </PopoverTrigger>
       <PopoverContent>
-        last sync: {userStateQuery.data.lastSyncedAt}
+        last sync: {userStateQuery.data.lastSync}
         {syncMutation.isError
           ? getErrorMessage(syncMutation.error, "The library could not be synced.")
-          : null}
-        {syncMutation.data
-          ? `${syncMutation.data.fetched} fetched, ${syncMutation.data.inserted} new, ${syncMutation.data.updated} updated`
           : null}
         <Button onClick={() => syncMutation.mutate()}>Sync</Button>
         <Button onClick={() => logoutMutation.mutate()}>Log out</Button>

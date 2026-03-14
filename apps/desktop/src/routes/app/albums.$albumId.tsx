@@ -9,7 +9,7 @@ import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-pr
 import { albumDetailQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
-import { Player } from "#/lib/db";
+import { PlayerIPC } from "#/lib/db";
 import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
@@ -185,7 +185,7 @@ function RouteComponent() {
                             isActive && "bg-primary/6",
                           )}
                           onClick={() => {
-                            void Player.playQueue({
+                            void PlayerIPC.playQueue({
                               queue: albumQueue,
                               startIndex: queueIndex,
                             });

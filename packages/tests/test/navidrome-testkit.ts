@@ -6,9 +6,10 @@ import path from "node:path";
 import BetterSqlite3 from "better-sqlite3-test";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { AnyDrizzleDb, migrateDb, schema } from "@muswag/shared";
+import { AnyDrizzleDb, DRIZZLE_MIGRATIONS_PATH, schema } from "@muswag/shared";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 export interface NavidromeConnection {
   baseUrl: string;
@@ -43,7 +44,7 @@ export function createInMemoryDrizzleDb(): AnyDrizzleDb {
   sqlite.pragma("foreign_keys = ON");
 
   const db = drizzle(sqlite, { schema });
-  migrateDb(db);
+  migrate(db, { migrationsFolder: DRIZZLE_MIGRATIONS_PATH });
 
   return db;
 }

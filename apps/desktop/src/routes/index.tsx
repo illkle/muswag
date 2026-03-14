@@ -3,11 +3,11 @@ import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import { userStateQueryOptions } from "#/lib/app-state";
-import { SM } from "#/lib/db";
+import { appQueryKeys, userStateQueryOptions } from "#/lib/app-state";
+import { SyncManagerIPC } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 
@@ -28,8 +28,13 @@ const defaultCredentials = {
 } satisfies CredentialsForm;
 
 function LoginScreen() {
+  const qc = useQueryClient();
+
   const loginMutation = useMutation({
-    mutationFn: (values: CredentialsForm) => SM.login(values),
+    mutationFn: async (values: CredentialsForm) => {
+      await SyncManagerIPC.login(values);
+      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
+    },
   });
 
   const form = useForm({
@@ -149,7 +154,7 @@ function App() {
     );
   }
 
-  if (!userStateQuery.data || userStateQuery.data.status === "logged_out") {
+  if (!userStateQuery.data) {
     return <LoginScreen />;
   }
 

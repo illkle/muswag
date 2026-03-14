@@ -4,10 +4,10 @@ import type {
   GetSongByIdResult,
   GetSongsInput,
   GetSongsResult,
-  SyncAlbumsResult,
-  SyncCredentials,
-  SyncManagerEvent,
-  SyncUserState,
+  MaybeUserState,
+  SyncEvent,
+  UserState,
+  UserStateToLogin,
 } from "@muswag/shared";
 
 import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
@@ -25,13 +25,13 @@ export type MuswagMainIpc = {
   "player:previous": () => PlayerState;
   "player:seek": (positionSeconds: number) => PlayerState;
   "player:toggle": () => PlayerState;
-  "sync:getUserState": () => SyncUserState;
-  "sync:login": (credentials: SyncCredentials) => SyncUserState;
-  "sync:logout": () => SyncUserState;
-  "sync:run": () => SyncAlbumsResult;
+  "sync:getUserState": () => MaybeUserState;
+  "sync:login": (credentials: UserStateToLogin) => UserState;
+  "sync:logout": () => MaybeUserState;
+  "sync:run": () => void;
 };
 
 export type MuswagRendererIpc = {
   "player:event": [event: PlayerEvent];
-  "sync:event": [event: SyncManagerEvent];
+  "sync:event": [event: SyncEvent];
 };

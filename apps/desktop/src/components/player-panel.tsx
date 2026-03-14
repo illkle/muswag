@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "#/components/ui/button";
 import { songQueryOptions } from "#/lib/app-state";
-import { Player } from "#/lib/db";
+import { PlayerIPC } from "#/lib/db";
 import { cn } from "#/lib/utils";
 
 import {
@@ -30,7 +30,7 @@ const PlayerButtonControls = () => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void Player.previous();
+          void PlayerIPC.previous();
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
@@ -43,11 +43,11 @@ const PlayerButtonControls = () => {
         className="rounded-full"
         onClick={() => {
           if (status === "playing") {
-            void Player.pause();
+            void PlayerIPC.pause();
             return;
           }
 
-          void Player.play();
+          void PlayerIPC.play();
         }}
         disabled={!canPlay}
         aria-label={status === "playing" ? "Pause playback" : "Play track"}
@@ -65,7 +65,7 @@ const PlayerButtonControls = () => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void Player.next();
+          void PlayerIPC.next();
         }}
         disabled={!canGoForward}
         aria-label="Next track"
@@ -108,7 +108,7 @@ const PlayerSeek = () => {
 
     seekInteractionRef.current = null;
     setDraft(null);
-    await Player.seek(nextValue);
+    await PlayerIPC.seek(nextValue);
   };
 
   return (
@@ -130,18 +130,12 @@ const PlayerSeek = () => {
           setDraft(Number(event.target.value));
         }}
         onPointerUp={(event) => {
-          if (
-            seekInteractionRef.current === "pointer" &&
-            draftPositionRef.current !== null
-          ) {
+          if (seekInteractionRef.current === "pointer" && draftPositionRef.current !== null) {
             void commitSeek(Number(event.currentTarget.value));
           }
         }}
         onBlur={(event) => {
-          if (
-            seekInteractionRef.current !== null &&
-            draftPositionRef.current !== null
-          ) {
+          if (seekInteractionRef.current !== null && draftPositionRef.current !== null) {
             void commitSeek(Number(event.currentTarget.value));
             return;
           }

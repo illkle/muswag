@@ -315,11 +315,6 @@ export const songReplayGainTable = sqliteTable("song_replay_gain", {
   fallbackGain: real("fallback_gain"),
 });
 
-export const syncStateTable = sqliteTable("sync_state", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
-});
-
 export const syncAlbumIdsTable = sqliteTable("sync_album_ids", {
   id: text("id").primaryKey(),
 });
@@ -329,6 +324,7 @@ export const userCredentialsTable = sqliteTable("user_credentials", {
   url: text("url").notNull(),
   username: text("username").notNull(),
   password: text("password").notNull(),
+  lastSync: text("last_sync"),
 });
 
 export const albumsRelations = relations(albumsTable, ({ many }) => ({
@@ -483,7 +479,6 @@ export const schema = {
   songContributors: songContributorsTable,
   songMoods: songMoodsTable,
   songReplayGain: songReplayGainTable,
-  syncState: syncStateTable,
   syncAlbumIds: syncAlbumIdsTable,
   userCredentials: userCredentialsTable,
 };
@@ -508,7 +503,6 @@ export const DBZodValidators = {
   songContributorsTable: createSelectSchema(songContributorsTable),
   songMoodsTable: createSelectSchema(songMoodsTable),
   songReplayGainTable: createSelectSchema(songReplayGainTable),
-  syncStateTable: createSelectSchema(syncStateTable),
   syncAlbumIdsTable: createSelectSchema(syncAlbumIdsTable),
   userCredentialsTable: createSelectSchema(userCredentialsTable),
 };

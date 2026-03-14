@@ -1,4 +1,4 @@
-import type { GetSongsInput, SyncCredentials, SyncManagerEvent } from "@muswag/shared";
+import type { GetSongsInput, SyncEvent, UserStateToLogin } from "@muswag/shared";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
 import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
@@ -7,14 +7,14 @@ import type { PlayQueueInput, PlayerEvent } from "../shared/player";
 const mainIpc = new IpcEmitter<MuswagMainIpc>();
 const rendererIpc = new IpcListener<MuswagRendererIpc>();
 
-export const dbHooks = {
+export const DBIpc = {
   getAlbumDetail: (albumId: string) => mainIpc.invoke("db:getAlbumDetail", albumId),
   getAlbums: () => mainIpc.invoke("db:getAlbums"),
   getSongById: (songId: string) => mainIpc.invoke("db:getSongById", songId),
   getSongs: (input?: GetSongsInput) => mainIpc.invoke("db:getSongs", input),
 };
 
-export const Player = {
+export const PlayerIPC = {
   getState: () => mainIpc.invoke("player:getState"),
   next: () => mainIpc.invoke("player:next"),
   pause: () => mainIpc.invoke("player:pause"),
@@ -29,11 +29,11 @@ export const Player = {
   toggle: () => mainIpc.invoke("player:toggle"),
 };
 
-export const SM = {
+export const SyncManagerIPC = {
   getUserState: () => mainIpc.invoke("sync:getUserState"),
-  login: (credentials: SyncCredentials) => mainIpc.invoke("sync:login", credentials),
+  login: (credentials: UserStateToLogin) => mainIpc.invoke("sync:login", credentials),
   logout: () => mainIpc.invoke("sync:logout"),
-  subscribe: (listener: (event: SyncManagerEvent) => void) =>
+  subscribe: (listener: (event: SyncEvent) => void) =>
     rendererIpc.on("sync:event", (_event, payload) => {
       listener(payload);
     }),

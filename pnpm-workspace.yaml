@@ -1,4 +1,8 @@
 packages:
-  - "apps/*"
-  - "packages/*"
-  - "tooling/*"
+  - 'apps/*'
+  - 'packages/*'
+  - 'tooling/*'
+
+catalog:
+  'drizzle-orm': 0.45.1
+  'drizzle-kit': 0.31.9

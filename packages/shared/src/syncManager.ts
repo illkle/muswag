@@ -5,11 +5,11 @@ import { eq } from "drizzle-orm";
 import SubsonicAPI from "subsonic-api";
 
 import type { AnyDrizzleDb } from "./drizzle/schema.js";
-import { syncStateTable, userCredentialsTable } from "./drizzle/schema.js";
-import { syncAlbums, type SyncAlbumsResult } from "./sync-albums.js";
+import { userCredentialsTable } from "./drizzle/schema.js";
+import { syncAlbums } from "./sync/sync-albums.js";
+import type { SyncEvent } from "./sync/utils.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
-const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 export const DRIZZLE_MIGRATIONS_PATH = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 const userStateFromDB = async (db: AnyDrizzleDb) => {
@@ -20,12 +20,13 @@ const userStateFromDB = async (db: AnyDrizzleDb) => {
         url: true,
         username: true,
         password: true,
+        lastSync: true,
       },
     })) ?? null
   );
 };
 
-const storeUserState = async (db: AnyDrizzleDb, credentials: UserState) => {
+const storeUserCredentials = async (db: AnyDrizzleDb, credentials: UserStateToLogin) => {
   await db
     .insert(userCredentialsTable)
     .values({
@@ -43,13 +44,16 @@ const storeUserState = async (db: AnyDrizzleDb, credentials: UserState) => {
       },
     });
 
-  return credentials;
+  return { ...credentials, lastSync: null };
 };
 
-const syncStateFromDb = async (db: AnyDrizzleDb) => {
-  return await db.query.syncState.findFirst({
-    where: eq(syncStateTable.key, ALBUMS_LAST_SYNCED_AT_KEY),
-  });
+const storeLastSync = async (db: AnyDrizzleDb, lastSync: string) => {
+  await db
+    .update(userCredentialsTable)
+    .set({
+      lastSync: lastSync,
+    })
+    .where(eq(userCredentialsTable.id, USER_CREDENTIALS_ROW_ID));
 };
 
 const verifyConnection = async (api: SubsonicAPI) => {
@@ -67,21 +71,19 @@ const verifyConnection = async (api: SubsonicAPI) => {
   throw lastCause ?? new Error("Subsonic connectivity check failed");
 };
 
-export type UserState = {
-  url: string;
-  username: string;
-  password: string;
-};
+export type MaybeUserState = Awaited<ReturnType<typeof userStateFromDB>>;
 
-export type MaybeUserState = UserState | null;
+export type UserState = NonNullable<MaybeUserState>;
+export type UserStateToLogin = Pick<UserState, "password" | "url" | "username">;
 
-type SyncManagerListener = (event: MaybeUserState) => void;
+type SyncManagerListener = (event: SyncEvent) => void;
 
 export class SyncManager {
   api: SubsonicAPI | undefined;
   readonly db: AnyDrizzleDb;
   readonly coverArtDir: string;
   private listeners: Set<SyncManagerListener>;
+  syncInProgress: boolean;
 
   constructor(
     db: AnyDrizzleDb,
@@ -92,6 +94,7 @@ export class SyncManager {
     this.db = db;
     this.coverArtDir = options.coverArtDir ?? join(process.cwd(), ".muswag", "album-covers");
     this.listeners = new Set();
+    this.syncInProgress = false;
   }
 
   subscribe(listener: SyncManagerListener): () => void {
@@ -102,8 +105,8 @@ export class SyncManager {
     };
   }
 
-  private emit(event: MaybeUserState): void {
-    for (const listener of this.listeners) {
+  emit(event: SyncEvent): void {
+    for (const listener of [...this.listeners]) {
       try {
         listener(event);
       } catch (cause) {
@@ -112,40 +115,59 @@ export class SyncManager {
     }
   }
 
-  async login(credentials: UserState): Promise<UserState> {
-    const api = new SubsonicAPI({
+  makeApi(credentials: UserStateToLogin) {
+    return new SubsonicAPI({
       url: credentials.url,
       auth: {
         username: credentials.username,
         password: credentials.password,
       },
     });
+  }
+
+  async login(credentials: UserStateToLogin): Promise<UserState> {
+    const api = this.makeApi(credentials);
 
     await verifyConnection(api);
 
     this.api = api;
 
-    return storeUserState(this.db, credentials);
+    return storeUserCredentials(this.db, credentials);
   }
 
-  async logout(): Promise<MaybeUserState> {
+  async logout() {
     await this.db.delete(userCredentialsTable);
     return null;
   }
 
-  async getUserState(): Promise<MaybeUserState> {
+  async getUserState() {
     return userStateFromDB(this.db);
   }
 
-  async sync(): Promise<SyncAlbumsResult> {
-    if (!this.api) {
+  async sync() {
+    const user = await this.getUserState();
+    if (!user) {
       throw new Error("SyncManager.login() must be called before sync()");
     }
 
-    const result = await syncAlbums(this.db, this.api, {
-      coverArtDir: this.coverArtDir,
-    });
+    this.api = this.makeApi(user);
 
-    return result;
+    if (this.syncInProgress) {
+      throw new Error("sync running already");
+    }
+
+    this.syncInProgress = true;
+
+    const started = new Date();
+
+    this.emit({ type: "start", date: started.toISOString() });
+
+    try {
+      await syncAlbums(this);
+      await storeLastSync(this.db, started.toISOString());
+    } finally {
+      this.syncInProgress = false;
+      this.emit({ type: "end", date: new Date().toISOString() });
+    }
   }
 }

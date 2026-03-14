@@ -20,10 +20,6 @@ function RouteComponent() {
     return <Navigate to="/" replace />;
   }
 
-  if (userStateQuery.data.status === "logged_out") {
-    return <Navigate to="/" replace />;
-  }
-
   return (
     <div>
       <TopBar />

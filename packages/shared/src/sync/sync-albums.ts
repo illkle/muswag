@@ -1,8 +1,8 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 
 import { eq, inArray, notInArray } from "drizzle-orm";
-import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3, type Child } from "subsonic-api";
+import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "subsonic-api";
+import { toAlbumRow, toSongRow } from "./toDrizzle.js";
 
 import {
   albumArtistRolesTable,
@@ -23,37 +23,24 @@ import {
   songReplayGainTable,
   songsTable,
   syncAlbumIdsTable,
-  syncStateTable,
-} from "./drizzle/schema.js";
-import type { AnyDrizzleDb } from "./drizzle/schema.js";
+} from "../drizzle/schema.js";
+import type { AnyDrizzleDb } from "../drizzle/schema.js";
+import { fetchAlbumCoverArtWithRetry, removeAlbumCoverFiles } from "./covers-helper.js";
+import type { SyncManager } from "../syncManager.js";
 
 const ALBUM_PAGE_SIZE = 500;
 const ALBUM_DETAIL_CONCURRENCY = 8;
-const ALBUMS_LAST_SYNCED_AT_KEY = "albums_last_synced_at";
 
-type Album = AlbumID3;
-type AlbumWithSongs = AlbumWithSongsID3;
-type Song = Child;
 type SyncTransaction = AnyDrizzleDb;
 type CoverArtPathResult = string | null | undefined;
 
 type SyncedAlbum = {
-  album: AlbumWithSongs;
+  album: AlbumWithSongsID3;
   coverArtPath: CoverArtPathResult;
 };
 
 export interface SyncAlbumsOptions {
   coverArtDir: string;
-}
-
-export interface SyncAlbumsResult {
-  fetched: number;
-  inserted: number;
-  updated: number;
-  deleted: number;
-  pages: number;
-  startedAt: string;
-  finishedAt: string;
 }
 
 async function retry<A>(run: () => Promise<A>, times: number): Promise<A> {
@@ -71,6 +58,8 @@ async function retry<A>(run: () => Promise<A>, times: number): Promise<A> {
 }
 
 function normalizeGenreValue(value: unknown): string {
+  //return value as string;
+
   if (typeof value === "string") {
     return value;
   }
@@ -87,177 +76,7 @@ function normalizeGenreValue(value: unknown): string {
   return String(value);
 }
 
-function toAlbumRow(album: Album, coverArtPath: string | null): typeof albumsTable.$inferInsert {
-  return {
-    id: album.id,
-    name: album.name,
-    version: album.version ?? null,
-    artist: album.artist ?? null,
-    artistId: album.artistId ?? null,
-    coverArt: album.coverArt ?? null,
-    coverArtPath,
-    songCount: album.songCount,
-    duration: album.duration,
-    playCount: album.playCount ?? null,
-    created: album.created,
-    starred: album.starred ?? null,
-    year: album.year ?? null,
-    genre: album.genre ?? null,
-    played: album.played ?? null,
-    userRating: album.userRating ?? null,
-    musicBrainzId: album.musicBrainzId ?? null,
-    displayArtist: album.displayArtist ?? null,
-    sortName: album.sortName ?? null,
-    originalReleaseDate: album.originalReleaseDate ?? null,
-    releaseDate: album.releaseDate ?? null,
-    isCompilation: album.isCompilation ?? null,
-    explicitStatus: album.explicitStatus ?? null,
-  };
-}
-
-function encodeAlbumCoverFilename(id: string): string {
-  return encodeURIComponent(id);
-}
-
-function getAlbumCoverExtension(contentType: string | null): string {
-  if (!contentType) {
-    return ".jpg";
-  }
-
-  const normalized = contentType.split(";")[0]?.trim().toLowerCase();
-
-  switch (normalized) {
-    case "image/jpeg":
-    case "image/jpg":
-      return ".jpg";
-    case "image/png":
-      return ".png";
-    case "image/webp":
-      return ".webp";
-    case "image/gif":
-      return ".gif";
-    case "image/avif":
-      return ".avif";
-    default:
-      return ".jpg";
-  }
-}
-
-async function removeAlbumCoverFiles(coverArtDir: string, albumId: string): Promise<void> {
-  await mkdir(coverArtDir, { recursive: true });
-  const filenamePrefix = `${encodeAlbumCoverFilename(albumId)}.`;
-  const entries = await readdir(coverArtDir, { withFileTypes: true });
-
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.startsWith(filenamePrefix))
-      .map((entry) => rm(join(coverArtDir, entry.name), { force: true })),
-  );
-}
-
-async function fetchAlbumCoverArt(
-  api: SubsonicAPI,
-  album: Album,
-  coverArtDir: string,
-): Promise<string | null> {
-  await mkdir(coverArtDir, { recursive: true });
-
-  if (!album.coverArt) {
-    await removeAlbumCoverFiles(coverArtDir, album.id);
-    return null;
-  }
-
-  const response = await api.getCoverArt({ id: album.coverArt });
-  if (!response.ok) {
-    throw new Error(`Fetching album cover failed for ${album.id}: HTTP ${response.status}`);
-  }
-
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength === 0) {
-    throw new Error(`Fetching album cover failed for ${album.id}: empty response body`);
-  }
-
-  const extension = getAlbumCoverExtension(response.headers.get("content-type"));
-  const outputPath = join(coverArtDir, `${encodeAlbumCoverFilename(album.id)}${extension}`);
-  await removeAlbumCoverFiles(coverArtDir, album.id);
-  await writeFile(outputPath, bytes);
-
-  return outputPath;
-}
-
-async function fetchAlbumCoverArtWithRetry(
-  api: SubsonicAPI,
-  album: Album,
-  coverArtDir: string,
-): Promise<CoverArtPathResult> {
-  if (!album.coverArt) {
-    await removeAlbumCoverFiles(coverArtDir, album.id);
-    return null;
-  }
-
-  let lastCause: unknown;
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await fetchAlbumCoverArt(api, album, coverArtDir);
-    } catch (cause) {
-      lastCause = cause;
-    }
-  }
-
-  console.warn("Album cover fetch failed; preserving existing cached art if present.", {
-    albumId: album.id,
-    cause: lastCause,
-  });
-  return undefined;
-}
-
-function toSongRow(album: AlbumWithSongs, song: Song): typeof songsTable.$inferInsert {
-  return {
-    id: song.id,
-    album: song.album ?? album.name,
-    albumId: song.albumId ?? album.id,
-    artist: song.artist ?? null,
-    artistId: song.artistId ?? null,
-    averageRating: song.averageRating ?? null,
-    bitRate: song.bitRate ?? null,
-    bookmarkPosition: song.bookmarkPosition ?? null,
-    contentType: song.contentType ?? null,
-    coverArt: song.coverArt ?? null,
-    created: song.created ?? null,
-    discNumber: song.discNumber ?? null,
-    duration: song.duration ?? null,
-    genre: song.genre ?? null,
-    isDir: song.isDir,
-    isVideo: song.isVideo ?? null,
-    originalHeight: song.originalHeight ?? null,
-    originalWidth: song.originalWidth ?? null,
-    parent: song.parent ?? null,
-    path: song.path ?? null,
-    playCount: song.playCount ?? null,
-    size: song.size ?? null,
-    starred: song.starred ?? null,
-    suffix: song.suffix ?? null,
-    title: song.title,
-    track: song.track ?? null,
-    transcodedContentType: song.transcodedContentType ?? null,
-    transcodedSuffix: song.transcodedSuffix ?? null,
-    type: song.type ?? null,
-    userRating: song.userRating ?? null,
-    year: song.year ?? null,
-    played: song.played ?? null,
-    bpm: song.bpm ?? null,
-    comment: song.comment ?? null,
-    sortName: song.sortName ?? null,
-    musicBrainzId: song.musicBrainzId ?? null,
-    displayArtist: song.displayArtist ?? null,
-    displayAlbumArtist: song.displayAlbumArtist ?? null,
-    displayComposer: song.displayComposer ?? null,
-    explicitStatus: song.explicitStatus ?? null,
-  };
-}
-
-function persistAlbumRows(tx: SyncTransaction, album: Album, resetExistingRows: boolean): void {
+function persistAlbumRows(tx: SyncTransaction, album: AlbumID3, resetExistingRows: boolean): void {
   if (resetExistingRows) {
     tx.delete(albumRecordLabelsTable).where(eq(albumRecordLabelsTable.albumId, album.id)).run();
     tx.delete(albumGenresTable).where(eq(albumGenresTable.albumId, album.id)).run();
@@ -375,7 +194,7 @@ function persistAlbumRows(tx: SyncTransaction, album: Album, resetExistingRows: 
 
 function persistSongRows(
   tx: SyncTransaction,
-  album: AlbumWithSongs,
+  album: AlbumWithSongsID3,
   resetExistingRows: boolean,
 ): void {
   if (resetExistingRows) {
@@ -532,7 +351,10 @@ function persistSongRows(
   }
 }
 
-async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: Album): Promise<AlbumWithSongs> {
+async function fetchAlbumDetailWithRetry(
+  api: SubsonicAPI,
+  album: AlbumID3,
+): Promise<AlbumWithSongsID3> {
   let lastCause: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -549,10 +371,10 @@ async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: Album): Promis
 
 async function fetchAlbumDetails(
   api: SubsonicAPI,
-  albums: Album[],
+  albums: AlbumID3[],
   coverArtDir: string,
 ): Promise<SyncedAlbum[]> {
-  const detailedAlbums = new Array<SyncedAlbum>(albums.length);
+  const detailedAlbums: SyncedAlbum[] = [];
   let nextIndex = 0;
 
   const workerCount = Math.min(ALBUM_DETAIL_CONCURRENCY, albums.length);
@@ -647,28 +469,16 @@ async function deleteMissingAlbums(
   return albumsToDelete;
 }
 
-async function cleanupSyncState(db: AnyDrizzleDb, finishedAt: string): Promise<void> {
-  await db
-    .insert(syncStateTable)
-    .values({ key: ALBUMS_LAST_SYNCED_AT_KEY, value: finishedAt })
-    .onConflictDoUpdate({
-      target: syncStateTable.key,
-      set: {
-        value: finishedAt,
-      },
-    });
+export async function syncAlbums(sm: SyncManager) {
+  if (!sm.api) {
+    throw new Error("no api on sm");
+  }
 
-  await db.delete(syncAlbumIdsTable);
-}
+  const api = sm.api;
 
-export async function syncAlbums(
-  db: AnyDrizzleDb,
-  api: SubsonicAPI,
-  options: SyncAlbumsOptions,
-): Promise<SyncAlbumsResult> {
   const startedAt = new Date().toISOString();
-  await db.delete(syncAlbumIdsTable);
-  await mkdir(options.coverArtDir, { recursive: true });
+  await sm.db.delete(syncAlbumIdsTable);
+  await mkdir(sm.coverArtDir, { recursive: true });
 
   let fetched = 0;
   let inserted = 0;
@@ -687,27 +497,29 @@ export async function syncAlbums(
     );
 
     const albums = payload.albumList2?.album ?? [];
-    const detailedAlbums = await fetchAlbumDetails(api, albums, options.coverArtDir);
+    const detailedAlbums = await fetchAlbumDetails(api, albums, sm.coverArtDir);
 
     pages += 1;
     fetched += albums.length;
 
-    const persisted = await persistPage(db, detailedAlbums);
+    const persisted = await persistPage(sm.db, detailedAlbums);
     inserted += persisted.inserted;
     updated += persisted.updated;
+
+    sm.emit({ process: "Albums", count: fetched });
 
     if (albums.length < ALBUM_PAGE_SIZE) {
       break;
     }
   }
 
-  const deletedAlbumRows = await deleteMissingAlbums(db);
+  const deletedAlbumRows = await deleteMissingAlbums(sm.db);
   const deleted = deletedAlbumRows.length;
   await Promise.all(
-    deletedAlbumRows.map((album) => removeAlbumCoverFiles(options.coverArtDir, album.id)),
+    deletedAlbumRows.map((album) => removeAlbumCoverFiles(sm.coverArtDir, album.id)),
   );
   const finishedAt = new Date().toISOString();
-  await cleanupSyncState(db, finishedAt);
+  await sm.db.delete(syncAlbumIdsTable);
 
   return {
     fetched,

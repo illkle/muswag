@@ -25,7 +25,6 @@ import {
   songReplayGainTable,
   songsTable,
   syncAlbumIdsTable,
-  syncStateTable,
 } from "@muswag/shared";
 import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
 import {
@@ -160,7 +159,7 @@ async function readFullState(db: AnyDrizzleDb) {
     .select()
     .from(songReplayGainTable)
     .orderBy(asc(songReplayGainTable.songId));
-  const syncState = await db.select().from(syncStateTable).orderBy(asc(syncStateTable.key));
+
   const syncAlbumIds = await db.select().from(syncAlbumIdsTable).orderBy(asc(syncAlbumIdsTable.id));
 
   return {
@@ -181,7 +180,6 @@ async function readFullState(db: AnyDrizzleDb) {
     songContributors,
     songMoods,
     songReplayGain,
-    syncState,
     syncAlbumIds,
   };
 }
@@ -205,7 +203,6 @@ function summarizeState(state: Awaited<ReturnType<typeof readFullState>>) {
     songContributors: state.songContributors.length,
     songMoods: state.songMoods.length,
     songReplayGain: state.songReplayGain.length,
-    syncState: state.syncState.length,
     syncAlbumIds: state.syncAlbumIds.length,
   };
 }
@@ -445,11 +442,9 @@ describeIfReady("navidrome sync integration", () => {
           })),
         );
 
-        const firstSyncState = firstState.syncState.find(
-          (row) => row.key === "albums_last_synced_at",
-        );
-        expect(firstSyncState).toBeDefined();
-        expect(firstSyncState?.value.length).toBeGreaterThan(0);
+        const u = await consumerDb.getUserState();
+        expect(u?.lastSync).toBeDefined();
+        expect(u?.lastSync?.length).toBeGreaterThan(0);
 
         const second = await consumerDb.sync();
         console.info("consumer:sync:second:result", {
@@ -495,11 +490,9 @@ describeIfReady("navidrome sync integration", () => {
           }),
         );
 
-        const secondSyncState = secondState.syncState.find(
-          (row) => row.key === "albums_last_synced_at",
-        );
-        expect(secondSyncState).toBeDefined();
-        expect(secondSyncState?.value).not.toBe(firstSyncState?.value);
+        const u2 = await consumerDb.getUserState();
+        expect(u2?.lastSync).toBeDefined();
+        expect(u2?.lastSync?.length).toBeGreaterThan(0);
       });
     });
     console.info("test:done", {
@@ -644,12 +637,9 @@ describeIfReady("navidrome sync integration", () => {
         expect(childSongReplayGain).toHaveLength(0);
       }
 
-      const syncStateRow = await drizzleDb
-        .select()
-        .from(syncStateTable)
-        .where(eq(syncStateTable.key, "albums_last_synced_at"))
-        .limit(1);
-      expect(syncStateRow).toHaveLength(1);
+      const u = await consumerDb.getUserState();
+      expect(u?.lastSync).toBeDefined();
+      expect(u?.lastSync?.length).toBeGreaterThan(1);
       console.info("test:done", {
         test: "reconciles album deletions when server library changes",
       });

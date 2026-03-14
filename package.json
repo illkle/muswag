@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.22.0",
   "scripts": {
-    "dev": "turbo run dev --filter=@muswag/desktop",
+    "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
@@ -11,9 +11,7 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:integration": "turbo run test:integration",
-    "generate:types": "turbo run generate --filter=@muswag/opensubsonic-types",
-    "openapi:update": "turbo run openapi:update --filter=@muswag/opensubsonic-types"
+    "test:integration": "turbo run test:integration"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
