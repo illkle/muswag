@@ -1,27 +1,15 @@
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Database } from "better-sqlite3";
-import BetterSqlite3 from "better-sqlite3";
 import { app, BrowserWindow, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import {
-  SyncManager,
-  createDrizzleDb,
-  getAlbumDetail,
-  getAlbums,
-  getSongById,
-  getSongs,
-  migrateDb,
-} from "@muswag/db";
+import { SyncManager, getAlbumDetail, getAlbums, getSongById, getSongs } from "@muswag/shared";
 
 import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
 import { getDefaultMpvIpcPath, MpvController } from "./mpv-controller";
+import { closeDb, getDrizzleDb } from "./drizzleSqlite";
 
-let sqlite: Database | undefined;
-let db: ReturnType<typeof createDrizzleDb> | undefined;
 let syncManager: SyncManager | undefined;
 let mpvController: MpvController | undefined;
 
@@ -40,26 +28,8 @@ protocol.registerSchemesAsPrivileged([
 const mainIpc = new IpcListener<MuswagMainIpc>();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
-function getDatabasePath(): string {
-  return join(app.getPath("userData"), "muswag.db");
-}
-
 function getCoverArtDirectory(): string {
   return join(app.getPath("userData"), "album-covers");
-}
-
-function getDatabase(): Database {
-  if (sqlite) {
-    return sqlite;
-  }
-
-  const databasePath = getDatabasePath();
-  mkdirSync(dirname(databasePath), { recursive: true });
-  sqlite = new BetterSqlite3(databasePath);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-
-  return sqlite;
 }
 
 function broadcastSyncEvent(event: MuswagRendererIpc["sync:event"][0]): void {
@@ -69,21 +39,10 @@ function broadcastSyncEvent(event: MuswagRendererIpc["sync:event"][0]): void {
 }
 
 function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void {
-  logPlayerMain("broadcast:renderer", summarizePlayerEvent(event));
+  console.log("broadcast:renderer", event);
   for (const window of BrowserWindow.getAllWindows()) {
     rendererIpc.send(window.webContents, "player:event", event);
   }
-}
-
-function getDrizzleDb(): ReturnType<typeof createDrizzleDb> {
-  if (db) {
-    return db;
-  }
-
-  db = createDrizzleDb(getDatabase());
-  migrateDb(db);
-
-  return db;
 }
 
 function getSyncManager(): SyncManager {
@@ -181,39 +140,27 @@ app.whenReady().then(() => {
   );
   mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
   mainIpc.handle("player:getState", async () => {
-    logPlayerMain("ipc:player:getState");
     return getMpvController().getState();
   });
   mainIpc.handle("player:next", async () => {
-    logPlayerMain("ipc:player:next");
     return getMpvController().next();
   });
   mainIpc.handle("player:pause", async () => {
-    logPlayerMain("ipc:player:pause");
     return getMpvController().pause();
   });
   mainIpc.handle("player:play", async () => {
-    logPlayerMain("ipc:player:play");
     return getMpvController().play();
   });
   mainIpc.handle("player:playQueue", async (_, input) => {
-    logPlayerMain("ipc:player:playQueue", {
-      queueLength: input.queue.length,
-      startIndex: input.startIndex,
-      startTrackId: input.queue[input.startIndex]?.id ?? null,
-    });
     return getMpvController().playQueue(input);
   });
   mainIpc.handle("player:previous", async () => {
-    logPlayerMain("ipc:player:previous");
     return getMpvController().previous();
   });
   mainIpc.handle("player:seek", async (_, positionSeconds) => {
-    logPlayerMain("ipc:player:seek", { positionSeconds });
     return getMpvController().seek(positionSeconds);
   });
   mainIpc.handle("player:toggle", async () => {
-    logPlayerMain("ipc:player:toggle");
     return getMpvController().toggle();
   });
   mainIpc.handle("sync:getUserState", async () => getSyncManager().getUserState());
@@ -240,48 +187,6 @@ app.on("before-quit", () => {
   mainIpc.dispose();
   mpvController?.dispose();
   mpvController = undefined;
-  db = undefined;
   syncManager = undefined;
-  sqlite?.close();
-  sqlite = undefined;
+  closeDb();
 });
-
-function summarizePlayerEvent(
-  event: MuswagRendererIpc["player:event"][0],
-): Record<string, unknown> {
-  if (event.type !== "state") {
-    return { type: event.type };
-  }
-
-  return {
-    type: event.type,
-    status: event.state.status,
-    currentTrackId: event.state.currentTrackId,
-    currentIndex: event.state.currentIndex,
-    queueLength: event.state.queue.length,
-    canPlay: event.state.canPlay,
-    canGoForward: event.state.canGoForward,
-    canGoBack: event.state.canGoBack,
-    canSeek: event.state.canSeek,
-    positionSeconds: roundSeconds(event.state.positionSeconds),
-    durationSeconds: roundSeconds(event.state.durationSeconds),
-    error: event.state.error,
-  };
-}
-
-function roundSeconds(value: number | null | undefined): number | null {
-  if (value == null) {
-    return null;
-  }
-
-  return Math.round(value * 100) / 100;
-}
-
-function logPlayerMain(message: string, payload?: Record<string, unknown>): void {
-  if (payload) {
-    console.debug("[player][main]", message, payload);
-    return;
-  }
-
-  console.debug("[player][main]", message);
-}

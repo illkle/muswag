@@ -5,7 +5,7 @@ import path from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { SyncManager } from "@muswag/db";
+import { AnyDrizzleDb, SyncManager } from "@muswag/shared";
 import {
   albumArtistRolesTable,
   albumArtistsTable,
@@ -15,7 +15,6 @@ import {
   albumRecordLabelsTable,
   albumsTable,
   albumReleaseTypesTable,
-  type DrizzleDb,
   songAlbumArtistRolesTable,
   songAlbumArtistsTable,
   songArtistRolesTable,
@@ -27,7 +26,7 @@ import {
   songsTable,
   syncAlbumIdsTable,
   syncStateTable,
-} from "@muswag/db";
+} from "@muswag/shared";
 import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
 import {
   checkNavidromeDependencies,
@@ -56,9 +55,7 @@ function countSongsInLibrary(
   return albums.reduce((count, album) => count + album.songs.length, 0);
 }
 
-function buildExpectedTracks(
-  albums: typeof librarySetA,
-): Array<{
+function buildExpectedTracks(albums: typeof librarySetA): Array<{
   album: string;
   albumArtist: string;
   albumGenre: string;
@@ -88,7 +85,7 @@ function buildExpectedTracks(
   );
 }
 
-async function readFullState(db: DrizzleDb) {
+async function readFullState(db: AnyDrizzleDb) {
   const albums = await db.select().from(albumsTable).orderBy(asc(albumsTable.id));
   const albumRecordLabels = await db
     .select()
@@ -587,7 +584,9 @@ describeIfReady("navidrome sync integration", () => {
           (row) => row.albumId === beforeAlbum.id,
         );
         const childGenres = afterState.albumGenres.filter((row) => row.albumId === beforeAlbum.id);
-        const childArtists = afterState.albumArtists.filter((row) => row.albumId === beforeAlbum.id);
+        const childArtists = afterState.albumArtists.filter(
+          (row) => row.albumId === beforeAlbum.id,
+        );
         const childRoles = afterState.albumArtistRoles.filter(
           (row) => row.albumId === beforeAlbum.id,
         );
@@ -602,7 +601,9 @@ describeIfReady("navidrome sync integration", () => {
         const removedSongIds = beforeState.songs
           .filter((row) => row.albumId === beforeAlbum.id)
           .map((row) => row.id);
-        const childSongGenres = afterState.songGenres.filter((row) => removedSongIds.includes(row.songId));
+        const childSongGenres = afterState.songGenres.filter((row) =>
+          removedSongIds.includes(row.songId),
+        );
         const childSongArtists = afterState.songArtists.filter((row) =>
           removedSongIds.includes(row.songId),
         );

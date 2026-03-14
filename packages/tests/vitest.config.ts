@@ -6,13 +6,13 @@ const dbEntry = fileURLToPath(new URL("../db/src/index.ts", import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "@muswag/db": dbEntry,
+      "@muswag/shared": dbEntry,
+      "better-sqlite3": "better-sqlite3-test",
     },
   },
   test: {
-    include: ["test/**/*integration.test.ts"],
+    include: ["test/unit/**/*.test.ts"],
     environment: "node",
-    testTimeout: 180_000,
-    hookTimeout: 180_000,
+    testTimeout: 30_000,
   },
 });

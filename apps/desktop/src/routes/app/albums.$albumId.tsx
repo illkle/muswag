@@ -1,4 +1,4 @@
-import type { SongRecord } from "@muswag/db";
+import type { SongRecord } from "@muswag/shared";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";

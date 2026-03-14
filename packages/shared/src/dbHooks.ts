@@ -124,6 +124,10 @@ export async function getAlbumDetail(
   };
 }
 
+export async function getUserCredentials() {
+  
+}
+
 export type GetAlbumsResult = Awaited<ReturnType<typeof getAlbums>>;
 export type GetSongsResult = Awaited<ReturnType<typeof getSongs>>;
 export type GetSongByIdResult = Awaited<ReturnType<typeof getSongById>>;

@@ -3,9 +3,6 @@
   "compilerOptions": {
     "baseUrl": ".",
     "outDir": "dist",
-    "paths": {
-      "@muswag/db": ["../db/src/index.ts"]
-    },
     "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json"
   },
   "include": ["test"],

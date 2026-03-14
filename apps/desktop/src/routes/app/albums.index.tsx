@@ -7,7 +7,7 @@ import { Disc3 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { albumsQueryOptions, userStateQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
-import type { AlbumRecord } from "@muswag/db";
+import type { AlbumRecord } from "@muswag/shared";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
@@ -91,7 +91,6 @@ function LibraryScreen() {
 }
 
 function AlbumCover({
-  albumId,
   artist,
   coverArtPath,
   title,
@@ -132,17 +131,6 @@ function AlbumCover({
       ) : null}
     </div>
   );
-}
-
-function hashValue(value: string): number {
-  let hash = 0;
-
-  for (const character of value) {
-    hash = (hash << 5) - hash + character.charCodeAt(0);
-    hash |= 0;
-  }
-
-  return hash;
 }
 
 function toCoverArtUrl(coverArtPath: string): string {

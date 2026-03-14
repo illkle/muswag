@@ -9,8 +9,7 @@
     "baseUrl": ".",
     "paths": {
       "#/*": ["./src/*"],
-      "@/*": ["./src/*"],
-      "@muswag/db": ["../../packages/db/src/index.ts"]
+      "@/*": ["./src/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],

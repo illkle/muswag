@@ -1,4 +1,4 @@
-import type { GetSongsInput, SyncCredentials, SyncManagerEvent } from "@muswag/db";
+import type { GetSongsInput, SyncCredentials, SyncManagerEvent } from "@muswag/shared";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
 import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";

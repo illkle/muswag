@@ -1,6 +1,4 @@
 import { relations } from "drizzle-orm";
-import type { Database } from "better-sqlite3";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import { customType, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createSelectSchema } from "drizzle-zod";
@@ -490,15 +488,7 @@ export const schema = {
   userCredentials: userCredentialsTable,
 };
 
-export type BetterSqliteDrizzleDb = BetterSQLite3Database<typeof schema>;
-
-export type AnyDrizzleDb = BaseSQLiteDatabase<any, any, typeof schema>;
-
-export function createDrizzleDb(client: Database | string) {
-  return drizzle(client, { schema });
-}
-
-export type DrizzleDb = ReturnType<typeof createDrizzleDb>;
+export type AnyDrizzleDb = BaseSQLiteDatabase<any, unknown, typeof schema>;
 
 export const DBZodValidators = {
   albumsTable: createSelectSchema(albumsTable),

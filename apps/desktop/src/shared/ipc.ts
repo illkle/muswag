@@ -8,7 +8,7 @@ import type {
   SyncCredentials,
   SyncManagerEvent,
   SyncUserState,
-} from "@muswag/db";
+} from "@muswag/shared";
 
 import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@muswag/db",
+  "name": "@muswag/shared",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -22,7 +22,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.44.6",
     "drizzle-zod": "^0.8.3",
     "subsonic-api": "^3.2.0",

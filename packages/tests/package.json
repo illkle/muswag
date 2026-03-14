@@ -1,5 +1,5 @@
 {
-  "name": "@muswag/db_test",
+  "name": "@muswag/tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "test:integration:sync-benchmark": "MUSWAG_RUN_SYNC_BENCHMARK=1 vitest run --config vitest.integration.config.ts test/navidrome-sync-benchmark.integration.test.ts"
   },
   "dependencies": {
-    "@muswag/db": "workspace:*",
+    "@muswag/shared": "workspace:*",
     "better-sqlite3-test": "npm:better-sqlite3@12.6.0",
     "drizzle-orm": "^0.44.6",
     "zod": "^3.25.76"

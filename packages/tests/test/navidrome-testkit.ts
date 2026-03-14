@@ -6,8 +6,9 @@ import path from "node:path";
 import BetterSqlite3 from "better-sqlite3-test";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { createDrizzleDb, migrateDb, type DrizzleDb } from "@muswag/db";
+import { AnyDrizzleDb, migrateDb, schema } from "@muswag/shared";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 
 export interface NavidromeConnection {
   baseUrl: string;
@@ -37,11 +38,11 @@ export interface GenerateFakeMp3LibraryOptions {
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "adminpass";
 
-export function createInMemoryDrizzleDb(): DrizzleDb {
+export function createInMemoryDrizzleDb(): AnyDrizzleDb {
   const sqlite = new BetterSqlite3(":memory:");
   sqlite.pragma("foreign_keys = ON");
 
-  const db = createDrizzleDb(sqlite);
+  const db = drizzle(sqlite, { schema });
   migrateDb(db);
 
   return db;

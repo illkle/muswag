@@ -46,9 +46,9 @@ importers:
       '@fluentui/react-context-selector':
         specifier: ^9.2.15
         version: 9.2.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)
-      '@muswag/db':
+      '@muswag/shared':
         specifier: workspace:*
-        version: link:../../packages/db
+        version: link:../../packages/shared
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.2.1(vite@7.3.1(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -189,11 +189,8 @@ importers:
         specifier: ^3.0.5
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.19.13)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.31.1)(msw@2.12.10(@types/node@22.19.13)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/db:
+  packages/shared:
     dependencies:
-      better-sqlite3:
-        specifier: ^12.6.2
-        version: 12.6.2
       drizzle-orm:
         specifier: ^0.44.6
         version: 0.44.7(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)
@@ -214,11 +211,11 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
 
-  packages/db_test:
+  packages/tests:
     dependencies:
-      '@muswag/db':
+      '@muswag/shared':
         specifier: workspace:*
-        version: link:../db
+        version: link:../shared
       better-sqlite3-test:
         specifier: npm:better-sqlite3@12.6.0
         version: better-sqlite3@12.6.0

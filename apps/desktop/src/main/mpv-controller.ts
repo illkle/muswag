@@ -8,11 +8,11 @@ import type { Socket } from "node:net";
 import { createConnection } from "node:net";
 
 import { eq } from "drizzle-orm";
-import type { BetterSqliteDrizzleDb } from "@muswag/db";
-import { userCredentialsTable } from "@muswag/db";
+import { userCredentialsTable } from "@muswag/shared";
 
 import type { PlayQueueInput, PlayerEvent, PlayerQueueItem, PlayerState } from "../shared/player";
 import { createDefaultPlayerState } from "../shared/player";
+import { DB_E } from "./drizzleSqlite";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
@@ -31,7 +31,7 @@ type CommandResolver = {
 };
 
 type MpvControllerOptions = {
-  getDb: () => BetterSqliteDrizzleDb;
+  getDb: () => DB_E;
   ipcPath: string;
   mpvBinaryPath: string;
   onEvent: (event: PlayerEvent) => void;
@@ -337,7 +337,7 @@ export class MpvController {
       logMpvDebug("track:load", {
         trackId: currentTrack.id,
         title: currentTrack.title,
-        streamUrl: sanitizeStreamUrl(streamUrl),
+        streamUrl: streamUrl,
       });
 
       await this.ensureReady();
@@ -414,12 +414,6 @@ export class MpvController {
     if (!credentials) {
       throw new Error("You need to log in before playback can start.");
     }
-
-    logMpvDebug("credentials:loaded", {
-      url: credentials.url,
-      username: credentials.username,
-    });
-
     return credentials;
   }
 
@@ -805,25 +799,8 @@ export function getDefaultMpvIpcPath(baseDirectory: string): string {
 
   return join(baseDirectory, `muswag-mpv-${process.pid}.sock`);
 }
-
-function sanitizeStreamUrl(streamUrl: string): string {
-  const url = new URL(streamUrl);
-  if (url.searchParams.has("t")) {
-    url.searchParams.set("t", "<redacted>");
-  }
-  if (url.searchParams.has("s")) {
-    url.searchParams.set("s", "<redacted>");
-  }
-  return url.toString();
-}
-
 function logMpvDebug(message: string, payload?: Record<string, unknown>): void {
-  if (payload) {
-    console.debug("[player][mpv][main]", message, payload);
-    return;
-  }
-
-  console.debug("[player][mpv][main]", message);
+  console.debug("[player][mpv][main]", message, payload);
 }
 
 function logMpvError(message: string, cause: unknown): void {
