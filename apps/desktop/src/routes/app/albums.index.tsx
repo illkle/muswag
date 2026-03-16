@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import {

@@ -506,7 +506,7 @@ export async function syncAlbums(sm: SyncManager) {
     inserted += persisted.inserted;
     updated += persisted.updated;
 
-    sm.emit({ process: "Albums", count: fetched });
+    sm.emit({ type: "update", process: "Albums", count: fetched });
 
     if (albums.length < ALBUM_PAGE_SIZE) {
       break;

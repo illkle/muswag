@@ -1,61 +1,87 @@
 import { PlayerIPC } from "#/lib/db";
-import { createDefaultPlayerState } from "#/shared/player";
-import { createStore, useStore } from "@tanstack/react-store";
+import {
+  createDefaultPlayerMetaState,
+  createDefaultPlayerNowPlayingState,
+  createDefaultPlayerQueueState,
+  getPlayerCanGoBack,
+  getPlayerCanGoForward,
+  getPlayerCanPlay,
+  getPlayerCanSeek,
+} from "#/shared/player";
+import { createMirroredRendererStore } from "#/shared/store-sync";
+import { useStore } from "@tanstack/react-store";
 
-const defaultState = createDefaultPlayerState();
+const PlayerMetaStore = createMirroredRendererStore({
+  defaultState: createDefaultPlayerMetaState(),
+  getEventState: (event) => (event.type === "meta" ? event.state : undefined),
+  getSnapshot: PlayerIPC.getState,
+  getSnapshotState: (snapshot) => snapshot.meta,
+  subscribe: PlayerIPC.subscribe,
+});
 
-const PlayerStore = createStore(defaultState);
+const PlayerQueueStore = createMirroredRendererStore({
+  defaultState: createDefaultPlayerQueueState(),
+  getEventState: (event) => (event.type === "queue" ? event.state : undefined),
+  getSnapshot: PlayerIPC.getState,
+  getSnapshotState: (snapshot) => snapshot.queue,
+  subscribe: PlayerIPC.subscribe,
+});
 
-void PlayerIPC.getState()
-  .then((nextState) => {
-    PlayerStore.setState(() => nextState);
-  })
-  .catch((cause) => {
-    console.error(cause);
-  });
-
-PlayerIPC.subscribe((event) => {
-  if (event.type === "state") {
-    PlayerStore.setState(() => event.state);
-  }
+const PlayerNowPlayingStore = createMirroredRendererStore({
+  defaultState: createDefaultPlayerNowPlayingState(),
+  getEventState: (event) => (event.type === "nowPlaying" ? event.state : undefined),
+  getSnapshot: PlayerIPC.getState,
+  getSnapshotState: (snapshot) => snapshot.nowPlaying,
+  subscribe: PlayerIPC.subscribe,
 });
 
 export function usePlayerCurrentIndex() {
-  return useStore(PlayerStore, (v) => v.currentIndex);
+  return useStore(PlayerQueueStore, (state) => state.currentIndex);
 }
 
 export function usePlayerQueue() {
-  return useStore(PlayerStore, (v) => v.queue);
+  return useStore(PlayerQueueStore, (state) => state.queue);
 }
 
 export function usePlayerCurrentTrackId() {
-  return useStore(PlayerStore, (v) => v.currentTrackId);
+  return useStore(PlayerQueueStore, (state) => state.currentTrackId);
 }
 
 export function usePlayerStatus() {
-  return useStore(PlayerStore, (v) => v.status);
+  return useStore(PlayerNowPlayingStore, (state) => state.status);
 }
 
 export function usePlayerCanPlay() {
-  return useStore(PlayerStore, (v) => v.canPlay);
+  const queueState = useStore(PlayerQueueStore, (state) => state);
+  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
+  return getPlayerCanPlay(queueState, nowPlayingState);
 }
 
 export function usePlayerCanGoForward() {
-  return useStore(PlayerStore, (v) => v.canGoForward);
+  const queueState = useStore(PlayerQueueStore, (state) => state);
+  return getPlayerCanGoForward(queueState);
 }
 
 export function usePlayerCanGoBack() {
-  return useStore(PlayerStore, (v) => v.canGoBack);
+  const queueState = useStore(PlayerQueueStore, (state) => state);
+  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
+  return getPlayerCanGoBack(queueState, nowPlayingState);
 }
 
 export function usePlayerCanSeek() {
-  return useStore(PlayerStore, (v) => v.canSeek);
+  const queueState = useStore(PlayerQueueStore, (state) => state);
+  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
+  return getPlayerCanSeek(queueState, nowPlayingState);
 }
 
 export function usePlayerDuration() {
-  return useStore(PlayerStore, (v) => v.durationSeconds);
+  return useStore(PlayerNowPlayingStore, (state) => state.durationSeconds);
 }
 
 export function usePlayerPositionSeconds() {
-  return useStore(PlayerStore, (v) => v.positionSeconds);
+  return useStore(PlayerNowPlayingStore, (state) => state.positionSeconds);
+}
+
+export function usePlayerMpvAvailable() {
+  return useStore(PlayerMetaStore, (state) => state.mpvAvailable);
 }

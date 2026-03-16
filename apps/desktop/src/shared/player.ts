@@ -17,39 +17,102 @@ export interface PlayQueueInput {
   startIndex: number;
 }
 
-export interface PlayerState {
-  status: PlayerStatus;
-  queue: string[];
-  currentIndex: number;
-  currentTrackId: string | null;
-  canPlay: boolean;
-  canGoForward: boolean;
-  canGoBack: boolean;
-  canSeek: boolean;
-  positionSeconds: number;
-  durationSeconds: number | null;
-  error: string | null;
+export interface PlayerMetaState {
   mpvAvailable: boolean;
 }
 
-export type PlayerEvent = {
-  type: "state";
-  state: PlayerState;
-};
+export interface PlayerQueueState {
+  queue: string[];
+  currentIndex: number;
+  currentTrackId: string | null;
+}
 
-export function createDefaultPlayerState(): PlayerState {
+export interface PlayerNowPlayingState {
+  status: PlayerStatus;
+  positionSeconds: number;
+  durationSeconds: number | null;
+  error: string | null;
+}
+
+export interface PlayerState {
+  meta: PlayerMetaState;
+  queue: PlayerQueueState;
+  nowPlaying: PlayerNowPlayingState;
+}
+
+export type PlayerEvent =
+  | {
+      type: "meta";
+      state: PlayerMetaState;
+    }
+  | {
+      type: "queue";
+      state: PlayerQueueState;
+    }
+  | {
+      type: "nowPlaying";
+      state: PlayerNowPlayingState;
+    };
+
+export function createDefaultPlayerMetaState(): PlayerMetaState {
   return {
-    status: "idle",
+    mpvAvailable: true,
+  };
+}
+
+export function createDefaultPlayerQueueState(): PlayerQueueState {
+  return {
     queue: [],
     currentIndex: -1,
     currentTrackId: null,
-    canPlay: false,
-    canGoForward: false,
-    canGoBack: false,
-    canSeek: false,
+  };
+}
+
+export function createDefaultPlayerNowPlayingState(): PlayerNowPlayingState {
+  return {
+    status: "idle",
     positionSeconds: 0,
     durationSeconds: null,
     error: null,
-    mpvAvailable: true,
   };
+}
+
+export function createDefaultPlayerState(): PlayerState {
+  return {
+    meta: createDefaultPlayerMetaState(),
+    queue: createDefaultPlayerQueueState(),
+    nowPlaying: createDefaultPlayerNowPlayingState(),
+  };
+}
+
+export function getPlayerCanPlay(
+  queueState: PlayerQueueState,
+  nowPlayingState: PlayerNowPlayingState,
+): boolean {
+  return queueState.currentTrackId !== null && nowPlayingState.status !== "loading";
+}
+
+export function getPlayerCanGoForward(queueState: PlayerQueueState): boolean {
+  return (
+    queueState.currentTrackId !== null &&
+    queueState.currentIndex >= 0 &&
+    queueState.currentIndex < queueState.queue.length - 1
+  );
+}
+
+export function getPlayerCanGoBack(
+  queueState: PlayerQueueState,
+  nowPlayingState: PlayerNowPlayingState,
+): boolean {
+  return (
+    queueState.currentTrackId !== null &&
+    (queueState.currentIndex > 0 || nowPlayingState.positionSeconds > 0)
+  );
+}
+
+export function getPlayerCanSeek(
+  queueState: PlayerQueueState,
+  nowPlayingState: PlayerNowPlayingState,
+): boolean {
+  return queueState.currentTrackId !== null && (nowPlayingState.durationSeconds ?? 0) > 0;
 }

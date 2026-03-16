@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +11,7 @@ import { syncAlbums } from "./sync/sync-albums.js";
 import type { SyncEvent } from "./sync/utils.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
+const SUBSONIC_API_VERSION = "1.16.1";
 export const DRIZZLE_MIGRATIONS_PATH = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 const userStateFromDB = async (db: AnyDrizzleDb) => {
@@ -75,6 +77,21 @@ export type MaybeUserState = Awaited<ReturnType<typeof userStateFromDB>>;
 
 export type UserState = NonNullable<MaybeUserState>;
 export type UserStateToLogin = Pick<UserState, "password" | "url" | "username">;
+
+export function buildSubsonicStreamUrl(credentials: UserStateToLogin, songId: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const token = createHash("md5").update(`${credentials.password}${salt}`).digest("hex");
+  const url = new URL("stream.view", getSubsonicRestBaseUrl(credentials.url));
+
+  url.searchParams.set("id", songId);
+  url.searchParams.set("u", credentials.username);
+  url.searchParams.set("t", token);
+  url.searchParams.set("s", salt);
+  url.searchParams.set("v", SUBSONIC_API_VERSION);
+  url.searchParams.set("c", "muswag");
+
+  return url.toString();
+}
 
 type SyncManagerListener = (event: SyncEvent) => void;
 
@@ -159,15 +176,33 @@ export class SyncManager {
     this.syncInProgress = true;
 
     const started = new Date();
+    const startedAt = started.toISOString();
 
-    this.emit({ type: "start", date: started.toISOString() });
+    this.emit({ type: "start", date: startedAt });
 
     try {
-      await syncAlbums(this);
-      await storeLastSync(this.db, started.toISOString());
+      const result = await syncAlbums(this);
+      await storeLastSync(this.db, startedAt);
+      return {
+        ...result,
+        startedAt,
+      };
     } finally {
       this.syncInProgress = false;
       this.emit({ type: "end", date: new Date().toISOString() });
     }
   }
+}
+
+function getSubsonicRestBaseUrl(baseUrl: string): string {
+  const normalizedBaseUrl = baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`;
+  const ensuredTrailingSlash = normalizedBaseUrl.endsWith("/")
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}/`;
+
+  if (ensuredTrailingSlash.endsWith("/rest/")) {
+    return ensuredTrailingSlash;
+  }
+
+  return new URL("rest/", ensuredTrailingSlash).toString();
 }

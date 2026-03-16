@@ -5,6 +5,7 @@ import type {
   GetSongsInput,
   GetSongsResult,
   MaybeUserState,
+  SyncManager,
   SyncEvent,
   UserState,
   UserStateToLogin,
@@ -18,17 +19,17 @@ export type MuswagMainIpc = {
   "db:getSongById": (songId: string) => GetSongByIdResult;
   "db:getSongs": (input?: GetSongsInput) => GetSongsResult;
   "player:getState": () => PlayerState;
-  "player:next": () => PlayerState;
-  "player:pause": () => PlayerState;
-  "player:play": () => PlayerState;
-  "player:playQueue": (input: PlayQueueInput) => PlayerState;
-  "player:previous": () => PlayerState;
-  "player:seek": (positionSeconds: number) => PlayerState;
-  "player:toggle": () => PlayerState;
+  "player:next": () => void;
+  "player:pause": () => void;
+  "player:play": () => void;
+  "player:playQueue": (input: PlayQueueInput) => void;
+  "player:previous": () => void;
+  "player:seek": (positionSeconds: number) => void;
+  "player:toggle": () => void;
   "sync:getUserState": () => MaybeUserState;
   "sync:login": (credentials: UserStateToLogin) => UserState;
   "sync:logout": () => MaybeUserState;
-  "sync:run": () => void;
+  "sync:run": () => Awaited<ReturnType<SyncManager["sync"]>>;
 };
 
 export type MuswagRendererIpc = {

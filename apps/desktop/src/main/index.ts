@@ -7,11 +7,24 @@ import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { SyncManager, getAlbumDetail, getAlbums, getSongById, getSongs } from "@muswag/shared";
 
 import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
-import { getDefaultMpvIpcPath, MpvController } from "./mpv-controller";
+import {
+  disposePlayer,
+  getDefaultMpvIpcPath,
+  getState,
+  initializePlayer,
+  next,
+  pause,
+  play,
+  playQueue,
+  previous,
+  seek,
+  subscribe,
+  toggle,
+} from "./player/mpv-controller";
 import { closeDb, getDrizzleDb } from "./drizzleSqlite";
 
 let syncManager: SyncManager | undefined;
-let mpvController: MpvController | undefined;
+let unsubscribePlayerEvents: (() => void) | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -60,21 +73,18 @@ function getSyncManager(): SyncManager {
   return syncManager;
 }
 
-function getMpvController(): MpvController {
-  if (mpvController) {
-    return mpvController;
-  }
-
-  mpvController = new MpvController({
+function initializeDesktopPlayer(): void {
+  initializePlayer({
     getDb: getDrizzleDb,
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
-    onEvent: (event) => {
-      broadcastPlayerEvent(event);
-    },
   });
 
-  return mpvController;
+  if (!unsubscribePlayerEvents) {
+    unsubscribePlayerEvents = subscribe((event) => {
+      broadcastPlayerEvent(event);
+    });
+  }
 }
 
 function createWindow(): void {
@@ -142,34 +152,35 @@ app.whenReady().then(() => {
   );
   mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
   mainIpc.handle("player:getState", async () => {
-    return getMpvController().getState();
+    return getState();
   });
   mainIpc.handle("player:next", async () => {
-    return getMpvController().next();
+    await next();
   });
   mainIpc.handle("player:pause", async () => {
-    return getMpvController().pause();
+    await pause();
   });
   mainIpc.handle("player:play", async () => {
-    return getMpvController().play();
+    await play();
   });
   mainIpc.handle("player:playQueue", async (_, input) => {
-    return getMpvController().playQueue(input);
+    await playQueue(input);
   });
   mainIpc.handle("player:previous", async () => {
-    return getMpvController().previous();
+    await previous();
   });
   mainIpc.handle("player:seek", async (_, positionSeconds) => {
-    return getMpvController().seek(positionSeconds);
+    await seek(positionSeconds);
   });
   mainIpc.handle("player:toggle", async () => {
-    return getMpvController().toggle();
+    await toggle();
   });
   mainIpc.handle("sync:getUserState", async () => getSyncManager().getUserState());
   mainIpc.handle("sync:login", async (_, credentials) => getSyncManager().login(credentials));
   mainIpc.handle("sync:logout", async () => getSyncManager().logout());
   mainIpc.handle("sync:run", async () => getSyncManager().sync());
 
+  initializeDesktopPlayer();
   createWindow();
 
   app.on("activate", () => {
@@ -185,8 +196,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   mainIpc.dispose();
-  mpvController?.dispose();
-  mpvController = undefined;
+  unsubscribePlayerEvents?.();
+  unsubscribePlayerEvents = undefined;
+  disposePlayer();
   syncManager = undefined;
   closeDb();
 });

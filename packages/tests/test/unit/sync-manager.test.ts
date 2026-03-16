@@ -115,7 +115,10 @@ describe("SyncManager", () => {
     expect(Number.isNaN(Date.parse(result.startedAt))).toBe(false);
     expect(Number.isNaN(Date.parse(result.finishedAt))).toBe(false);
 
-    expect(events).toEqual([{ process: "Albums", count: 0 }]);
+    expect(events).toHaveLength(3);
+    expect(events[0]).toMatchObject({ type: "start" });
+    expect(events[1]).toEqual({ type: "update", process: "Albums", count: 0 });
+    expect(events[2]).toMatchObject({ type: "end" });
 
     const u = await manager.getUserState();
     expect(u?.lastSync).toEqual(result.startedAt);
