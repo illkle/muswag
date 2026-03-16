@@ -6,10 +6,7 @@ function SidebarProvider({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sidebar-provider"
-      className={cn(
-        "min-h-(--main-height) bg-background md:grid md:grid-cols-[18rem_1fr]",
-        className,
-      )}
+      className={cn("min-h-(--main-height) bg-background grid grid-cols-[15rem_1fr]", className)}
       {...props}
     />
   );

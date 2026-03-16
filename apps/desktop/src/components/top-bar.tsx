@@ -65,7 +65,6 @@ const NavButtons = () => {
 
   return (
     <>
-      {canGoBack ? "+" : "-"}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -97,14 +96,14 @@ export const TopBar = () => {
 
   return (
     <div className={cn("h-(--top-height) relative w-full  bg-accent flex items-center border-b")}>
-      <div className="app-drag-region  h-full w-30"></div>
+      <div className="app-drag-region shrink-0  h-full w-30"></div>
       <div className={cn("flex app-no-drag items-center w-fit relative z-10 h-full ", isMac && "")}>
         <NavButtons />
       </div>
       <div className="app-drag-region  w-full h-full"></div>
       <ServerInfo />
 
-      <div className="app-drag-region  w-20 h-full"></div>
+      <div className="app-drag-region shrink-0  w-20 h-full"></div>
     </div>
   );
 };

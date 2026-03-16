@@ -79,8 +79,10 @@ function getMpvController(): MpvController {
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1280,
+    height: 720,
+    minHeight: 600,
+    minWidth: 800,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === "darwin"

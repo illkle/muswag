@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Navigate,
+  useElementScrollRestoration,
+  useNavigate,
+} from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
@@ -10,45 +15,88 @@ import { getErrorMessage } from "#/lib/err";
 import type { AlbumRecord } from "@muswag/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";
+import { useContentSize } from "#/components/app-content-size";
+import { AlbumCover } from "#/components/album-cover";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
 });
 
-const AlbumItem = ({ album, onClick }: { album: AlbumRecord; onClick: () => void }) => {
+const AlbumItem = ({
+  album,
+  instantCovers,
+  ...props
+}: {
+  album: AlbumRecord;
+  instantCovers: boolean;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   return (
     <button
       key={album.id}
-      className="cursor-pointer h-64 text-left flex flex-col p-1 justify-start align-bottom hover:bg-accent rounded transition"
+      className="cursor-pointer text-left flex w-full  flex-col p-1 justify-start align-bottom hover:bg-accent rounded transition"
       tabIndex={0}
-      onClick={onClick}
+      {...props}
     >
-      <AlbumCover albumId={album.id} coverArtPath={album.coverArtPath} title={album.name} />
+      <AlbumCover coverArtPath={album.coverArtPath} instantLoad={instantCovers} />
 
-      <p className="truncate text-xs mt-2 line-clamp-2">
+      <p className="truncate text-xs line-clamp-1 mt-2">
         {album.artist ?? album.displayArtist ?? "Unknown artist"}
       </p>
       <h2 className="line-clamp-2 text-xs font-semibold">{album.name}</h2>
-      <p className="text-xs text-muted-foreground">{album.year}</p>
+      <p className="text-xs line-clamp-1 text-muted-foreground">{album.year}</p>
     </button>
   );
 };
 
-function AlbumList({ albums }: { albums: AlbumRecord[] }) {
-  const parentRef = useRef(null);
+const calcSize = (totalSpace: number) => {
+  const chunks = Math.floor(totalSpace / 150);
+
+  const fullWidth = totalSpace / chunks;
+  const paddings = 8;
+  const coverSize = fullWidth - paddings;
+  const textSize = 64;
+  const fullHeight = textSize + 16 + coverSize + paddings;
+
+  return { fullWidth, fullHeight, chunks };
+};
+
+function AlbumList({ albums, scrollId }: { albums: AlbumRecord[]; scrollId: string }) {
+  const parentRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
-  const chunked = useMemo(() => chunk(albums, 7), [albums]);
+  const scrollRestorationId = "album-list-" + scrollId;
+  const scrollEntry = useElementScrollRestoration({
+    id: "album-list-" + scrollId,
+  });
+
+  const s = useContentSize();
+
+  const sizes = useMemo(() => calcSize(s.width ?? 600), [s.width]);
+
+  const chunked = useMemo(() => chunk(albums, sizes.chunks), [albums, sizes.chunks]);
+
+  const [instantCovers, setInstantCovers] = useState(true);
+
+  useEffect(() => {
+    startTransition(() => {
+      setInstantCovers(false);
+    });
+  });
 
   const rowVirtualizer = useVirtualizer({
     count: chunked.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 256,
-    overscan: 2,
+    estimateSize: () => sizes.fullHeight,
+    overscan: 4,
+    initialOffset: scrollEntry?.scrollY,
   });
 
   return (
-    <div ref={parentRef} className="overflow-y-auto">
+    <div
+      ref={parentRef}
+      data-scroll-restoration-id={scrollRestorationId}
+      className="overflow-y-auto"
+    >
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -63,13 +111,18 @@ function AlbumList({ albums }: { albums: AlbumRecord[] }) {
               height: `${virtualRow.size}px`,
               transform: `translateY(${virtualRow.start}px)`,
             }}
-            className="absolute top-0 left-0 w-full grid grid-cols-7"
+            className="absolute top-0 left-0 w-full flex"
           >
             {chunked[virtualRow.index]?.map((a) => {
               return (
                 <AlbumItem
                   key={a.id}
+                  instantCovers={instantCovers}
                   album={a}
+                  style={{
+                    width: `${sizes.fullWidth}px`,
+                    height: `${sizes.fullHeight}px`,
+                  }}
                   onClick={() => {
                     void navigate({
                       to: "/app/albums/$albumId",
@@ -123,60 +176,10 @@ function LibraryScreen() {
       ) : null}
 
       {!albumsQuery.isLoading && !albumsQuery.isError && (albumsQuery.data?.length ?? 0) > 0 ? (
-        <AlbumList albums={albumsQuery.data ?? []} />
+        <AlbumList albums={albumsQuery.data ?? []} scrollId="library-screen-albums" />
       ) : null}
     </section>
   );
-}
-
-function AlbumCover({
-  coverArtPath,
-  title,
-}: {
-  albumId: string;
-  coverArtPath: string | null;
-  title: string;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const coverSrc = coverArtPath ? toCoverArtUrl(coverArtPath) : null;
-
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!coverSrc) return;
-    let cancelled = false;
-    const img = new Image();
-    img.src = coverSrc;
-    img.onload = () => {
-      if (!cancelled) setLoadedSrc(coverSrc);
-    };
-
-    return () => {
-      cancelled = true;
-    };
-  }, [coverSrc]);
-
-  return (
-    <div className="relative aspect-square overflow-hidden rounded">
-      {!imageFailed && loadedSrc ? (
-        <img
-          src={loadedSrc}
-          alt={`${title} cover art`}
-          className="size-full relative z-10 object-cover fade-in-0 animate-in"
-          decoding="async"
-          loading="lazy"
-          onError={() => {
-            setImageFailed(true);
-          }}
-        />
-      ) : null}
-      <div className="size-full absolute top-0 border border-border bg-muted "> </div>
-    </div>
-  );
-}
-
-function toCoverArtUrl(coverArtPath: string): string {
-  return `muswag-cover://local?path=${encodeURIComponent(coverArtPath)}`;
 }
 
 function RouteComponent() {

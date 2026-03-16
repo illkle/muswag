@@ -11,6 +11,7 @@ import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
 import { PlayerIPC } from "#/lib/db";
 import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
+import { AlbumCover } from "#/components/album-cover";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -126,17 +127,13 @@ function RouteComponent() {
 
   return (
     <section className="flex h-full w-full flex-col">
-      <header className="border-b border-border/70 bg-card/80">
-        <div className="grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
-          <div className="flex aspect-square w-full max-w-[10rem] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/35 text-muted-foreground">
-            <Disc3 className="size-14" />
-          </div>
+      <header className="border-b border-border/70 bg-card/80 grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
+        <AlbumCover coverArtPath={album.coverArtPath} instantLoad />
 
-          <div className="min-w-0 self-end">
-            <p className="truncate text-sm text-muted-foreground">{headlineArtist}</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{album.name}</h1>
-            {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
-          </div>
+        <div className="min-w-0 self-end">
+          <p className="truncate text-sm text-muted-foreground">{headlineArtist}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{album.name}</h1>
+          {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
         </div>
       </header>
 
