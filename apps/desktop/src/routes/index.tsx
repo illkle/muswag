@@ -132,9 +132,7 @@ function LoginScreen() {
           {loginMutation.isError ? (
             <Alert variant="destructive" className="mt-4">
               <AlertTitle>Login failed</AlertTitle>
-              <AlertDescription>
-                {getErrorMessage(loginMutation.error, "Check your credentials and try again.")}
-              </AlertDescription>
+              <AlertDescription>{getErrorMessage(loginMutation.error, "Check your credentials and try again.")}</AlertDescription>
             </Alert>
           ) : null}
         </CardContent>

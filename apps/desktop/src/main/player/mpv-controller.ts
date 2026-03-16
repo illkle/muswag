@@ -1,10 +1,4 @@
-import type {
-  PlayQueueInput,
-  PlayerEvent,
-  PlayerNowPlayingState,
-  PlayerQueueState,
-  PlayerState,
-} from "../../shared/player";
+import type { PlayQueueInput, PlayerEvent, PlayerNowPlayingState, PlayerQueueState, PlayerState } from "../../shared/player";
 import type { DB_E } from "../drizzleSqlite";
 import { bridgeMainStoreToEvent } from "../../shared/store-sync";
 import {
@@ -59,11 +53,7 @@ let metaBridgeDispose: (() => void) | undefined;
 let queueBridgeDispose: (() => void) | undefined;
 let nowPlayingBridgeDispose: (() => void) | undefined;
 
-export function initializePlayer(options: {
-  getDb: () => DB_E;
-  ipcPath: string;
-  mpvBinaryPath: string;
-}): void {
+export function initializePlayer(options: { getDb: () => DB_E; ipcPath: string; mpvBinaryPath: string }): void {
   if (streamSource) {
     return;
   }
@@ -397,10 +387,7 @@ function ensureInitialized(): void {
   }
 }
 
-function isSameMetaState(
-  nextState: PlayerState["meta"],
-  previousState: PlayerState["meta"],
-): boolean {
+function isSameMetaState(nextState: PlayerState["meta"], previousState: PlayerState["meta"]): boolean {
   return nextState.mpvAvailable === previousState.mpvAvailable;
 }
 
@@ -413,10 +400,7 @@ function isSameQueueState(nextState: PlayerQueueState, previousState: PlayerQueu
   );
 }
 
-function isSameNowPlayingState(
-  nextState: PlayerNowPlayingState,
-  previousState: PlayerNowPlayingState,
-): boolean {
+function isSameNowPlayingState(nextState: PlayerNowPlayingState, previousState: PlayerNowPlayingState): boolean {
   return (
     nextState.durationSeconds === previousState.durationSeconds &&
     nextState.error === previousState.error &&
@@ -425,10 +409,7 @@ function isSameNowPlayingState(
   );
 }
 
-function isPositionOnlyNowPlayingChange(
-  nextState: PlayerNowPlayingState,
-  previousState: PlayerNowPlayingState,
-): boolean {
+function isPositionOnlyNowPlayingChange(nextState: PlayerNowPlayingState, previousState: PlayerNowPlayingState): boolean {
   return (
     nextState.positionSeconds !== previousState.positionSeconds &&
     nextState.durationSeconds === previousState.durationSeconds &&

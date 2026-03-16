@@ -1,12 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  Navigate,
-  useElementScrollRestoration,
-  useNavigate,
-} from "@tanstack/react-router";
+import { createFileRoute, Navigate, useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
@@ -39,9 +34,7 @@ const AlbumItem = ({
     >
       <AlbumCover coverArtPath={album.coverArtPath} instantLoad={instantCovers} />
 
-      <p className="truncate text-xs line-clamp-1 mt-2">
-        {album.artist ?? album.displayArtist ?? "Unknown artist"}
-      </p>
+      <p className="truncate text-xs line-clamp-1 mt-2">{album.artist ?? album.displayArtist ?? "Unknown artist"}</p>
       <h2 className="line-clamp-2 text-xs font-semibold">{album.name}</h2>
       <p className="text-xs line-clamp-1 text-muted-foreground">{album.year}</p>
     </button>
@@ -92,11 +85,7 @@ function AlbumList({ albums, scrollId }: { albums: AlbumRecord[]; scrollId: stri
   });
 
   return (
-    <div
-      ref={parentRef}
-      data-scroll-restoration-id={scrollRestorationId}
-      className="overflow-y-auto"
-    >
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto">
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -145,18 +134,14 @@ function LibraryScreen() {
   return (
     <section className="flex h-full w-full flex-col">
       {albumsQuery.isLoading ? (
-        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">
-          Loading albums...
-        </div>
+        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div>
       ) : null}
 
       {albumsQuery.isError ? (
         <div className="m-6">
           <Alert variant="destructive">
             <AlertTitle>Albums unavailable</AlertTitle>
-            <AlertDescription>
-              {getErrorMessage(albumsQuery.error, "The local album list could not be read.")}
-            </AlertDescription>
+            <AlertDescription>{getErrorMessage(albumsQuery.error, "The local album list could not be read.")}</AlertDescription>
           </Alert>
         </div>
       ) : null}
@@ -168,9 +153,7 @@ function LibraryScreen() {
           </div>
           <div className="space-y-1">
             <p className="font-medium">No albums in the local database yet.</p>
-            <p className="text-sm text-muted-foreground">
-              Use the server control in the sidebar to fetch your server library.
-            </p>
+            <p className="text-sm text-muted-foreground">Use the server control in the sidebar to fetch your server library.</p>
           </div>
         </div>
       ) : null}

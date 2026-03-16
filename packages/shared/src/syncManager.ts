@@ -196,9 +196,7 @@ export class SyncManager {
 
 function getSubsonicRestBaseUrl(baseUrl: string): string {
   const normalizedBaseUrl = baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`;
-  const ensuredTrailingSlash = normalizedBaseUrl.endsWith("/")
-    ? normalizedBaseUrl
-    : `${normalizedBaseUrl}/`;
+  const ensuredTrailingSlash = normalizedBaseUrl.endsWith("/") ? normalizedBaseUrl : `${normalizedBaseUrl}/`;
 
   if (ensuredTrailingSlash.endsWith("/rest/")) {
     return ensuredTrailingSlash;

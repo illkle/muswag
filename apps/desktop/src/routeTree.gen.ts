@@ -8,152 +8,137 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as AppRouteImport } from './routes/app'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppAlbumsRouteImport } from './routes/app/albums'
-import { Route as AppAlbumsIndexRouteImport } from './routes/app/albums.index'
-import { Route as AppAlbumsAlbumIdRouteImport } from './routes/app/albums.$albumId'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as AppRouteImport } from "./routes/app";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as AppAlbumsRouteImport } from "./routes/app/albums";
+import { Route as AppAlbumsIndexRouteImport } from "./routes/app/albums.index";
+import { Route as AppAlbumsAlbumIdRouteImport } from "./routes/app/albums.$albumId";
 
 const AppRoute = AppRouteImport.update({
-  id: '/app',
-  path: '/app',
+  id: "/app",
+  path: "/app",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AppAlbumsRoute = AppAlbumsRouteImport.update({
-  id: '/albums',
-  path: '/albums',
+  id: "/albums",
+  path: "/albums",
   getParentRoute: () => AppRoute,
-} as any)
+} as any);
 const AppAlbumsIndexRoute = AppAlbumsIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => AppAlbumsRoute,
-} as any)
+} as any);
 const AppAlbumsAlbumIdRoute = AppAlbumsAlbumIdRouteImport.update({
-  id: '/$albumId',
-  path: '/$albumId',
+  id: "/$albumId",
+  path: "/$albumId",
   getParentRoute: () => AppAlbumsRoute,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/app': typeof AppRouteWithChildren
-  '/app/albums': typeof AppAlbumsRouteWithChildren
-  '/app/albums/$albumId': typeof AppAlbumsAlbumIdRoute
-  '/app/albums/': typeof AppAlbumsIndexRoute
+  "/": typeof IndexRoute;
+  "/app": typeof AppRouteWithChildren;
+  "/app/albums": typeof AppAlbumsRouteWithChildren;
+  "/app/albums/$albumId": typeof AppAlbumsAlbumIdRoute;
+  "/app/albums/": typeof AppAlbumsIndexRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/app': typeof AppRouteWithChildren
-  '/app/albums/$albumId': typeof AppAlbumsAlbumIdRoute
-  '/app/albums': typeof AppAlbumsIndexRoute
+  "/": typeof IndexRoute;
+  "/app": typeof AppRouteWithChildren;
+  "/app/albums/$albumId": typeof AppAlbumsAlbumIdRoute;
+  "/app/albums": typeof AppAlbumsIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/app': typeof AppRouteWithChildren
-  '/app/albums': typeof AppAlbumsRouteWithChildren
-  '/app/albums/$albumId': typeof AppAlbumsAlbumIdRoute
-  '/app/albums/': typeof AppAlbumsIndexRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/app": typeof AppRouteWithChildren;
+  "/app/albums": typeof AppAlbumsRouteWithChildren;
+  "/app/albums/$albumId": typeof AppAlbumsAlbumIdRoute;
+  "/app/albums/": typeof AppAlbumsIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/app'
-    | '/app/albums'
-    | '/app/albums/$albumId'
-    | '/app/albums/'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/app/albums/$albumId' | '/app/albums'
-  id:
-    | '__root__'
-    | '/'
-    | '/app'
-    | '/app/albums'
-    | '/app/albums/$albumId'
-    | '/app/albums/'
-  fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths: "/" | "/app" | "/app/albums" | "/app/albums/$albumId" | "/app/albums/";
+  fileRoutesByTo: FileRoutesByTo;
+  to: "/" | "/app" | "/app/albums/$albumId" | "/app/albums";
+  id: "__root__" | "/" | "/app" | "/app/albums" | "/app/albums/$albumId" | "/app/albums/";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
+  IndexRoute: typeof IndexRoute;
+  AppRoute: typeof AppRouteWithChildren;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/app': {
-      id: '/app'
-      path: '/app'
-      fullPath: '/app'
-      preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/app/albums': {
-      id: '/app/albums'
-      path: '/albums'
-      fullPath: '/app/albums'
-      preLoaderRoute: typeof AppAlbumsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/albums/': {
-      id: '/app/albums/'
-      path: '/'
-      fullPath: '/app/albums/'
-      preLoaderRoute: typeof AppAlbumsIndexRouteImport
-      parentRoute: typeof AppAlbumsRoute
-    }
-    '/app/albums/$albumId': {
-      id: '/app/albums/$albumId'
-      path: '/$albumId'
-      fullPath: '/app/albums/$albumId'
-      preLoaderRoute: typeof AppAlbumsAlbumIdRouteImport
-      parentRoute: typeof AppAlbumsRoute
-    }
+    "/app": {
+      id: "/app";
+      path: "/app";
+      fullPath: "/app";
+      preLoaderRoute: typeof AppRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/app/albums": {
+      id: "/app/albums";
+      path: "/albums";
+      fullPath: "/app/albums";
+      preLoaderRoute: typeof AppAlbumsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/app/albums/": {
+      id: "/app/albums/";
+      path: "/";
+      fullPath: "/app/albums/";
+      preLoaderRoute: typeof AppAlbumsIndexRouteImport;
+      parentRoute: typeof AppAlbumsRoute;
+    };
+    "/app/albums/$albumId": {
+      id: "/app/albums/$albumId";
+      path: "/$albumId";
+      fullPath: "/app/albums/$albumId";
+      preLoaderRoute: typeof AppAlbumsAlbumIdRouteImport;
+      parentRoute: typeof AppAlbumsRoute;
+    };
   }
 }
 
 interface AppAlbumsRouteChildren {
-  AppAlbumsAlbumIdRoute: typeof AppAlbumsAlbumIdRoute
-  AppAlbumsIndexRoute: typeof AppAlbumsIndexRoute
+  AppAlbumsAlbumIdRoute: typeof AppAlbumsAlbumIdRoute;
+  AppAlbumsIndexRoute: typeof AppAlbumsIndexRoute;
 }
 
 const AppAlbumsRouteChildren: AppAlbumsRouteChildren = {
   AppAlbumsAlbumIdRoute: AppAlbumsAlbumIdRoute,
   AppAlbumsIndexRoute: AppAlbumsIndexRoute,
-}
+};
 
-const AppAlbumsRouteWithChildren = AppAlbumsRoute._addFileChildren(
-  AppAlbumsRouteChildren,
-)
+const AppAlbumsRouteWithChildren = AppAlbumsRoute._addFileChildren(AppAlbumsRouteChildren);
 
 interface AppRouteChildren {
-  AppAlbumsRoute: typeof AppAlbumsRouteWithChildren
+  AppAlbumsRoute: typeof AppAlbumsRouteWithChildren;
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAlbumsRoute: AppAlbumsRouteWithChildren,
-}
+};
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
-}
-export const routeTree = rootRouteImport
-  ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+};
+export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();

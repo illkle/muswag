@@ -143,13 +143,9 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) =>
-    getAlbumDetail(getDrizzleDb(), albumId),
-  );
+  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) => getAlbumDetail(getDrizzleDb(), albumId));
   mainIpc.handle("db:getAlbums", async () => getAlbums(getDrizzleDb()));
-  mainIpc.handle("db:getSongById", async (_, songId: string) =>
-    getSongById(getDrizzleDb(), songId),
-  );
+  mainIpc.handle("db:getSongById", async (_, songId: string) => getSongById(getDrizzleDb(), songId));
   mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
   mainIpc.handle("player:getState", async () => {
     return getState();

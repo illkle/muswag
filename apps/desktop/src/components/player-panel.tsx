@@ -113,9 +113,7 @@ const PlayerSeek = () => {
 
   return (
     <div className="flex items-center gap-3 w-full">
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-        {formatDuration(sliderValue)}
-      </span>
+      <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDuration(sliderValue)}</span>
       <input
         type="range"
         min={0}
@@ -170,9 +168,7 @@ const PlayerSeek = () => {
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
       />
-      <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">
-        {formatDuration(durationSeconds)}
-      </span>
+      <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(durationSeconds)}</span>
     </div>
   );
 };
@@ -191,10 +187,7 @@ const CurrentTrack = () => {
         <>
           <p className="truncate text-sm font-semibold">{currentTrack.title}</p>
           <p className="truncate text-sm text-muted-foreground">
-            {[
-              currentTrack.displayArtist ?? currentTrack.artist ?? "Unknown artist",
-              currentTrack.album,
-            ]
+            {[currentTrack.displayArtist ?? currentTrack.artist ?? "Unknown artist", currentTrack.album]
               .filter((value): value is string => Boolean(value))
               .join(" • ")}
           </p>

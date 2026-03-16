@@ -64,12 +64,7 @@ function normalizeGenreValue(value: unknown): string {
     return value;
   }
 
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof value.name === "string"
-  ) {
+  if (typeof value === "object" && value !== null && "name" in value && typeof value.name === "string") {
     return value.name;
   }
 
@@ -192,11 +187,7 @@ function persistAlbumRows(tx: SyncTransaction, album: AlbumID3, resetExistingRow
   }
 }
 
-function persistSongRows(
-  tx: SyncTransaction,
-  album: AlbumWithSongsID3,
-  resetExistingRows: boolean,
-): void {
+function persistSongRows(tx: SyncTransaction, album: AlbumWithSongsID3, resetExistingRows: boolean): void {
   if (resetExistingRows) {
     tx.delete(songsTable).where(eq(songsTable.albumId, album.id)).run();
   }
@@ -351,10 +342,7 @@ function persistSongRows(
   }
 }
 
-async function fetchAlbumDetailWithRetry(
-  api: SubsonicAPI,
-  album: AlbumID3,
-): Promise<AlbumWithSongsID3> {
+async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: AlbumID3): Promise<AlbumWithSongsID3> {
   let lastCause: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -369,11 +357,7 @@ async function fetchAlbumDetailWithRetry(
   throw lastCause ?? new Error(`Fetching album detail failed for ${album.id}`);
 }
 
-async function fetchAlbumDetails(
-  api: SubsonicAPI,
-  albums: AlbumID3[],
-  coverArtDir: string,
-): Promise<SyncedAlbum[]> {
+async function fetchAlbumDetails(api: SubsonicAPI, albums: AlbumID3[], coverArtDir: string): Promise<SyncedAlbum[]> {
   const detailedAlbums: SyncedAlbum[] = [];
   let nextIndex = 0;
 
@@ -402,10 +386,7 @@ async function fetchAlbumDetails(
   return detailedAlbums;
 }
 
-async function persistPage(
-  db: AnyDrizzleDb,
-  albums: SyncedAlbum[],
-): Promise<{ inserted: number; updated: number }> {
+async function persistPage(db: AnyDrizzleDb, albums: SyncedAlbum[]): Promise<{ inserted: number; updated: number }> {
   let inserted = 0;
   let updated = 0;
   const albumIds = albums.map(({ album }) => album.id);
@@ -432,8 +413,7 @@ async function persistPage(
         inserted += 1;
       }
 
-      const resolvedCoverArtPath =
-        coverArtPath === undefined ? (existingAlbum?.coverArtPath ?? null) : coverArtPath;
+      const resolvedCoverArtPath = coverArtPath === undefined ? (existingAlbum?.coverArtPath ?? null) : coverArtPath;
       const albumRow = toAlbumRow(album, resolvedCoverArtPath);
       tx.insert(albumsTable)
         .values(albumRow)
@@ -452,9 +432,7 @@ async function persistPage(
   return { inserted, updated };
 }
 
-async function deleteMissingAlbums(
-  db: AnyDrizzleDb,
-): Promise<Array<{ id: string; coverArtPath: string | null }>> {
+async function deleteMissingAlbums(db: AnyDrizzleDb): Promise<Array<{ id: string; coverArtPath: string | null }>> {
   const existingIdsSubquery = db.select({ id: syncAlbumIdsTable.id }).from(syncAlbumIdsTable);
   const albumsToDelete = await db
     .select({
@@ -515,9 +493,7 @@ export async function syncAlbums(sm: SyncManager) {
 
   const deletedAlbumRows = await deleteMissingAlbums(sm.db);
   const deleted = deletedAlbumRows.length;
-  await Promise.all(
-    deletedAlbumRows.map((album) => removeAlbumCoverFiles(sm.coverArtDir, album.id)),
-  );
+  await Promise.all(deletedAlbumRows.map((album) => removeAlbumCoverFiles(sm.coverArtDir, album.id)));
   const finishedAt = new Date().toISOString();
   await sm.db.delete(syncAlbumIdsTable);
 

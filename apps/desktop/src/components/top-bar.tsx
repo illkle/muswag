@@ -48,9 +48,7 @@ const ServerInfo = () => {
       </PopoverTrigger>
       <PopoverContent>
         last sync: {userStateQuery.data.lastSync}
-        {syncMutation.isError
-          ? getErrorMessage(syncMutation.error, "The library could not be synced.")
-          : null}
+        {syncMutation.isError ? getErrorMessage(syncMutation.error, "The library could not be synced.") : null}
         <Button onClick={() => syncMutation.mutate()}>Sync</Button>
         <Button onClick={() => logoutMutation.mutate()}>Log out</Button>
       </PopoverContent>

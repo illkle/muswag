@@ -26,33 +26,15 @@ function Sidebar({ className, ...props }: React.ComponentProps<"aside">) {
 }
 
 function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="sidebar-header"
-      className={cn("border-b border-sidebar-border px-5 py-5", className)}
-      {...props}
-    />
-  );
+  return <div data-slot="sidebar-header" className={cn("border-b border-sidebar-border px-5 py-5", className)} {...props} />;
 }
 
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="sidebar-content"
-      className={cn("flex flex-col gap-4 px-4 py-4", className)}
-      {...props}
-    />
-  );
+  return <div data-slot="sidebar-content" className={cn("flex flex-col gap-4 px-4 py-4", className)} {...props} />;
 }
 
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="sidebar-footer"
-      className={cn("mt-auto border-t border-sidebar-border px-4 py-4", className)}
-      {...props}
-    />
-  );
+  return <div data-slot="sidebar-footer" className={cn("mt-auto border-t border-sidebar-border px-4 py-4", className)} {...props} />;
 }
 
 function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {

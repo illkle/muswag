@@ -21,11 +21,7 @@ export async function removeAlbumCoverFiles(coverArtDir: string, albumId: string
   );
 }
 
-async function fetchAlbumCoverArt(
-  api: SubsonicAPI,
-  album: AlbumID3,
-  coverArtDir: string,
-): Promise<string | null> {
+async function fetchAlbumCoverArt(api: SubsonicAPI, album: AlbumID3, coverArtDir: string): Promise<string | null> {
   await mkdir(coverArtDir, { recursive: true });
 
   if (!album.coverArt) {
@@ -51,11 +47,7 @@ async function fetchAlbumCoverArt(
   return outputPath;
 }
 
-export async function fetchAlbumCoverArtWithRetry(
-  api: SubsonicAPI,
-  album: AlbumID3,
-  coverArtDir: string,
-) {
+export async function fetchAlbumCoverArtWithRetry(api: SubsonicAPI, album: AlbumID3, coverArtDir: string) {
   if (!album.coverArt) {
     await removeAlbumCoverFiles(coverArtDir, album.id);
     return null;

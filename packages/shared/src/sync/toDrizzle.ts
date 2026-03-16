@@ -47,10 +47,7 @@ export function toSongRow(album: AlbumWithSongsID3, song: Child): typeof songsTa
   };
 }
 
-export function toAlbumRow(
-  album: AlbumWithSongsID3,
-  coverArtPath: string | null,
-): typeof albumsTable.$inferInsert {
+export function toAlbumRow(album: AlbumWithSongsID3, coverArtPath: string | null): typeof albumsTable.$inferInsert {
   return {
     id: album.id,
     name: album.name,

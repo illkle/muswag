@@ -23,9 +23,7 @@ type MirroredRendererStoreOptions<TState, TSnapshot, TEvent> = {
   subscribe: (listener: (event: TEvent) => void) => () => void;
 };
 
-export function bridgeMainStoreToEvent<TState, TEvent>(
-  options: MainStoreBridgeOptions<TState, TEvent>,
-): () => void {
+export function bridgeMainStoreToEvent<TState, TEvent>(options: MainStoreBridgeOptions<TState, TEvent>): () => void {
   const isEqual = options.isEqual ?? Object.is;
   let previousState = options.store.state;
   let lastEmitAt = 0;
@@ -53,11 +51,7 @@ export function bridgeMainStoreToEvent<TState, TEvent>(
 
     previousState = nextState;
 
-    if (
-      options.throttleMs &&
-      options.shouldThrottle &&
-      options.shouldThrottle(nextState, lastState)
-    ) {
+    if (options.throttleMs && options.shouldThrottle && options.shouldThrottle(nextState, lastState)) {
       const elapsed = Date.now() - lastEmitAt;
       if (elapsed >= options.throttleMs) {
         emit(nextState);
@@ -87,9 +81,7 @@ export function bridgeMainStoreToEvent<TState, TEvent>(
   };
 }
 
-export function createMirroredRendererStore<TState, TSnapshot, TEvent>(
-  options: MirroredRendererStoreOptions<TState, TSnapshot, TEvent>,
-) {
+export function createMirroredRendererStore<TState, TSnapshot, TEvent>(options: MirroredRendererStoreOptions<TState, TSnapshot, TEvent>) {
   const store = createStore(options.defaultState);
 
   void options

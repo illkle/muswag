@@ -11,10 +11,7 @@ export const useContentSize = () => {
   return useContext(AppContentSizeContext);
 };
 
-export const AppContentSizeProvider = ({
-  children,
-  ...props
-}: { children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) => {
+export const AppContentSizeProvider = ({ children, ...props }: { children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   const s = useResizeObserver({

@@ -61,10 +61,7 @@ function RouteComponent() {
           <Alert variant="destructive">
             <AlertTitle>Album unavailable</AlertTitle>
             <AlertDescription>
-              {getErrorMessage(
-                albumQuery.error,
-                "The album details could not be read from the local database.",
-              )}
+              {getErrorMessage(albumQuery.error, "The album details could not be read from the local database.")}
             </AlertDescription>
           </Alert>
         </div>
@@ -81,9 +78,7 @@ function RouteComponent() {
           </div>
           <div className="space-y-1">
             <p className="font-medium">Album not found.</p>
-            <p className="text-sm text-muted-foreground">
-              This album is not currently available in the synced local library.
-            </p>
+            <p className="text-sm text-muted-foreground">This album is not currently available in the synced local library.</p>
           </div>
         </div>
       </section>
@@ -92,13 +87,8 @@ function RouteComponent() {
 
   const { album, artists, discTitles, genres, songs } = albumQuery.data;
   const albumArtists = artists.length > 0 ? artists.map((artist) => artist.name) : [];
-  const headlineArtist =
-    album.displayArtist ??
-    album.artist ??
-    (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
-  const discTitlesByNumber = new Map(
-    discTitles.map((discTitle) => [discTitle.disc, discTitle.title]),
-  );
+  const headlineArtist = album.displayArtist ?? album.artist ?? (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
+  const discTitlesByNumber = new Map(discTitles.map((discTitle) => [discTitle.disc, discTitle.title]));
   const songsByDisc = new Map<number, typeof songs>();
 
   for (const song of songs) {
@@ -155,11 +145,7 @@ function RouteComponent() {
                     <div className="flex items-center justify-between bg-muted/35 px-4 py-2.5">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">Disc {discSection.discNumber}</p>
-                        {discSection.discTitle ? (
-                          <p className="truncate text-sm text-muted-foreground">
-                            {discSection.discTitle}
-                          </p>
-                        ) : null}
+                        {discSection.discTitle ? <p className="truncate text-sm text-muted-foreground">{discSection.discTitle}</p> : null}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {discSection.songs.length} track{discSection.songs.length === 1 ? "" : "s"}
@@ -192,21 +178,11 @@ function RouteComponent() {
                             {isActive ? renderTrackStateIcon(playerStatus) : (song.track ?? "•")}
                           </div>
                           <div className="min-w-0">
-                            <p className={cn("truncate font-medium", isActive && "text-primary")}>
-                              {song.title}
-                            </p>
-                            {song.comment ? (
-                              <p className="truncate text-sm text-muted-foreground">
-                                {song.comment}
-                              </p>
-                            ) : null}
+                            <p className={cn("truncate font-medium", isActive && "text-primary")}>{song.title}</p>
+                            {song.comment ? <p className="truncate text-sm text-muted-foreground">{song.comment}</p> : null}
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {song.displayArtist ?? song.artist ?? "Unknown artist"}
-                          </div>
-                          <div className="text-sm font-medium text-muted-foreground md:text-right">
-                            {formatDuration(song.duration)}
-                          </div>
+                          <div className="text-sm text-muted-foreground">{song.displayArtist ?? song.artist ?? "Unknown artist"}</div>
+                          <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
                         </button>
                       );
                     })}

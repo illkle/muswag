@@ -85,34 +85,18 @@ export function createDefaultPlayerState(): PlayerState {
   };
 }
 
-export function getPlayerCanPlay(
-  queueState: PlayerQueueState,
-  nowPlayingState: PlayerNowPlayingState,
-): boolean {
+export function getPlayerCanPlay(queueState: PlayerQueueState, nowPlayingState: PlayerNowPlayingState): boolean {
   return queueState.currentTrackId !== null && nowPlayingState.status !== "loading";
 }
 
 export function getPlayerCanGoForward(queueState: PlayerQueueState): boolean {
-  return (
-    queueState.currentTrackId !== null &&
-    queueState.currentIndex >= 0 &&
-    queueState.currentIndex < queueState.queue.length - 1
-  );
+  return queueState.currentTrackId !== null && queueState.currentIndex >= 0 && queueState.currentIndex < queueState.queue.length - 1;
 }
 
-export function getPlayerCanGoBack(
-  queueState: PlayerQueueState,
-  nowPlayingState: PlayerNowPlayingState,
-): boolean {
-  return (
-    queueState.currentTrackId !== null &&
-    (queueState.currentIndex > 0 || nowPlayingState.positionSeconds > 0)
-  );
+export function getPlayerCanGoBack(queueState: PlayerQueueState, nowPlayingState: PlayerNowPlayingState): boolean {
+  return queueState.currentTrackId !== null && (queueState.currentIndex > 0 || nowPlayingState.positionSeconds > 0);
 }
 
-export function getPlayerCanSeek(
-  queueState: PlayerQueueState,
-  nowPlayingState: PlayerNowPlayingState,
-): boolean {
+export function getPlayerCanSeek(queueState: PlayerQueueState, nowPlayingState: PlayerNowPlayingState): boolean {
   return queueState.currentTrackId !== null && (nowPlayingState.durationSeconds ?? 0) > 0;
 }

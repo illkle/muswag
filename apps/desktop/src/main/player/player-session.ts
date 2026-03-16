@@ -1,11 +1,7 @@
 import { createStore } from "@tanstack/react-store";
 
 import type { PlayQueueInput, PlayerQueueItem, PlayerState } from "../../shared/player";
-import {
-  createDefaultPlayerMetaState,
-  createDefaultPlayerNowPlayingState,
-  createDefaultPlayerQueueState,
-} from "../../shared/player";
+import { createDefaultPlayerMetaState, createDefaultPlayerNowPlayingState, createDefaultPlayerQueueState } from "../../shared/player";
 
 type MarkTrackLoadingOptions = {
   resumePlayback: boolean;
@@ -155,12 +151,7 @@ export function handlePauseChanged(paused: boolean): void {
   pausedIntent = paused;
   nowPlayingStore.setState((state) => ({
     ...state,
-    status:
-      state.status === "loading" || state.status === "ended"
-        ? state.status
-        : paused
-          ? "paused"
-          : "playing",
+    status: state.status === "loading" || state.status === "ended" ? state.status : paused ? "paused" : "playing",
   }));
 }
 

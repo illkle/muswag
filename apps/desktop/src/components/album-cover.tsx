@@ -1,12 +1,6 @@
 import { startTransition, useEffect, useState } from "react";
 
-export function AlbumCover({
-  coverArtPath,
-  instantLoad = false,
-}: {
-  coverArtPath: string | null;
-  instantLoad?: boolean;
-}) {
+export function AlbumCover({ coverArtPath, instantLoad = false }: { coverArtPath: string | null; instantLoad?: boolean }) {
   const [imageFailed, setImageFailed] = useState(false);
   const coverSrc = coverArtPath ? toCoverArtUrl(coverArtPath) : null;
 

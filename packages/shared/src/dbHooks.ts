@@ -52,12 +52,7 @@ export async function getSongs(db: AnyDrizzleDb, input: GetSongsInput = {}): Pro
   return db
     .select()
     .from(songsTable)
-    .orderBy(
-      asc(songsTable.albumId),
-      asc(songsTable.discNumber),
-      asc(songsTable.track),
-      asc(songsTable.title),
-    );
+    .orderBy(asc(songsTable.albumId), asc(songsTable.discNumber), asc(songsTable.track), asc(songsTable.title));
 }
 
 export async function getSongById(db: AnyDrizzleDb, songId: string): Promise<SongRecord | null> {
@@ -65,10 +60,7 @@ export async function getSongById(db: AnyDrizzleDb, songId: string): Promise<Son
   return rows[0] ?? null;
 }
 
-export async function getAlbumDetail(
-  db: AnyDrizzleDb,
-  albumId: string,
-): Promise<AlbumDetail | null> {
+export async function getAlbumDetail(db: AnyDrizzleDb, albumId: string): Promise<AlbumDetail | null> {
   const albumRows = await db.select().from(albumsTable).where(eq(albumsTable.id, albumId)).limit(1);
   const album = albumRows[0];
 
@@ -76,41 +68,23 @@ export async function getAlbumDetail(
     return null;
   }
 
-  const [recordLabels, genres, artists, releaseTypes, moods, discTitles, songs] = await Promise.all(
-    [
-      db
-        .select()
-        .from(albumRecordLabelsTable)
-        .where(eq(albumRecordLabelsTable.albumId, albumId))
-        .orderBy(asc(albumRecordLabelsTable.position)),
-      db
-        .select()
-        .from(albumGenresTable)
-        .where(eq(albumGenresTable.albumId, albumId))
-        .orderBy(asc(albumGenresTable.position)),
-      db
-        .select()
-        .from(albumArtistsTable)
-        .where(eq(albumArtistsTable.albumId, albumId))
-        .orderBy(asc(albumArtistsTable.position)),
-      db
-        .select()
-        .from(albumReleaseTypesTable)
-        .where(eq(albumReleaseTypesTable.albumId, albumId))
-        .orderBy(asc(albumReleaseTypesTable.position)),
-      db
-        .select()
-        .from(albumMoodsTable)
-        .where(eq(albumMoodsTable.albumId, albumId))
-        .orderBy(asc(albumMoodsTable.position)),
-      db
-        .select()
-        .from(albumDiscTitlesTable)
-        .where(eq(albumDiscTitlesTable.albumId, albumId))
-        .orderBy(asc(albumDiscTitlesTable.position)),
-      getSongs(db, { albumId }),
-    ],
-  );
+  const [recordLabels, genres, artists, releaseTypes, moods, discTitles, songs] = await Promise.all([
+    db
+      .select()
+      .from(albumRecordLabelsTable)
+      .where(eq(albumRecordLabelsTable.albumId, albumId))
+      .orderBy(asc(albumRecordLabelsTable.position)),
+    db.select().from(albumGenresTable).where(eq(albumGenresTable.albumId, albumId)).orderBy(asc(albumGenresTable.position)),
+    db.select().from(albumArtistsTable).where(eq(albumArtistsTable.albumId, albumId)).orderBy(asc(albumArtistsTable.position)),
+    db
+      .select()
+      .from(albumReleaseTypesTable)
+      .where(eq(albumReleaseTypesTable.albumId, albumId))
+      .orderBy(asc(albumReleaseTypesTable.position)),
+    db.select().from(albumMoodsTable).where(eq(albumMoodsTable.albumId, albumId)).orderBy(asc(albumMoodsTable.position)),
+    db.select().from(albumDiscTitlesTable).where(eq(albumDiscTitlesTable.albumId, albumId)).orderBy(asc(albumDiscTitlesTable.position)),
+    getSongs(db, { albumId }),
+  ]);
 
   return {
     album,
@@ -124,9 +98,7 @@ export async function getAlbumDetail(
   };
 }
 
-export async function getUserCredentials() {
-  
-}
+export async function getUserCredentials() {}
 
 export type GetAlbumsResult = Awaited<ReturnType<typeof getAlbums>>;
 export type GetSongsResult = Awaited<ReturnType<typeof getSongs>>;
