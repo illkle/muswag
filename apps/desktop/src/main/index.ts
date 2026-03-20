@@ -10,7 +10,6 @@ import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
 import {
   disposePlayer,
   getDefaultMpvIpcPath,
-  getState,
   initializePlayer,
   next,
   pause,
@@ -22,6 +21,7 @@ import {
   toggle,
 } from "./player/mpv-controller";
 import { closeDb, getDrizzleDb } from "./drizzleSqlite";
+import { getState } from "./player/player-session";
 
 let syncManager: SyncManager | undefined;
 let unsubscribePlayerEvents: (() => void) | undefined;

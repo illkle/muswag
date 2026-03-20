@@ -19,7 +19,6 @@ import {
   clampPosition,
   clearQueue,
   getCurrentQueueItem,
-  getState as getSessionState,
   getStatus,
   handleFileLoaded,
   handlePauseChanged,
@@ -88,10 +87,6 @@ export function disposePlayer(): void {
   disposeMpvIpcClient();
   streamSource = undefined;
   resetPlayerSession();
-}
-
-export function getState(): PlayerState {
-  return getSessionState();
 }
 
 export function subscribe(listener: (event: PlayerEvent) => void): () => void {
@@ -252,48 +247,40 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function handleClientEvent(event: MpvClientEvent): void {
-  if (event.type === "pause-change") {
-    handlePauseChanged(event.paused);
-    return;
-  }
-
-  if (event.type === "time-pos-change") {
-    updatePosition(event.positionSeconds);
-    return;
-  }
-
-  if (event.type === "duration-change") {
-    updateDuration(event.durationSeconds);
-    return;
-  }
-
-  if (event.type === "file-loaded") {
-    handleFileLoaded();
-    return;
-  }
-
-  if (event.type === "end-file") {
-    if (event.reason !== "eof") {
+  switch (event.type) {
+    case "pause-change":
+      handlePauseChanged(event.paused);
       return;
-    }
-
-    void enqueue(async () => {
-      if (advanceToNextTrack({ resumePlayback: true })) {
-        await playCurrentTrack({ resumePlayback: true });
+    case "time-pos-change":
+      updatePosition(event.positionSeconds);
+      return;
+    case "duration-change":
+      updateDuration(event.durationSeconds);
+      return;
+    case "file-loaded":
+      handleFileLoaded();
+      return;
+    case "end-file":
+      if (event.reason !== "eof") {
         return;
       }
 
-      handlePlaybackEnded();
-    });
-    return;
-  }
+      void enqueue(async () => {
+        if (advanceToNextTrack({ resumePlayback: true })) {
+          await playCurrentTrack({ resumePlayback: true });
+          return;
+        }
 
-  if (event.type === "unexpected-exit") {
-    applyError(new Error("mpv exited unexpectedly."));
-    return;
+        handlePlaybackEnded();
+      });
+      return;
+    case "unexpected-exit":
+      applyError(new Error("mpv exited unexpectedly."));
+      return;
+    case "error":
+      applyError(event.cause);
+      return;
   }
-
-  applyError(event.cause);
 }
 
 async function playCurrentTrack(options: { resumePlayback: boolean }): Promise<void> {
