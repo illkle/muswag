@@ -1,20 +1,15 @@
-interface SyncEventStart {
-  type: "start";
-  date: string;
+/**
+ * Generic interface for cover art storage operations.
+ * Implementations handle fetching, caching, and cleanup of album artwork.
+ *
+ * - `fetch` returns the local path to the saved file, `null` if the album has
+ *   no cover art, or `undefined` if the fetch failed (preserves existing cache).
+ * - `remove` deletes any cached cover art for the given album.
+ */
+export interface CoverArtStore {
+  fetch(albumId: string, coverArtId: string | null): Promise<string | null | undefined>;
+  remove(albumId: string): Promise<void>;
 }
-
-interface SyncEventUpdate {
-  type: "update";
-  process: "Albums";
-  count: number;
-}
-
-interface SyncEventEnd {
-  type: "end";
-  date: string;
-}
-
-export type SyncEvent = SyncEventStart | SyncEventEnd | SyncEventUpdate;
 
 export function getAlbumCoverExtension(contentType: string | null): string {
   if (!contentType) {

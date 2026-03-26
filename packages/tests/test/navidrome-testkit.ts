@@ -3,13 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import BetterSqlite3 from "better-sqlite3-test";
+import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 
-import { AnyDrizzleDb, DRIZZLE_MIGRATIONS_PATH, schema } from "@muswag/shared";
+import { createMuswagDb, type MuswagDb } from "@muswag/shared";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 export interface NavidromeConnection {
   baseUrl: string;
@@ -39,14 +37,9 @@ export interface GenerateFakeMp3LibraryOptions {
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "adminpass";
 
-export function createInMemoryDrizzleDb(): AnyDrizzleDb {
+export function createInMemoryDb(): MuswagDb {
   const sqlite = new BetterSqlite3(":memory:");
-  sqlite.pragma("foreign_keys = ON");
-
-  const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: DRIZZLE_MIGRATIONS_PATH });
-
-  return db;
+  return createMuswagDb(sqlite);
 }
 
 export function checkNavidromeDependencies(): NavidromeDependencyStatus {

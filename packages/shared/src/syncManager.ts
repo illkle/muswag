@@ -1,64 +1,30 @@
 import { createHash, randomBytes } from "node:crypto";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { eq } from "drizzle-orm";
 import SubsonicAPI from "subsonic-api";
 
-import type { AnyDrizzleDb } from "./drizzle/schema.js";
-import { userCredentialsTable } from "./drizzle/schema.js";
+import type { MuswagDb } from "./db/database.js";
+import type { SyncRecord, UserCredentials } from "./db/types.js";
 import { syncAlbums } from "./sync/sync-albums.js";
-import type { SyncEvent } from "./sync/utils.js";
+import type { CoverArtStore } from "./sync/utils.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
-export const DRIZZLE_MIGRATIONS_PATH = fileURLToPath(new URL("../drizzle", import.meta.url));
 
-const userStateFromDB = async (db: AnyDrizzleDb) => {
-  return (
-    (await db.query.userCredentials.findFirst({
-      where: eq(userCredentialsTable.id, USER_CREDENTIALS_ROW_ID),
-      columns: {
-        url: true,
-        username: true,
-        password: true,
-        lastSync: true,
-      },
-    })) ?? null
-  );
-};
+export type UserInfo = { url: string; username: string; password: string } | null;
+export type UserCredentialsToLogin = { url: string; username: string; password: string };
+export type SyncInfo = SyncRecord | null;
 
-const storeUserCredentials = async (db: AnyDrizzleDb, credentials: UserStateToLogin) => {
-  await db
-    .insert(userCredentialsTable)
-    .values({
-      id: USER_CREDENTIALS_ROW_ID,
-      url: credentials.url,
+function createApi(credentials: UserCredentialsToLogin) {
+  return new SubsonicAPI({
+    url: credentials.url,
+    auth: {
       username: credentials.username,
       password: credentials.password,
-    })
-    .onConflictDoUpdate({
-      target: userCredentialsTable.id,
-      set: {
-        url: credentials.url,
-        username: credentials.username,
-        password: credentials.password,
-      },
-    });
+    },
+  });
+}
 
-  return { ...credentials, lastSync: null };
-};
-
-const storeLastSync = async (db: AnyDrizzleDb, lastSync: string) => {
-  await db
-    .update(userCredentialsTable)
-    .set({
-      lastSync: lastSync,
-    })
-    .where(eq(userCredentialsTable.id, USER_CREDENTIALS_ROW_ID));
-};
-
-const verifyConnection = async (api: SubsonicAPI) => {
+async function verifyConnection(api: SubsonicAPI) {
   let lastCause: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -71,14 +37,122 @@ const verifyConnection = async (api: SubsonicAPI) => {
   }
 
   throw lastCause ?? new Error("Subsonic connectivity check failed");
-};
+}
 
-export type MaybeUserState = Awaited<ReturnType<typeof userStateFromDB>>;
+// --- Read API ---
 
-export type UserState = NonNullable<MaybeUserState>;
-export type UserStateToLogin = Pick<UserState, "password" | "url" | "username">;
+export function getUserInfo(db: MuswagDb): UserInfo {
+  const row = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
+  if (!row) return null;
+  return {
+    url: row.url,
+    username: row.username,
+    password: row.password,
+  };
+}
 
-export function buildSubsonicStreamUrl(credentials: UserStateToLogin, songId: string): string {
+export function getSyncInfo(db: MuswagDb): SyncInfo {
+  let latest: SyncRecord | null = null;
+  for (const [, record] of db.syncs.entries()) {
+    if (!latest || record.timeStarted > latest.timeStarted) {
+      latest = record;
+    }
+  }
+  return latest;
+}
+
+// --- Hooks ---
+
+export async function login(db: MuswagDb, credentials: UserCredentialsToLogin): Promise<UserInfo> {
+  const api = createApi(credentials);
+  await verifyConnection(api);
+
+  const existing = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
+  const record: UserCredentials = {
+    id: USER_CREDENTIALS_ROW_ID,
+    url: credentials.url,
+    username: credentials.username,
+    password: credentials.password,
+  };
+
+  if (existing) {
+    db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
+  }
+  db.userCredentials.insert(record);
+
+  return { url: credentials.url, username: credentials.username, password: credentials.password };
+}
+
+export async function logout(db: MuswagDb): Promise<null> {
+  const existing = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
+  if (existing) {
+    db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
+  }
+  return null;
+}
+
+export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncRecord> {
+  const user = getUserInfo(db);
+  if (!user) {
+    throw new Error("login() must be called before sync()");
+  }
+
+  const api = createApi(user);
+
+  const syncId = randomBytes(16).toString("hex");
+  const timeStarted = new Date().toISOString();
+
+  const syncRecord: SyncRecord = {
+    id: syncId,
+    timeStarted,
+    timeEnded: null,
+    lastStatus: "running",
+    error: null,
+  };
+  db.syncs.insert(syncRecord);
+
+  try {
+    await syncAlbums({ api, db, coverArt, syncId });
+
+    db.syncs.update(syncId, (draft) => {
+      draft.timeEnded = new Date().toISOString();
+      draft.lastStatus = "completed";
+    });
+
+    return db.syncs.get(syncId)!;
+  } catch (error) {
+    const record = db.syncs.get(syncId);
+    // If timeEnded is already set, this was an abort
+    if (record && record.timeEnded !== null) {
+      return record;
+    }
+
+    db.syncs.update(syncId, (draft) => {
+      draft.timeEnded = new Date().toISOString();
+      draft.lastStatus = "failed";
+      draft.error = error instanceof Error ? error.message : String(error);
+    });
+
+    throw error;
+  }
+}
+
+export function abortSync(db: MuswagDb): void {
+  for (const [, record] of db.syncs.entries()) {
+    if (record.lastStatus === "running") {
+      db.syncs.update(record.id, (draft) => {
+        draft.timeEnded = new Date().toISOString();
+        draft.lastStatus = "aborted";
+      });
+    }
+  }
+}
+
+// --- Helpers ---
+
+export { createCoverArtStore } from "./sync/covers-helper.js";
+
+export function buildSubsonicStreamUrl(credentials: UserCredentialsToLogin, songId: string): string {
   const salt = randomBytes(16).toString("hex");
   const token = createHash("md5").update(`${credentials.password}${salt}`).digest("hex");
   const url = new URL("stream.view", getSubsonicRestBaseUrl(credentials.url));
@@ -91,107 +165,6 @@ export function buildSubsonicStreamUrl(credentials: UserStateToLogin, songId: st
   url.searchParams.set("c", "muswag");
 
   return url.toString();
-}
-
-type SyncManagerListener = (event: SyncEvent) => void;
-
-export class SyncManager {
-  api: SubsonicAPI | undefined;
-  readonly db: AnyDrizzleDb;
-  readonly coverArtDir: string;
-  private listeners: Set<SyncManagerListener>;
-  syncInProgress: boolean;
-
-  constructor(
-    db: AnyDrizzleDb,
-    options: {
-      coverArtDir?: string;
-    } = {},
-  ) {
-    this.db = db;
-    this.coverArtDir = options.coverArtDir ?? join(process.cwd(), ".muswag", "album-covers");
-    this.listeners = new Set();
-    this.syncInProgress = false;
-  }
-
-  subscribe(listener: SyncManagerListener): () => void {
-    this.listeners.add(listener);
-
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  emit(event: SyncEvent): void {
-    for (const listener of [...this.listeners]) {
-      try {
-        listener(event);
-      } catch (cause) {
-        console.error("SyncManager subscriber failed", cause);
-      }
-    }
-  }
-
-  makeApi(credentials: UserStateToLogin) {
-    return new SubsonicAPI({
-      url: credentials.url,
-      auth: {
-        username: credentials.username,
-        password: credentials.password,
-      },
-    });
-  }
-
-  async login(credentials: UserStateToLogin): Promise<UserState> {
-    const api = this.makeApi(credentials);
-
-    await verifyConnection(api);
-
-    this.api = api;
-
-    return storeUserCredentials(this.db, credentials);
-  }
-
-  async logout() {
-    await this.db.delete(userCredentialsTable);
-    return null;
-  }
-
-  async getUserState() {
-    return userStateFromDB(this.db);
-  }
-
-  async sync() {
-    const user = await this.getUserState();
-    if (!user) {
-      throw new Error("SyncManager.login() must be called before sync()");
-    }
-
-    this.api = this.makeApi(user);
-
-    if (this.syncInProgress) {
-      throw new Error("sync running already");
-    }
-
-    this.syncInProgress = true;
-
-    const started = new Date();
-    const startedAt = started.toISOString();
-
-    this.emit({ type: "start", date: startedAt });
-
-    try {
-      const result = await syncAlbums(this);
-      await storeLastSync(this.db, startedAt);
-      return {
-        ...result,
-        startedAt,
-      };
-    } finally {
-      this.syncInProgress = false;
-      this.emit({ type: "end", date: new Date().toISOString() });
-    }
-  }
 }
 
 function getSubsonicRestBaseUrl(baseUrl: string): string {

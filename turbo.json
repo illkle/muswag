@@ -43,7 +43,7 @@
     },
     "test:integration": {
       "dependsOn": [
-        "build"
+        "^build"
       ],
       "outputs": []
     },

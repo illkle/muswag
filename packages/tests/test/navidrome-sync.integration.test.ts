@@ -2,49 +2,13 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { asc, eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
-import { AnyDrizzleDb, SyncManager } from "@muswag/shared";
-import {
-  albumArtistRolesTable,
-  albumArtistsTable,
-  albumDiscTitlesTable,
-  albumGenresTable,
-  albumMoodsTable,
-  albumRecordLabelsTable,
-  albumsTable,
-  albumReleaseTypesTable,
-  songAlbumArtistRolesTable,
-  songAlbumArtistsTable,
-  songArtistRolesTable,
-  songArtistsTable,
-  songContributorsTable,
-  songGenresTable,
-  songMoodsTable,
-  songReplayGainTable,
-  songsTable,
-  syncAlbumIdsTable,
-} from "@muswag/shared";
+import type { Album, MuswagDb, Song } from "@muswag/shared";
+import { createCoverArtStore, getUserInfo, login, stripVirtualProps, sync } from "@muswag/shared";
 import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
-import {
-  checkNavidromeDependencies,
-  createInMemoryDrizzleDb,
-  withNavidromeLibrary,
-} from "./navidrome-testkit.js";
-
-const dependencies = checkNavidromeDependencies();
-if (!dependencies.ready) {
-  console.warn(
-    `Skipping integration tests: ${dependencies.missingDependencies.join(" and ")} unavailable.`,
-  );
-}
-console.info("dependency-check", {
-  dockerAvailable: dependencies.dockerAvailable,
-  ffmpegAvailable: dependencies.ffmpegAvailable,
-});
-
-const describeIfReady = dependencies.ready ? describe : describe.skip;
+import { createInMemoryDb, withNavidromeLibrary } from "./navidrome-testkit.js";
+import { describe } from "node:test";
 
 function countSongsInLibrary(
   albums: ReadonlyArray<{
@@ -84,185 +48,26 @@ function buildExpectedTracks(albums: typeof librarySetA): Array<{
   );
 }
 
-async function readFullState(db: AnyDrizzleDb) {
-  const albums = await db.select().from(albumsTable).orderBy(asc(albumsTable.id));
-  const albumRecordLabels = await db
-    .select()
-    .from(albumRecordLabelsTable)
-    .orderBy(asc(albumRecordLabelsTable.albumId), asc(albumRecordLabelsTable.position));
-  const albumGenres = await db
-    .select()
-    .from(albumGenresTable)
-    .orderBy(asc(albumGenresTable.albumId), asc(albumGenresTable.position));
-  const albumArtists = await db
-    .select()
-    .from(albumArtistsTable)
-    .orderBy(asc(albumArtistsTable.albumId), asc(albumArtistsTable.position));
-  const albumArtistRoles = await db
-    .select()
-    .from(albumArtistRolesTable)
-    .orderBy(
-      asc(albumArtistRolesTable.albumId),
-      asc(albumArtistRolesTable.artistPosition),
-      asc(albumArtistRolesTable.position),
-    );
-  const albumReleaseTypes = await db
-    .select()
-    .from(albumReleaseTypesTable)
-    .orderBy(asc(albumReleaseTypesTable.albumId), asc(albumReleaseTypesTable.position));
-  const albumMoods = await db
-    .select()
-    .from(albumMoodsTable)
-    .orderBy(asc(albumMoodsTable.albumId), asc(albumMoodsTable.position));
-  const albumDiscTitles = await db
-    .select()
-    .from(albumDiscTitlesTable)
-    .orderBy(asc(albumDiscTitlesTable.albumId), asc(albumDiscTitlesTable.position));
-  const songs = await db.select().from(songsTable).orderBy(asc(songsTable.id));
-  const songGenres = await db
-    .select()
-    .from(songGenresTable)
-    .orderBy(asc(songGenresTable.songId), asc(songGenresTable.position));
-  const songArtists = await db
-    .select()
-    .from(songArtistsTable)
-    .orderBy(asc(songArtistsTable.songId), asc(songArtistsTable.position));
-  const songArtistRoles = await db
-    .select()
-    .from(songArtistRolesTable)
-    .orderBy(
-      asc(songArtistRolesTable.songId),
-      asc(songArtistRolesTable.artistPosition),
-      asc(songArtistRolesTable.position),
-    );
-  const songAlbumArtists = await db
-    .select()
-    .from(songAlbumArtistsTable)
-    .orderBy(asc(songAlbumArtistsTable.songId), asc(songAlbumArtistsTable.position));
-  const songAlbumArtistRoles = await db
-    .select()
-    .from(songAlbumArtistRolesTable)
-    .orderBy(
-      asc(songAlbumArtistRolesTable.songId),
-      asc(songAlbumArtistRolesTable.artistPosition),
-      asc(songAlbumArtistRolesTable.position),
-    );
-  const songContributors = await db
-    .select()
-    .from(songContributorsTable)
-    .orderBy(asc(songContributorsTable.songId), asc(songContributorsTable.position));
-  const songMoods = await db
-    .select()
-    .from(songMoodsTable)
-    .orderBy(asc(songMoodsTable.songId), asc(songMoodsTable.position));
-  const songReplayGain = await db
-    .select()
-    .from(songReplayGainTable)
-    .orderBy(asc(songReplayGainTable.songId));
+function readFullState(db: MuswagDb) {
+  const albums: Album[] = [];
+  for (const [, album] of db.albums.entries()) {
+    albums.push(stripVirtualProps(album) as Album);
+  }
+  albums.sort((a, b) => a.id.localeCompare(b.id));
 
-  const syncAlbumIds = await db.select().from(syncAlbumIdsTable).orderBy(asc(syncAlbumIdsTable.id));
+  const songs: Song[] = [];
+  for (const [, song] of db.songs.entries()) {
+    songs.push(stripVirtualProps(song) as Song);
+  }
+  songs.sort((a, b) => a.id.localeCompare(b.id));
 
-  return {
-    albums,
-    albumRecordLabels,
-    albumGenres,
-    albumArtists,
-    albumArtistRoles,
-    albumReleaseTypes,
-    albumMoods,
-    albumDiscTitles,
-    songs,
-    songGenres,
-    songArtists,
-    songArtistRoles,
-    songAlbumArtists,
-    songAlbumArtistRoles,
-    songContributors,
-    songMoods,
-    songReplayGain,
-    syncAlbumIds,
-  };
+  return { albums, songs };
 }
 
-function summarizeState(state: Awaited<ReturnType<typeof readFullState>>) {
-  return {
-    albums: state.albums.length,
-    albumRecordLabels: state.albumRecordLabels.length,
-    albumGenres: state.albumGenres.length,
-    albumArtists: state.albumArtists.length,
-    albumArtistRoles: state.albumArtistRoles.length,
-    albumReleaseTypes: state.albumReleaseTypes.length,
-    albumMoods: state.albumMoods.length,
-    albumDiscTitles: state.albumDiscTitles.length,
-    songs: state.songs.length,
-    songGenres: state.songGenres.length,
-    songArtists: state.songArtists.length,
-    songArtistRoles: state.songArtistRoles.length,
-    songAlbumArtists: state.songAlbumArtists.length,
-    songAlbumArtistRoles: state.songAlbumArtistRoles.length,
-    songContributors: state.songContributors.length,
-    songMoods: state.songMoods.length,
-    songReplayGain: state.songReplayGain.length,
-    syncAlbumIds: state.syncAlbumIds.length,
-  };
-}
-
-function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullState>>): void {
-  const albumIds = new Set(state.albums.map((row) => row.id));
-  const songIds = new Set(state.songs.map((row) => row.id));
-  const artistKeys = new Set(state.albumArtists.map((row) => `${row.albumId}:${row.position}`));
-  const songArtistKeys = new Set(state.songArtists.map((row) => `${row.songId}:${row.position}`));
-  const songAlbumArtistKeys = new Set(
-    state.songAlbumArtists.map((row) => `${row.songId}:${row.position}`),
-  );
-
-  for (const row of state.albumRecordLabels) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumGenres) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumArtists) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumReleaseTypes) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumMoods) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumDiscTitles) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.albumArtistRoles) {
-    expect(artistKeys.has(`${row.albumId}:${row.artistPosition}`)).toBe(true);
-  }
-  for (const row of state.songs) {
-    expect(albumIds.has(row.albumId)).toBe(true);
-  }
-  for (const row of state.songGenres) {
-    expect(songIds.has(row.songId)).toBe(true);
-  }
-  for (const row of state.songArtists) {
-    expect(songIds.has(row.songId)).toBe(true);
-  }
-  for (const row of state.songArtistRoles) {
-    expect(songArtistKeys.has(`${row.songId}:${row.artistPosition}`)).toBe(true);
-  }
-  for (const row of state.songAlbumArtists) {
-    expect(songIds.has(row.songId)).toBe(true);
-  }
-  for (const row of state.songAlbumArtistRoles) {
-    expect(songAlbumArtistKeys.has(`${row.songId}:${row.artistPosition}`)).toBe(true);
-  }
-  for (const row of state.songContributors) {
-    expect(songIds.has(row.songId)).toBe(true);
-  }
-  for (const row of state.songMoods) {
-    expect(songIds.has(row.songId)).toBe(true);
-  }
-  for (const row of state.songReplayGain) {
-    expect(songIds.has(row.songId)).toBe(true);
+function assertNoDanglingRelations(state: ReturnType<typeof readFullState>): void {
+  const albumIds = new Set(state.albums.map((album) => album.id));
+  for (const song of state.songs) {
+    expect(albumIds.has(song.albumId)).toBe(true);
   }
 }
 
@@ -276,38 +81,43 @@ async function withTempCoverArtDir(run: (coverArtDir: string) => Promise<void>):
   }
 }
 
-describeIfReady("navidrome sync integration", () => {
+function coverArtStoreFor(connection: { baseUrl: string; username: string; password: string }, coverArtDir: string) {
+  return createCoverArtStore({ url: connection.baseUrl, username: connection.username, password: connection.password, coverArtDir });
+}
+
+describe("navidrome sync integration", () => {
   it("persists detailed track metadata across song-related tables", async () => {
     console.info("test:start", {
       test: "persists detailed track metadata across song-related tables",
     });
     await withTempCoverArtDir(async (coverArtDir) => {
       await withNavidromeLibrary(librarySetA, async (connection) => {
-        const drizzleDb = createInMemoryDrizzleDb();
-        const consumerDb = new SyncManager(drizzleDb, { coverArtDir });
+        const db = createInMemoryDb();
 
-        await consumerDb.login({
+        await login(db, {
           url: connection.baseUrl,
           username: connection.username,
           password: connection.password,
         });
 
-        const result = await consumerDb.sync();
-        expect(result.fetched).toBe(5);
+        const result = await sync(db, coverArtStoreFor(connection, coverArtDir));
+        expect(result.lastStatus).toBe("completed");
 
-        const state = await readFullState(drizzleDb);
+        const state = readFullState(db);
         const albumById = new Map(state.albums.map((album) => [album.id, album]));
-        const songsByKey = new Map(
-          state.songs.map((song) => [`${song.album}::${song.track ?? -1}::${song.title}`, song]),
-        );
+        const songsByKey = new Map(state.songs.map((song) => [`${song.album}::${song.track ?? -1}::${song.title}`, song]));
         const expectedTracks = buildExpectedTracks(librarySetA);
 
         expect(state.songs).toHaveLength(expectedTracks.length);
-        expect(state.songGenres).toHaveLength(expectedTracks.length);
-        expect(state.songArtists).toHaveLength(expectedTracks.length);
-        expect(state.songAlbumArtists).toHaveLength(expectedTracks.length);
-        expect(state.songContributors).toHaveLength(expectedTracks.length);
-        expect(state.songReplayGain).toHaveLength(expectedTracks.length);
+
+        // Verify each song has genre, artist, album artist, contributor, and replay gain data
+        for (const song of state.songs) {
+          expect(song.genres.length).toBeGreaterThanOrEqual(1);
+          expect(song.artists.length).toBeGreaterThanOrEqual(1);
+          expect(song.albumArtists.length).toBeGreaterThanOrEqual(1);
+          expect(song.contributors.length).toBeGreaterThanOrEqual(1);
+          expect(song.replayGain).toBeDefined();
+        }
 
         for (const album of state.albums) {
           expect(album.coverArt).toBeTruthy();
@@ -318,9 +128,7 @@ describeIfReady("navidrome sync integration", () => {
         }
 
         for (const expectedTrack of expectedTracks) {
-          const song = songsByKey.get(
-            `${expectedTrack.album}::${expectedTrack.track}::${expectedTrack.title}`,
-          );
+          const song = songsByKey.get(`${expectedTrack.album}::${expectedTrack.track}::${expectedTrack.title}`);
 
           expect(song).toBeDefined();
           expect(song).toMatchObject({
@@ -346,31 +154,23 @@ describeIfReady("navidrome sync integration", () => {
             name: expectedTrack.album,
           });
 
-          const songGenres = state.songGenres
-            .filter((row) => row.songId === song!.id)
-            .map((row) => row.value);
+          const songGenres = song!.genres.map((g) => g.value);
           expect(songGenres).toContain(expectedTrack.albumGenre);
 
-          const songArtists = state.songArtists
-            .filter((row) => row.songId === song!.id)
-            .map((row) => row.name);
+          const songArtists = song!.artists.map((a) => a.name);
           expect(songArtists).toContain(expectedTrack.artist);
 
-          const songAlbumArtists = state.songAlbumArtists
-            .filter((row) => row.songId === song!.id)
-            .map((row) => row.name);
+          const songAlbumArtists = song!.albumArtists.map((a) => a.name);
           expect(songAlbumArtists).toContain(expectedTrack.albumArtist);
 
-          const contributors = state.songContributors.filter((row) => row.songId === song!.id);
+          const contributors = song!.contributors;
           expect(contributors).toHaveLength(1);
           expect(contributors[0]).toMatchObject({
             role: "composer",
             artistName: expectedTrack.composer,
           });
 
-          const replayGainRows = state.songReplayGain.filter((row) => row.songId === song!.id);
-          expect(replayGainRows).toHaveLength(1);
-          expect(replayGainRows[0]).toMatchObject({
+          expect(song!.replayGain).toMatchObject({
             trackGain: null,
             albumGain: null,
             trackPeak: null,
@@ -382,14 +182,9 @@ describeIfReady("navidrome sync integration", () => {
 
         const compilationTracks = state.songs.filter((song) => song.album === "Summer Sampler");
         expect(compilationTracks).toHaveLength(2);
-        expect(compilationTracks.map((song) => song.artist).sort()).toEqual([
-          "June Pixel",
-          "Mira Holt",
-        ]);
+        expect(compilationTracks.map((song) => song.artist).sort()).toEqual(["June Pixel", "Mira Holt"]);
         for (const compilationTrack of compilationTracks) {
-          const songAlbumArtists = state.songAlbumArtists
-            .filter((row) => row.songId === compilationTrack.id)
-            .map((row) => row.name);
+          const songAlbumArtists = compilationTrack.albumArtists.map((a) => a.name);
           expect(songAlbumArtists).toEqual(["Various Artists"]);
         }
       });
@@ -405,33 +200,24 @@ describeIfReady("navidrome sync integration", () => {
     });
     await withTempCoverArtDir(async (coverArtDir) => {
       await withNavidromeLibrary(librarySetA, async (connection) => {
-        const drizzleDb = createInMemoryDrizzleDb();
-        const consumerDb = new SyncManager(drizzleDb, { coverArtDir });
+        const db = createInMemoryDb();
 
         console.info("consumer:login:first", { baseUrl: connection.baseUrl });
-        await consumerDb.login({
+        await login(db, {
           url: connection.baseUrl,
           username: connection.username,
           password: connection.password,
         });
 
-        const first = await consumerDb.sync();
+        const first = await sync(db, coverArtStoreFor(connection, coverArtDir));
         console.info("consumer:sync:first:result", {
-          fetched: first.fetched,
-          inserted: first.inserted,
-          updated: first.updated,
-          deleted: first.deleted,
+          status: first.lastStatus,
         });
-        expect(first.fetched).toBe(5);
-        expect(first.inserted).toBe(5);
-        expect(first.updated).toBe(0);
-        expect(first.deleted).toBe(0);
+        expect(first.lastStatus).toBe("completed");
 
-        const firstState = await readFullState(drizzleDb);
-        console.info("state:first:summary", summarizeState(firstState));
+        const firstState = readFullState(db);
         expect(firstState.albums).toHaveLength(5);
         expect(firstState.songs).toHaveLength(countSongsInLibrary(librarySetA));
-        expect(firstState.syncAlbumIds).toHaveLength(0);
         assertNoDanglingRelations(firstState);
 
         const firstCoverSnapshots = await Promise.all(
@@ -442,44 +228,33 @@ describeIfReady("navidrome sync integration", () => {
           })),
         );
 
-        const u = await consumerDb.getUserState();
-        expect(u?.lastSync).toBeDefined();
-        expect(u?.lastSync?.length).toBeGreaterThan(0);
+        const u = getUserInfo(db);
+        expect(u).toBeTruthy();
 
-        const second = await consumerDb.sync();
+        const second = await sync(db, coverArtStoreFor(connection, coverArtDir));
         console.info("consumer:sync:second:result", {
-          fetched: second.fetched,
-          inserted: second.inserted,
-          updated: second.updated,
-          deleted: second.deleted,
+          status: second.lastStatus,
         });
-        expect(second.fetched).toBe(5);
-        expect(second.inserted).toBe(0);
-        expect(second.updated).toBe(5);
-        expect(second.deleted).toBe(0);
+        expect(second.lastStatus).toBe("completed");
 
-        const secondState = await readFullState(drizzleDb);
-        console.info("state:second:summary", summarizeState(secondState));
-        expect(secondState.syncAlbumIds).toHaveLength(0);
+        const secondState = readFullState(db);
         assertNoDanglingRelations(secondState);
 
-        expect(secondState.albums).toEqual(firstState.albums);
-        expect(secondState.albumRecordLabels).toEqual(firstState.albumRecordLabels);
-        expect(secondState.albumGenres).toEqual(firstState.albumGenres);
-        expect(secondState.albumArtists).toEqual(firstState.albumArtists);
-        expect(secondState.albumArtistRoles).toEqual(firstState.albumArtistRoles);
-        expect(secondState.albumReleaseTypes).toEqual(firstState.albumReleaseTypes);
-        expect(secondState.albumMoods).toEqual(firstState.albumMoods);
-        expect(secondState.albumDiscTitles).toEqual(firstState.albumDiscTitles);
-        expect(secondState.songs).toEqual(firstState.songs);
-        expect(secondState.songGenres).toEqual(firstState.songGenres);
-        expect(secondState.songArtists).toEqual(firstState.songArtists);
-        expect(secondState.songArtistRoles).toEqual(firstState.songArtistRoles);
-        expect(secondState.songAlbumArtists).toEqual(firstState.songAlbumArtists);
-        expect(secondState.songAlbumArtistRoles).toEqual(firstState.songAlbumArtistRoles);
-        expect(secondState.songContributors).toEqual(firstState.songContributors);
-        expect(secondState.songMoods).toEqual(firstState.songMoods);
-        expect(secondState.songReplayGain).toEqual(firstState.songReplayGain);
+        // Verify idempotency: all albums and songs should be structurally identical
+        expect(secondState.albums).toHaveLength(firstState.albums.length);
+        expect(secondState.songs).toHaveLength(firstState.songs.length);
+
+        for (const firstAlbum of firstState.albums) {
+          const secondAlbum = secondState.albums.find((a) => a.id === firstAlbum.id);
+          expect(secondAlbum).toBeDefined();
+          expect(secondAlbum).toEqual(firstAlbum);
+        }
+
+        for (const firstSong of firstState.songs) {
+          const secondSong = secondState.songs.find((s) => s.id === firstSong.id);
+          expect(secondSong).toBeDefined();
+          expect(secondSong).toEqual(firstSong);
+        }
 
         await Promise.all(
           firstCoverSnapshots.map(async ({ id, coverArtPath, coverBytes }) => {
@@ -490,9 +265,8 @@ describeIfReady("navidrome sync integration", () => {
           }),
         );
 
-        const u2 = await consumerDb.getUserState();
-        expect(u2?.lastSync).toBeDefined();
-        expect(u2?.lastSync?.length).toBeGreaterThan(0);
+        const u2 = getUserInfo(db);
+        expect(u2).toBeTruthy();
       });
     });
     console.info("test:done", {
@@ -504,60 +278,45 @@ describeIfReady("navidrome sync integration", () => {
     console.info("test:start", {
       test: "reconciles album deletions when server library changes",
     });
-    const drizzleDb = createInMemoryDrizzleDb();
+    const db = createInMemoryDb();
     await withTempCoverArtDir(async (coverArtDir) => {
-      const consumerDb = new SyncManager(drizzleDb, { coverArtDir });
-
       await withNavidromeLibrary(librarySetA, async (connectionA) => {
         console.info("consumer:login:library-a", { baseUrl: connectionA.baseUrl });
-        await consumerDb.login({
+        await login(db, {
           url: connectionA.baseUrl,
           username: connectionA.username,
           password: connectionA.password,
         });
-        const resultA = await consumerDb.sync();
+        const resultA = await sync(db, coverArtStoreFor(connectionA, coverArtDir));
         console.info("consumer:sync:library-a:result", {
-          fetched: resultA.fetched,
-          inserted: resultA.inserted,
-          updated: resultA.updated,
-          deleted: resultA.deleted,
+          status: resultA.lastStatus,
         });
-        expect(resultA.fetched).toBe(5);
-        expect(resultA.deleted).toBe(0);
+        expect(resultA.lastStatus).toBe("completed");
       });
 
-      const beforeState = await readFullState(drizzleDb);
-      console.info("state:before:summary", summarizeState(beforeState));
+      const beforeState = readFullState(db);
       const beforeIds = new Set(beforeState.albums.map((album) => album.id));
-      const removedAlbumCoverPaths = new Map(
-        beforeState.albums.map((album) => [album.id, album.coverArtPath]),
-      );
+      const removedAlbumCoverPaths = new Map(beforeState.albums.map((album) => [album.id, album.coverArtPath]));
 
       await withNavidromeLibrary(librarySetB, async (connectionB) => {
         console.info("consumer:login:library-b", { baseUrl: connectionB.baseUrl });
-        await consumerDb.login({
+        await login(db, {
           url: connectionB.baseUrl,
           username: connectionB.username,
           password: connectionB.password,
         });
-        const resultB = await consumerDb.sync();
+        const resultB = await sync(db, coverArtStoreFor(connectionB, coverArtDir));
         console.info("consumer:sync:library-b:result", {
-          fetched: resultB.fetched,
-          inserted: resultB.inserted,
-          updated: resultB.updated,
-          deleted: resultB.deleted,
+          status: resultB.lastStatus,
         });
-        expect(resultB.fetched).toBe(5);
-        expect(resultB.deleted).toBeGreaterThan(0);
+        expect(resultB.lastStatus).toBe("completed");
       });
 
-      const afterState = await readFullState(drizzleDb);
-      console.info("state:after:summary", summarizeState(afterState));
+      const afterState = readFullState(db);
       const afterIds = new Set(afterState.albums.map((album) => album.id));
 
       expect(afterState.albums).toHaveLength(5);
       expect(afterState.songs).toHaveLength(countSongsInLibrary(librarySetB));
-      expect(afterState.syncAlbumIds).toHaveLength(0);
       assertNoDanglingRelations(afterState);
 
       const hasNewAlbumIds = [...afterIds].some((id) => !beforeIds.has(id));
@@ -573,73 +332,13 @@ describeIfReady("navidrome sync integration", () => {
         expect(removedCoverArtPath).toBeTruthy();
         await expect(access(removedCoverArtPath!)).rejects.toThrow();
 
-        const childLabels = afterState.albumRecordLabels.filter(
-          (row) => row.albumId === beforeAlbum.id,
-        );
-        const childGenres = afterState.albumGenres.filter((row) => row.albumId === beforeAlbum.id);
-        const childArtists = afterState.albumArtists.filter(
-          (row) => row.albumId === beforeAlbum.id,
-        );
-        const childRoles = afterState.albumArtistRoles.filter(
-          (row) => row.albumId === beforeAlbum.id,
-        );
-        const childReleaseTypes = afterState.albumReleaseTypes.filter(
-          (row) => row.albumId === beforeAlbum.id,
-        );
-        const childMoods = afterState.albumMoods.filter((row) => row.albumId === beforeAlbum.id);
-        const childDiscTitles = afterState.albumDiscTitles.filter(
-          (row) => row.albumId === beforeAlbum.id,
-        );
-        const childSongs = afterState.songs.filter((row) => row.albumId === beforeAlbum.id);
-        const removedSongIds = beforeState.songs
-          .filter((row) => row.albumId === beforeAlbum.id)
-          .map((row) => row.id);
-        const childSongGenres = afterState.songGenres.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongArtists = afterState.songArtists.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongArtistRoles = afterState.songArtistRoles.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongAlbumArtists = afterState.songAlbumArtists.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongAlbumArtistRoles = afterState.songAlbumArtistRoles.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongContributors = afterState.songContributors.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongMoods = afterState.songMoods.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-        const childSongReplayGain = afterState.songReplayGain.filter((row) =>
-          removedSongIds.includes(row.songId),
-        );
-
-        expect(childLabels).toHaveLength(0);
-        expect(childGenres).toHaveLength(0);
-        expect(childArtists).toHaveLength(0);
-        expect(childRoles).toHaveLength(0);
-        expect(childReleaseTypes).toHaveLength(0);
-        expect(childMoods).toHaveLength(0);
-        expect(childDiscTitles).toHaveLength(0);
-        expect(childSongs).toHaveLength(0);
-        expect(childSongGenres).toHaveLength(0);
-        expect(childSongArtists).toHaveLength(0);
-        expect(childSongArtistRoles).toHaveLength(0);
-        expect(childSongAlbumArtists).toHaveLength(0);
-        expect(childSongAlbumArtistRoles).toHaveLength(0);
-        expect(childSongContributors).toHaveLength(0);
-        expect(childSongMoods).toHaveLength(0);
-        expect(childSongReplayGain).toHaveLength(0);
+        // Verify all songs for this album were deleted
+        const orphanedSongs = afterState.songs.filter((song) => song.albumId === beforeAlbum.id);
+        expect(orphanedSongs).toHaveLength(0);
       }
 
-      const u = await consumerDb.getUserState();
-      expect(u?.lastSync).toBeDefined();
-      expect(u?.lastSync?.length).toBeGreaterThan(1);
+      const u = getUserInfo(db);
+      expect(u).toBeTruthy();
       console.info("test:done", {
         test: "reconciles album deletions when server library changes",
       });

@@ -26,12 +26,27 @@ vi.mock("subsonic-api", () => ({
   },
 }));
 
-import { SyncEvent, SyncManager, userCredentialsTable } from "@muswag/shared";
-import { createInMemoryDrizzleDb } from "test/navidrome-testkit";
+import {
+  createCoverArtStore,
+  getUserInfo,
+  getSyncInfo,
+  login,
+  logout,
+  sync,
+} from "@muswag/shared";
+import type { CoverArtStore } from "@muswag/shared";
+import { createInMemoryDb } from "test/navidrome-testkit";
 
 const TEST_COVER_ART_DIR = path.join(tmpdir(), "muswag-sync-manager-test-covers");
 
-describe("SyncManager", () => {
+const noopCoverArt: CoverArtStore = {
+  async fetch() {
+    return null;
+  },
+  async remove() {},
+};
+
+describe("sync hooks", () => {
   beforeEach(() => {
     pingMock.mockClear();
     pingMock.mockResolvedValue(undefined);
@@ -39,97 +54,73 @@ describe("SyncManager", () => {
     getAlbumList2Mock.mockResolvedValue({ albumList2: { album: [] } });
   });
 
-  it("persists login state in the database and emits user updates", async () => {
-    const db = createInMemoryDrizzleDb();
-    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
-    const events: SyncEvent[] = [];
+  it("persists login state in the database", async () => {
+    const db = createInMemoryDb();
     const credentials = {
       url: "https://demo.navidrome.org",
       username: "alice",
       password: "secret",
     };
 
-    manager.subscribe((event) => {
-      events.push(event);
-    });
+    expect(getUserInfo(db)).toBeNull();
 
-    await expect(manager.getUserState()).resolves.toBeNull();
-
-    await expect(manager.login(credentials)).resolves.toEqual({
+    await expect(login(db, credentials)).resolves.toEqual({
       url: credentials.url,
       username: credentials.username,
       password: credentials.password,
-      lastSync: null,
     });
 
-    await expect(manager.getUserState()).resolves.toEqual({
+    expect(getUserInfo(db)).toEqual({
       url: credentials.url,
       username: credentials.username,
       password: credentials.password,
-      lastSync: null,
     });
 
-    const storedCredentials = await db.select().from(userCredentialsTable);
-    expect(storedCredentials).toEqual([
-      {
-        id: 1,
-        lastSync: null,
-        url: credentials.url,
-        username: credentials.username,
-        password: credentials.password,
-      },
-    ]);
+    const storedCredentials = db.userCredentials.get(1);
+    expect(storedCredentials).toMatchObject({
+      id: 1,
+      url: credentials.url,
+      username: credentials.username,
+      password: credentials.password,
+    });
 
-    await expect(manager.logout()).resolves.toBeNull();
-    await expect(manager.getUserState()).resolves.toBeNull();
-    await expect(db.select().from(userCredentialsTable)).resolves.toEqual([]);
-
-    expect(events).toEqual([]);
+    await expect(logout(db)).resolves.toBeNull();
+    expect(getUserInfo(db)).toBeNull();
+    expect(db.userCredentials.has(1)).toBe(false);
   });
 
-  it("syncs after login and emits a sync progress event", async () => {
-    const db = createInMemoryDrizzleDb();
-    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
-    const events: SyncEvent[] = [];
+  it("syncs after login and records sync in db", async () => {
+    const db = createInMemoryDb();
     const credentials = {
       url: "https://demo.navidrome.org",
       username: "alice",
       password: "secret",
     };
 
-    await manager.login(credentials);
+    await login(db, credentials);
 
-    manager.subscribe((event) => {
-      events.push(event);
-    });
-
-    const result = await manager.sync();
+    const result = await sync(db, noopCoverArt);
 
     expect(result).toMatchObject({
-      fetched: 0,
-      inserted: 0,
-      updated: 0,
-      deleted: 0,
-      pages: 1,
+      lastStatus: "completed",
     });
-    expect(Number.isNaN(Date.parse(result.startedAt))).toBe(false);
-    expect(Number.isNaN(Date.parse(result.finishedAt))).toBe(false);
+    expect(result.timeStarted).toBeTruthy();
+    expect(result.timeEnded).toBeTruthy();
+    expect(result.error).toBeNull();
+    expect(Number.isNaN(Date.parse(result.timeStarted))).toBe(false);
+    expect(Number.isNaN(Date.parse(result.timeEnded!))).toBe(false);
 
-    expect(events).toHaveLength(3);
-    expect(events[0]).toMatchObject({ type: "start" });
-    expect(events[1]).toEqual({ type: "update", process: "Albums", count: 0 });
-    expect(events[2]).toMatchObject({ type: "end" });
-
-    const u = await manager.getUserState();
-    expect(u?.lastSync).toEqual(result.startedAt);
+    const syncInfo = getSyncInfo(db);
+    expect(syncInfo).toBeTruthy();
+    expect(syncInfo!.lastStatus).toBe("completed");
+    expect(syncInfo!.timeStarted).toBe(result.timeStarted);
   });
 
   it("rejects sync when no user is logged in", async () => {
-    const db = createInMemoryDrizzleDb();
-    const manager = new SyncManager(db, { coverArtDir: TEST_COVER_ART_DIR });
+    const db = createInMemoryDb();
 
-    await expect(manager.sync()).rejects.toThrow(
-      "SyncManager.login() must be called before sync()",
+    await expect(sync(db, noopCoverArt)).rejects.toThrow(
+      "login() must be called before sync()",
     );
     expect(getAlbumList2Mock).not.toHaveBeenCalled();
   });
