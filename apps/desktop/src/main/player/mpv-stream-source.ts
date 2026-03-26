@@ -1,7 +1,5 @@
-import { buildSubsonicStreamUrl, userCredentialsTable } from "@muswag/shared";
+import { buildSubsonicStreamUrl } from "@muswag/shared";
 import { eq } from "drizzle-orm";
-
-import type { DB_E } from "../drizzleSqlite";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 

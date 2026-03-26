@@ -4,9 +4,8 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import { SyncManager, getAlbumDetail, getAlbums, getSongById, getSongs } from "@muswag/shared";
-
-import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
+import Database from "better-sqlite3";
+import type { MuswagRendererIpc } from "../shared/ipc";
 import {
   disposePlayer,
   getDefaultMpvIpcPath,
@@ -20,10 +19,18 @@ import {
   subscribe,
   toggle,
 } from "./player/mpv-controller";
-import { closeDb, getDrizzleDb } from "./drizzleSqlite";
 import { getState } from "./player/player-session";
+import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
+import { exposeElectronSQLitePersistence } from "@tanstack/electron-db-sqlite-persistence/main";
 
-let syncManager: SyncManager | undefined;
+const dbP = join(app.getPath("userData"), "muswag.db");
+
+const database = new Database(dbP);
+
+const persistence = createNodeSQLitePersistence({
+  database,
+});
+
 let unsubscribePlayerEvents: (() => void) | undefined;
 
 protocol.registerSchemesAsPrivileged([
@@ -38,18 +45,13 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const mainIpc = new IpcListener<MuswagMainIpc>();
+const mainIpc = new IpcListener();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
-function getCoverArtDirectory(): string {
-  return join(app.getPath("userData"), "album-covers");
-}
-
-function broadcastSyncEvent(event: MuswagRendererIpc["sync:event"][0]): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    rendererIpc.send(window.webContents, "sync:event", event);
-  }
-}
+const dispose = exposeElectronSQLitePersistence({
+  ipcMain: mainIpc,
+  persistence,
+});
 
 function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void {
   console.log("broadcast:renderer", event);
@@ -58,24 +60,8 @@ function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void
   }
 }
 
-function getSyncManager(): SyncManager {
-  if (syncManager) {
-    return syncManager;
-  }
-
-  syncManager = new SyncManager(getDrizzleDb(), {
-    coverArtDir: getCoverArtDirectory(),
-  });
-  syncManager.subscribe((event) => {
-    broadcastSyncEvent(event);
-  });
-
-  return syncManager;
-}
-
 function initializeDesktopPlayer(): void {
   initializePlayer({
-    getDb: getDrizzleDb,
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
   });
@@ -143,10 +129,6 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  mainIpc.handle("db:getAlbumDetail", async (_, albumId: string) => getAlbumDetail(getDrizzleDb(), albumId));
-  mainIpc.handle("db:getAlbums", async () => getAlbums(getDrizzleDb()));
-  mainIpc.handle("db:getSongById", async (_, songId: string) => getSongById(getDrizzleDb(), songId));
-  mainIpc.handle("db:getSongs", async (_, input) => getSongs(getDrizzleDb(), input));
   mainIpc.handle("player:getState", async () => {
     return getState();
   });
@@ -171,10 +153,6 @@ app.whenReady().then(() => {
   mainIpc.handle("player:toggle", async () => {
     await toggle();
   });
-  mainIpc.handle("sync:getUserState", async () => getSyncManager().getUserState());
-  mainIpc.handle("sync:login", async (_, credentials) => getSyncManager().login(credentials));
-  mainIpc.handle("sync:logout", async () => getSyncManager().logout());
-  mainIpc.handle("sync:run", async () => getSyncManager().sync());
 
   initializeDesktopPlayer();
   createWindow();
@@ -195,6 +173,4 @@ app.on("before-quit", () => {
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;
   disposePlayer();
-  syncManager = undefined;
-  closeDb();
 });

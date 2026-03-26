@@ -1,5 +1,4 @@
 import type { PlayQueueInput, PlayerEvent, PlayerNowPlayingState, PlayerQueueState, PlayerState } from "../../shared/player";
-import type { DB_E } from "../drizzleSqlite";
 import { bridgeMainStoreToEvent } from "../../shared/store-sync";
 import {
   disposeMpvIpcClient,
@@ -52,7 +51,7 @@ let metaBridgeDispose: (() => void) | undefined;
 let queueBridgeDispose: (() => void) | undefined;
 let nowPlayingBridgeDispose: (() => void) | undefined;
 
-export function initializePlayer(options: { getDb: () => DB_E; ipcPath: string; mpvBinaryPath: string }): void {
+export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string }): void {
   if (streamSource) {
     return;
   }

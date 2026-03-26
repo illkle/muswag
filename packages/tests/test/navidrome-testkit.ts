@@ -557,26 +557,52 @@ export async function waitForNavidromeScan(
   throw new Error(`Timed out after ${timeoutMs}ms waiting for Navidrome to scan media`);
 }
 
-export async function withNavidromeLibrary(
+export interface TempDir {
+  path: string;
+  cleanup(): Promise<void>;
+}
+
+export async function createTempCoverArtDir(): Promise<TempDir> {
+  const coverArtDir = await mkdtemp(path.join(tmpdir(), "muswag-cover-cache-"));
+  return {
+    path: coverArtDir,
+    cleanup: () => rm(coverArtDir, { recursive: true, force: true }),
+  };
+}
+
+export interface NavidromeTestConnection extends NavidromeConnection {
+  replaceLibrary(albums: AlbumFixture[], options?: NavidromeLibraryOptions): Promise<void>;
+  cleanup(): Promise<void>;
+}
+
+export async function createNavidromeTestConnection(
   albums: AlbumFixture[],
-  callback: (connection: NavidromeConnection) => Promise<void>,
   options: NavidromeLibraryOptions = {},
-): Promise<void> {
-  const { adminTimeoutMs, scanTimeoutMs } = options;
-
-  const hostRoot = await mkdtemp(path.join(tmpdir(), "muswag-navidrome-"));
-  const musicDir = path.join(hostRoot, "music");
-  const dataDir = path.join(hostRoot, "data");
-  console.info("tempdir:create", { hostRoot, musicDir, dataDir });
-
-  await mkdir(musicDir, { recursive: true });
-  await mkdir(dataDir, { recursive: true });
-  console.info("filesystem:init", { musicDir, dataDir });
-  await generateFakeMp3Library(musicDir, albums, options.generation);
-
+): Promise<NavidromeTestConnection> {
   let container: StartedTestContainer | undefined;
+  let hostRoot: string | undefined;
 
-  try {
+  async function startWithLibrary(libraryAlbums: AlbumFixture[], startOptions: NavidromeLibraryOptions = options): Promise<void> {
+    if (container) {
+      await container.stop();
+      console.info("container:stop");
+      container = undefined;
+    }
+    if (hostRoot) {
+      await rm(hostRoot, { recursive: true, force: true });
+      console.info("tempdir:cleanup", { hostRoot });
+    }
+
+    hostRoot = await mkdtemp(path.join(tmpdir(), "muswag-navidrome-"));
+    const musicDir = path.join(hostRoot, "music");
+    const dataDir = path.join(hostRoot, "data");
+    console.info("tempdir:create", { hostRoot, musicDir, dataDir });
+
+    await mkdir(musicDir, { recursive: true });
+    await mkdir(dataDir, { recursive: true });
+    console.info("filesystem:init", { musicDir, dataDir });
+    await generateFakeMp3Library(musicDir, libraryAlbums, startOptions.generation);
+
     console.info("container:start");
     container = await new GenericContainer("deluan/navidrome:latest")
       .withExposedPorts(4533)
@@ -594,31 +620,41 @@ export async function withNavidromeLibrary(
       .withWaitStrategy(Wait.forListeningPorts())
       .start();
 
-    const connection: NavidromeConnection = {
-      baseUrl: `http://${container.getHost()}:${container.getMappedPort(4533)}`,
-      username: ADMIN_USERNAME,
-      password: ADMIN_PASSWORD,
-    };
+    conn.baseUrl = `http://${container.getHost()}:${container.getMappedPort(4533)}`;
     console.info("container:ready", {
-      baseUrl: connection.baseUrl,
+      baseUrl: conn.baseUrl,
       hostRoot,
       musicDir,
       dataDir,
     });
 
-    await createNavidromeAdmin(connection.baseUrl, adminTimeoutMs);
-    await waitForNavidromeScan(connection, albums.length, scanTimeoutMs);
-    console.info("test:callback:start", { baseUrl: connection.baseUrl });
-    await callback(connection);
-    console.info("test:callback:done", { baseUrl: connection.baseUrl });
-  } finally {
-    if (container) {
-      const runningContainer = container;
-      await runningContainer.stop();
-      console.info("container:stop");
-    }
-
-    await rm(hostRoot, { recursive: true, force: true });
-    console.info("tempdir:cleanup", { hostRoot });
+    await createNavidromeAdmin(conn.baseUrl, startOptions.adminTimeoutMs);
+    await waitForNavidromeScan(conn, libraryAlbums.length, startOptions.scanTimeoutMs);
   }
+
+  const conn: NavidromeTestConnection = {
+    baseUrl: "",
+    username: ADMIN_USERNAME,
+    password: ADMIN_PASSWORD,
+
+    async replaceLibrary(newAlbums, replaceOptions) {
+      await startWithLibrary(newAlbums, replaceOptions ? { ...options, ...replaceOptions } : options);
+    },
+
+    async cleanup() {
+      if (container) {
+        await container.stop();
+        console.info("container:stop");
+        container = undefined;
+      }
+      if (hostRoot) {
+        await rm(hostRoot, { recursive: true, force: true });
+        console.info("tempdir:cleanup", { hostRoot });
+        hostRoot = undefined;
+      }
+    },
+  };
+
+  await startWithLibrary(albums);
+  return conn;
 }
