@@ -30,5 +30,6 @@ export type MuswagMainIpc = {
 };
 
 export type MuswagRendererIpc = {
+  'db:reloadAll': [];
   'player:event': [event: PlayerEvent];
 };

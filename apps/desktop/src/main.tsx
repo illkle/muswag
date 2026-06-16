@@ -7,8 +7,14 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { scan } from "react-scan";
+import { reloadAllDbCollections } from "./lib/db-renderer";
+import { DbIPC } from "./lib/ipc";
 scan({
   enabled: true,
+});
+
+DbIPC.onReloadAll(() => {
+  reloadAllDbCollections();
 });
 
 const queryClient = new QueryClient();

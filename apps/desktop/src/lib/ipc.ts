@@ -30,3 +30,10 @@ export const SyncManagerIPC = {
   logout: () => mainIpc.invoke('sync:logout'),
   sync: () => mainIpc.invoke('sync:run'),
 };
+
+export const DbIPC = {
+  onReloadAll: (listener: () => void) =>
+    rendererIpc.on('db:reloadAll', () => {
+      listener();
+    }),
+};

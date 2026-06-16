@@ -12,6 +12,7 @@ const database = new Database(dbP);
 
 const persistence = createNodeSQLitePersistence({
   database,
+  schemaMismatchPolicy: 'sync-present-reset',
 });
 
 export const db = createMuswagDb(persistence);

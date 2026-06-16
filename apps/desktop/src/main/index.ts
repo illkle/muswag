@@ -49,6 +49,12 @@ function broadcastPlayerEvent(
   }
 }
 
+function broadcastDbReloadAll(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    rendererIpc.send(window.webContents, 'db:reloadAll');
+  }
+}
+
 function initializeDesktopPlayer(): void {
   initializePlayer({
     getDb: () => db,
@@ -145,11 +151,15 @@ app.whenReady().then(() => {
   });
   mainIpc.handle('sync:login', async (_, credentials) => {
     await dbReady;
-    return login(db, credentials);
+    const user = await login(db, credentials);
+    broadcastDbReloadAll();
+    return user;
   });
   mainIpc.handle('sync:logout', async () => {
     await dbReady;
-    return logout(db);
+    const result = await logout(db);
+    broadcastDbReloadAll();
+    return result;
   });
   mainIpc.handle('sync:run', async () => {
     await dbReady;
@@ -169,9 +179,14 @@ app.whenReady().then(() => {
         ...user,
         coverArtDir: join(app.getPath('userData'), 'cover-art'),
       }),
-    ).finally(() => {
-      syncInFlight = undefined;
-    });
+    )
+      .then((record) => {
+        broadcastDbReloadAll();
+        return record;
+      })
+      .finally(() => {
+        syncInFlight = undefined;
+      });
 
     return syncInFlight;
   });
