@@ -22,13 +22,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tanstack/db": "^0.6.0",
-    "@tanstack/node-db-sqlite-persistence": "^0.1.4",
+    "@tanstack/db": "^0.6.8",
+    "@tanstack/node-db-sqlite-persistence": "^0.2.0",
+    "@tanstack/react-db": "^0.1.86",
     "subsonic-api": "^3.2.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@muswag/tsconfig": "workspace:*"
+    "@muswag/tsconfig": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13"
   }
 }

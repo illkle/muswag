@@ -1,7 +1,11 @@
-import { createCollection, type Collection } from "@tanstack/db";
-import { createNodeSQLitePersistence, persistedCollectionOptions } from "@tanstack/node-db-sqlite-persistence";
+import { type Collection } from '@tanstack/db';
+import {
+  persistedCollectionOptions,
+  type PersistedCollectionPersistence,
+} from '@tanstack/node-db-sqlite-persistence';
 
-import type { Album, Song, SyncRecord, UserCredentials } from "./types.js";
+import type { Album, Song, SyncRecord, UserCredentials } from './types.js';
+import { createCollection } from '@tanstack/react-db';
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;
@@ -15,12 +19,12 @@ export interface MuswagDb {
   syncs: Collection<SyncRecord, string>;
 }
 
-export function createMuswagDb(database: BetterSqlite3Database): MuswagDb {
-  const persistence = createNodeSQLitePersistence({ database: database as never }) as never;
-
+export function createMuswagDb(
+  persistence: PersistedCollectionPersistence,
+): MuswagDb {
   const albums = createCollection(
     persistedCollectionOptions<Album, string>({
-      id: "albums",
+      id: 'albums',
       getKey: (album) => album.id,
       persistence,
       schemaVersion: 1,
@@ -29,7 +33,7 @@ export function createMuswagDb(database: BetterSqlite3Database): MuswagDb {
 
   const songs = createCollection(
     persistedCollectionOptions<Song, string>({
-      id: "songs",
+      id: 'songs',
       getKey: (song) => song.id,
       persistence,
       schemaVersion: 1,
@@ -38,7 +42,7 @@ export function createMuswagDb(database: BetterSqlite3Database): MuswagDb {
 
   const userCredentials = createCollection(
     persistedCollectionOptions<UserCredentials, number>({
-      id: "userCredentials",
+      id: 'userCredentials',
       getKey: (cred) => cred.id,
       persistence,
       schemaVersion: 2,
@@ -47,7 +51,7 @@ export function createMuswagDb(database: BetterSqlite3Database): MuswagDb {
 
   const syncs = createCollection(
     persistedCollectionOptions<SyncRecord, string>({
-      id: "syncs",
+      id: 'syncs',
       getKey: (sync) => sync.id,
       persistence,
       schemaVersion: 1,

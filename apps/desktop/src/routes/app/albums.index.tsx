@@ -1,17 +1,18 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
-import { albumsQueryOptions, userStateQueryOptions } from "#/lib/app-state";
-import { getErrorMessage } from "#/lib/err";
+
 import type { AlbumRecord } from "@muswag/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";
 import { useContentSize } from "#/components/app-content-size";
 import { AlbumCover } from "#/components/album-cover";
+import { useUser } from "#/lib/queries";
+import { useLiveQuery } from "@tanstack/react-db";
+import { db } from "#/lib/db-renderer";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
@@ -129,7 +130,7 @@ function AlbumList({ albums, scrollId }: { albums: AlbumRecord[]; scrollId: stri
 }
 
 function LibraryScreen() {
-  const albumsQuery = useQuery(albumsQueryOptions);
+  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }));
 
   return (
     <section className="flex h-full w-full flex-col">
@@ -141,7 +142,7 @@ function LibraryScreen() {
         <div className="m-6">
           <Alert variant="destructive">
             <AlertTitle>Albums unavailable</AlertTitle>
-            <AlertDescription>{getErrorMessage(albumsQuery.error, "The local album list could not be read.")}</AlertDescription>
+            <AlertDescription>{"The local album list could not be read."}</AlertDescription>
           </Alert>
         </div>
       ) : null}
@@ -166,7 +167,7 @@ function LibraryScreen() {
 }
 
 function RouteComponent() {
-  const userStateQuery = useQuery(userStateQueryOptions);
+  const userStateQuery = useUser();
 
   if (!userStateQuery.data) {
     return <Navigate to="/" />;

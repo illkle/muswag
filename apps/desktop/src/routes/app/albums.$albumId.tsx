@@ -1,17 +1,17 @@
 import type { SongRecord } from "@muswag/shared";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
-import { albumDetailQueryOptions } from "#/lib/app-state";
 import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
 import { PlayerIPC } from "#/lib/db";
 import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 import { AlbumCover } from "#/components/album-cover";
+import { eq, useLiveQuery } from "@tanstack/react-db";
+import { db } from "#/lib/db-renderer";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -39,12 +39,21 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
-  const albumQuery = useQuery(albumDetailQueryOptions(albumId));
+  const albumQuery = useLiveQuery(
+    (q) =>
+      q
+        .from({ album: db.albums })
+        .where(({ album }) => eq(album.id, albumId))
+        .findOne(),
+    [albumId],
+  );
+
+  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => eq(song.albumId, albumId)), [albumId]);
 
   const currentTrackId = usePlayerCurrentTrackId();
   const playerStatus = usePlayerStatus();
 
-  if (albumQuery.isLoading) {
+  if (albumQuery.isLoading || songsQuery.isLoading) {
     return (
       <section className="flex h-full w-full flex-col">
         <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">
@@ -54,15 +63,13 @@ function RouteComponent() {
     );
   }
 
-  if (albumQuery.isError) {
+  if (albumQuery.isError || songsQuery.isError) {
     return (
       <section className="flex h-full w-full flex-col">
         <div className="m-6">
           <Alert variant="destructive">
             <AlertTitle>Album unavailable</AlertTitle>
-            <AlertDescription>
-              {getErrorMessage(albumQuery.error, "The album details could not be read from the local database.")}
-            </AlertDescription>
+            <AlertDescription>The album details could not be read from the local database.</AlertDescription>
           </Alert>
         </div>
       </section>
@@ -85,7 +92,9 @@ function RouteComponent() {
     );
   }
 
-  const { album, artists, discTitles, genres, songs } = albumQuery.data;
+  const album = albumQuery.data;
+  const { artists, discTitles, genres } = album;
+  const songs = songsQuery.data;
   const albumArtists = artists.length > 0 ? artists.map((artist) => artist.name) : [];
   const headlineArtist = album.displayArtist ?? album.artist ?? (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
   const discTitlesByNumber = new Map(discTitles.map((discTitle) => [discTitle.disc, discTitle.title]));

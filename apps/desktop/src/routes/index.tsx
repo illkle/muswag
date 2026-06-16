@@ -3,11 +3,10 @@ import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import { appQueryKeys, userStateQueryOptions } from "#/lib/app-state";
-import { SyncManagerIPC } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
+import { useUser } from "#/lib/queries";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 
@@ -28,12 +27,9 @@ const defaultCredentials = {
 } satisfies CredentialsForm;
 
 function LoginScreen() {
-  const qc = useQueryClient();
-
   const loginMutation = useMutation({
     mutationFn: async (values: CredentialsForm) => {
       await SyncManagerIPC.login(values);
-      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
     },
   });
 
@@ -142,7 +138,7 @@ function LoginScreen() {
 }
 
 function App() {
-  const userStateQuery = useQuery(userStateQueryOptions);
+  const userStateQuery = useUser();
 
   if (userStateQuery.isLoading) {
     return (

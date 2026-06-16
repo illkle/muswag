@@ -1,11 +1,10 @@
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import { app, BrowserWindow, net, protocol, shell } from "electron";
-import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
-import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import Database from "better-sqlite3";
-import type { MuswagRendererIpc } from "../shared/ipc";
+import { app, BrowserWindow, net, protocol, shell } from 'electron';
+import { IpcEmitter, IpcListener } from '@electron-toolkit/typed-ipc/main';
+import { electronApp, is, optimizer } from '@electron-toolkit/utils';
+import type { MuswagRendererIpc } from '../shared/ipc';
 import {
   disposePlayer,
   getDefaultMpvIpcPath,
@@ -18,24 +17,15 @@ import {
   seek,
   subscribe,
   toggle,
-} from "./player/mpv-controller";
-import { getState } from "./player/player-session";
-import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
-import { exposeElectronSQLitePersistence } from "@tanstack/electron-db-sqlite-persistence/main";
-
-const dbP = join(app.getPath("userData"), "muswag.db");
-
-const database = new Database(dbP);
-
-const persistence = createNodeSQLitePersistence({
-  database,
-});
+} from './player/mpv-controller';
+import { getState } from './player/player-session';
+import { disposeDB } from './db';
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "muswag-cover",
+    scheme: 'muswag-cover',
     privileges: {
       standard: true,
       secure: true,
@@ -48,22 +38,19 @@ protocol.registerSchemesAsPrivileged([
 const mainIpc = new IpcListener();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
-const dispose = exposeElectronSQLitePersistence({
-  ipcMain: mainIpc,
-  persistence,
-});
-
-function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void {
-  console.log("broadcast:renderer", event);
+function broadcastPlayerEvent(
+  event: MuswagRendererIpc['player:event'][0],
+): void {
+  console.log('broadcast:renderer', event);
   for (const window of BrowserWindow.getAllWindows()) {
-    rendererIpc.send(window.webContents, "player:event", event);
+    rendererIpc.send(window.webContents, 'player:event', event);
   }
 }
 
 function initializeDesktopPlayer(): void {
   initializePlayer({
-    ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
-    mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
+    ipcPath: getDefaultMpvIpcPath(app.getPath('temp')),
+    mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? 'mpv',
   });
 
   if (!unsubscribePlayerEvents) {
@@ -81,96 +68,97 @@ function createWindow(): void {
     minWidth: 800,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === "darwin"
+    ...(process.platform === 'darwin'
       ? {
-          titleBarStyle: "hiddenInset" as const,
+          titleBarStyle: 'hiddenInset' as const,
           trafficLightPosition: { x: 14, y: 14 },
         }
       : {}),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
   });
 
-  mainWindow.on("ready-to-show", () => {
+  mainWindow.on('ready-to-show', () => {
     mainWindow.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
-    return { action: "deny" };
+    return { action: 'deny' };
   });
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
     return;
   }
 
-  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId("com.muswag.desktop");
+  electronApp.setAppUserModelId('com.muswag.desktop');
 
-  app.on("browser-window-created", (_, window) => {
+  app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  protocol.handle("muswag-cover", (request) => {
-    const requestedPath = new URL(request.url).searchParams.get("path");
+  protocol.handle('muswag-cover', (request) => {
+    const requestedPath = new URL(request.url).searchParams.get('path');
     if (!requestedPath) {
-      return new Response("Missing path", { status: 400 });
+      return new Response('Missing path', { status: 400 });
     }
 
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  mainIpc.handle("player:getState", async () => {
+  mainIpc.handle('player:getState', async () => {
     return getState();
   });
-  mainIpc.handle("player:next", async () => {
+  mainIpc.handle('player:next', async () => {
     await next();
   });
-  mainIpc.handle("player:pause", async () => {
+  mainIpc.handle('player:pause', async () => {
     await pause();
   });
-  mainIpc.handle("player:play", async () => {
+  mainIpc.handle('player:play', async () => {
     await play();
   });
-  mainIpc.handle("player:playQueue", async (_, input) => {
+  mainIpc.handle('player:playQueue', async (_, input) => {
     await playQueue(input);
   });
-  mainIpc.handle("player:previous", async () => {
+  mainIpc.handle('player:previous', async () => {
     await previous();
   });
-  mainIpc.handle("player:seek", async (_, positionSeconds) => {
+  mainIpc.handle('player:seek', async (_, positionSeconds) => {
     await seek(positionSeconds);
   });
-  mainIpc.handle("player:toggle", async () => {
+  mainIpc.handle('player:toggle', async () => {
     await toggle();
   });
 
   initializeDesktopPlayer();
   createWindow();
 
-  app.on("activate", () => {
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
-app.on("window-all-closed", () => {
+app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+app.on('before-quit', () => {
   mainIpc.dispose();
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;
   disposePlayer();
+  disposeDB();
 });

@@ -1,16 +1,16 @@
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
-import { appQueryKeys, userStateQueryOptions } from "#/lib/app-state";
 import { SyncManagerIPC } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
+import { useUser } from "#/lib/queries";
 import { cn } from "#/lib/utils";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 
 const ServerInfo = () => {
-  const userStateQuery = useQuery(userStateQueryOptions);
+  const userStateQuery = useUser();
 
   const qc = useQueryClient();
   const syncMutation = useMutation({
