@@ -224,6 +224,9 @@ importers:
       '@tanstack/db':
         specifier: ^0.6.8
         version: 0.6.8(typescript@5.9.3)
+      '@tanstack/db-sqlite-persistence-core':
+        specifier: ^0.2.0
+        version: 0.2.0(typescript@5.9.3)
       '@tanstack/node-db-sqlite-persistence':
         specifier: ^0.2.0
         version: 0.2.0(typescript@5.9.3)

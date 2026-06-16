@@ -4,9 +4,9 @@ import type {
   GetSongByIdResult,
   GetSongsInput,
   GetSongsResult,
-  login,
-  logout,
-  sync,
+  SyncRecord,
+  UserCredentialsToLogin,
+  UserInfo,
 } from '@muswag/shared';
 
 import type { PlayQueueInput, PlayerEvent, PlayerState } from './player';
@@ -24,9 +24,9 @@ export type MuswagMainIpc = {
   'player:previous': () => void;
   'player:seek': (positionSeconds: number) => void;
   'player:toggle': () => void;
-  'sync:login': typeof login;
-  'sync:logout': typeof logout;
-  'sync:run': typeof sync;
+  'sync:login': (credentials: UserCredentialsToLogin) => Promise<UserInfo>;
+  'sync:logout': () => Promise<null>;
+  'sync:run': () => Promise<SyncRecord>;
 };
 
 export type MuswagRendererIpc = {

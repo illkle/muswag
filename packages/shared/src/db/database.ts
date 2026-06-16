@@ -2,7 +2,7 @@ import { type Collection } from '@tanstack/db';
 import {
   persistedCollectionOptions,
   type PersistedCollectionPersistence,
-} from '@tanstack/node-db-sqlite-persistence';
+} from '@tanstack/db-sqlite-persistence-core';
 
 import type { Album, Song, SyncRecord, UserCredentials } from './types.js';
 import { createCollection } from '@tanstack/react-db';

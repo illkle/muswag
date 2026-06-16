@@ -2,6 +2,7 @@ import { IpcEmitter, IpcListener } from '@electron-toolkit/typed-ipc/renderer';
 
 import type { MuswagMainIpc, MuswagRendererIpc } from '../shared/ipc';
 import type { PlayQueueInput, PlayerEvent } from '../shared/player';
+import type { UserCredentialsToLogin } from '@muswag/shared';
 
 const mainIpc = new IpcEmitter<MuswagMainIpc>();
 const rendererIpc = new IpcListener<MuswagRendererIpc>();
@@ -24,12 +25,8 @@ export const PlayerIPC = {
 };
 
 export const SyncManagerIPC = {
-  login: (credentials: UserStateToLogin) =>
+  login: (credentials: UserCredentialsToLogin) =>
     mainIpc.invoke('sync:login', credentials),
   logout: () => mainIpc.invoke('sync:logout'),
-  subscribe: (listener: (event: SyncEvent) => void) =>
-    rendererIpc.on('sync:event', (_event, payload) => {
-      listener(payload);
-    }),
   sync: () => mainIpc.invoke('sync:run'),
 };

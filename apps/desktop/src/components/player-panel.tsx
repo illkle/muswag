@@ -1,10 +1,10 @@
 import { LoaderCircle, Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { eq, useLiveQuery } from "@tanstack/react-db";
 
 import { Button } from "#/components/ui/button";
-import { songQueryOptions } from "#/lib/app-state";
 import { PlayerIPC } from "#/lib/db";
+import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 
 import {
@@ -175,10 +175,16 @@ const PlayerSeek = () => {
 
 const CurrentTrack = () => {
   const currentTrackId = usePlayerCurrentTrackId();
-  const currentTrackQuery = useQuery({
-    ...songQueryOptions(currentTrackId ?? "__missing__"),
-    enabled: currentTrackId !== null,
-  });
+  const currentTrackQuery = useLiveQuery(
+    (q) =>
+      currentTrackId
+        ? q
+            .from({ song: db.songs })
+            .where(({ song }) => eq(song.id, currentTrackId))
+            .findOne()
+        : null,
+    [currentTrackId],
+  );
   const currentTrack = currentTrackQuery.data;
 
   return (

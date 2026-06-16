@@ -2,28 +2,22 @@ import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
 import { SyncManagerIPC } from "#/lib/db";
 import { getErrorMessage } from "#/lib/err";
-import { useUser } from "#/lib/queries";
+import { useSyncs, useUser } from "#/lib/queries";
 import { cn } from "#/lib/utils";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 
 const ServerInfo = () => {
   const userStateQuery = useUser();
+  const syncsQuery = useSyncs();
 
-  const qc = useQueryClient();
   const syncMutation = useMutation({
     mutationFn: () => SyncManagerIPC.sync(),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
-    },
   });
   const logoutMutation = useMutation({
     mutationFn: () => SyncManagerIPC.logout(),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: appQueryKeys.userState });
-    },
   });
 
   const hostName = useMemo(() => {
@@ -36,6 +30,15 @@ const ServerInfo = () => {
     return url.hostname;
   }, [userStateQuery.data]);
 
+  const latestSync = useMemo(() => {
+    return (syncsQuery.data ?? []).reduce<(typeof syncsQuery.data)[number] | null>((latest, syncRecord) => {
+      if (!latest || syncRecord.timeStarted > latest.timeStarted) {
+        return syncRecord;
+      }
+      return latest;
+    }, null);
+  }, [syncsQuery.data]);
+
   if (!userStateQuery.data) {
     console.warn("No user data in ServerInfo component");
     return null;
@@ -47,7 +50,7 @@ const ServerInfo = () => {
         {hostName} <ChevronDown size={14} className="" />
       </PopoverTrigger>
       <PopoverContent>
-        last sync: {userStateQuery.data.lastSync}
+        last sync: {latestSync ? `${latestSync.lastStatus} at ${latestSync.timeStarted}` : "never"}
         {syncMutation.isError ? getErrorMessage(syncMutation.error, "The library could not be synced.") : null}
         <Button onClick={() => syncMutation.mutate()}>Sync</Button>
         <Button onClick={() => logoutMutation.mutate()}>Log out</Button>

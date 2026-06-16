@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, net, protocol, shell } from 'electron';
 import { IpcEmitter, IpcListener } from '@electron-toolkit/typed-ipc/main';
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
+import { createCoverArtStore, getUserInfo, login, logout, sync } from '@muswag/shared';
 import type { MuswagRendererIpc } from '../shared/ipc';
 import {
   disposePlayer,
@@ -19,9 +20,10 @@ import {
   toggle,
 } from './player/mpv-controller';
 import { getState } from './player/player-session';
-import { disposeDB } from './db';
+import { db, dbReady, disposeDB } from './db';
 
 let unsubscribePlayerEvents: (() => void) | undefined;
+let syncInFlight: Promise<Awaited<ReturnType<typeof sync>>> | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -49,6 +51,7 @@ function broadcastPlayerEvent(
 
 function initializeDesktopPlayer(): void {
   initializePlayer({
+    getDb: () => db,
     ipcPath: getDefaultMpvIpcPath(app.getPath('temp')),
     mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? 'mpv',
   });
@@ -139,6 +142,38 @@ app.whenReady().then(() => {
   });
   mainIpc.handle('player:toggle', async () => {
     await toggle();
+  });
+  mainIpc.handle('sync:login', async (_, credentials) => {
+    await dbReady;
+    return login(db, credentials);
+  });
+  mainIpc.handle('sync:logout', async () => {
+    await dbReady;
+    return logout(db);
+  });
+  mainIpc.handle('sync:run', async () => {
+    await dbReady;
+
+    if (syncInFlight) {
+      return syncInFlight;
+    }
+
+    const user = getUserInfo(db);
+    if (!user) {
+      throw new Error('You need to log in before syncing.');
+    }
+
+    syncInFlight = sync(
+      db,
+      createCoverArtStore({
+        ...user,
+        coverArtDir: join(app.getPath('userData'), 'cover-art'),
+      }),
+    ).finally(() => {
+      syncInFlight = undefined;
+    });
+
+    return syncInFlight;
   });
 
   initializeDesktopPlayer();

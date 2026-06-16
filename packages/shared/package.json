@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js",
+      "default": "./dist/db/index.js"
     }
   },
   "scripts": {
@@ -23,6 +28,7 @@
   },
   "dependencies": {
     "@tanstack/db": "^0.6.8",
+    "@tanstack/db-sqlite-persistence-core": "^0.2.0",
     "@tanstack/node-db-sqlite-persistence": "^0.2.0",
     "@tanstack/react-db": "^0.1.86",
     "subsonic-api": "^3.2.0",

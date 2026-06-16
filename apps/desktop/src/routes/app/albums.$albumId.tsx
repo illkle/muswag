@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
-import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
 import { PlayerIPC } from "#/lib/db";
 import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
@@ -48,7 +47,7 @@ function RouteComponent() {
     [albumId],
   );
 
-  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => eq(song.albumId, albumId)), [albumId]);
+  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => eq(song.albumId, albumId)).orderBy(q => q.song.track), [albumId]);
 
   const currentTrackId = usePlayerCurrentTrackId();
   const playerStatus = usePlayerStatus();
