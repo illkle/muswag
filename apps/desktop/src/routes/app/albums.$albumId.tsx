@@ -1,4 +1,3 @@
-import type { SongRecord } from "@muswag/shared";
 import { createFileRoute } from "@tanstack/react-router";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import type { ReactNode } from "react";
@@ -7,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 import { cn } from "#/lib/utils";
 import { PlayerIPC } from "#/lib/ipc";
-import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
+import type { PlayerStatus } from "#/shared/player";
 import { AlbumCover } from "#/components/album-cover";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
@@ -120,7 +119,7 @@ function RouteComponent() {
       discTitle: discTitlesByNumber.get(discNumber) ?? null,
       songs: discSongs,
     }));
-  const albumQueue = songs.map(toQueueItem);
+  const albumQueue = songs;
   const queueIndexBySongId = new Map(albumQueue.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres[0]?.value ?? null;
   const albumMeta = formatMetaLine([
@@ -210,20 +209,6 @@ function RouteComponent() {
       </div>
     </section>
   );
-}
-
-function toQueueItem(song: SongRecord): PlayerQueueItem {
-  return {
-    id: song.id,
-    title: song.title,
-    albumId: song.albumId ?? null,
-    album: song.album ?? null,
-    artist: song.artist ?? null,
-    displayArtist: song.displayArtist ?? null,
-    duration: song.duration ?? null,
-    discNumber: song.discNumber ?? null,
-    track: song.track ?? null,
-  };
 }
 
 function renderTrackStateIcon(status: PlayerStatus): ReactNode {
