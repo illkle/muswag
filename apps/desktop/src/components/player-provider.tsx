@@ -1,4 +1,4 @@
-import { PlayerIPC } from "#/lib/db";
+import { PlayerIPC } from "#/lib/ipc";
 import {
   createDefaultPlayerMetaState,
   createDefaultPlayerNowPlayingState,

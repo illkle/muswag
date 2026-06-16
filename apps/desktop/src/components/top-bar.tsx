@@ -1,6 +1,6 @@
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
-import { SyncManagerIPC } from "#/lib/db";
+import { SyncManagerIPC } from "#/lib/ipc";
 import { getErrorMessage } from "#/lib/err";
 import { useSyncs, useUser } from "#/lib/queries";
 import { cn } from "#/lib/utils";

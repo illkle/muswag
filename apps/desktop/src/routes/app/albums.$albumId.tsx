@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 import { cn } from "#/lib/utils";
-import { PlayerIPC } from "#/lib/db";
+import { PlayerIPC } from "#/lib/ipc";
 import type { PlayerQueueItem, PlayerStatus } from "#/shared/player";
 import { AlbumCover } from "#/components/album-cover";
 import { eq, useLiveQuery } from "@tanstack/react-db";
@@ -47,7 +47,14 @@ function RouteComponent() {
     [albumId],
   );
 
-  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => eq(song.albumId, albumId)).orderBy(q => q.song.track), [albumId]);
+  const songsQuery = useLiveQuery(
+    (q) =>
+      q
+        .from({ song: db.songs })
+        .where(({ song }) => eq(song.albumId, albumId))
+        .orderBy((q) => q.song.track),
+    [albumId],
+  );
 
   const currentTrackId = usePlayerCurrentTrackId();
   const playerStatus = usePlayerStatus();
