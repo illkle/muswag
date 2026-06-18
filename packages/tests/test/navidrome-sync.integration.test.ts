@@ -3,8 +3,8 @@ import { describe } from "node:test";
 
 import { expect, it } from "vitest";
 
-import type { Album, MuswagDb, Song } from "@muswag/shared";
-import { createCoverArtStore, getUserInfo, login, stripVirtualProps, sync } from "@muswag/shared";
+import type { MuswagDb } from "@muswag/shared";
+import { createCoverArtStore, getUserInfo, login, sync } from "@muswag/shared";
 import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
 import {
   createInMemoryDb,
@@ -13,6 +13,17 @@ import {
   type NavidromeTestConnection,
   type TempDir,
 } from "./navidrome-testkit.js";
+import { queryOnce } from "@tanstack/db";
+
+export function stripVirtualProps<T extends object>(obj: T): T {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (!key.startsWith("$")) {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}
 
 function countSongsInLibrary(
   albums: ReadonlyArray<{
@@ -52,26 +63,21 @@ function buildExpectedTracks(albums: typeof librarySetA): Array<{
   );
 }
 
-function readFullState(db: MuswagDb) {
-  const albums: Album[] = [];
-  for (const [, album] of db.albums.entries()) {
-    albums.push(stripVirtualProps(album) as Album);
-  }
+async function readFullState(db: MuswagDb) {
+  const albums = await queryOnce((q) => q.from({ albums: db.albums }));
+
   albums.sort((a, b) => a.id.localeCompare(b.id));
 
-  const songs: Song[] = [];
-  for (const [, song] of db.songs.entries()) {
-    songs.push(stripVirtualProps(song) as Song);
-  }
+  const songs = await queryOnce((q) => q.from({ songs: db.songs }));
   songs.sort((a, b) => a.id.localeCompare(b.id));
 
   return { albums, songs };
 }
 
-function assertNoDanglingRelations(state: ReturnType<typeof readFullState>): void {
+function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullState>>): void {
   const albumIds = new Set(state.albums.map((album) => album.id));
   for (const song of state.songs) {
-    expect(albumIds.has(song.albumId)).toBe(true);
+    expect(albumIds.has(song.albumId || "never-never")).toBe(true);
   }
 }
 
@@ -103,7 +109,7 @@ describe("navidrome sync integration", () => {
       const result = await sync(db, coverArtStoreFor(connection, coverArt.path));
       expect(result.lastStatus).toBe("completed");
 
-      const state = readFullState(db);
+      const state = await readFullState(db);
       const albumById = new Map(state.albums.map((album) => [album.id, album]));
       const songsByKey = new Map(state.songs.map((song) => [`${song.album}::${song.track ?? -1}::${song.title}`, song]));
       const expectedTracks = buildExpectedTracks(librarySetA);
@@ -112,16 +118,15 @@ describe("navidrome sync integration", () => {
 
       // Verify each song has genre, artist, album artist, contributor, and replay gain data
       for (const song of state.songs) {
-        expect(song.genres.length).toBeGreaterThanOrEqual(1);
-        expect(song.artists.length).toBeGreaterThanOrEqual(1);
-        expect(song.albumArtists.length).toBeGreaterThanOrEqual(1);
-        expect(song.contributors.length).toBeGreaterThanOrEqual(1);
+        expect(song.genres?.length).toBeGreaterThanOrEqual(1);
+        expect(song.artists?.length).toBeGreaterThanOrEqual(1);
+        expect(song.albumArtists?.length).toBeGreaterThanOrEqual(1);
+        expect(song.contributors?.length).toBeGreaterThanOrEqual(1);
         expect(song.replayGain).toBeDefined();
       }
 
       for (const album of state.albums) {
         expect(album.coverArt).toBeTruthy();
-        expect(album.coverArtPath).toBeTruthy();
         await expect(access(album.coverArtPath!)).resolves.toBeUndefined();
         const coverBytes = await readFile(album.coverArtPath!);
         expect(coverBytes.byteLength).toBeGreaterThan(0);
@@ -131,6 +136,11 @@ describe("navidrome sync integration", () => {
         const song = songsByKey.get(`${expectedTrack.album}::${expectedTrack.track}::${expectedTrack.title}`);
 
         expect(song).toBeDefined();
+
+        if (!song) {
+          continue;
+        }
+
         expect(song).toMatchObject({
           album: expectedTrack.album,
           artist: expectedTrack.artist,
@@ -148,24 +158,22 @@ describe("navidrome sync integration", () => {
         expect(song?.duration).toBeGreaterThan(0);
         expect(song?.contentType).toContain("audio/");
 
-        const album = albumById.get(song!.albumId);
+        const album = albumById.get(song.albumId || "never-never");
         expect(album).toBeDefined();
         expect(album).toMatchObject({
           name: expectedTrack.album,
         });
 
-        const songGenres = song!.genres.map((g) => g.value);
-        expect(songGenres).toContain(expectedTrack.albumGenre);
+        expect(song.genres).toContain(expectedTrack.albumGenre);
 
-        const songArtists = song!.artists.map((a) => a.name);
+        const songArtists = song.artists?.map((a) => a.name);
         expect(songArtists).toContain(expectedTrack.artist);
 
-        const songAlbumArtists = song!.albumArtists.map((a) => a.name);
+        const songAlbumArtists = song.albumArtists?.map((a) => a.name);
         expect(songAlbumArtists).toContain(expectedTrack.albumArtist);
 
-        const contributors = song!.contributors;
-        expect(contributors).toHaveLength(1);
-        expect(contributors[0]).toMatchObject({
+        expect(song.contributors).toHaveLength(1);
+        expect(song.contributors?.[0]).toMatchObject({
           role: "composer",
           artistName: expectedTrack.composer,
         });
@@ -184,7 +192,7 @@ describe("navidrome sync integration", () => {
       expect(compilationTracks).toHaveLength(2);
       expect(compilationTracks.map((song) => song.artist).sort()).toEqual(["June Pixel", "Mira Holt"]);
       for (const compilationTrack of compilationTracks) {
-        const songAlbumArtists = compilationTrack.albumArtists.map((a) => a.name);
+        const songAlbumArtists = compilationTrack.albumArtists?.map((a) => a.name);
         expect(songAlbumArtists).toEqual(["Various Artists"]);
       }
     } finally {
@@ -224,7 +232,7 @@ describe("navidrome sync integration", () => {
       });
       expect(first.lastStatus).toBe("completed");
 
-      const firstState = readFullState(db);
+      const firstState = await readFullState(db);
       expect(firstState.albums).toHaveLength(5);
       expect(firstState.songs).toHaveLength(countSongsInLibrary(librarySetA));
       assertNoDanglingRelations(firstState);
@@ -246,7 +254,7 @@ describe("navidrome sync integration", () => {
       });
       expect(second.lastStatus).toBe("completed");
 
-      const secondState = readFullState(db);
+      const secondState = await readFullState(db);
       assertNoDanglingRelations(secondState);
 
       // Verify idempotency: all albums and songs should be structurally identical
@@ -312,7 +320,7 @@ describe("navidrome sync integration", () => {
       });
       expect(resultA.lastStatus).toBe("completed");
 
-      const beforeState = readFullState(db);
+      const beforeState = await readFullState(db);
       const beforeIds = new Set(beforeState.albums.map((album) => album.id));
       const removedAlbumCoverPaths = new Map(beforeState.albums.map((album) => [album.id, album.coverArtPath]));
 
@@ -331,7 +339,7 @@ describe("navidrome sync integration", () => {
       });
       expect(resultB.lastStatus).toBe("completed");
 
-      const afterState = readFullState(db);
+      const afterState = await readFullState(db);
       const afterIds = new Set(afterState.albums.map((album) => album.id));
 
       expect(afterState.albums).toHaveLength(5);

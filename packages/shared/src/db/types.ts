@@ -1,3 +1,22 @@
+export interface UserCredentials {
+  id: number;
+  url: string;
+  username: string;
+  password: string;
+}
+
+export type SyncStatus = "running" | "completed" | "failed" | "aborted";
+
+export interface SyncRecord {
+  id: string;
+  timeStarted: string;
+  timeEnded: string | null;
+  lastStatus: SyncStatus;
+  error: string | null;
+}
+
+/*
+
 export type ItemDate = {
   year?: number | undefined;
   month?: number | undefined;
@@ -37,11 +56,14 @@ export interface ReplayGainInfo {
   baseGain: number | null;
   fallbackGain: number | null;
 }
+*/
 
 /**
  * Denormalized album record stored in the albums collection.
  * Contains all nested metadata that was previously in separate relational tables.
  */
+
+/*
 export interface Album {
   id: string;
   name: string;
@@ -74,10 +96,14 @@ export interface Album {
   discTitles: Array<{ disc: number; title: string }>;
 }
 
+*/
+
 /**
  * Denormalized song record stored in the songs collection.
  * Contains all nested metadata that was previously in separate relational tables.
  */
+
+/*
 export interface Song {
   id: string;
   album: string;
@@ -126,36 +152,21 @@ export interface Song {
   moods: Array<{ value: string }>;
   replayGain: ReplayGainInfo | null;
 }
-
-export interface UserCredentials {
-  id: number;
-  url: string;
-  username: string;
-  password: string;
-}
-
-export type SyncStatus = "running" | "completed" | "failed" | "aborted";
-
-export interface SyncRecord {
-  id: string;
-  timeStarted: string;
-  timeEnded: string | null;
-  lastStatus: SyncStatus;
-  error: string | null;
-}
+*/
 
 /**
  * Flat album record without nested metadata.
  * Used for backward-compatible API responses (e.g. album list views).
  */
-export type AlbumRecord = Omit<Album, "recordLabels" | "genres" | "artists" | "releaseTypes" | "moods" | "discTitles">;
+//export type AlbumRecord = Omit<Album, "recordLabels" | "genres" | "artists" | "releaseTypes" | "moods" | "discTitles">;
 
 /**
  * Flat song record without nested metadata.
  * Used for backward-compatible API responses (e.g. song list views).
  */
-export type SongRecord = Omit<Song, "genres" | "artists" | "albumArtists" | "contributors" | "moods" | "replayGain">;
+// export type SongRecord = Omit<Song, "genres" | "artists" | "albumArtists" | "contributors" | "moods" | "replayGain">;
 
+/*
 export interface AlbumDetail {
   album: AlbumRecord;
   recordLabels: Array<{ albumId: string; position: number; name: string }>;
@@ -186,3 +197,5 @@ export type GetAlbumsResult = AlbumRecord[];
 export type GetSongsResult = SongRecord[];
 export type GetSongByIdResult = SongRecord | null;
 export type GetAlbumDetailResult = AlbumDetail | null;
+
+*/

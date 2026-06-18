@@ -1,7 +1,6 @@
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "subsonic-api";
 
 import type { MuswagDb } from "../db/database.js";
-import { toAlbumRecord, toSongRecord } from "./toRecord.js";
 import type { CoverArtStore } from "./utils.js";
 
 const ALBUM_PAGE_SIZE = 500;
@@ -115,7 +114,7 @@ function persistPage(
     }
 
     const resolvedCoverArtPath = coverArtPath === undefined ? (existing?.coverArtPath ?? null) : coverArtPath;
-    const albumRecord = toAlbumRecord(album, resolvedCoverArtPath);
+    const albumRecord = { ...album, coverArtPath: resolvedCoverArtPath ?? undefined };
 
     if (exists) {
       db.albums.delete(album.id);
@@ -137,16 +136,19 @@ function persistPage(
 
     const songs = album.song ?? [];
     for (const song of songs) {
-      const songRecord = toSongRecord(album, song);
-      db.songs.insert(songRecord);
+      db.songs.insert(song);
     }
   }
 
   return { inserted, updated };
 }
 
-function deleteMissingAlbums(db: MuswagDb, syncId: string, syncedAlbumIds: Set<string>): Array<{ id: string; coverArtPath: string | null }> {
-  const albumsToDelete: Array<{ id: string; coverArtPath: string | null }> = [];
+function deleteMissingAlbums(
+  db: MuswagDb,
+  syncId: string,
+  syncedAlbumIds: Set<string>,
+): Array<{ id: string; coverArtPath: string | undefined }> {
+  const albumsToDelete: Array<{ id: string; coverArtPath: string | undefined }> = [];
 
   for (const [, album] of db.albums.entries()) {
     if (!syncedAlbumIds.has(album.id)) {
