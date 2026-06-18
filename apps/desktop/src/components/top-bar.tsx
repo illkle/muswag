@@ -1,8 +1,8 @@
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
-import { SyncManagerIPC } from "#/lib/ipc";
 import { getErrorMessage } from "#/lib/err";
 import { useSyncs, useUser } from "#/lib/queries";
+import { SyncManager } from "#/lib/sync-manager";
 import { cn } from "#/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
@@ -14,10 +14,10 @@ const ServerInfo = () => {
   const syncsQuery = useSyncs();
 
   const syncMutation = useMutation({
-    mutationFn: () => SyncManagerIPC.sync(),
+    mutationFn: () => SyncManager.sync(),
   });
   const logoutMutation = useMutation({
-    mutationFn: () => SyncManagerIPC.logout(),
+    mutationFn: () => SyncManager.logout(),
   });
 
   const hostName = useMemo(() => {

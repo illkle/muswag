@@ -1,57 +1,43 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import SubsonicAPI from "subsonic-api";
 
 import type { CoverArtStore } from "./utils.js";
 import { getAlbumCoverExtension } from "./utils.js";
 
-function encodeAlbumCoverFilename(id: string): string {
-  return encodeURIComponent(id);
+export interface CoverArtFileSystem {
+  removeCoverFiles(albumId: string): Promise<void>;
+  writeCoverFile(albumId: string, extension: string, bytes: Uint8Array): Promise<string>;
 }
 
-async function removeAlbumCoverFiles(coverArtDir: string, albumId: string): Promise<void> {
-  await mkdir(coverArtDir, { recursive: true });
-  const filenamePrefix = `${encodeAlbumCoverFilename(albumId)}.`;
-  const entries = await readdir(coverArtDir, { withFileTypes: true });
-
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.startsWith(filenamePrefix))
-      .map((entry) => rm(join(coverArtDir, entry.name), { force: true })),
-  );
-}
-
-async function fetchAlbumCoverArt(api: SubsonicAPI, albumId: string, coverArtId: string, coverArtDir: string): Promise<string | null> {
-  await mkdir(coverArtDir, { recursive: true });
-
+async function fetchAlbumCoverArt(
+  api: SubsonicAPI,
+  albumId: string,
+  coverArtId: string,
+  fileSystem: CoverArtFileSystem,
+): Promise<string | null> {
   const response = await api.getCoverArt({ id: coverArtId, size: 1000 });
   if (!response.ok) {
     throw new Error(`Fetching album cover failed for ${albumId}: HTTP ${response.status}`);
   }
 
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength === 0) {
     throw new Error(`Fetching album cover failed for ${albumId}: empty response body`);
   }
 
   const extension = getAlbumCoverExtension(response.headers.get("content-type"));
-  const outputPath = join(coverArtDir, `${encodeAlbumCoverFilename(albumId)}${extension}`);
-  await removeAlbumCoverFiles(coverArtDir, albumId);
-  await writeFile(outputPath, bytes);
-
-  return outputPath;
+  return fileSystem.writeCoverFile(albumId, extension, bytes);
 }
 
 export interface SubsonicCoverArtStoreOptions {
   url: string;
   username: string;
   password: string;
-  coverArtDir: string;
+  fileSystem: CoverArtFileSystem;
 }
 
 /**
- * Creates a CoverArtStore backed by the filesystem and a Subsonic API connection.
+ * Creates a CoverArtStore backed by injectable cover file operations and a
+ * Subsonic API connection.
  */
 export function createCoverArtStore(options: SubsonicCoverArtStoreOptions): CoverArtStore {
   const api = new SubsonicAPI({
@@ -61,12 +47,12 @@ export function createCoverArtStore(options: SubsonicCoverArtStoreOptions): Cove
       password: options.password,
     },
   });
-  const { coverArtDir } = options;
+  const { fileSystem } = options;
 
   return {
     async fetch(albumId: string, coverArtId: string | null): Promise<string | null | undefined> {
       if (!coverArtId) {
-        await removeAlbumCoverFiles(coverArtDir, albumId);
+        await fileSystem.removeCoverFiles(albumId);
         return null;
       }
 
@@ -74,7 +60,7 @@ export function createCoverArtStore(options: SubsonicCoverArtStoreOptions): Cove
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          return await fetchAlbumCoverArt(api, albumId, coverArtId, coverArtDir);
+          return await fetchAlbumCoverArt(api, albumId, coverArtId, fileSystem);
         } catch (cause) {
           lastCause = cause;
         }
@@ -88,7 +74,7 @@ export function createCoverArtStore(options: SubsonicCoverArtStoreOptions): Cove
     },
 
     async remove(albumId: string): Promise<void> {
-      await removeAlbumCoverFiles(coverArtDir, albumId);
+      await fileSystem.removeCoverFiles(albumId);
     },
   };
 }

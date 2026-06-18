@@ -1,5 +1,5 @@
 import type { PlayQueueInput, PlayerEvent, PlayerNowPlayingState, PlayerQueueState, PlayerState } from "../../shared/player";
-import type { MuswagDb } from "@muswag/shared";
+import type { UserCredentialsToLogin } from "@muswag/shared";
 import { bridgeMainStoreToEvent } from "../../shared/store-sync";
 import {
   disposeMpvIpcClient,
@@ -51,8 +51,9 @@ let clientSubscription: (() => void) | undefined;
 let metaBridgeDispose: (() => void) | undefined;
 let queueBridgeDispose: (() => void) | undefined;
 let nowPlayingBridgeDispose: (() => void) | undefined;
+let credentials: UserCredentialsToLogin | null = null;
 
-export function initializePlayer(options: { getDb: () => MuswagDb; ipcPath: string; mpvBinaryPath: string }): void {
+export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string }): void {
   if (streamSource) {
     return;
   }
@@ -62,7 +63,7 @@ export function initializePlayer(options: { getDb: () => MuswagDb; ipcPath: stri
     mpvBinaryPath: options.mpvBinaryPath,
   });
 
-  streamSource = createMpvStreamSource(options.getDb);
+  streamSource = createMpvStreamSource(() => credentials);
   initializeMpvIpcClient({
     ipcPath: options.ipcPath,
     mpvBinaryPath: options.mpvBinaryPath,
@@ -86,7 +87,12 @@ export function disposePlayer(): void {
   clientSubscription = undefined;
   disposeMpvIpcClient();
   streamSource = undefined;
+  credentials = null;
   resetPlayerSession();
+}
+
+export function setCredentials(nextCredentials: UserCredentialsToLogin | null): void {
+  credentials = nextCredentials;
 }
 
 export function subscribe(listener: (event: PlayerEvent) => void): () => void {

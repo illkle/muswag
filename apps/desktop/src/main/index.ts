@@ -1,11 +1,11 @@
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, net, protocol, shell } from 'electron';
-import { IpcEmitter, IpcListener } from '@electron-toolkit/typed-ipc/main';
-import { electronApp, is, optimizer } from '@electron-toolkit/utils';
-import { createCoverArtStore, getUserInfo, login, logout, sync } from '@muswag/shared';
-import type { MuswagRendererIpc } from '../shared/ipc';
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
+import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
+import { electronApp, is, optimizer } from "@electron-toolkit/utils";
+import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
+import type { MuswagRendererIpc } from "../shared/ipc";
 import {
   disposePlayer,
   getDefaultMpvIpcPath,
@@ -16,18 +16,18 @@ import {
   playQueue,
   previous,
   seek,
+  setCredentials,
   subscribe,
   toggle,
-} from './player/mpv-controller';
-import { getState } from './player/player-session';
-import { db, dbReady, disposeDB } from './db';
+} from "./player/mpv-controller";
+import { getState } from "./player/player-session";
+import { disposeDB } from "./db";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
-let syncInFlight: Promise<Awaited<ReturnType<typeof sync>>> | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: 'muswag-cover',
+    scheme: "muswag-cover",
     privileges: {
       standard: true,
       secure: true,
@@ -39,27 +39,19 @@ protocol.registerSchemesAsPrivileged([
 
 const mainIpc = new IpcListener();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
+let disposeCoverArtIpc: (() => void) | undefined;
 
-function broadcastPlayerEvent(
-  event: MuswagRendererIpc['player:event'][0],
-): void {
-  console.log('broadcast:renderer', event);
+function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void {
+  console.log("broadcast:renderer", event);
   for (const window of BrowserWindow.getAllWindows()) {
-    rendererIpc.send(window.webContents, 'player:event', event);
-  }
-}
-
-function broadcastDbReloadAll(): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    rendererIpc.send(window.webContents, 'db:reloadAll');
+    rendererIpc.send(window.webContents, "player:event", event);
   }
 }
 
 function initializeDesktopPlayer(): void {
   initializePlayer({
-    getDb: () => db,
-    ipcPath: getDefaultMpvIpcPath(app.getPath('temp')),
-    mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? 'mpv',
+    ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
+    mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
   });
 
   if (!unsubscribePlayerEvents) {
@@ -67,6 +59,27 @@ function initializeDesktopPlayer(): void {
       broadcastPlayerEvent(event);
     });
   }
+}
+
+function registerCoverArtIpc(): void {
+  if (disposeCoverArtIpc) {
+    return;
+  }
+
+  const coverArtFileSystem = createNodeCoverArtFileSystem(join(app.getPath("userData"), "cover-art"));
+
+  ipcMain.handle("coverArt:removeFiles", async (_, albumId: string) => {
+    await coverArtFileSystem.removeCoverFiles(albumId);
+  });
+  ipcMain.handle("coverArt:writeFile", async (_, albumId: string, extension: string, bytes: Uint8Array) => {
+    return coverArtFileSystem.writeCoverFile(albumId, extension, bytes);
+  });
+
+  disposeCoverArtIpc = () => {
+    ipcMain.removeHandler("coverArt:removeFiles");
+    ipcMain.removeHandler("coverArt:writeFile");
+    disposeCoverArtIpc = undefined;
+  };
 }
 
 function createWindow(): void {
@@ -77,136 +90,101 @@ function createWindow(): void {
     minWidth: 800,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'darwin'
+    ...(process.platform === "darwin"
       ? {
-          titleBarStyle: 'hiddenInset' as const,
+          titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: { x: 14, y: 14 },
         }
       : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
   });
 
-  mainWindow.on('ready-to-show', () => {
+  mainWindow.on("ready-to-show", () => {
     mainWindow.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
-    return { action: 'deny' };
+    return { action: "deny" };
   });
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.webContents.openDevTools({ mode: "detach" });
     return;
   }
 
-  mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.muswag.desktop');
+  electronApp.setAppUserModelId("com.muswag.desktop");
 
-  app.on('browser-window-created', (_, window) => {
+  app.on("browser-window-created", (_, window) => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  protocol.handle('muswag-cover', (request) => {
-    const requestedPath = new URL(request.url).searchParams.get('path');
+  protocol.handle("muswag-cover", (request) => {
+    const requestedPath = new URL(request.url).searchParams.get("path");
     if (!requestedPath) {
-      return new Response('Missing path', { status: 400 });
+      return new Response("Missing path", { status: 400 });
     }
 
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  mainIpc.handle('player:getState', async () => {
+  registerCoverArtIpc();
+
+  mainIpc.handle("player:getState", async () => {
     return getState();
   });
-  mainIpc.handle('player:next', async () => {
+  mainIpc.handle("player:next", async () => {
     await next();
   });
-  mainIpc.handle('player:pause', async () => {
+  mainIpc.handle("player:pause", async () => {
     await pause();
   });
-  mainIpc.handle('player:play', async () => {
+  mainIpc.handle("player:play", async () => {
     await play();
   });
-  mainIpc.handle('player:playQueue', async (_, input) => {
+  mainIpc.handle("player:playQueue", async (_, input) => {
     await playQueue(input);
   });
-  mainIpc.handle('player:previous', async () => {
+  mainIpc.handle("player:previous", async () => {
     await previous();
   });
-  mainIpc.handle('player:seek', async (_, positionSeconds) => {
+  mainIpc.handle("player:seek", async (_, positionSeconds) => {
     await seek(positionSeconds);
   });
-  mainIpc.handle('player:toggle', async () => {
+  mainIpc.handle("player:setCredentials", async (_, credentials) => {
+    setCredentials(credentials);
+  });
+  mainIpc.handle("player:toggle", async () => {
     await toggle();
-  });
-  mainIpc.handle('sync:login', async (_, credentials) => {
-    await dbReady;
-    const user = await login(db, credentials);
-    broadcastDbReloadAll();
-    return user;
-  });
-  mainIpc.handle('sync:logout', async () => {
-    await dbReady;
-    const result = await logout(db);
-    broadcastDbReloadAll();
-    return result;
-  });
-  mainIpc.handle('sync:run', async () => {
-    await dbReady;
-
-    if (syncInFlight) {
-      return syncInFlight;
-    }
-
-    const user = getUserInfo(db);
-    if (!user) {
-      throw new Error('You need to log in before syncing.');
-    }
-
-    syncInFlight = sync(
-      db,
-      createCoverArtStore({
-        ...user,
-        coverArtDir: join(app.getPath('userData'), 'cover-art'),
-      }),
-    )
-      .then((record) => {
-        broadcastDbReloadAll();
-        return record;
-      })
-      .finally(() => {
-        syncInFlight = undefined;
-      });
-
-    return syncInFlight;
   });
 
   initializeDesktopPlayer();
   createWindow();
 
-  app.on('activate', () => {
+  app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
-app.on('window-all-closed', () => {
+app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   mainIpc.dispose();
+  disposeCoverArtIpc?.();
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;
   disposePlayer();

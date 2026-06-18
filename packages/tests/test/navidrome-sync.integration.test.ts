@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 
 import type { MuswagDb } from "@muswag/shared";
 import { createCoverArtStore, getUserInfo, login, sync } from "@muswag/shared";
+import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
 import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
 import {
   createInMemoryDb,
@@ -82,7 +83,12 @@ function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullStat
 }
 
 function coverArtStoreFor(connection: { baseUrl: string; username: string; password: string }, coverArtDir: string) {
-  return createCoverArtStore({ url: connection.baseUrl, username: connection.username, password: connection.password, coverArtDir });
+  return createCoverArtStore({
+    url: connection.baseUrl,
+    username: connection.username,
+    password: connection.password,
+    fileSystem: createNodeCoverArtFileSystem(coverArtDir),
+  });
 }
 
 describe("navidrome sync integration", () => {

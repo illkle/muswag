@@ -1,35 +1,20 @@
-import type {
-  GetAlbumDetailResult,
-  GetAlbumsResult,
-  GetSongByIdResult,
-  GetSongsInput,
-  GetSongsResult,
-  SyncRecord,
-  UserCredentialsToLogin,
-  UserInfo,
-} from '@muswag/shared';
-
-import type { PlayQueueInput, PlayerEvent, PlayerState } from './player';
+import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
+import type { UserCredentialsToLogin } from "@muswag/shared";
 
 export type MuswagMainIpc = {
-  'db:getAlbumDetail': (albumId: string) => GetAlbumDetailResult;
-  'db:getAlbums': () => GetAlbumsResult;
-  'db:getSongById': (songId: string) => GetSongByIdResult;
-  'db:getSongs': (input?: GetSongsInput) => GetSongsResult;
-  'player:getState': () => PlayerState;
-  'player:next': () => void;
-  'player:pause': () => void;
-  'player:play': () => void;
-  'player:playQueue': (input: PlayQueueInput) => void;
-  'player:previous': () => void;
-  'player:seek': (positionSeconds: number) => void;
-  'player:toggle': () => void;
-  'sync:login': (credentials: UserCredentialsToLogin) => Promise<UserInfo>;
-  'sync:logout': () => Promise<null>;
-  'sync:run': () => Promise<SyncRecord>;
+  "coverArt:removeFiles": (albumId: string) => void;
+  "coverArt:writeFile": (albumId: string, extension: string, bytes: Uint8Array) => string;
+  "player:getState": () => PlayerState;
+  "player:next": () => void;
+  "player:pause": () => void;
+  "player:play": () => void;
+  "player:playQueue": (input: PlayQueueInput) => void;
+  "player:previous": () => void;
+  "player:seek": (positionSeconds: number) => void;
+  "player:setCredentials": (credentials: UserCredentialsToLogin | null) => void;
+  "player:toggle": () => void;
 };
 
 export type MuswagRendererIpc = {
-  'db:reloadAll': [];
-  'player:event': [event: PlayerEvent];
+  "player:event": [event: PlayerEvent];
 };

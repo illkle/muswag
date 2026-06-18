@@ -100,9 +100,9 @@ function RouteComponent() {
   const album = albumQuery.data;
   const { artists, discTitles, genres } = album;
   const songs = songsQuery.data;
-  const albumArtists = artists.length > 0 ? artists.map((artist) => artist.name) : [];
+  const albumArtists = artists?.length ? artists.map((artist) => artist.name) : [];
   const headlineArtist = album.displayArtist ?? album.artist ?? (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
-  const discTitlesByNumber = new Map(discTitles.map((discTitle) => [discTitle.disc, discTitle.title]));
+  const discTitlesByNumber = new Map(discTitles?.map((discTitle) => [discTitle.disc, discTitle.title]));
   const songsByDisc = new Map<number, typeof songs>();
 
   for (const song of songs) {
@@ -121,7 +121,7 @@ function RouteComponent() {
     }));
   const albumQueue = songs;
   const queueIndexBySongId = new Map(albumQueue.map((song, index) => [song.id, index]));
-  const primaryGenre = album.genre ?? genres[0]?.value ?? null;
+  const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([
     album.year ? String(album.year) : null,
     `${album.songCount} track${album.songCount === 1 ? "" : "s"}`,
@@ -140,6 +140,8 @@ function RouteComponent() {
           {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
         </div>
       </header>
+
+      <div>{songs.length}</div>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {discSections.length === 0 ? (

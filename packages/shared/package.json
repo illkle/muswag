@@ -15,6 +15,11 @@
       "types": "./dist/db/index.d.ts",
       "import": "./dist/db/index.js",
       "default": "./dist/db/index.js"
+    },
+    "./sync-node": {
+      "types": "./dist/sync-node.d.ts",
+      "import": "./dist/sync-node.js",
+      "default": "./dist/sync-node.js"
     }
   },
   "scripts": {

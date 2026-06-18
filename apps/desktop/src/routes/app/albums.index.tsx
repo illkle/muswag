@@ -5,7 +5,6 @@ import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
-import type { AlbumRecord } from "@muswag/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";
 import { useContentSize } from "#/components/app-content-size";
@@ -13,6 +12,7 @@ import { AlbumCover } from "#/components/album-cover";
 import { useUser } from "#/lib/queries";
 import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
+import type { Album } from "@muswag/shared";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
@@ -23,7 +23,7 @@ const AlbumItem = ({
   instantCovers,
   ...props
 }: {
-  album: AlbumRecord;
+  album: Album;
   instantCovers: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   return (
@@ -54,7 +54,7 @@ const calcSize = (totalSpace: number) => {
   return { fullWidth, fullHeight, chunks };
 };
 
-function AlbumList({ albums, scrollId }: { albums: AlbumRecord[]; scrollId: string }) {
+function AlbumList({ albums, scrollId }: { albums: Album[]; scrollId: string }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 

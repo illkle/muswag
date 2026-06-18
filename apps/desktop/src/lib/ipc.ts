@@ -17,6 +17,8 @@ export const PlayerIPC = {
   previous: () => mainIpc.invoke('player:previous'),
   seek: (positionSeconds: number) =>
     mainIpc.invoke('player:seek', positionSeconds),
+  setCredentials: (credentials: UserCredentialsToLogin | null) =>
+    mainIpc.invoke('player:setCredentials', credentials),
   subscribe: (listener: (event: PlayerEvent) => void) =>
     rendererIpc.on('player:event', (_event, payload) => {
       listener(payload);
@@ -24,16 +26,8 @@ export const PlayerIPC = {
   toggle: () => mainIpc.invoke('player:toggle'),
 };
 
-export const SyncManagerIPC = {
-  login: (credentials: UserCredentialsToLogin) =>
-    mainIpc.invoke('sync:login', credentials),
-  logout: () => mainIpc.invoke('sync:logout'),
-  sync: () => mainIpc.invoke('sync:run'),
-};
-
-export const DbIPC = {
-  onReloadAll: (listener: () => void) =>
-    rendererIpc.on('db:reloadAll', () => {
-      listener();
-    }),
+export const CoverArtIPC = {
+  removeFiles: (albumId: string) => mainIpc.invoke('coverArt:removeFiles', albumId),
+  writeFile: (albumId: string, extension: string, bytes: Uint8Array) =>
+    mainIpc.invoke('coverArt:writeFile', albumId, extension, bytes),
 };
