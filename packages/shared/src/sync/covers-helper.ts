@@ -1,4 +1,4 @@
-import SubsonicAPI from "subsonic-api";
+import SubsonicAPI from "@muswag/subsonic-api";
 
 import type { CoverArtStore } from "./utils.js";
 import { getAlbumCoverExtension } from "./utils.js";

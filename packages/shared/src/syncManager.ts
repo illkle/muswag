@@ -1,4 +1,4 @@
-import SubsonicAPI from "subsonic-api";
+import SubsonicAPI from "@muswag/subsonic-api";
 
 import type { MuswagDb } from "./db/database.js";
 import type { SyncRecord, UserCredentials } from "./db/types.js";

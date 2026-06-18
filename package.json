@@ -29,9 +29,6 @@
       "msw",
       "protobufjs",
       "ssh2"
-    ],
-    "patchedDependencies": {
-      "subsonic-api": "patches/subsonic-api.patch"
-    }
+    ]
   }
 }

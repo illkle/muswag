@@ -10,11 +10,6 @@ catalogs:
       specifier: 0.45.1
       version: 0.45.1
 
-patchedDependencies:
-  subsonic-api:
-    hash: fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6
-    path: patches/subsonic-api.patch
-
 importers:
 
   .:
@@ -221,6 +216,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@muswag/subsonic-api':
+        specifier: workspace:*
+        version: link:../subsonic-api
       '@tanstack/db':
         specifier: ^0.6.8
         version: 0.6.8(typescript@5.9.3)
@@ -233,9 +231,6 @@ importers:
       '@tanstack/react-db':
         specifier: ^0.1.86
         version: 0.1.86(react@19.2.4)(typescript@5.9.3)
-      subsonic-api:
-        specifier: ^3.2.0
-        version: 3.2.0(patch_hash=fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -247,11 +242,24 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
 
+  packages/subsonic-api:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@muswag/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+
   packages/tests:
     dependencies:
       '@muswag/shared':
         specifier: workspace:*
         version: link:../shared
+      '@muswag/subsonic-api':
+        specifier: workspace:*
+        version: link:../subsonic-api
       '@tanstack/db':
         specifier: ^0.6.8
         version: 0.6.8(typescript@5.9.3)
@@ -5005,10 +5013,6 @@ packages:
 
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
-
-  subsonic-api@3.2.0:
-    resolution: {integrity: sha512-BADBQ2hONdLb3agCiSDzNzTIFLWJAuxJTUJvC2zDFvXUVfnK3yy7r8xFu3NkrQl8p5UVI7q8Qfm62N1lFxWbww==}
-    engines: {node: '>=18'}
 
   sumchecker@3.0.1:
     resolution: {integrity: sha512-MvjXzkz/BOfyVDkG0oFOtBxHX2u3gKbMHIF/dXblZsgD3BWOFLmHovIpZY7BykJdAjcqRCBi1WYBNdEC9yI7vg==}
@@ -10381,8 +10385,6 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
-
-  subsonic-api@3.2.0(patch_hash=fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6): {}
 
   sumchecker@3.0.1:
     dependencies:

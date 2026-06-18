@@ -3,7 +3,7 @@ import { persistedCollectionOptions, type PersistedCollectionPersistence } from 
 
 import type { SyncRecord, UserCredentials } from "./types.js";
 import { createCollection } from "@tanstack/react-db";
-import type { AlbumID3, Child } from "subsonic-api";
+import type { AlbumID3, Child } from "@muswag/subsonic-api";
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;

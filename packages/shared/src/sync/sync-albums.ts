@@ -1,4 +1,4 @@
-import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "subsonic-api";
+import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "@muswag/subsonic-api";
 
 import type { MuswagDb } from "../db/database.js";
 import type { CoverArtStore } from "./utils.js";
