@@ -1,16 +1,8 @@
+import type { Song } from "@muswag/shared";
+
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
-export interface PlayerQueueItem {
-  id: string;
-  title: string;
-  albumId: string | null;
-  album: string | null;
-  artist: string | null;
-  displayArtist: string | null;
-  duration: number | null;
-  discNumber: number | null;
-  track: number | null;
-}
+export type PlayerQueueItem = Song;
 
 export interface PlayQueueInput {
   queue: PlayerQueueItem[];

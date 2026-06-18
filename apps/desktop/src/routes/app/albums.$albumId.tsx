@@ -119,8 +119,7 @@ function RouteComponent() {
       discTitle: discTitlesByNumber.get(discNumber) ?? null,
       songs: discSongs,
     }));
-  const albumQueue = songs;
-  const queueIndexBySongId = new Map(albumQueue.map((song, index) => [song.id, index]));
+  const queueIndexBySongId = new Map(songs.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([
     album.year ? String(album.year) : null,
@@ -140,8 +139,6 @@ function RouteComponent() {
           {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
         </div>
       </header>
-
-      <div>{songs.length}</div>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {discSections.length === 0 ? (
@@ -185,7 +182,7 @@ function RouteComponent() {
                           )}
                           onClick={() => {
                             void PlayerIPC.playQueue({
-                              queue: albumQueue,
+                              queue: songs,
                               startIndex: queueIndex,
                             });
                           }}

@@ -123,10 +123,15 @@ function persistPage(
 
     syncedAlbumIds.add(album.id);
 
-    // Persist songs: delete existing songs for this album, then insert new ones
+    const songs = album.song ?? [];
+    const incomingSongIds = new Set(songs.map((song) => song.id));
+
+    // Persist songs: delete existing songs for this album, then insert new ones.
+    // Also delete by incoming song ID so older rows with non-canonical albumId values
+    // are replaced during the next sync.
     const existingSongIds: string[] = [];
     for (const [, song] of db.songs.entries()) {
-      if (song.albumId === album.id) {
+      if (song.albumId === album.id || incomingSongIds.has(song.id)) {
         existingSongIds.push(song.id);
       }
     }
@@ -134,9 +139,8 @@ function persistPage(
       db.songs.delete(songId);
     }
 
-    const songs = album.song ?? [];
     for (const song of songs) {
-      db.songs.insert(song);
+      db.songs.insert({ ...song, albumId: album.id });
     }
   }
 
@@ -175,6 +179,20 @@ function deleteMissingAlbums(
   }
 
   return albumsToDelete;
+}
+
+function deleteDanglingSongs(db: MuswagDb, syncedAlbumIds: Set<string>): void {
+  const songIdsToDelete: string[] = [];
+
+  for (const [, song] of db.songs.entries()) {
+    if (!syncedAlbumIds.has(song.albumId ?? "")) {
+      songIdsToDelete.push(song.id);
+    }
+  }
+
+  for (const songId of songIdsToDelete) {
+    db.songs.delete(songId);
+  }
 }
 
 export async function syncAlbums(params: SyncAlbumsParams) {
@@ -216,6 +234,7 @@ export async function syncAlbums(params: SyncAlbumsParams) {
   }
 
   const deletedAlbumRows = deleteMissingAlbums(db, syncId, syncedAlbumIds);
+  deleteDanglingSongs(db, syncedAlbumIds);
   const deleted = deletedAlbumRows.length;
   await Promise.all(deletedAlbumRows.map((album) => coverArt.remove(album.id)));
   const finishedAt = new Date().toISOString();

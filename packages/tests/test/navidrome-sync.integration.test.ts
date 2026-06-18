@@ -14,7 +14,7 @@ import {
   type NavidromeTestConnection,
   type TempDir,
 } from "./navidrome-testkit.js";
-import { queryOnce } from "@tanstack/db";
+import { eq, queryOnce } from "@tanstack/db";
 
 export function stripVirtualProps<T extends object>(obj: T): T {
   const result: Record<string, unknown> = {};
@@ -82,6 +82,31 @@ function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullStat
   }
 }
 
+async function assertAlbumDetailSongQueries(db: MuswagDb): Promise<void> {
+  const albums = await queryOnce((q) => q.from({ album: db.albums }));
+
+  for (const album of albums) {
+    const albumDetail = await queryOnce((q) =>
+      q
+        .from({ album: db.albums })
+        .where(({ album: albumRow }) => eq(albumRow.id, album.id))
+        .findOne(),
+    );
+    const songs = await queryOnce((q) =>
+      q
+        .from({ song: db.songs })
+        .where(({ song }) => eq(song.albumId, album.id))
+        .orderBy((q) => q.song.track),
+    );
+
+    expect(albumDetail).toBeDefined();
+    expect(songs).toHaveLength(album.songCount);
+    expect(songs.map((song) => song.albumId)).toEqual(
+      Array.from({ length: album.songCount }, () => album.id),
+    );
+  }
+}
+
 function coverArtStoreFor(connection: { baseUrl: string; username: string; password: string }, coverArtDir: string) {
   return createCoverArtStore({
     url: connection.baseUrl,
@@ -116,6 +141,7 @@ describe("navidrome sync integration", () => {
       expect(result.lastStatus).toBe("completed");
 
       const state = await readFullState(db);
+      await assertAlbumDetailSongQueries(db);
       const albumById = new Map(state.albums.map((album) => [album.id, album]));
       const songsByKey = new Map(state.songs.map((song) => [`${song.album}::${song.track ?? -1}::${song.title}`, song]));
       const expectedTracks = buildExpectedTracks(librarySetA);
@@ -237,6 +263,7 @@ describe("navidrome sync integration", () => {
       expect(firstState.albums).toHaveLength(5);
       expect(firstState.songs).toHaveLength(countSongsInLibrary(librarySetA));
       assertNoDanglingRelations(firstState);
+      await assertAlbumDetailSongQueries(db);
 
       const firstCoverSnapshots = await Promise.all(
         firstState.albums.map(async (album) => ({
@@ -249,6 +276,14 @@ describe("navidrome sync integration", () => {
       const u = getUserInfo(db);
       expect(u).toBeTruthy();
 
+      const staleSong = firstState.songs[0];
+      expect(staleSong).toBeDefined();
+      db.songs.delete(staleSong!.id);
+      db.songs.insert({
+        ...stripVirtualProps(staleSong!),
+        albumId: "stale-server-album-id",
+      });
+
       const second = await sync(db, coverArtStoreFor(connection, coverArt.path));
       console.info("consumer:sync:second:result", {
         status: second.lastStatus,
@@ -257,6 +292,7 @@ describe("navidrome sync integration", () => {
 
       const secondState = await readFullState(db);
       assertNoDanglingRelations(secondState);
+      await assertAlbumDetailSongQueries(db);
 
       // Verify idempotency: all albums and songs should be structurally identical
       expect(secondState.albums).toHaveLength(firstState.albums.length);
@@ -346,6 +382,7 @@ describe("navidrome sync integration", () => {
       expect(afterState.albums).toHaveLength(5);
       expect(afterState.songs).toHaveLength(countSongsInLibrary(librarySetB));
       assertNoDanglingRelations(afterState);
+      await assertAlbumDetailSongQueries(db);
 
       const hasNewAlbumIds = [...afterIds].some((id) => !beforeIds.has(id));
       expect(hasNewAlbumIds).toBe(true);
