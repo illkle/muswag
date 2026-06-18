@@ -3,6 +3,7 @@ import {
   createDefaultPlayerMetaState,
   createDefaultPlayerNowPlayingState,
   createDefaultPlayerQueueState,
+  createDefaultPlayerVolumeState,
   getPlayerCanGoBack,
   getPlayerCanGoForward,
   getPlayerCanPlay,
@@ -32,6 +33,14 @@ const PlayerNowPlayingStore = createMirroredRendererStore({
   getEventState: (event) => (event.type === "nowPlaying" ? event.state : undefined),
   getSnapshot: PlayerIPC.getState,
   getSnapshotState: (snapshot) => snapshot.nowPlaying,
+  subscribe: PlayerIPC.subscribe,
+});
+
+const PlayerVolumeStore = createMirroredRendererStore({
+  defaultState: createDefaultPlayerVolumeState(),
+  getEventState: (event) => (event.type === "volume" ? event.state : undefined),
+  getSnapshot: PlayerIPC.getState,
+  getSnapshotState: (snapshot) => snapshot.volume,
   subscribe: PlayerIPC.subscribe,
 });
 
@@ -84,4 +93,12 @@ export function usePlayerPositionSeconds() {
 
 export function usePlayerMpvAvailable() {
   return useStore(PlayerMetaStore, (state) => state.mpvAvailable);
+}
+
+export function usePlayerMuted() {
+  return useStore(PlayerVolumeStore, (state) => state.muted);
+}
+
+export function usePlayerVolumePercent() {
+  return useStore(PlayerVolumeStore, (state) => state.volumePercent);
 }

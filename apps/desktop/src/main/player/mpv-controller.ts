@@ -7,7 +7,9 @@ import {
   initializeMpvIpcClient,
   loadFile as loadMpvFile,
   seekAbsolute,
+  setMuted as setMpvMuted,
   setPause as setMpvPause,
+  setVolume as setMpvVolume,
   stop as stopMpvPlayback,
   subscribe as subscribeToMpvIpcClient,
   type MpvClientEvent,
@@ -17,13 +19,16 @@ import {
   advanceToNextTrack,
   applyError as applySessionError,
   clampPosition,
+  clampVolumePercent,
   clearQueue,
   getCurrentQueueItem,
   getStatus,
   handleFileLoaded,
+  handleMutedChanged,
   handlePauseChanged,
   handlePlaybackEnded,
   handleSeekApplied,
+  handleVolumeChanged,
   hasCurrentTrack,
   loadQueue,
   markCurrentTrackLoading,
@@ -33,10 +38,13 @@ import {
   nowPlayingStore,
   queueStore,
   resetPlayerSession,
+  setMutedRequested,
   setPauseRequested,
+  setVolumeRequested,
   shouldRestartOnPrevious,
   updateDuration,
   updatePosition,
+  volumeStore,
 } from "./player-session";
 
 const POSITION_BROADCAST_INTERVAL_MS = 500;
@@ -51,6 +59,7 @@ let clientSubscription: (() => void) | undefined;
 let metaBridgeDispose: (() => void) | undefined;
 let queueBridgeDispose: (() => void) | undefined;
 let nowPlayingBridgeDispose: (() => void) | undefined;
+let volumeBridgeDispose: (() => void) | undefined;
 let credentials: UserCredentialsToLogin | null = null;
 
 export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string }): void {
@@ -83,6 +92,8 @@ export function disposePlayer(): void {
   queueBridgeDispose = undefined;
   nowPlayingBridgeDispose?.();
   nowPlayingBridgeDispose = undefined;
+  volumeBridgeDispose?.();
+  volumeBridgeDispose = undefined;
   clientSubscription?.();
   clientSubscription = undefined;
   disposeMpvIpcClient();
@@ -178,6 +189,23 @@ export async function seek(positionSeconds: number): Promise<void> {
   });
 }
 
+export async function setVolume(volumePercent: number): Promise<void> {
+  return enqueue(async () => {
+    const nextVolumePercent = clampVolumePercent(volumePercent);
+    console.debug("[player][mpv][main]", "action:setVolume", { volumePercent: nextVolumePercent });
+
+    await performSetVolume(nextVolumePercent);
+  });
+}
+
+export async function setMuted(muted: boolean): Promise<void> {
+  return enqueue(async () => {
+    console.debug("[player][mpv][main]", "action:setMuted", { muted });
+
+    await performSetMuted(muted);
+  });
+}
+
 export async function next(): Promise<void> {
   return enqueue(async () => {
     console.debug("[player][mpv][main]", "action:next");
@@ -217,7 +245,7 @@ export async function previous(): Promise<void> {
 }
 
 function subscribeToStores(): void {
-  if (metaBridgeDispose || queueBridgeDispose || nowPlayingBridgeDispose) {
+  if (metaBridgeDispose || queueBridgeDispose || nowPlayingBridgeDispose || volumeBridgeDispose) {
     return;
   }
 
@@ -241,6 +269,12 @@ function subscribeToStores(): void {
     store: nowPlayingStore,
     throttleMs: POSITION_BROADCAST_INTERVAL_MS,
   });
+  volumeBridgeDispose = bridgeMainStoreToEvent({
+    createEvent: (state) => ({ state, type: "volume" as const }),
+    emitEvent: emitState,
+    isEqual: isSameVolumeState,
+    store: volumeStore,
+  });
 }
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -262,6 +296,12 @@ function handleClientEvent(event: MpvClientEvent): void {
       return;
     case "duration-change":
       updateDuration(event.durationSeconds);
+      return;
+    case "volume-change":
+      handleVolumeChanged(event.volumePercent);
+      return;
+    case "mute-change":
+      handleMutedChanged(event.muted);
       return;
     case "file-loaded":
       handleFileLoaded();
@@ -348,6 +388,32 @@ async function performSeek(positionSeconds: number): Promise<void> {
   }
 }
 
+async function performSetVolume(volumePercent: number): Promise<void> {
+  ensureInitialized();
+
+  try {
+    console.debug("[player][mpv][main]", "track:setVolume", { volumePercent });
+    await setMpvVolume(volumePercent);
+    markMpvAvailable();
+    setVolumeRequested(volumePercent);
+  } catch (cause) {
+    applyError(cause);
+  }
+}
+
+async function performSetMuted(muted: boolean): Promise<void> {
+  ensureInitialized();
+
+  try {
+    console.debug("[player][mpv][main]", "track:setMuted", { muted });
+    await setMpvMuted(muted);
+    markMpvAvailable();
+    setMutedRequested(muted);
+  } catch (cause) {
+    applyError(cause);
+  }
+}
+
 async function stopPlayback(): Promise<void> {
   if (!streamSource) {
     return;
@@ -400,6 +466,10 @@ function isSameNowPlayingState(nextState: PlayerNowPlayingState, previousState: 
     nextState.positionSeconds === previousState.positionSeconds &&
     nextState.status === previousState.status
   );
+}
+
+function isSameVolumeState(nextState: PlayerState["volume"], previousState: PlayerState["volume"]): boolean {
+  return nextState.volumePercent === previousState.volumePercent && nextState.muted === previousState.muted;
 }
 
 function isPositionOnlyNowPlayingChange(nextState: PlayerNowPlayingState, previousState: PlayerNowPlayingState): boolean {

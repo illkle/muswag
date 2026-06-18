@@ -1,24 +1,8 @@
-import {
-  createElectronSQLitePersistence,
-  ElectronCollectionCoordinator,
-} from '@tanstack/electron-db-sqlite-persistence';
-import { createMuswagDb } from '@muswag/shared/db';
-
-const DB_NAME = 'muswag';
-
-const coordinator = new ElectronCollectionCoordinator({ dbName: DB_NAME });
+import { createElectronSQLitePersistence } from "@tanstack/electron-db-sqlite-persistence";
+import { createMuswagDb } from "@muswag/shared/db";
 
 const persistence = createElectronSQLitePersistence({
-  invoke: (channel, request) =>
-    window.electron.ipcRenderer.invoke(channel, request),
-  coordinator,
+  invoke: (channel, request) => window.electron.ipcRenderer.invoke(channel, request),
 });
 
 export const db = createMuswagDb(persistence);
-
-export const dbReady = Promise.all([
-  db.albums.preload(),
-  db.songs.preload(),
-  db.userCredentials.preload(),
-  db.syncs.preload(),
-]).then(() => undefined);

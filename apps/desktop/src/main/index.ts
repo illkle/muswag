@@ -17,6 +17,8 @@ import {
   previous,
   seek,
   setCredentials,
+  setMuted,
+  setVolume,
   subscribe,
   toggle,
 } from "./player/mpv-controller";
@@ -163,6 +165,12 @@ app.whenReady().then(() => {
   });
   mainIpc.handle("player:setCredentials", async (_, credentials) => {
     setCredentials(credentials);
+  });
+  mainIpc.handle("player:setMuted", async (_, muted) => {
+    await setMuted(muted);
+  });
+  mainIpc.handle("player:setVolume", async (_, volumePercent) => {
+    await setVolume(volumePercent);
   });
   mainIpc.handle("player:toggle", async () => {
     await toggle();

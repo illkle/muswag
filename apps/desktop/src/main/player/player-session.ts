@@ -1,7 +1,12 @@
 import { createStore } from "@tanstack/react-store";
 
 import type { PlayQueueInput, PlayerQueueItem, PlayerState } from "../../shared/player";
-import { createDefaultPlayerMetaState, createDefaultPlayerNowPlayingState, createDefaultPlayerQueueState } from "../../shared/player";
+import {
+  createDefaultPlayerMetaState,
+  createDefaultPlayerNowPlayingState,
+  createDefaultPlayerQueueState,
+  createDefaultPlayerVolumeState,
+} from "../../shared/player";
 
 type MarkTrackLoadingOptions = {
   resumePlayback: boolean;
@@ -10,6 +15,7 @@ type MarkTrackLoadingOptions = {
 export const metaStore = createStore(createDefaultPlayerMetaState());
 export const queueStore = createStore(createDefaultPlayerQueueState());
 export const nowPlayingStore = createStore(createDefaultPlayerNowPlayingState());
+export const volumeStore = createStore(createDefaultPlayerVolumeState());
 
 let playbackQueue: PlayerQueueItem[] = [];
 let pausedIntent = false;
@@ -22,6 +28,7 @@ export function getState(): PlayerState {
       queue: [...queueStore.state.queue],
     },
     nowPlaying: { ...nowPlayingStore.state },
+    volume: { ...volumeStore.state },
   };
 }
 
@@ -193,6 +200,42 @@ export function updateDuration(durationSeconds: number | null): void {
   }));
 }
 
+export function clampVolumePercent(volumePercent: number): number {
+  if (!Number.isFinite(volumePercent)) {
+    return volumeStore.state.volumePercent;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(volumePercent)));
+}
+
+export function setVolumeRequested(volumePercent: number): void {
+  volumeStore.setState((state) => ({
+    ...state,
+    volumePercent: clampVolumePercent(volumePercent),
+  }));
+}
+
+export function setMutedRequested(muted: boolean): void {
+  volumeStore.setState((state) => ({
+    ...state,
+    muted,
+  }));
+}
+
+export function handleVolumeChanged(volumePercent: number): void {
+  volumeStore.setState((state) => ({
+    ...state,
+    volumePercent: clampVolumePercent(volumePercent),
+  }));
+}
+
+export function handleMutedChanged(muted: boolean): void {
+  volumeStore.setState((state) => ({
+    ...state,
+    muted,
+  }));
+}
+
 export function markMpvAvailable(): void {
   if (metaStore.state.mpvAvailable) {
     return;
@@ -220,6 +263,7 @@ export function resetPlayerSession(): void {
   metaStore.setState(() => createDefaultPlayerMetaState());
   queueStore.setState(() => createDefaultPlayerQueueState());
   nowPlayingStore.setState(() => createDefaultPlayerNowPlayingState());
+  volumeStore.setState(() => createDefaultPlayerVolumeState());
 }
 
 function clampIndex(index: number, length: number): number {

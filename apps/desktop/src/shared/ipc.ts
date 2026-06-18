@@ -12,6 +12,8 @@ export type MuswagMainIpc = {
   "player:previous": () => void;
   "player:seek": (positionSeconds: number) => void;
   "player:setCredentials": (credentials: UserCredentialsToLogin | null) => void;
+  "player:setMuted": (muted: boolean) => void;
+  "player:setVolume": (volumePercent: number) => void;
   "player:toggle": () => void;
 };
 

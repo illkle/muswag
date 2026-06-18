@@ -4,6 +4,8 @@ import type { PlayQueueInput } from "../../shared/player";
 import {
   advanceToNextTrack,
   getState,
+  handleMutedChanged,
+  handleVolumeChanged,
   handleFileLoaded,
   handlePauseChanged,
   handlePlaybackEnded,
@@ -17,6 +19,7 @@ import {
 const queue: PlayQueueInput["queue"] = [
   {
     id: "track-1",
+    isDir: false,
     title: "Track 1",
     albumId: "album-1",
     album: "Album 1",
@@ -28,6 +31,7 @@ const queue: PlayQueueInput["queue"] = [
   },
   {
     id: "track-2",
+    isDir: false,
     title: "Track 2",
     albumId: "album-1",
     album: "Album 1",
@@ -61,6 +65,10 @@ describe("PlayerSession", () => {
         error: null,
         positionSeconds: 0,
         status: "loading",
+      },
+      volume: {
+        muted: false,
+        volumePercent: 100,
       },
     });
   });
@@ -106,6 +114,24 @@ describe("PlayerSession", () => {
         positionSeconds: 12,
         status: "playing",
       },
+    });
+  });
+
+  it("tracks clamped volume and mute state", () => {
+    handleVolumeChanged(87.6);
+    handleMutedChanged(true);
+
+    expect(getState().volume).toEqual({
+      muted: true,
+      volumePercent: 88,
+    });
+
+    handleVolumeChanged(120);
+    handleMutedChanged(false);
+
+    expect(getState().volume).toEqual({
+      muted: false,
+      volumePercent: 100,
     });
   });
 });

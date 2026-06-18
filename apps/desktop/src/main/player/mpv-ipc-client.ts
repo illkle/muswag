@@ -38,9 +38,11 @@ export type MpvClientEvent =
   | { type: "end-file"; reason: string | null }
   | { type: "error"; cause: unknown }
   | { type: "file-loaded" }
+  | { type: "mute-change"; muted: boolean }
   | { type: "pause-change"; paused: boolean }
   | { type: "time-pos-change"; positionSeconds: number }
-  | { type: "unexpected-exit" };
+  | { type: "unexpected-exit" }
+  | { type: "volume-change"; volumePercent: number };
 
 const listeners = new Set<(event: MpvClientEvent) => void>();
 const pendingCommands = new Map<number, CommandResolver>();
@@ -75,6 +77,16 @@ export async function loadFile(url: string): Promise<void> {
 export async function setPause(paused: boolean): Promise<void> {
   await ensureReady();
   await sendCommand(["set_property", "pause", paused]);
+}
+
+export async function setMuted(muted: boolean): Promise<void> {
+  await ensureReady();
+  await sendCommand(["set_property", "mute", muted]);
+}
+
+export async function setVolume(volumePercent: number): Promise<void> {
+  await ensureReady();
+  await sendCommand(["set_property", "volume", volumePercent]);
 }
 
 export async function seekAbsolute(positionSeconds: number): Promise<void> {
@@ -198,6 +210,8 @@ async function startMpv(): Promise<void> {
       sendCommand(["observe_property", 1, "pause"]),
       sendCommand(["observe_property", 2, "time-pos"]),
       sendCommand(["observe_property", 3, "duration"]),
+      sendCommand(["observe_property", 4, "volume"]),
+      sendCommand(["observe_property", 5, "mute"]),
     ]);
   } catch (cause) {
     console.error("[player][mpv][main]", "mpv:start:error", cause);
@@ -374,6 +388,19 @@ function handlePropertyChange(name: unknown, value: unknown): void {
       durationSeconds: typeof value === "number" ? value : null,
       type: "duration-change",
     });
+    return;
+  }
+
+  if (name === "volume") {
+    emit({
+      type: "volume-change",
+      volumePercent: typeof value === "number" ? value : 100,
+    });
+    return;
+  }
+
+  if (name === "mute") {
+    emit({ muted: value === true, type: "mute-change" });
   }
 }
 

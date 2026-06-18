@@ -1,5 +1,5 @@
 import { CoverArtIPC, PlayerIPC } from "#/lib/ipc";
-import { db, dbReady } from "#/lib/db-renderer";
+import { db } from "#/lib/db-renderer";
 import { createCoverArtStore, getUserInfo, login, logout, sync } from "@muswag/shared";
 import type { CoverArtFileSystem, SyncRecord, UserCredentialsToLogin, UserInfo } from "@muswag/shared";
 
@@ -11,28 +11,23 @@ const coverArtFileSystem: CoverArtFileSystem = {
 let syncInFlight: Promise<SyncRecord> | undefined;
 
 export async function syncPlayerCredentials(): Promise<void> {
-  await dbReady;
   await PlayerIPC.setCredentials(getUserInfo(db));
 }
 
 export const SyncManager = {
   async login(credentials: UserCredentialsToLogin): Promise<UserInfo> {
-    await dbReady;
     const user = await login(db, credentials);
     await PlayerIPC.setCredentials(user);
     return user;
   },
 
   async logout(): Promise<null> {
-    await dbReady;
     const result = await logout(db);
     await PlayerIPC.setCredentials(null);
     return result;
   },
 
   async sync(): Promise<SyncRecord> {
-    await dbReady;
-
     if (syncInFlight) {
       return syncInFlight;
     }
@@ -48,10 +43,9 @@ export const SyncManager = {
         ...user,
         fileSystem: coverArtFileSystem,
       }),
-    )
-      .finally(() => {
-        syncInFlight = undefined;
-      });
+    ).finally(() => {
+      syncInFlight = undefined;
+    });
 
     return syncInFlight;
   },

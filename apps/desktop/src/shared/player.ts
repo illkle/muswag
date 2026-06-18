@@ -26,10 +26,16 @@ export interface PlayerNowPlayingState {
   error: string | null;
 }
 
+export interface PlayerVolumeState {
+  volumePercent: number;
+  muted: boolean;
+}
+
 export interface PlayerState {
   meta: PlayerMetaState;
   queue: PlayerQueueState;
   nowPlaying: PlayerNowPlayingState;
+  volume: PlayerVolumeState;
 }
 
 export type PlayerEvent =
@@ -44,6 +50,10 @@ export type PlayerEvent =
   | {
       type: "nowPlaying";
       state: PlayerNowPlayingState;
+    }
+  | {
+      type: "volume";
+      state: PlayerVolumeState;
     };
 
 export function createDefaultPlayerMetaState(): PlayerMetaState {
@@ -69,11 +79,19 @@ export function createDefaultPlayerNowPlayingState(): PlayerNowPlayingState {
   };
 }
 
+export function createDefaultPlayerVolumeState(): PlayerVolumeState {
+  return {
+    volumePercent: 100,
+    muted: false,
+  };
+}
+
 export function createDefaultPlayerState(): PlayerState {
   return {
     meta: createDefaultPlayerMetaState(),
     queue: createDefaultPlayerQueueState(),
     nowPlaying: createDefaultPlayerNowPlayingState(),
+    volume: createDefaultPlayerVolumeState(),
   };
 }
 
