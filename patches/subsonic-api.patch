@@ -19,6 +19,25 @@ index 48c8c2e18f866dc0b8d35cae2082377eeef49441..05d91251ea32f963193683d5eb642975
      year?: number;
      version?: string;
      played?: string;
+@@ -16,7 +16,7 @@ export interface AlbumID3 {
+     userRating?: number;
+     recordLabels?: RecordLabel[];
+     musicBrainzId?: string;
+-    genres?: string[];
++    genres?: ItemGenre[];
+     artists?: ArtistID3[];
+     displayArtist?: string;
+     releaseTypes?: string[];
+@@ -32,6 +32,9 @@ export interface RecordLabel {
+ export interface RecordLabel {
+     name: string;
+ }
++export interface ItemGenre {
++    name: string;
++}
+ export interface AlbumInfo {
+     largeImageUrl?: string;
+     lastFmUrl?: string;
 @@ -62,7 +62,7 @@ export interface Artist {
      averageRating?: number;
      id: string;
@@ -67,6 +86,34 @@ index 48c8c2e18f866dc0b8d35cae2082377eeef49441..05d91251ea32f963193683d5eb642975
      suffix?: string;
      title: string;
      track?: number;
+@@ -163,7 +163,7 @@ export interface Child {
+     comment?: string;
+     sortName?: string;
+     musicBrainzId?: string;
+-    genres?: string[];
++    genres?: ItemGenre[];
+     artists?: ArtistID3[];
+     displayArtist?: string;
+     albumArtists?: ArtistID3[];
+@@ -180,12 +180,12 @@ export interface Contributor {
+     artist?: ArtistID3;
+ }
+ export interface ReplayGain {
+-    trackGain: number;
+-    albumGain: number;
+-    trackPeak: number;
+-    albumPeak: number;
+-    baseGain: number;
+-    fallbackGain: number;
++    trackGain?: number;
++    albumGain?: number;
++    trackPeak?: number;
++    albumPeak?: number;
++    baseGain?: number;
++    fallbackGain?: number;
+ }
+ export interface Directory {
+     averageRating?: number;
 @@ -193,7 +193,7 @@ export interface Directory {
      name: string;
      parent?: string;

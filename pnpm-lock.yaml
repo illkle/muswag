@@ -12,7 +12,7 @@ catalogs:
 
 patchedDependencies:
   subsonic-api:
-    hash: 9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7
+    hash: fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6
     path: patches/subsonic-api.patch
 
 importers:
@@ -235,7 +235,7 @@ importers:
         version: 0.1.86(react@19.2.4)(typescript@5.9.3)
       subsonic-api:
         specifier: ^3.2.0
-        version: 3.2.0(patch_hash=9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7)
+        version: 3.2.0(patch_hash=fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -10382,7 +10382,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  subsonic-api@3.2.0(patch_hash=9262d74da904f3f8cf118b9d45c1784b42fb0f6a4600b87e362385bf98e8d8d7): {}
+  subsonic-api@3.2.0(patch_hash=fc79d9d5ac096995c80c5c896310ae91337d368fc921e97cfec4095a373d95c6): {}
 
   sumchecker@3.0.1:
     dependencies:

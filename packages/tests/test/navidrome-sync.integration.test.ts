@@ -164,7 +164,7 @@ describe("navidrome sync integration", () => {
           name: expectedTrack.album,
         });
 
-        expect(song.genres).toContain(expectedTrack.albumGenre);
+        expect(song.genres?.map((genre) => genre.name)).toContain(expectedTrack.albumGenre);
 
         const songArtists = song.artists?.map((a) => a.name);
         expect(songArtists).toContain(expectedTrack.artist);
@@ -175,17 +175,12 @@ describe("navidrome sync integration", () => {
         expect(song.contributors).toHaveLength(1);
         expect(song.contributors?.[0]).toMatchObject({
           role: "composer",
-          artistName: expectedTrack.composer,
+          artist: {
+            name: expectedTrack.composer,
+          },
         });
 
-        expect(song!.replayGain).toMatchObject({
-          trackGain: null,
-          albumGain: null,
-          trackPeak: null,
-          albumPeak: null,
-          baseGain: null,
-          fallbackGain: null,
-        });
+        expect(song.replayGain).toEqual({});
       }
 
       const compilationTracks = state.songs.filter((song) => song.album === "Summer Sampler");
