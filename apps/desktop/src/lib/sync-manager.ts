@@ -1,4 +1,4 @@
-import { CoverArtIPC, PlayerIPC } from "#/lib/ipc";
+import { CoverArtIPC } from "#/lib/ipc";
 import { db } from "#/lib/db-renderer";
 import { createCoverArtStore, getUserInfo, login, logout, sync } from "@muswag/shared";
 import type { CoverArtFileSystem, SyncRecord, UserCredentialsToLogin, UserInfo } from "@muswag/shared";
@@ -10,20 +10,14 @@ const coverArtFileSystem: CoverArtFileSystem = {
 
 let syncInFlight: Promise<SyncRecord> | undefined;
 
-export async function syncPlayerCredentials(): Promise<void> {
-  await PlayerIPC.setCredentials(getUserInfo(db));
-}
-
 export const SyncManager = {
   async login(credentials: UserCredentialsToLogin): Promise<UserInfo> {
     const user = await login(db, credentials);
-    await PlayerIPC.setCredentials(user);
     return user;
   },
 
   async logout(): Promise<null> {
     const result = await logout(db);
-    await PlayerIPC.setCredentials(null);
     return result;
   },
 

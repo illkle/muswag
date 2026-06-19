@@ -9,8 +9,12 @@ const persistence = createElectronSQLitePersistence({
 
 export const db = createMuswagDb(persistence);
 
-queryOnce((v) => v.from({ user: db.userCredentials }).findOne()).then((v) => {
-  if (v) {
-    PlayerIPC.setCredentials(v);
-  }
-});
+const queryAndSetCredentials = () => {
+  queryOnce((v) => v.from({ user: db.userCredentials }).findOne()).then((v) => {
+    if (v) {
+      PlayerIPC.setCredentials(v);
+    }
+  });
+};
+
+db.userCredentials.subscribeChanges(queryAndSetCredentials, { includeInitialState: true });

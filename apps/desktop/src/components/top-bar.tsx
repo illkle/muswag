@@ -1,3 +1,4 @@
+import { Search } from "#/components/search";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
 import { getErrorMessage } from "#/lib/err";
@@ -102,9 +103,12 @@ export const TopBar = () => {
         <NavButtons />
       </div>
       <div className="app-drag-region  w-full h-full"></div>
+
+      <Search />
+      <div className="app-drag-region  w-full h-full"></div>
       <ServerInfo />
 
-      <div className="app-drag-region shrink-0  w-20 h-full"></div>
+      <div className="app-drag-region shrink-0 w-20 h-full"></div>
     </div>
   );
 };
