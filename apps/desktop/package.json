@@ -47,7 +47,7 @@
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-router-ssr-query": "latest",
     "@tanstack/react-store": "^0.9.2",
-    "@tanstack/react-virtual": "^3.13.22",
+    "@tanstack/react-virtual": "^3.14.3",
     "@tanstack/router-plugin": "^1.132.0",
     "@types/lodash-es": "^4.17.12",
     "better-sqlite3": "^12.8.0",

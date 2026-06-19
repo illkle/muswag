@@ -9,3 +9,7 @@ out
 coverage
 .DS_Store
 .cache
+
+dev.db
+dev.db-shm
+dev.db-wal

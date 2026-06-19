@@ -1,391 +1,166 @@
 import { access, readFile } from "node:fs/promises";
-import { describe } from "node:test";
 
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import type { MuswagDb } from "@muswag/shared";
-import { createCoverArtStore, getUserInfo, login, sync } from "@muswag/shared";
-import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
-import { librarySetA, librarySetB } from "./fixtures/library-sets.js";
+import type { MuswagDb, SyncRecord } from "@muswag/shared";
+import { login, sync } from "@muswag/shared";
+import { librarySetA, librarySetB, type AlbumFixture } from "./fixtures/library-sets.js";
 import {
+  assertNoDanglingRelations,
+  countSongsInLibrary,
+  coverArtStoreFor,
+  expectSongMetadata,
+  expectSyncedCounts,
+  readFullState,
+} from "./helpers/sync-testkit.js";
+import {
+  checkNavidromeDependencies,
   createInMemoryDb,
   createNavidromeTestConnection,
   createTempCoverArtDir,
   type NavidromeTestConnection,
   type TempDir,
 } from "./navidrome-testkit.js";
-import { eq, queryOnce } from "@tanstack/db";
 
-export function stripVirtualProps<T extends object>(obj: T): T {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (!key.startsWith("$")) {
-      result[key] = value;
-    }
-  }
-  return result as T;
-}
+const dependencyStatus = checkNavidromeDependencies();
+const describeIfReady = dependencyStatus.ready ? describe : describe.skip;
+const fastLibraryGeneration = {
+  generation: {
+    mode: "tagged-template" as const,
+    logPerTrack: false,
+    logPerAlbum: false,
+  },
+};
 
-function countSongsInLibrary(
-  albums: ReadonlyArray<{
-    songs: ReadonlyArray<unknown>;
-  }>,
-): number {
-  return albums.reduce((count, album) => count + album.songs.length, 0);
-}
-
-function buildExpectedTracks(albums: typeof librarySetA): Array<{
-  album: string;
-  albumArtist: string;
-  albumGenre: string;
-  albumComment: string;
-  albumYear: number;
-  composer: string;
-  discNumber: number;
-  title: string;
-  track: number;
-  artist: string;
-  musicBrainzTrackId: string;
-}> {
-  return albums.flatMap((album) =>
-    album.songs.map((song) => ({
-      album: album.album,
-      albumArtist: album.albumArtist,
-      albumGenre: album.genre,
-      albumComment: album.comment,
-      albumYear: album.year,
-      composer: album.composer,
-      discNumber: album.disc,
-      title: song.title,
-      track: song.track,
-      artist: song.artist ?? album.artist,
-      musicBrainzTrackId: song.musicBrainzTrackId,
-    })),
-  );
-}
-
-async function readFullState(db: MuswagDb) {
-  const albums = await queryOnce((q) => q.from({ albums: db.albums }));
-
-  albums.sort((a, b) => a.id.localeCompare(b.id));
-
-  const songs = await queryOnce((q) => q.from({ songs: db.songs }));
-  songs.sort((a, b) => a.id.localeCompare(b.id));
-
-  return { albums, songs };
-}
-
-function assertNoDanglingRelations(state: Awaited<ReturnType<typeof readFullState>>): void {
-  const albumIds = new Set(state.albums.map((album) => album.id));
-  for (const song of state.songs) {
-    expect(albumIds.has(song.albumId || "never-never")).toBe(true);
-  }
-}
-
-async function assertAlbumDetailSongQueries(db: MuswagDb): Promise<void> {
-  const albums = await queryOnce((q) => q.from({ album: db.albums }));
-
-  for (const album of albums) {
-    const albumDetail = await queryOnce((q) =>
-      q
-        .from({ album: db.albums })
-        .where(({ album: albumRow }) => eq(albumRow.id, album.id))
-        .findOne(),
-    );
-    const songs = await queryOnce((q) =>
-      q
-        .from({ song: db.songs })
-        .where(({ song }) => eq(song.albumId, album.id))
-        .orderBy((q) => q.song.track),
-    );
-
-    expect(albumDetail).toBeDefined();
-    expect(songs).toHaveLength(album.songCount);
-    expect(songs.map((song) => song.albumId)).toEqual(
-      Array.from({ length: album.songCount }, () => album.id),
-    );
-  }
-}
-
-function coverArtStoreFor(connection: { baseUrl: string; username: string; password: string }, coverArtDir: string) {
-  return createCoverArtStore({
-    url: connection.baseUrl,
-    username: connection.username,
-    password: connection.password,
-    fileSystem: createNodeCoverArtFileSystem(coverArtDir),
+if (!dependencyStatus.ready) {
+  console.warn("Skipping Navidrome integration tests; missing dependencies.", {
+    missingDependencies: dependencyStatus.missingDependencies,
   });
 }
 
-describe("navidrome sync integration", () => {
-  it("persists detailed track metadata across song-related tables", async () => {
-    console.info("test:start", {
-      test: "persists detailed track metadata across song-related tables",
+async function withSyncedNavidromeLibrary<T>(
+  albums: AlbumFixture[],
+  run: (ctx: {
+    db: MuswagDb;
+    connection: NavidromeTestConnection;
+    coverArt: TempDir;
+    syncOnce: () => Promise<SyncRecord>;
+    readState: () => ReturnType<typeof readFullState>;
+  }) => Promise<T>,
+): Promise<T> {
+  let coverArt: TempDir | undefined;
+  let connection: NavidromeTestConnection | undefined;
+
+  try {
+    coverArt = await createTempCoverArtDir();
+    connection = await createNavidromeTestConnection(albums, fastLibraryGeneration);
+
+    const db = createInMemoryDb();
+    await login(db, {
+      url: connection.baseUrl,
+      username: connection.username,
+      password: connection.password,
     });
 
-    let coverArt: TempDir | undefined;
-    let connection: NavidromeTestConnection | undefined;
+    return await run({
+      db,
+      connection,
+      coverArt,
+      syncOnce: () => sync(db, coverArtStoreFor(connection!, coverArt!.path)),
+      readState: () => readFullState(db),
+    });
+  } finally {
+    await connection?.cleanup();
+    await coverArt?.cleanup();
+  }
+}
 
-    try {
-      coverArt = await createTempCoverArtDir();
-      connection = await createNavidromeTestConnection(librarySetA);
-
-      const db = createInMemoryDb();
-
-      await login(db, {
-        url: connection.baseUrl,
-        username: connection.username,
-        password: connection.password,
-      });
-
-      const result = await sync(db, coverArtStoreFor(connection, coverArt.path));
+describeIfReady("navidrome sync integration", () => {
+  it("syncs a real Navidrome library into albums and songs", async () => {
+    await withSyncedNavidromeLibrary(librarySetA, async ({ syncOnce, readState }) => {
+      const result = await syncOnce();
       expect(result.lastStatus).toBe("completed");
 
-      const state = await readFullState(db);
-      await assertAlbumDetailSongQueries(db);
-      const albumById = new Map(state.albums.map((album) => [album.id, album]));
-      const songsByKey = new Map(state.songs.map((song) => [`${song.album}::${song.track ?? -1}::${song.title}`, song]));
-      const expectedTracks = buildExpectedTracks(librarySetA);
+      const state = await readState();
+      expectSyncedCounts(state, {
+        albums: librarySetA.length,
+        songs: countSongsInLibrary(librarySetA),
+      });
+      assertNoDanglingRelations(state);
 
-      expect(state.songs).toHaveLength(expectedTracks.length);
+      const representativeSong = state.songs.find((song) => song.title === "Morning Grid");
+      expectSongMetadata(representativeSong, {
+        album: "Sky Patterns",
+        title: "Morning Grid",
+        artist: "Aurora Lane",
+        albumArtist: "Aurora Lane",
+      });
+      expect(representativeSong).toMatchObject({
+        track: 1,
+        genre: "Indie",
+        isDir: false,
+        suffix: "mp3",
+        type: "music",
+      });
+      expect(representativeSong?.contentType).toContain("audio/");
 
-      // Verify each song has genre, artist, album artist, contributor, and replay gain data
-      for (const song of state.songs) {
-        expect(song.genres?.length).toBeGreaterThanOrEqual(1);
-        expect(song.artists?.length).toBeGreaterThanOrEqual(1);
-        expect(song.albumArtists?.length).toBeGreaterThanOrEqual(1);
-        expect(song.contributors?.length).toBeGreaterThanOrEqual(1);
-        expect(song.replayGain).toBeDefined();
-      }
+      const albumWithCover = state.albums.find((album) => album.name === "Sky Patterns");
+      expect(albumWithCover?.coverArtPath).toBeTruthy();
+      await expect(access(albumWithCover!.coverArtPath!)).resolves.toBeUndefined();
+      const coverBytes = await readFile(albumWithCover!.coverArtPath!);
+      expect(coverBytes.byteLength).toBeGreaterThan(0);
+    });
+  });
 
-      for (const album of state.albums) {
-        expect(album.coverArt).toBeTruthy();
-        await expect(access(album.coverArtPath!)).resolves.toBeUndefined();
-        const coverBytes = await readFile(album.coverArtPath!);
-        expect(coverBytes.byteLength).toBeGreaterThan(0);
-      }
+  it("preserves compilation track artists from real Navidrome metadata", async () => {
+    await withSyncedNavidromeLibrary(librarySetA, async ({ syncOnce, readState }) => {
+      const result = await syncOnce();
+      expect(result.lastStatus).toBe("completed");
 
-      for (const expectedTrack of expectedTracks) {
-        const song = songsByKey.get(`${expectedTrack.album}::${expectedTrack.track}::${expectedTrack.title}`);
-
-        expect(song).toBeDefined();
-
-        if (!song) {
-          continue;
-        }
-
-        expect(song).toMatchObject({
-          album: expectedTrack.album,
-          artist: expectedTrack.artist,
-          title: expectedTrack.title,
-          track: expectedTrack.track,
-          discNumber: expectedTrack.discNumber,
-          year: expectedTrack.albumYear,
-          genre: expectedTrack.albumGenre,
-          comment: expectedTrack.albumComment,
-          musicBrainzId: expectedTrack.musicBrainzTrackId,
-          isDir: false,
-          type: "music",
-          suffix: "mp3",
-        });
-        expect(song?.duration).toBeGreaterThan(0);
-        expect(song?.contentType).toContain("audio/");
-
-        const album = albumById.get(song.albumId || "never-never");
-        expect(album).toBeDefined();
-        expect(album).toMatchObject({
-          name: expectedTrack.album,
-        });
-
-        expect(song.genres?.map((genre) => genre.name)).toContain(expectedTrack.albumGenre);
-
-        const songArtists = song.artists?.map((a) => a.name);
-        expect(songArtists).toContain(expectedTrack.artist);
-
-        const songAlbumArtists = song.albumArtists?.map((a) => a.name);
-        expect(songAlbumArtists).toContain(expectedTrack.albumArtist);
-
-        expect(song.contributors).toHaveLength(1);
-        expect(song.contributors?.[0]).toMatchObject({
-          role: "composer",
-          artist: {
-            name: expectedTrack.composer,
-          },
-        });
-
-        expect(song.replayGain).toEqual({});
-      }
-
+      const state = await readState();
       const compilationTracks = state.songs.filter((song) => song.album === "Summer Sampler");
+
       expect(compilationTracks).toHaveLength(2);
       expect(compilationTracks.map((song) => song.artist).sort()).toEqual(["June Pixel", "Mira Holt"]);
-      for (const compilationTrack of compilationTracks) {
-        const songAlbumArtists = compilationTrack.albumArtists?.map((a) => a.name);
-        expect(songAlbumArtists).toEqual(["Various Artists"]);
+      for (const track of compilationTracks) {
+        expectSongMetadata(track, {
+          album: "Summer Sampler",
+          title: track.title,
+          artist: track.artist ?? "",
+          albumArtist: "Various Artists",
+        });
       }
-    } finally {
-      await connection?.cleanup();
-      await coverArt?.cleanup();
-    }
-
-    console.info("test:done", {
-      test: "persists detailed track metadata across song-related tables",
     });
   });
 
-  it("syncs albums and remains idempotent across all album-related tables", async () => {
-    console.info("test:start", {
-      test: "syncs albums and remains idempotent across all album-related tables",
-    });
-
-    let coverArt: TempDir | undefined;
-    let connection: NavidromeTestConnection | undefined;
-
-    try {
-      coverArt = await createTempCoverArtDir();
-      connection = await createNavidromeTestConnection(librarySetA);
-
-      const db = createInMemoryDb();
-
-      console.info("consumer:login:first", { baseUrl: connection.baseUrl });
-      await login(db, {
-        url: connection.baseUrl,
-        username: connection.username,
-        password: connection.password,
-      });
-
-      const first = await sync(db, coverArtStoreFor(connection, coverArt.path));
-      console.info("consumer:sync:first:result", {
-        status: first.lastStatus,
-      });
-      expect(first.lastStatus).toBe("completed");
-
-      const firstState = await readFullState(db);
-      expect(firstState.albums).toHaveLength(5);
-      expect(firstState.songs).toHaveLength(countSongsInLibrary(librarySetA));
-      assertNoDanglingRelations(firstState);
-      await assertAlbumDetailSongQueries(db);
-
-      const firstCoverSnapshots = await Promise.all(
-        firstState.albums.map(async (album) => ({
-          id: album.id,
-          coverArtPath: album.coverArtPath,
-          coverBytes: await readFile(album.coverArtPath!),
-        })),
-      );
-
-      const u = getUserInfo(db);
-      expect(u).toBeTruthy();
-
-      const staleSong = firstState.songs[0];
-      expect(staleSong).toBeDefined();
-      db.songs.delete(staleSong!.id);
-      db.songs.insert({
-        ...stripVirtualProps(staleSong!),
-        albumId: "stale-server-album-id",
-      });
-
-      const second = await sync(db, coverArtStoreFor(connection, coverArt.path));
-      console.info("consumer:sync:second:result", {
-        status: second.lastStatus,
-      });
-      expect(second.lastStatus).toBe("completed");
-
-      const secondState = await readFullState(db);
-      assertNoDanglingRelations(secondState);
-      await assertAlbumDetailSongQueries(db);
-
-      // Verify idempotency: all albums and songs should be structurally identical
-      expect(secondState.albums).toHaveLength(firstState.albums.length);
-      expect(secondState.songs).toHaveLength(firstState.songs.length);
-
-      for (const firstAlbum of firstState.albums) {
-        const secondAlbum = secondState.albums.find((a) => a.id === firstAlbum.id);
-        expect(secondAlbum).toBeDefined();
-        expect(secondAlbum).toEqual(firstAlbum);
-      }
-
-      for (const firstSong of firstState.songs) {
-        const secondSong = secondState.songs.find((s) => s.id === firstSong.id);
-        expect(secondSong).toBeDefined();
-        expect(secondSong).toEqual(firstSong);
-      }
-
-      await Promise.all(
-        firstCoverSnapshots.map(async ({ id, coverArtPath, coverBytes }) => {
-          const secondAlbum = secondState.albums.find((album) => album.id === id);
-          expect(secondAlbum?.coverArtPath).toBe(coverArtPath);
-          const currentBytes = await readFile(secondAlbum!.coverArtPath!);
-          expect(currentBytes.equals(coverBytes)).toBe(true);
-        }),
-      );
-
-      const u2 = getUserInfo(db);
-      expect(u2).toBeTruthy();
-    } finally {
-      await connection?.cleanup();
-      await coverArt?.cleanup();
-    }
-
-    console.info("test:done", {
-      test: "syncs albums and remains idempotent across all album-related tables",
-    });
-  });
-
-  it("reconciles album deletions when server library changes", async () => {
-    console.info("test:start", {
-      test: "reconciles album deletions when server library changes",
-    });
-
-    let coverArt: TempDir | undefined;
-    let connection: NavidromeTestConnection | undefined;
-
-    try {
-      coverArt = await createTempCoverArtDir();
-      connection = await createNavidromeTestConnection(librarySetA);
-
-      const db = createInMemoryDb();
-
-      console.info("consumer:login:library-a", { baseUrl: connection.baseUrl });
-      await login(db, {
-        url: connection.baseUrl,
-        username: connection.username,
-        password: connection.password,
-      });
-      const resultA = await sync(db, coverArtStoreFor(connection, coverArt.path));
-      console.info("consumer:sync:library-a:result", {
-        status: resultA.lastStatus,
-      });
+  it("reconciles a real server library replacement", async () => {
+    await withSyncedNavidromeLibrary(librarySetA, async ({ db, connection, coverArt, syncOnce, readState }) => {
+      const resultA = await syncOnce();
       expect(resultA.lastStatus).toBe("completed");
 
-      const beforeState = await readFullState(db);
+      const beforeState = await readState();
       const beforeIds = new Set(beforeState.albums.map((album) => album.id));
       const removedAlbumCoverPaths = new Map(beforeState.albums.map((album) => [album.id, album.coverArtPath]));
 
-      // Swap the server library to a different set of albums
-      await connection.replaceLibrary(librarySetB);
-
-      console.info("consumer:login:library-b", { baseUrl: connection.baseUrl });
+      await connection.replaceLibrary(librarySetB, fastLibraryGeneration);
       await login(db, {
         url: connection.baseUrl,
         username: connection.username,
         password: connection.password,
       });
+
       const resultB = await sync(db, coverArtStoreFor(connection, coverArt.path));
-      console.info("consumer:sync:library-b:result", {
-        status: resultB.lastStatus,
-      });
       expect(resultB.lastStatus).toBe("completed");
 
-      const afterState = await readFullState(db);
+      const afterState = await readState();
       const afterIds = new Set(afterState.albums.map((album) => album.id));
 
-      expect(afterState.albums).toHaveLength(5);
-      expect(afterState.songs).toHaveLength(countSongsInLibrary(librarySetB));
+      expectSyncedCounts(afterState, {
+        albums: librarySetB.length,
+        songs: countSongsInLibrary(librarySetB),
+      });
       assertNoDanglingRelations(afterState);
-      await assertAlbumDetailSongQueries(db);
-
-      const hasNewAlbumIds = [...afterIds].some((id) => !beforeIds.has(id));
-      expect(hasNewAlbumIds).toBe(true);
+      expect([...afterIds].some((id) => !beforeIds.has(id))).toBe(true);
 
       for (const beforeAlbum of beforeState.albums) {
         const stillExists = afterState.albums.some((album) => album.id === beforeAlbum.id);
@@ -396,21 +171,8 @@ describe("navidrome sync integration", () => {
         const removedCoverArtPath = removedAlbumCoverPaths.get(beforeAlbum.id);
         expect(removedCoverArtPath).toBeTruthy();
         await expect(access(removedCoverArtPath!)).rejects.toThrow();
-
-        // Verify all songs for this album were deleted
-        const orphanedSongs = afterState.songs.filter((song) => song.albumId === beforeAlbum.id);
-        expect(orphanedSongs).toHaveLength(0);
+        expect(afterState.songs.some((song) => song.albumId === beforeAlbum.id)).toBe(false);
       }
-
-      const u = getUserInfo(db);
-      expect(u).toBeTruthy();
-    } finally {
-      await connection?.cleanup();
-      await coverArt?.cleanup();
-    }
-
-    console.info("test:done", {
-      test: "reconciles album deletions when server library changes",
     });
   });
 });

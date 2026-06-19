@@ -5,10 +5,10 @@ import path from "node:path";
 
 import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
+import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
 
 import { createMuswagDb, type MuswagDb } from "@muswag/shared";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
-import { createNodeSQLitePersistence } from "node_modules/@tanstack/node-db-sqlite-persistence/dist/cjs/node-persistence.cjs";
 
 export interface NavidromeConnection {
   baseUrl: string;

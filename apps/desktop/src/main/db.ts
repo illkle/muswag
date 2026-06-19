@@ -5,7 +5,7 @@ import { app } from "electron";
 import { join } from "path";
 import { ipcMain } from "electron";
 
-const dbP = join(app.getPath("userData"), "muswag.db");
+const dbP = process.env.NODE_ENV === "development" ? "./dev.db" : join(app.getPath("userData"), "muswag.db");
 
 const database = new Database(dbP);
 

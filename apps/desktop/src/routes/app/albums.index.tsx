@@ -130,7 +130,7 @@ function AlbumList({ albums, scrollId }: { albums: Album[]; scrollId: string }) 
 }
 
 function LibraryScreen() {
-  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }));
+  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc" }));
 
   return (
     <section className="flex h-full w-full flex-col">
