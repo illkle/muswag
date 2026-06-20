@@ -55,11 +55,11 @@ const PlayerButtonControls = () => {
         aria-label={status === "playing" ? "Pause playback" : "Play track"}
       >
         {status === "playing" ? (
-          <Pause className="size-5" />
+          <Pause className="size-4" />
         ) : status === "loading" ? (
-          <LoaderCircle className="size-5 animate-spin" />
+          <LoaderCircle className="size-4 animate-spin" />
         ) : (
-          <Play className="size-5" />
+          <Play className="size-4" />
         )}
       </Button>
 
@@ -314,9 +314,9 @@ const PlayerVolume = () => {
 
 export function PlayerPanel() {
   return (
-    <section className=" border-t h-(--player-height) overflow-hidden grid grid-cols-10 px-4 py-2 gap-4">
+    <section className=" border-t h-(--player-height) overflow-hidden grid grid-cols-10 px-4 py-1 gap-4">
       <CurrentTrack />
-      <div className="flex flex-col gap-2 grow items-center justify-center col-span-6">
+      <div className="flex flex-col grow items-center justify-center col-span-6">
         <PlayerButtonControls />
         <PlayerSeek />
       </div>

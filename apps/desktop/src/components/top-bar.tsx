@@ -1,4 +1,4 @@
-import { Search } from "#/components/search";
+import { MiniSearch } from "#/components/search";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
 import { getErrorMessage } from "#/lib/err";
@@ -104,7 +104,7 @@ export const TopBar = () => {
       </div>
       <div className="app-drag-region  w-full h-full"></div>
 
-      <Search />
+      <MiniSearch />
       <div className="app-drag-region  w-full h-full"></div>
       <ServerInfo />
 

@@ -37,6 +37,7 @@
     "@tanstack/db-sqlite-persistence-core": "^0.2.0",
     "@tanstack/node-db-sqlite-persistence": "^0.2.0",
     "@tanstack/react-db": "^0.1.86",
+    "fuse.js": "^7.4.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

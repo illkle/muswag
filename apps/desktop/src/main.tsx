@@ -7,13 +7,8 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { scan } from "react-scan";
-import { syncPlayerCredentials } from "./lib/sync-manager";
 scan({
   enabled: true,
-});
-
-void syncPlayerCredentials().catch((cause) => {
-  console.error("Failed to initialize player credentials", cause);
 });
 
 const queryClient = new QueryClient();
