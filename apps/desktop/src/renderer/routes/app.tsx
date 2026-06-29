@@ -22,6 +22,7 @@ function RouteComponent() {
   return (
     <div>
       <TopBar />
+
       <AppSidebarWrapper>
         <Outlet />
       </AppSidebarWrapper>

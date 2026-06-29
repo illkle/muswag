@@ -1,7 +1,7 @@
 import { AlbumCover } from "#/components/album-cover";
 import { FuzeSearch } from "#/lib/db-renderer";
 import type { SearchResult, SearchResultAlbum, SearchResultSong } from "@muswag/shared";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 
 const InnerResult = ({
   title,
@@ -64,7 +64,7 @@ export function MiniSearch() {
       items={searchResults}
       value={searchValue}
       openOnInputClick
-      onValueChange={(nextSearchValue, r) => {
+      onValueChange={(nextSearchValue) => {
         setSearchValue(nextSearchValue);
 
         const controller = new AbortController();

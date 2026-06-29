@@ -24,6 +24,8 @@ export const rendererConfig = defineConfig({
     tailwindcss(),
     tanstackRouter({
       target: "react",
+      routesDirectory: "src/renderer/routes",
+      generatedRouteTree: "src/renderer/routeTree.gen.ts",
       autoCodeSplitting: true,
     }),
     viteReact(),

@@ -1,7 +1,7 @@
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
-import type { MuswagMainIpc, MuswagRendererIpc } from "../shared/ipc";
-import type { PlayQueueInput, PlayerEvent } from "../shared/player";
+import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
+import type { PlayQueueInput, PlayerEvent } from "#shared/player";
 import type { UserCredentialsToLogin } from "@muswag/shared";
 
 const mainIpc = new IpcEmitter<MuswagMainIpc>();

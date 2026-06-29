@@ -6,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 import { cn } from "#/lib/utils";
 import { PlayerIPC } from "#/lib/ipc";
-import type { PlayerStatus } from "#/shared/player";
+import type { PlayerStatus } from "#shared/player";
 import { AlbumCover } from "#/components/album-cover";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";

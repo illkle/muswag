@@ -1,14 +1,14 @@
 {
   "extends": "@muswag/tsconfig/base.json",
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["src/main/**/*", "src/preload/**/*"],
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
     "paths": {
-      "#/*": ["./src/*"],
-      "@/*": ["./src/*"]
+      "#/*": ["./src/renderer/*"],
+      "@/*": ["./src/renderer/*"],
+      "#shared/*": ["./src/shared/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],

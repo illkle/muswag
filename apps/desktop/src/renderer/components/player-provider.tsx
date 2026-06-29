@@ -8,8 +8,8 @@ import {
   getPlayerCanGoForward,
   getPlayerCanPlay,
   getPlayerCanSeek,
-} from "#/shared/player";
-import { createMirroredRendererStore } from "#/shared/store-sync";
+} from "#shared/player";
+import { createMirroredRendererStore } from "#shared/store-sync";
 import { useStore } from "@tanstack/react-store";
 
 const PlayerMetaStore = createMirroredRendererStore({
