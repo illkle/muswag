@@ -11,16 +11,13 @@ const InnerResult = ({
   ...props
 }: React.ComponentProps<"div"> & { title?: string; subtitle?: string; coverPath?: string }) => {
   return (
-    <div
-      className={cn("flex gap-2 h-12 items-center data-highlighted:bg-primary data-highlighted:text-secondary rounded-lg px-2", className)}
-      {...props}
-    >
+    <div className={cn("flex gap-2 h-12 items-center data-highlighted:bg-primary/10  rounded-lg px-2", className)} {...props}>
       <div className="w-10 shrink-0">
         <AlbumCover key={coverPath} coverArtPath={coverPath} />
       </div>
       <div>
-        <div className="line-clamp-1">{title}</div>
-        <div className="line-clamp-1">{subtitle}</div>
+        <div className="line-clamp-1 text-xs">{title}</div>
+        <div className="line-clamp-1 text-xs text-muted-foreground">{subtitle}</div>
       </div>
     </div>
   );
@@ -30,8 +27,8 @@ const SongResult = ({ song }: { song: SearchResultSong }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={<InnerResult title={song.title} subtitle={song.album} coverPath={song.coverArtPath} />}
-      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: song.albumId ?? "n" } })}
+      render={<InnerResult title={song.title} subtitle={song.artist} coverPath={song.coverArtPath} />}
+      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: song.albumId ?? "n" }, resetScroll: true })}
     ></Autocomplete.Item>
   );
 };
@@ -41,7 +38,7 @@ const AlbumResult = ({ album }: { album: SearchResultAlbum }) => {
   return (
     <Autocomplete.Item
       render={<InnerResult title={album.name} subtitle={album.artist} coverPath={album.coverArtPath} />}
-      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: album.id } })}
+      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: album.id }, resetScroll: true })}
     ></Autocomplete.Item>
   );
 };
@@ -101,7 +98,7 @@ export function MiniSearch() {
             className="w-(--anchor-width) max-w-(--available-width) bg-secondary shadow-2xl rounded-b-xl px-1"
             aria-busy={isPending || undefined}
           >
-            <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain py-1 scroll-pt-1 scroll-pb-1">
+            <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain scroll-pt-1 scroll-pb-1">
               <Autocomplete.List>
                 {(v: FuseResult<SearchResult>) => {
                   if (v.item.type === "album") return <AlbumResult album={v.item} />;

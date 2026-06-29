@@ -60,7 +60,7 @@ function AlbumList({ albums, scrollId }: { albums: Album[]; scrollId: string }) 
 
   const scrollRestorationId = "album-list-" + scrollId;
   const scrollEntry = useElementScrollRestoration({
-    id: "album-list-" + scrollId,
+    id: scrollRestorationId,
   });
 
   const s = useContentSize();

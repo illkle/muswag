@@ -7,6 +7,7 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { scan } from "react-scan";
+import { ThemeProvider } from "#/components/theme-provider";
 scan({
   enabled: true,
 });
@@ -33,7 +34,9 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <StrictMode>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </StrictMode>,
   );
 }

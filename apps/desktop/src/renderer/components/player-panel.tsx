@@ -19,6 +19,8 @@ import {
   usePlayerStatus,
   usePlayerVolumePercent,
 } from "./player-provider";
+import { AlbumCover } from "#/components/album-cover";
+import { Link } from "@tanstack/react-router";
 
 const PlayerButtonControls = () => {
   const canGoBack = usePlayerCanGoBack();
@@ -42,7 +44,7 @@ const PlayerButtonControls = () => {
 
       <Button
         size="icon"
-        className="rounded-full"
+        className="rounded-full h-7"
         onClick={() => {
           if (status === "playing") {
             void PlayerIPC.pause();
@@ -55,11 +57,11 @@ const PlayerButtonControls = () => {
         aria-label={status === "playing" ? "Pause playback" : "Play track"}
       >
         {status === "playing" ? (
-          <Pause className="size-4" />
+          <Pause className="size-3" />
         ) : status === "loading" ? (
-          <LoaderCircle className="size-4 animate-spin" />
+          <LoaderCircle className="size-3 animate-spin" />
         ) : (
-          <Play className="size-4" />
+          <Play className="size-3" />
         )}
       </Button>
 
@@ -151,7 +153,7 @@ const PlayerSeek = () => {
   };
 
   return (
-    <div className="flex items-center gap-3 w-full">
+    <div className="flex items-center gap-1 w-full max-w-190">
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDuration(positionSeconds)}</span>
       <input
         type="range"
@@ -235,22 +237,27 @@ const CurrentTrack = () => {
             .from({ song: db.songs })
             .where(({ song }) => eq(song.id, currentTrackId))
             .findOne()
+            .join({ alb: db.albums }, ({ song, alb }) => eq(song.albumId, alb.id))
         : null,
     [currentTrackId],
   );
-  const currentTrack = currentTrackQuery.data;
+
+  const currentTrack = currentTrackQuery.data?.song;
+  const alb = currentTrackQuery.data?.alb;
 
   return (
-    <div className="min-w-0 col-span-2">
+    <div className="min-w-0 col-span-2 h-full   flex gap-2 items-center">
+      <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" />
+
       {currentTrackId && currentTrack && (
-        <>
-          <p className="truncate text-sm font-semibold">{currentTrack.title}</p>
-          <p className="truncate text-sm text-muted-foreground">
-            {[currentTrack.displayArtist ?? currentTrack.artist ?? "Unknown artist", currentTrack.album]
-              .filter((value): value is string => Boolean(value))
-              .join(" • ")}
+        <div className="flex-col w-full">
+          <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="truncate text-xs font-semibold block">
+            {currentTrack.title}
+          </Link>
+          <p className="truncate text-xs text-muted-foreground block">
+            {currentTrack.displayArtist ?? currentTrack.artist ?? "Unknown artist"}
           </p>
-        </>
+        </div>
       )}
     </div>
   );
@@ -314,7 +321,7 @@ const PlayerVolume = () => {
 
 export function PlayerPanel() {
   return (
-    <section className=" border-t h-(--player-height) overflow-hidden grid grid-cols-10 px-4 py-1 gap-4">
+    <section className=" border-t h-(--player-height) overflow-hidden grid grid-cols-10 px-4 py-1 gap-10">
       <CurrentTrack />
       <div className="flex flex-col grow items-center justify-center col-span-6">
         <PlayerButtonControls />

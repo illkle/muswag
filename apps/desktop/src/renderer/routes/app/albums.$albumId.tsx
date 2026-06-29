@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
 import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -128,8 +128,13 @@ function RouteComponent() {
     primaryGenre,
   ]);
 
+  const scrollRestorationId = "album-" + albumId;
+  useElementScrollRestoration({
+    id: scrollRestorationId,
+  });
+
   return (
-    <section className="flex h-full w-full flex-col">
+    <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
       <header className="border-b border-border/70 bg-card/80 grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
         <AlbumCover coverArtPath={album.coverArtPath} instantLoad />
 
@@ -140,7 +145,7 @@ function RouteComponent() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 ">
         {discSections.length === 0 ? (
           <div className="m-6 rounded-2xl border border-dashed border-border bg-muted/35 px-6 py-12 text-sm text-muted-foreground">
             No songs are available for this album yet.

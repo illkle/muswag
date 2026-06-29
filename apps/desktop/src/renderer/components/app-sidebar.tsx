@@ -1,4 +1,5 @@
 import { AppContentSizeProvider } from "#/components/app-content-size";
+import { ThemeSwitcher } from "#/components/settings/themeSwitcher";
 
 import {
   SidebarProvider,
@@ -39,7 +40,9 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter />
+      <SidebarFooter>
+        <ThemeSwitcher className="w-full" />
+      </SidebarFooter>
     </Sidebar>
   );
 }

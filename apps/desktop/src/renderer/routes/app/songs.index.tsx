@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 
 import { createFileRoute, Navigate, useElementScrollRestoration } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
@@ -11,10 +11,26 @@ import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import type { Song } from "@muswag/shared";
 import { AlbumCover } from "#/components/album-cover";
+import { useResizeObserver } from "usehooks-ts";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
 });
+
+function Placeholder() {
+  return (
+    <div className="grid grid-cols-5 w-full h-12 items-center">
+      <div className="bg-primary/10 w-5 h-4 rounded-md"></div>
+      <div className="w-12 h-12 bg-primary"></div>
+      <div className="flex flex-col">
+        <div className="truncate"></div>
+        <div className="truncate"></div>
+      </div>
+      <div></div>
+      <div></div>
+    </div>
+  );
+}
 
 function SongLine({ song, index }: { song: Song; index: number }) {
   const cover = useLiveQuery((q) =>
@@ -28,38 +44,47 @@ function SongLine({ song, index }: { song: Song; index: number }) {
   );
 
   return (
-    <div className="grid grid-cols-5 w-full h-12 bg-red-500">
-      <div>{index}</div>
-      <div className="w-12 h-12">
+    <div className="grid px-4 grid-cols-[40px_64px_1fr_1fr_48px] gap-4 w-full h-12 items-center">
+      <div className="text-muted-foreground text-xs font-mono text-center">{index + 1}</div>
+      <div className="w-10 h-10">
         <AlbumCover coverArtPath={cover.data?.cover} />
       </div>
-      <div className="flex flex-col">
-        <div className="truncate">{song.title}</div>
-        <div className="truncate">{song.artist}</div>
+      <div className="flex flex-col overflow-hidden">
+        <div className="truncate text-sm">{song.title}</div>
+        <div className="truncate text-xs text-muted-foreground">{song.artist}</div>
       </div>
-      <div>{song.album}</div>
-
-      <div>{song.duration}</div>
+      <div className="text-sm text-muted-foreground">{song.album}</div>
+      <div className="text-xs text-muted-foreground">{song.duration}</div>
     </div>
   );
 }
 
 function SongsList({ songs, scrollId }: { songs: Song[]; scrollId: string }) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const scrollRestorationId = "song-list-" + scrollId;
   const scrollEntry = useElementScrollRestoration({
     id: "album-list-" + scrollId,
   });
 
+  const SIZE = 48;
+
   const rowVirtualizer = useVirtualizer({
     count: songs.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 48,
-    overscan: 30,
+    estimateSize: () => SIZE,
+    overscan: 10,
     initialOffset: scrollEntry?.scrollY,
-    useFlushSync: true,
   });
+
+  const { height = 0 } = useResizeObserver({
+    ref: parentRef as RefObject<HTMLDivElement>,
+    box: "border-box",
+  });
+
+  const needFakes = Math.ceil(height / 48) + 5;
+
+  const fakeOffset = (rowVirtualizer.scrollOffset ?? 0) % SIZE;
 
   return (
     <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto">
@@ -77,7 +102,7 @@ function SongsList({ songs, scrollId }: { songs: Song[]; scrollId: string }) {
               height: `${virtualRow.size}px`,
               transform: `translateY(${virtualRow.start}px)`,
             }}
-            className="absolute top-0 left-0 w-full flex"
+            className="absolute top-0 left-0 w-full flex z-5"
           >
             <SongLine index={virtualRow.index} song={songs[virtualRow.index]!} />
           </div>

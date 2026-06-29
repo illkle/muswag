@@ -1,6 +1,15 @@
+import { cn } from "#/lib/utils";
 import { startTransition, useEffect, useState } from "react";
 
-export function AlbumCover({ coverArtPath, instantLoad = false }: { coverArtPath: string | undefined; instantLoad?: boolean }) {
+export function AlbumCover({
+  coverArtPath,
+  instantLoad = false,
+  className,
+}: {
+  coverArtPath: string | undefined;
+  instantLoad?: boolean;
+  className?: string;
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const coverSrc = coverArtPath ? toCoverArtUrl(coverArtPath) : null;
 
@@ -19,7 +28,7 @@ export function AlbumCover({ coverArtPath, instantLoad = false }: { coverArtPath
   }, []);
 
   return (
-    <div className="relative aspect-square overflow-hidden rounded">
+    <div className={cn("relative aspect-square overflow-hidden rounded", className)}>
       {!imageFailed && coverSrc && loadImage && (
         <img
           src={coverSrc}
