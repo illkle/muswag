@@ -45,7 +45,6 @@ export function CreateFuse(db: MuswagDb) {
   db.albums.subscribeChanges(
     (v) => {
       for (const c of v) {
-        console.log(toAlbum(c.value));
         switch (c.type) {
           case "delete": {
             f.remove((v) => v.type === "album" && v.id === c.value.id);

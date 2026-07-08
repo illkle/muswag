@@ -54,6 +54,7 @@ function initializeDesktopPlayer(): void {
   initializePlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
+    volumeStatePath: join(app.getPath("userData"), "player-volume.json"),
   });
 
   if (!unsubscribePlayerEvents) {

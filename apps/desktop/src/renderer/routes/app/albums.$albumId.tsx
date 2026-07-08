@@ -37,6 +37,12 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
+
+  const scrollRestorationId = "album-" + albumId;
+  useElementScrollRestoration({
+    id: scrollRestorationId,
+  });
+
   const albumQuery = useLiveQuery(
     (q) =>
       q
@@ -127,11 +133,6 @@ function RouteComponent() {
     formatDuration(album.duration),
     primaryGenre,
   ]);
-
-  const scrollRestorationId = "album-" + albumId;
-  useElementScrollRestoration({
-    id: scrollRestorationId,
-  });
 
   return (
     <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">

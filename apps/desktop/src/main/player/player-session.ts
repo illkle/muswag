@@ -6,6 +6,7 @@ import {
   createDefaultPlayerNowPlayingState,
   createDefaultPlayerQueueState,
   createDefaultPlayerVolumeState,
+  type PlayerVolumeState,
 } from "../../shared/player";
 
 type MarkTrackLoadingOptions = {
@@ -206,6 +207,13 @@ export function clampVolumePercent(volumePercent: number): number {
   }
 
   return Math.min(100, Math.max(0, Math.round(volumePercent)));
+}
+
+export function restoreVolumeState(volumeState: PlayerVolumeState): void {
+  volumeStore.setState(() => ({
+    muted: volumeState.muted,
+    volumePercent: clampVolumePercent(volumeState.volumePercent),
+  }));
 }
 
 export function setVolumeRequested(volumePercent: number): void {

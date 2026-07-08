@@ -38,6 +38,7 @@ import {
   nowPlayingStore,
   queueStore,
   resetPlayerSession,
+  restoreVolumeState,
   setMutedRequested,
   setPauseRequested,
   setVolumeRequested,
@@ -46,6 +47,7 @@ import {
   updatePosition,
   volumeStore,
 } from "./player-session";
+import { loadPlayerVolumeState, savePlayerVolumeState } from "./player-volume-persistence";
 
 const POSITION_BROADCAST_INTERVAL_MS = 500;
 
@@ -60,9 +62,10 @@ let metaBridgeDispose: (() => void) | undefined;
 let queueBridgeDispose: (() => void) | undefined;
 let nowPlayingBridgeDispose: (() => void) | undefined;
 let volumeBridgeDispose: (() => void) | undefined;
+let volumePersistenceDispose: (() => void) | undefined;
 let credentials: UserCredentialsToLogin | null = null;
 
-export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string }): void {
+export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string; volumeStatePath: string }): void {
   if (streamSource) {
     return;
   }
@@ -73,6 +76,8 @@ export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: stri
   });
 
   streamSource = createMpvStreamSource(() => credentials);
+  restoreVolumeState(loadPlayerVolumeState(options.volumeStatePath));
+  volumePersistenceDispose = subscribeToVolumePersistence(options.volumeStatePath);
   initializeMpvIpcClient({
     ipcPath: options.ipcPath,
     mpvBinaryPath: options.mpvBinaryPath,
@@ -94,6 +99,8 @@ export function disposePlayer(): void {
   nowPlayingBridgeDispose = undefined;
   volumeBridgeDispose?.();
   volumeBridgeDispose = undefined;
+  volumePersistenceDispose?.();
+  volumePersistenceDispose = undefined;
   clientSubscription?.();
   clientSubscription = undefined;
   disposeMpvIpcClient();
@@ -277,6 +284,28 @@ function subscribeToStores(): void {
   });
 }
 
+function subscribeToVolumePersistence(volumeStatePath: string): () => void {
+  let previousState = volumeStore.state;
+
+  const subscription = volumeStore.subscribe(() => {
+    const nextState = volumeStore.state;
+    if (isSameVolumeState(nextState, previousState)) {
+      return;
+    }
+
+    previousState = nextState;
+    try {
+      savePlayerVolumeState(volumeStatePath, nextState);
+    } catch (cause) {
+      console.error("[player][mpv][main]", "volume:persist:error", cause);
+    }
+  });
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}
+
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
   const nextOperation = operationChain.then(operation, operation);
   operationChain = nextOperation.then(
@@ -350,6 +379,7 @@ async function playCurrentTrack(options: { resumePlayback: boolean }): Promise<v
       trackId: currentTrack.id,
     });
 
+    await applyCurrentVolumeToMpv();
     if (options.resumePlayback) {
       await setMpvPause(false);
     }
@@ -358,6 +388,11 @@ async function playCurrentTrack(options: { resumePlayback: boolean }): Promise<v
   } catch (cause) {
     applyError(cause);
   }
+}
+
+async function applyCurrentVolumeToMpv(): Promise<void> {
+  await setMpvVolume(volumeStore.state.volumePercent);
+  await setMpvMuted(volumeStore.state.muted);
 }
 
 async function setPause(paused: boolean): Promise<void> {

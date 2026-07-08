@@ -13,7 +13,7 @@ import {
   syncAlbumsInMemory,
 } from "../helpers/sync-testkit.js";
 import { createInMemoryDb } from "../navidrome-testkit.js";
-import { sync, syncAlbums } from "@muswag/shared";
+import { createInitialSyncProgress, sync, syncAlbums } from "@muswag/shared";
 
 describe("syncAlbums", () => {
   it("persists nested song metadata", async () => {
@@ -279,5 +279,53 @@ describe("syncAlbums", () => {
     expect(result.inserted).toBe(1);
     expect(state.albums[0]?.coverArtPath).toBe("/covers/direct.jpg");
     expect(coverArt.fetchCalls).toEqual([{ albumId: "album-direct", coverArtId: "cover-1" }]);
+  });
+
+  it("writes sync progress counters to the sync record", async () => {
+    const db = createInMemoryDb();
+    const album = albumWithSongsFixture({
+      id: "album-progress",
+      song: [songFixture({ id: "song-progress", albumId: "album-progress" })],
+    });
+    const listedAlbum = (({ song: _song, ...listItem }) => listItem)(album);
+    const fakeApi = createFakeSubsonicApi([[listedAlbum]], { [album.id]: album });
+    const coverArt = createMemoryCoverArtStore({ fetchResult: "/covers/progress.jpg" });
+
+    db.syncs.insert({
+      id: "progress-sync",
+      timeStarted: "2026-06-29T00:00:00.000Z",
+      timeEnded: null,
+      lastStatus: "running",
+      error: null,
+      currentStep: "starting",
+      progress: createInitialSyncProgress(),
+      progressUpdatedAt: "2026-06-29T00:00:00.000Z",
+    });
+
+    await syncAlbums({
+      api: fakeApi.api,
+      db,
+      coverArt,
+      syncId: "progress-sync",
+    });
+
+    const syncRecord = db.syncs.get("progress-sync");
+    expect(syncRecord).toMatchObject({
+      currentStep: "removing-cover-art",
+      progress: {
+        pagesFetched: 1,
+        albumsFetched: 1,
+        currentPage: 1,
+        currentPageSize: 1,
+        currentPageAlbumDetailsFetched: 1,
+        currentPageAlbumDetailsTotal: 1,
+        albumsInserted: 1,
+        albumsUpdated: 0,
+        albumsDeleted: 0,
+        songsDeleted: 0,
+        coverArtDeleted: 0,
+      },
+    });
+    expect(syncRecord?.progressUpdatedAt).not.toBe("2026-06-29T00:00:00.000Z");
   });
 });

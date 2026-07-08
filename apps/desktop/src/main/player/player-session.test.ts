@@ -12,6 +12,7 @@ import {
   handleSeekApplied,
   loadQueue,
   resetPlayerSession,
+  restoreVolumeState,
   setPauseRequested,
   updateDuration,
 } from "./player-session";
@@ -132,6 +133,18 @@ describe("PlayerSession", () => {
     expect(getState().volume).toEqual({
       muted: false,
       volumePercent: 100,
+    });
+  });
+
+  it("restores volume state", () => {
+    restoreVolumeState({
+      muted: true,
+      volumePercent: 42.4,
+    });
+
+    expect(getState().volume).toEqual({
+      muted: true,
+      volumePercent: 42,
     });
   });
 });

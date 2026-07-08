@@ -3,6 +3,7 @@ import SubsonicAPI from "@muswag/subsonic-api";
 import type { MuswagDb } from "./db/database.js";
 import type { SyncRecord, UserCredentials } from "./db/types.js";
 import { syncAlbums } from "./sync/sync-albums.js";
+import { createInitialSyncProgress } from "./sync/progress.js";
 import type { CoverArtStore } from "./sync/utils.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
@@ -210,6 +211,9 @@ export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncR
     timeEnded: null,
     lastStatus: "running",
     error: null,
+    currentStep: "starting",
+    progress: createInitialSyncProgress(),
+    progressUpdatedAt: timeStarted,
   };
   db.syncs.insert(syncRecord);
 
@@ -219,6 +223,8 @@ export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncR
     db.syncs.update(syncId, (draft) => {
       draft.timeEnded = new Date().toISOString();
       draft.lastStatus = "completed";
+      draft.currentStep = "completed";
+      draft.progressUpdatedAt = draft.timeEnded;
     });
 
     return db.syncs.get(syncId)!;
@@ -233,6 +239,8 @@ export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncR
       draft.timeEnded = new Date().toISOString();
       draft.lastStatus = "failed";
       draft.error = error instanceof Error ? error.message : String(error);
+      draft.currentStep = "failed";
+      draft.progressUpdatedAt = draft.timeEnded;
     });
 
     throw error;
@@ -245,6 +253,8 @@ export function abortSync(db: MuswagDb): void {
       db.syncs.update(record.id, (draft) => {
         draft.timeEnded = new Date().toISOString();
         draft.lastStatus = "aborted";
+        draft.currentStep = "aborted";
+        draft.progressUpdatedAt = draft.timeEnded;
       });
     }
   }
@@ -254,6 +264,7 @@ export function abortSync(db: MuswagDb): void {
 
 export { createCoverArtStore } from "./sync/covers-helper.js";
 export type { CoverArtFileSystem } from "./sync/covers-helper.js";
+export { createInitialSyncProgress } from "./sync/progress.js";
 
 export function buildSubsonicStreamUrl(credentials: UserCredentialsToLogin, songId: string): string {
   const salt = randomHex(16);

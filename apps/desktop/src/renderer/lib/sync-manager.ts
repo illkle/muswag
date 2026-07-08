@@ -1,6 +1,6 @@
 import { CoverArtIPC } from "#/lib/ipc";
 import { db } from "#/lib/db-renderer";
-import { createCoverArtStore, getUserInfo, login, logout, sync } from "@muswag/shared";
+import { abortSync, createCoverArtStore, getUserInfo, login, logout, sync } from "@muswag/shared";
 import type { CoverArtFileSystem, SyncRecord, UserCredentialsToLogin, UserInfo } from "@muswag/shared";
 
 const coverArtFileSystem: CoverArtFileSystem = {
@@ -19,6 +19,10 @@ export const SyncManager = {
   async logout(): Promise<null> {
     const result = await logout(db);
     return result;
+  },
+
+  async cancelSync(): Promise<void> {
+    abortSync(db);
   },
 
   async sync(): Promise<SyncRecord> {

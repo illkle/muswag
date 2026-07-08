@@ -1,4 +1,4 @@
-import { type Collection } from "@tanstack/db";
+import { BasicIndex, type Collection } from "@tanstack/db";
 import { persistedCollectionOptions, type PersistedCollectionPersistence } from "@tanstack/db-sqlite-persistence-core";
 
 import type { SyncRecord, UserCredentials } from "./types.js";
@@ -27,8 +27,11 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
       getKey: (album) => album.id,
       persistence,
       schemaVersion: 1,
+      defaultIndexType: BasicIndex,
     }),
   );
+
+  albums.createIndex(({ id }) => id);
 
   const songs = createCollection(
     persistedCollectionOptions<Child, string>({
@@ -36,8 +39,11 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
       getKey: (song) => song.id,
       persistence,
       schemaVersion: 1,
+      defaultIndexType: BasicIndex,
     }),
   );
+
+  songs.createIndex(({ id }) => id);
 
   const userCredentials = createCollection(
     persistedCollectionOptions<UserCredentials, number>({

@@ -1,6 +1,7 @@
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "@muswag/subsonic-api";
 
 import type { MuswagDb } from "../db/database.js";
+import { updateSyncProgress } from "./progress.js";
 import type { CoverArtStore } from "./utils.js";
 
 const ALBUM_PAGE_SIZE = 500;
@@ -63,7 +64,12 @@ async function fetchAlbumDetailWithRetry(api: SubsonicAPI, album: AlbumID3): Pro
   throw lastCause ?? new Error(`Fetching album detail failed for ${album.id}`);
 }
 
-async function fetchAlbumDetails(api: SubsonicAPI, albums: AlbumID3[], coverArt: CoverArtStore): Promise<SyncedAlbum[]> {
+async function fetchAlbumDetails(
+  api: SubsonicAPI,
+  albums: AlbumID3[],
+  coverArt: CoverArtStore,
+  onAlbumFetched?: () => void,
+): Promise<SyncedAlbum[]> {
   const detailedAlbums: SyncedAlbum[] = [];
   let nextIndex = 0;
 
@@ -85,6 +91,7 @@ async function fetchAlbumDetails(api: SubsonicAPI, albums: AlbumID3[], coverArt:
           album: detailedAlbum,
           coverArtPath,
         };
+        onAlbumFetched?.();
       }
     }),
   );
@@ -181,7 +188,7 @@ function deleteMissingAlbums(
   return albumsToDelete;
 }
 
-function deleteDanglingSongs(db: MuswagDb, syncedAlbumIds: Set<string>): void {
+function deleteDanglingSongs(db: MuswagDb, syncedAlbumIds: Set<string>): number {
   const songIdsToDelete: string[] = [];
 
   for (const [, song] of db.songs.entries()) {
@@ -193,6 +200,8 @@ function deleteDanglingSongs(db: MuswagDb, syncedAlbumIds: Set<string>): void {
   for (const songId of songIdsToDelete) {
     db.songs.delete(songId);
   }
+
+  return songIdsToDelete.length;
 }
 
 export async function syncAlbums(params: SyncAlbumsParams) {
@@ -208,6 +217,16 @@ export async function syncAlbums(params: SyncAlbumsParams) {
   for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
     checkAborted(db, syncId);
 
+    updateSyncProgress(db, syncId, {
+      currentStep: "fetching-album-list",
+      progress: {
+        currentPage: pages + 1,
+        currentPageSize: 0,
+        currentPageAlbumDetailsFetched: 0,
+        currentPageAlbumDetailsTotal: 0,
+      },
+    });
+
     const payload = await retry(
       () =>
         api.getAlbumList2({
@@ -219,24 +238,93 @@ export async function syncAlbums(params: SyncAlbumsParams) {
     );
 
     const albums = payload.albumList2?.album ?? [];
-    const detailedAlbums = await fetchAlbumDetails(api, albums, coverArt);
-
     pages += 1;
     fetched += albums.length;
+
+    updateSyncProgress(db, syncId, {
+      currentStep: "fetching-album-details",
+      progress: {
+        pagesFetched: pages,
+        albumsFetched: fetched,
+        currentPage: pages,
+        currentPageSize: albums.length,
+        currentPageAlbumDetailsFetched: 0,
+        currentPageAlbumDetailsTotal: albums.length,
+      },
+    });
+
+    let currentPageAlbumDetailsFetched = 0;
+    const detailedAlbums = await fetchAlbumDetails(api, albums, coverArt, () => {
+      currentPageAlbumDetailsFetched += 1;
+      if (currentPageAlbumDetailsFetched % 10 !== 0 && currentPageAlbumDetailsFetched !== albums.length) {
+        return;
+      }
+
+      updateSyncProgress(db, syncId, {
+        currentStep: "fetching-album-details",
+        progress: {
+          currentPageAlbumDetailsFetched,
+          currentPageAlbumDetailsTotal: albums.length,
+        },
+      });
+    });
+
+    updateSyncProgress(db, syncId, {
+      currentStep: "saving-albums",
+      progress: {
+        currentPageAlbumDetailsFetched: albums.length,
+        currentPageAlbumDetailsTotal: albums.length,
+      },
+    });
 
     const persisted = persistPage(db, syncId, detailedAlbums, syncedAlbumIds);
     inserted += persisted.inserted;
     updated += persisted.updated;
+
+    updateSyncProgress(db, syncId, {
+      currentStep: "saving-albums",
+      progress: {
+        albumsInserted: inserted,
+        albumsUpdated: updated,
+      },
+    });
 
     if (albums.length < ALBUM_PAGE_SIZE) {
       break;
     }
   }
 
+  updateSyncProgress(db, syncId, { currentStep: "removing-missing-albums" });
   const deletedAlbumRows = deleteMissingAlbums(db, syncId, syncedAlbumIds);
-  deleteDanglingSongs(db, syncedAlbumIds);
   const deleted = deletedAlbumRows.length;
-  await Promise.all(deletedAlbumRows.map((album) => coverArt.remove(album.id)));
+  updateSyncProgress(db, syncId, {
+    currentStep: "removing-dangling-songs",
+    progress: {
+      albumsDeleted: deleted,
+    },
+  });
+
+  const songsDeleted = deleteDanglingSongs(db, syncedAlbumIds);
+  updateSyncProgress(db, syncId, {
+    currentStep: "removing-cover-art",
+    progress: {
+      songsDeleted,
+    },
+  });
+
+  let coverArtDeleted = 0;
+  await Promise.all(
+    deletedAlbumRows.map(async (album) => {
+      await coverArt.remove(album.id);
+      coverArtDeleted += 1;
+      updateSyncProgress(db, syncId, {
+        currentStep: "removing-cover-art",
+        progress: {
+          coverArtDeleted,
+        },
+      });
+    }),
+  );
   const finishedAt = new Date().toISOString();
 
   return {
