@@ -44,6 +44,7 @@ export function CreateFuse(db: MuswagDb) {
 
   db.albums.subscribeChanges(
     (v) => {
+      console.info("processing albums changes", v.length);
       for (const c of v) {
         switch (c.type) {
           case "delete": {
@@ -64,10 +65,11 @@ export function CreateFuse(db: MuswagDb) {
 
   db.songs.subscribeChanges(
     async (v) => {
+      console.info("processing song changes", v.length);
       for (const c of v) {
         switch (c.type) {
           case "delete": {
-            f.remove((v) => v.type === "album" && v.id === c.value.id);
+            f.remove((v) => v.type === "song" && v.id === c.value.id);
           }
           case "update": {
             const alb = await queryOnce((v) =>
@@ -79,7 +81,7 @@ export function CreateFuse(db: MuswagDb) {
 
             if (!alb) continue;
 
-            f.remove((v) => v.type === "album" && v.id === c.value.id);
+            f.remove((v) => v.type === "song" && v.id === c.value.id);
             f.add(toSong(c.value, alb));
           }
           case "insert": {

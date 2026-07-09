@@ -1,8 +1,5 @@
 import SubsonicAPI from "@muswag/subsonic-api";
 
-import type { CoverArtStore } from "./utils.js";
-import { getAlbumCoverExtension } from "./utils.js";
-
 export interface CoverArtFileSystem {
   removeCoverFiles(albumId: string): Promise<void>;
   writeCoverFile(albumId: string, extension: string, bytes: Uint8Array): Promise<string>;
@@ -77,4 +74,33 @@ export function createCoverArtStore(options: SubsonicCoverArtStoreOptions): Cove
       await fileSystem.removeCoverFiles(albumId);
     },
   };
+}
+
+export interface CoverArtStore {
+  fetch(albumId: string, coverArtId: string | null): Promise<string | null | undefined>;
+  remove(albumId: string): Promise<void>;
+}
+
+export function getAlbumCoverExtension(contentType: string | null): string {
+  if (!contentType) {
+    return ".jpg";
+  }
+
+  const normalized = contentType.split(";")[0]?.trim().toLowerCase();
+
+  switch (normalized) {
+    case "image/jpeg":
+    case "image/jpg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    case "image/avif":
+      return ".avif";
+    default:
+      return ".jpg";
+  }
 }

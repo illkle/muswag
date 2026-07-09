@@ -4,7 +4,7 @@ import type { MuswagDb } from "./db/database.js";
 import type { SyncRecord, UserCredentials } from "./db/types.js";
 import { syncAlbums } from "./sync/sync-albums.js";
 import { createInitialSyncProgress } from "./sync/progress.js";
-import type { CoverArtStore } from "./sync/utils.js";
+import type { CoverArtStore } from "./sync/covers-helper.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
@@ -70,10 +70,8 @@ function md5(input: string): string {
   let d0 = 0x10325476;
 
   const shifts = [
-    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4,
+    11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
   ];
   const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0);
 

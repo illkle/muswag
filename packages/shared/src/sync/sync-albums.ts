@@ -1,8 +1,8 @@
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "@muswag/subsonic-api";
 
-import type { MuswagDb } from "../db/database.js";
+import type { Album, MuswagDb, Song } from "../db/database.js";
 import { updateSyncProgress } from "./progress.js";
-import type { CoverArtStore } from "./utils.js";
+import type { CoverArtStore } from "./covers-helper.js";
 
 const ALBUM_PAGE_SIZE = 500;
 const ALBUM_DETAIL_CONCURRENCY = 8;
@@ -108,6 +108,12 @@ function persistPage(
   let inserted = 0;
   let updated = 0;
 
+  const albumIDsToDelete: string[] = [];
+  const albumsToInsert: Album[] = [];
+
+  const songIDsToDelete: string[] = [];
+  const songsToInsert: Song[] = [];
+
   for (const { album, coverArtPath } of albums) {
     checkAborted(db, syncId);
 
@@ -124,9 +130,9 @@ function persistPage(
     const albumRecord = { ...album, coverArtPath: resolvedCoverArtPath ?? undefined };
 
     if (exists) {
-      db.albums.delete(album.id);
+      albumIDsToDelete.push(album.id);
     }
-    db.albums.insert(albumRecord);
+    albumsToInsert.push(albumRecord);
 
     syncedAlbumIds.add(album.id);
 
@@ -143,13 +149,18 @@ function persistPage(
       }
     }
     for (const songId of existingSongIds) {
-      db.songs.delete(songId);
+      songIDsToDelete.push(songId);
     }
 
     for (const song of songs) {
-      db.songs.insert({ ...song, albumId: album.id });
+      songsToInsert.push({ ...song, albumId: album.id });
     }
   }
+
+  if (albumIDsToDelete.length) db.albums.delete(albumIDsToDelete);
+  if (albumsToInsert.length) db.albums.insert(albumsToInsert);
+  if (songIDsToDelete.length) db.songs.delete(songIDsToDelete);
+  if (songsToInsert.length) db.songs.insert(songsToInsert);
 
   return { inserted, updated };
 }
@@ -167,23 +178,22 @@ function deleteMissingAlbums(
     }
   }
 
+  const albumIdsToDelete: string[] = [];
+  const songIdsToDelete: string[] = [];
+
   for (const { id } of albumsToDelete) {
     checkAborted(db, syncId);
 
-    // Delete all songs for this album
-    const songIdsToDelete: string[] = [];
     for (const [, song] of db.songs.entries()) {
       if (song.albumId === id) {
         songIdsToDelete.push(song.id);
       }
     }
-    for (const songId of songIdsToDelete) {
-      db.songs.delete(songId);
-    }
-
-    // Delete the album
-    db.albums.delete(id);
+    albumIdsToDelete.push(id);
   }
+
+  if (albumIdsToDelete.length) db.albums.delete(albumIdsToDelete);
+  if (songIdsToDelete.length) db.songs.delete(songIdsToDelete);
 
   return albumsToDelete;
 }
@@ -197,9 +207,7 @@ function deleteDanglingSongs(db: MuswagDb, syncedAlbumIds: Set<string>): number 
     }
   }
 
-  for (const songId of songIdsToDelete) {
-    db.songs.delete(songId);
-  }
+  if (songIdsToDelete.length) db.songs.delete(songIdsToDelete);
 
   return songIdsToDelete.length;
 }
