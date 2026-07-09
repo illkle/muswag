@@ -48,7 +48,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build application
-        run: pnpm --filter @muswag/desktop build
+        run: pnpm turbo run build --filter=@muswag/desktop...
 
       - name: Package and publish release
         working-directory: apps/desktop
