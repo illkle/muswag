@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Muswag desktop application built with Electron and electron-vite.",
-  "author": "Muswag",
+  "homepage": "https://github.com/illkle/muswag",
+  "author": {
+    "name": "illkle",
+    "email": "k.kelolov@gmail.com"
+  },
   "type": "module",
   "main": "./out/main/index.js",
   "imports": {

@@ -19,6 +19,8 @@ mac:
     - zip
 linux:
   category: AudioVideo
+  maintainer: illkle <kelolov@gmail.com>
+  artifactName: muswag-${version}-${arch}.${ext}
   target:
     - AppImage
     - deb
