@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import { useRef } from "react";
 
 import { createFileRoute, Navigate, useElementScrollRestoration } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
@@ -11,26 +11,10 @@ import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import type { Song } from "@muswag/shared";
 import { AlbumCover } from "#/components/album-cover";
-import { useResizeObserver } from "usehooks-ts";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
 });
-
-function Placeholder() {
-  return (
-    <div className="grid grid-cols-5 w-full h-12 items-center">
-      <div className="bg-primary/10 w-5 h-4 rounded-md"></div>
-      <div className="w-12 h-12 bg-primary"></div>
-      <div className="flex flex-col">
-        <div className="truncate"></div>
-        <div className="truncate"></div>
-      </div>
-      <div></div>
-      <div></div>
-    </div>
-  );
-}
 
 function SongLine({ song, index }: { song: Song; index: number }) {
   const cover = useLiveQuery((q) =>
@@ -76,15 +60,6 @@ function SongsList({ songs, scrollId }: { songs: Song[]; scrollId: string }) {
     overscan: 10,
     initialOffset: scrollEntry?.scrollY,
   });
-
-  const { height = 0 } = useResizeObserver({
-    ref: parentRef as RefObject<HTMLDivElement>,
-    box: "border-box",
-  });
-
-  const needFakes = Math.ceil(height / 48) + 5;
-
-  const fakeOffset = (rowVirtualizer.scrollOffset ?? 0) % SIZE;
 
   return (
     <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto">

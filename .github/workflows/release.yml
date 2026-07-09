@@ -1,0 +1,55 @@
+name: Release desktop app
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            electron_builder_target: --linux
+          - os: macos-latest
+            electron_builder_target: --mac
+          - os: windows-latest
+            electron_builder_target: --win
+
+    env:
+      APP_VERSION: 0.1.${{ github.run_number }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm --filter @muswag/desktop build
+
+      - name: Package and publish release
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder ${{ matrix.electron_builder_target }} --publish always --config.extraMetadata.version=${{ env.APP_VERSION }}

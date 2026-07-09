@@ -9,12 +9,22 @@ asarUnpack:
   - node_modules/better-sqlite3/**
 win:
   executableName: Muswag
+  target:
+    - nsis
 mac:
   category: public.app-category.music
   entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - dmg
+    - zip
 linux:
   category: AudioVideo
   target:
     - AppImage
     - deb
 npmRebuild: false
+publish:
+  provider: github
+  owner: illkle
+  repo: muswag
+  releaseType: release

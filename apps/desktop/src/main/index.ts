@@ -24,6 +24,7 @@ import {
 } from "./player/mpv-controller";
 import { getState } from "./player/player-session";
 import { disposeDB } from "./db";
+import { initializeAutoUpdater } from "./app-updater";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 
@@ -179,6 +180,7 @@ app.whenReady().then(() => {
 
   initializeDesktopPlayer();
   createWindow();
+  initializeAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
