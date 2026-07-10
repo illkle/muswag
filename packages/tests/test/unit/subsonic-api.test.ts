@@ -113,4 +113,61 @@ describe("SubsonicAPI", () => {
       message: "Wrong username or password.",
     });
   });
+
+  it("parses full playlist responses", async () => {
+    const api = createApi({
+      "subsonic-response": {
+        status: "ok",
+        version: "1.16.1",
+        playlist: {
+          id: "playlist-1",
+          name: "Offline mix",
+          comment: "For the train",
+          public: false,
+          readonly: false,
+          songCount: 2,
+          duration: 240,
+          created: "2026-07-10T10:00:00Z",
+          changed: "2026-07-10T11:00:00Z",
+          entry: [
+            { id: "song-1", title: "One", isDir: false },
+            { id: "song-1", title: "One again", isDir: false },
+          ],
+        },
+      },
+    });
+
+    const result = await api.getPlaylist({ id: "playlist-1" });
+
+    expect(result.playlist).toMatchObject({
+      id: "playlist-1",
+      name: "Offline mix",
+      readonly: false,
+    });
+    expect(result.playlist.entry?.map(({ id }) => id)).toEqual(["song-1", "song-1"]);
+  });
+
+  it("encodes repeated playlist update parameters", async () => {
+    const urls: string[] = [];
+    const api = createApi(
+      {
+        "subsonic-response": {
+          status: "ok",
+          version: "1.16.1",
+        },
+      },
+      urls,
+    );
+
+    await api.updatePlaylist({
+      playlistId: "playlist-1",
+      songIndexToRemove: [2, 1, 0],
+      songIdToAdd: ["song-a", "song-b"],
+    });
+
+    const url = new URL(urls[0]!);
+    expect(url.pathname).toBe("/rest/updatePlaylist.view");
+    expect(url.searchParams.getAll("songIndexToRemove")).toEqual(["2", "1", "0"]);
+    expect(url.searchParams.getAll("songIdToAdd")).toEqual(["song-a", "song-b"]);
+  });
 });

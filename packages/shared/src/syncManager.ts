@@ -189,6 +189,11 @@ export async function logout(db: MuswagDb): Promise<null> {
   if (existing) {
     db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
   }
+
+  for (const [id] of db.playlists.entries()) db.playlists.delete(id);
+  for (const [id] of db.songs.entries()) db.songs.delete(id);
+  for (const [id] of db.albums.entries()) db.albums.delete(id);
+  for (const [id] of db.syncs.entries()) db.syncs.delete(id);
   return null;
 }
 

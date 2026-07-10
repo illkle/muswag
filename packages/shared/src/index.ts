@@ -3,4 +3,6 @@ export * from "./db/database.js";
 export * from "./db/queries.js";
 export * from "./syncManager.js";
 export * from "./sync/sync-albums.js";
+export * from "./sync/covers-helper.js";
 export * from "./db/fuzzy.js";
+export * from "./playlists/index.js";

@@ -60,6 +60,10 @@ export function usePlayerStatus() {
   return useStore(PlayerNowPlayingStore, (state) => state.status);
 }
 
+export function usePlayerError() {
+  return useStore(PlayerNowPlayingStore, (state) => state.error);
+}
+
 export function usePlayerCanPlay() {
   const queueState = useStore(PlayerQueueStore, (state) => state);
   const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);

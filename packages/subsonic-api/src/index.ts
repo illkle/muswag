@@ -176,12 +176,45 @@ const albumList2Schema = z.object({
   album: z.array(albumID3Schema).optional(),
 });
 
+const playlistSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  comment: z.string().optional(),
+  owner: z.string().optional(),
+  public: z.boolean().optional(),
+  songCount: z.number(),
+  duration: z.number(),
+  created: z.string(),
+  changed: z.string(),
+  coverArt: z.string().optional(),
+  allowedUser: z.array(z.string()).optional(),
+  readonly: z.boolean().optional(),
+  validUntil: z.string().optional(),
+});
+
+const playlistWithSongsSchema = playlistSchema.extend({
+  entry: z.array(childSchema).optional(),
+});
+
+const playlistsSchema = z.object({
+  playlist: z.array(playlistSchema).optional(),
+});
+
 const pingResponseSchema = z.object({});
 const getAlbumResponseSchema = z.object({
   album: albumWithSongsID3Schema,
 });
 const getAlbumList2ResponseSchema = z.object({
   albumList2: albumList2Schema,
+});
+const getPlaylistsResponseSchema = z.object({
+  playlists: playlistsSchema,
+});
+const getPlaylistResponseSchema = z.object({
+  playlist: playlistWithSongsSchema,
+});
+const createPlaylistResponseSchema = z.object({
+  playlist: playlistWithSongsSchema,
 });
 
 const responseEnvelopeSchema = z.object({
@@ -202,6 +235,9 @@ export type Child = z.infer<typeof childSchema>;
 export type AlbumID3 = z.infer<typeof albumID3Schema>;
 export type AlbumWithSongsID3 = z.infer<typeof albumWithSongsID3Schema>;
 export type AlbumList2 = z.infer<typeof albumList2Schema>;
+export type Playlist = z.infer<typeof playlistSchema>;
+export type PlaylistWithSongs = z.infer<typeof playlistWithSongsSchema>;
+export type Playlists = z.infer<typeof playlistsSchema>;
 
 export type GetAlbumList2Args = {
   type: "alphabeticalByName" | "alphabeticalByArtist" | "byYear" | "random" | "newest" | "highest" | "frequent" | "recent";
@@ -220,6 +256,29 @@ export type GetAlbumArgs = {
 export type GetCoverArtArgs = {
   id: string;
   size?: number;
+};
+
+export type GetPlaylistArgs = {
+  id: string;
+};
+
+export type CreatePlaylistArgs = {
+  playlistId?: string;
+  name?: string;
+  songId?: string[];
+};
+
+export type UpdatePlaylistArgs = {
+  playlistId: string;
+  name?: string;
+  comment?: string;
+  public?: boolean;
+  songIdToAdd?: string[];
+  songIndexToRemove?: number[];
+};
+
+export type DeletePlaylistArgs = {
+  id: string;
 };
 
 export class SubsonicApiError extends Error {
@@ -396,6 +455,26 @@ export default class SubsonicAPI {
 
   async getCoverArt(args: GetCoverArtArgs): Promise<Response> {
     return this.#request("getCoverArt", args);
+  }
+
+  async getPlaylists(): Promise<SubsonicBaseResponse & { playlists: Playlists }> {
+    return this.#json("getPlaylists", {}, getPlaylistsResponseSchema);
+  }
+
+  async getPlaylist(args: GetPlaylistArgs): Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }> {
+    return this.#json("getPlaylist", args, getPlaylistResponseSchema);
+  }
+
+  async createPlaylist(args: CreatePlaylistArgs): Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }> {
+    return this.#json("createPlaylist", args, createPlaylistResponseSchema);
+  }
+
+  async updatePlaylist(args: UpdatePlaylistArgs): Promise<SubsonicBaseResponse> {
+    return this.#json("updatePlaylist", args, pingResponseSchema);
+  }
+
+  async deletePlaylist(args: DeletePlaylistArgs): Promise<SubsonicBaseResponse> {
+    return this.#json("deletePlaylist", args, pingResponseSchema);
   }
 
   async #json<T extends z.AnyZodObject>(

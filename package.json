@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:local:mac": "pnpm turbo run build --filter=@muswag/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @muswag/desktop exec electron-builder --mac --dir --config.mac.identity=- --publish never",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "format": "turbo run format",
