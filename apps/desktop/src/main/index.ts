@@ -24,9 +24,10 @@ import {
 } from "./player/mpv-controller";
 import { getState } from "./player/player-session";
 import { disposeDB } from "./db";
-import { initializeAutoUpdater } from "./app-updater";
+import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, subscribeToAppUpdateState } from "./app-updater";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
+let unsubscribeAppUpdateState: (() => void) | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -144,6 +145,14 @@ app.whenReady().then(() => {
 
   registerCoverArtIpc();
 
+  mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
+  mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());
+  unsubscribeAppUpdateState = subscribeToAppUpdateState((state) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      rendererIpc.send(window.webContents, "appUpdate:state", state);
+    }
+  });
+
   mainIpc.handle("player:getState", async () => {
     return getState();
   });
@@ -195,6 +204,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   mainIpc.dispose();
+  unsubscribeAppUpdateState?.();
+  unsubscribeAppUpdateState = undefined;
   disposeCoverArtIpc?.();
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;

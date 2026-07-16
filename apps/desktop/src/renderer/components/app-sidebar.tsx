@@ -1,4 +1,5 @@
 import { AppContentSizeProvider } from "#/components/app-content-size";
+import { AppVersionButton } from "#/components/app-version-button";
 import { MpvInfoDialog } from "#/components/mpv-info-dialog";
 import { ThemeSwitcher } from "#/components/settings/themeSwitcher";
 
@@ -42,6 +43,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <AppVersionButton />
         <MpvInfoDialog />
         <ThemeSwitcher className="w-full" />
       </SidebarFooter>
