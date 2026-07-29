@@ -20,6 +20,7 @@ import {
   usePlayerVolumePercent,
 } from "./player-provider";
 import { AlbumCover } from "#/components/album-cover";
+import { ArtistLinks } from "#/components/artist-links";
 import { Link } from "@tanstack/react-router";
 
 const PlayerButtonControls = () => {
@@ -254,9 +255,13 @@ const CurrentTrack = () => {
           <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="truncate text-xs font-semibold block">
             {currentTrack.title}
           </Link>
-          <p className="truncate text-xs text-muted-foreground block">
-            {currentTrack.displayArtist ?? currentTrack.artist ?? "Unknown artist"}
-          </p>
+          <ArtistLinks
+            artist={currentTrack.artist}
+            artistId={currentTrack.artistId}
+            artists={currentTrack.artists}
+            className="block truncate text-xs text-muted-foreground"
+            linkClassName="hover:text-foreground hover:underline"
+          />
         </div>
       )}
     </div>

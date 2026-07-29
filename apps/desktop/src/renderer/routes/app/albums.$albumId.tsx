@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 
 import { AlbumCover } from "#/components/album-cover";
+import { ArtistLinks } from "#/components/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
@@ -104,27 +105,8 @@ function RouteComponent() {
   }
 
   const album = albumQuery.data;
-  const { artists, discTitles, genres } = album;
+  const { genres } = album;
   const songs = songsQuery.data;
-  const albumArtists = artists?.length ? artists.map((artist) => artist.name) : [];
-  const headlineArtist = album.displayArtist ?? album.artist ?? (albumArtists.length > 0 ? albumArtists.join(", ") : "Unknown artist");
-  const discTitlesByNumber = new Map(discTitles?.map((discTitle) => [discTitle.disc, discTitle.title]));
-  const songsByDisc = new Map<number, typeof songs>();
-
-  for (const song of songs) {
-    const discNumber = song.discNumber ?? 1;
-    const currentSongs = songsByDisc.get(discNumber) ?? [];
-    currentSongs.push(song);
-    songsByDisc.set(discNumber, currentSongs);
-  }
-
-  const discSections = [...songsByDisc.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([discNumber, discSongs]) => ({
-      discNumber,
-      discTitle: discTitlesByNumber.get(discNumber) ?? null,
-      songs: discSongs,
-    }));
   const queueIndexBySongId = new Map(songs.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([
@@ -151,13 +133,21 @@ function RouteComponent() {
         <AlbumCover coverArtPath={album.coverArtPath} instantLoad />
 
         <div className="min-w-0 self-end">
-          <p className="truncate text-sm text-muted-foreground">{headlineArtist}</p>
+          <ArtistLinks
+            artist={album.artist}
+            artistId={album.artistId}
+            artists={album.artists}
+            displayArtist={album.displayArtist}
+            className="block truncate text-sm text-muted-foreground"
+            linkClassName="hover:text-foreground hover:underline"
+          />
+
           <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{album.name}</h1>
           {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 ">
+      <div className="min-h-0 flex-1">
         <SongListRoot
           songs={songs}
           discTitles={album.discTitles}

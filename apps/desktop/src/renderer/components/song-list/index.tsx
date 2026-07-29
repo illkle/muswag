@@ -1,4 +1,5 @@
 import { AlbumCover } from "#/components/album-cover";
+import { ArtistLinks } from "#/components/artist-links";
 import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 import type { PlayerStatus } from "#shared/player.ts";
@@ -52,7 +53,7 @@ export const SongListRoot = ({
   const [selectionState, setSelectionState] = useState<Record<string, boolean>>({});
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto">
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto h-full">
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -114,17 +115,16 @@ type SongVisualProps = {
   isPlaying?: boolean;
   status?: PlayerStatus | null;
   index: number;
-} & React.ComponentProps<"button">;
+} & React.ComponentProps<"div">;
 
 type SongComponent = (v: SongVisualProps) => JSX.Element;
 
 export const SongRenderAlbum = ({ song, isPlaying, isSelected, status, ...props }: SongVisualProps) => {
   return (
-    <button
+    <div
       key={song.id}
-      type="button"
       className={cn(
-        "h-12 grid w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center",
+        "grid h-12 w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center",
         "hover:bg-muted/30 focus-visible:bg-muted/60 focus-visible:outline-none",
         isSelected && "bg-muted/60 hover:bg-muted/70",
       )}
@@ -137,9 +137,15 @@ export const SongRenderAlbum = ({ song, isPlaying, isSelected, status, ...props 
         <p className={cn("truncate font-light", isPlaying && "font-bold")}>{song.title}</p>
         {song.comment ? <p className="truncate text-sm text-muted-foreground line-clamp-1">{song.comment}</p> : null}
       </div>
-      <div className="text-sm text-muted-foreground line-clamp-1">{song.displayArtist ?? song.artist ?? "Unknown artist"}</div>
+      <ArtistLinks
+        artist={song.artist}
+        artistId={song.artistId}
+        artists={song.artists}
+        className="line-clamp-1 text-sm text-muted-foreground"
+        linkClassName="hover:text-foreground hover:underline"
+      />
       <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
-    </button>
+    </div>
   );
 };
 
@@ -164,10 +170,16 @@ export function SongRenderSongsList({ song, index }: SongVisualProps) {
       <div className="w-10 h-10">{song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <></>}</div>
       <div className="flex flex-col overflow-hidden">
         <div className="truncate text-sm">{song.title}</div>
-        <div className="truncate text-xs text-muted-foreground">{song.artist}</div>
+        <ArtistLinks
+          artist={song.artist}
+          artistId={song.artistId}
+          artists={song.artists}
+          className="truncate text-xs text-muted-foreground"
+          linkClassName="hover:text-foreground hover:underline"
+        />
       </div>
       <div className="text-sm text-muted-foreground">{song.album}</div>
-      <div className="text-xs text-muted-foreground">{song.duration}</div>
+      <div className="text-xs text-muted-foreground">{formatDuration(song.duration)}</div>
     </div>
   );
 }
