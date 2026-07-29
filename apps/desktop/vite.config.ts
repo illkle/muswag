@@ -20,7 +20,7 @@ export const rendererConfig = defineConfig({
   },
   plugins: [
     devtools(),
-    tsconfigPaths({ projects: ["./tsconfig.json"] }),
+    tsconfigPaths({ projects: ["./tsconfig.renderer.json"] }),
     tailwindcss(),
     tanstackRouter({
       target: "react",

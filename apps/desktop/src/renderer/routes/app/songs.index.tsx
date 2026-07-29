@@ -1,91 +1,17 @@
-import { useRef } from "react";
 
-import { createFileRoute, Navigate, useElementScrollRestoration } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useUser } from "#/lib/queries";
-import { eq, useLiveQuery } from "@tanstack/react-db";
+import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
-import type { Song } from "@muswag/shared";
-import { AlbumCover } from "#/components/album-cover";
+import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
 });
-
-function SongLine({ song, index }: { song: Song; index: number }) {
-  const cover = useLiveQuery((q) =>
-    q
-      .from({ album: db.albums })
-      .where((a) => eq(a.album.id, song.albumId))
-      .findOne()
-      .select((v) => ({
-        cover: v.album.coverArtPath,
-      })),
-  );
-
-  return (
-    <div className="grid px-4 grid-cols-[40px_64px_1fr_1fr_48px] gap-4 w-full h-12 items-center">
-      <div className="text-muted-foreground text-xs font-mono text-center">{index + 1}</div>
-      <div className="w-10 h-10">
-        <AlbumCover coverArtPath={cover.data?.cover} />
-      </div>
-      <div className="flex flex-col overflow-hidden">
-        <div className="truncate text-sm">{song.title}</div>
-        <div className="truncate text-xs text-muted-foreground">{song.artist}</div>
-      </div>
-      <div className="text-sm text-muted-foreground">{song.album}</div>
-      <div className="text-xs text-muted-foreground">{song.duration}</div>
-    </div>
-  );
-}
-
-function SongsList({ songs, scrollId }: { songs: Song[]; scrollId: string }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const scrollRestorationId = "song-list-" + scrollId;
-  const scrollEntry = useElementScrollRestoration({
-    id: "album-list-" + scrollId,
-  });
-
-  const SIZE = 48;
-
-  const rowVirtualizer = useVirtualizer({
-    count: songs.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => SIZE,
-    overscan: 10,
-    initialOffset: scrollEntry?.scrollY,
-  });
-
-  return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto">
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => (
-          <div
-            key={virtualRow.index}
-            style={{
-              height: `${virtualRow.size}px`,
-              transform: `translateY(${virtualRow.start}px)`,
-            }}
-            className="absolute top-0 left-0 w-full flex z-5"
-          >
-            <SongLine index={virtualRow.index} song={songs[virtualRow.index]!} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function LibraryScreen() {
   const songsQuery = useLiveQuery((q) => q.from({ songs: db.songs }));
@@ -118,7 +44,14 @@ function LibraryScreen() {
       ) : null}
 
       {!songsQuery.isLoading && !songsQuery.isError && (songsQuery.data?.length ?? 0) > 0 ? (
-        <SongsList songs={songsQuery.data ?? []} scrollId="library-screen-songs" />
+        <SongListRoot
+          currentTrackID={""}
+          playerStatus={null}
+          songs={songsQuery.data ?? []}
+          scrollId="library-screen-songs"
+          onSongPlay={() => null}
+          SongComponent={SongRenderSongsList}
+        />
       ) : null}
     </section>
   );

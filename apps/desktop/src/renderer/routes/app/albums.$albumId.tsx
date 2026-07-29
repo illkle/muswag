@@ -1,15 +1,15 @@
 import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
-import { Disc3, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
-import type { ReactNode } from "react";
+import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
-import { cn } from "#/lib/utils";
-import { PlayerIPC } from "#/lib/ipc";
-import type { PlayerStatus } from "#shared/player";
+
 import { AlbumCover } from "#/components/album-cover";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
+import { SongListRoot } from "#/components/song-list";
+import { PlayerIPC } from "#/lib/ipc";
+import type { Song } from "@muswag/shared";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -57,7 +57,7 @@ function RouteComponent() {
       q
         .from({ song: db.songs })
         .where(({ song }) => eq(song.albumId, albumId))
-        .orderBy((q) => q.song.track),
+        .orderBy((q) => [q.song.discNumber, q.song.track]),
     [albumId],
   );
 
@@ -134,6 +134,17 @@ function RouteComponent() {
     primaryGenre,
   ]);
 
+  const onPlay = (song: Song) => {
+    const queueIndex = queueIndexBySongId.get(song.id);
+
+    if (queueIndex === undefined) return;
+
+    void PlayerIPC.playQueue({
+      queue: songs,
+      startIndex: queueIndex,
+    });
+  };
+
   return (
     <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
       <header className="border-b border-border/70 bg-card/80 grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
@@ -147,83 +158,15 @@ function RouteComponent() {
       </header>
 
       <div className="min-h-0 flex-1 ">
-        {discSections.length === 0 ? (
-          <div className="m-6 rounded-2xl border border-dashed border-border bg-muted/35 px-6 py-12 text-sm text-muted-foreground">
-            No songs are available for this album yet.
-          </div>
-        ) : null}
-
-        {discSections.length > 0 ? (
-          <div className="divide-y divide-border/70">
-            {discSections.map((discSection) => {
-              const showDiscHeader = discSections.length > 1 || Boolean(discSection.discTitle);
-
-              return (
-                <div key={discSection.discNumber}>
-                  {showDiscHeader ? (
-                    <div className="flex items-center justify-between bg-muted/35 px-4 py-2.5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">Disc {discSection.discNumber}</p>
-                        {discSection.discTitle ? <p className="truncate text-sm text-muted-foreground">{discSection.discTitle}</p> : null}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {discSection.songs.length} track{discSection.songs.length === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className="divide-y divide-border/60">
-                    {discSection.songs.map((song) => {
-                      const queueIndex = queueIndexBySongId.get(song.id) ?? 0;
-                      const isActive = currentTrackId === song.id;
-
-                      return (
-                        <button
-                          key={song.id}
-                          type="button"
-                          className={cn(
-                            "grid w-full gap-3 px-4 py-3 text-left transition-colors md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center",
-                            "hover:bg-muted/55 focus-visible:bg-muted/60 focus-visible:outline-none",
-                            isActive && "bg-primary/6",
-                          )}
-                          onClick={() => {
-                            void PlayerIPC.playQueue({
-                              queue: songs,
-                              startIndex: queueIndex,
-                            });
-                          }}
-                        >
-                          <div className="text-sm font-medium text-muted-foreground">
-                            {isActive ? renderTrackStateIcon(playerStatus) : (song.track ?? "•")}
-                          </div>
-                          <div className="min-w-0">
-                            <p className={cn("truncate font-medium", isActive && "text-primary")}>{song.title}</p>
-                            {song.comment ? <p className="truncate text-sm text-muted-foreground">{song.comment}</p> : null}
-                          </div>
-                          <div className="text-sm text-muted-foreground">{song.displayArtist ?? song.artist ?? "Unknown artist"}</div>
-                          <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
+        <SongListRoot
+          songs={songs}
+          discTitles={album.discTitles}
+          onSongPlay={onPlay}
+          currentTrackID={currentTrackId}
+          playerStatus={playerStatus}
+          scrollId={"album-" + album.id}
+        />
       </div>
     </section>
   );
-}
-
-function renderTrackStateIcon(status: PlayerStatus): ReactNode {
-  if (status === "loading") {
-    return <LoaderCircle className="size-4 animate-spin text-primary" />;
-  }
-
-  if (status === "paused") {
-    return <PauseCircle className="size-4 text-primary" />;
-  }
-
-  return <PlayCircle className="size-4 text-primary" />;
 }
