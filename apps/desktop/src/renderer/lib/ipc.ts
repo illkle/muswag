@@ -1,7 +1,7 @@
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
-import type { AppUpdateState, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
-import type { PlayQueueInput, PlayerEvent } from "#shared/player";
+import type { AppUpdateState, MpvInstallOutput, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
+import type { MpvInstallMethod, PlayQueueInput, PlayerEvent } from "#shared/player";
 import type { UserCredentialsToLogin } from "@muswag/shared";
 
 const mainIpc = new IpcEmitter<MuswagMainIpc>();
@@ -13,6 +13,18 @@ export const AppUpdateIPC = {
   subscribe: (listener: (state: AppUpdateState) => void) =>
     rendererIpc.on("appUpdate:state", (_event, state) => {
       listener(state);
+    }),
+};
+
+export const MpvIPC = {
+  cancelInstall: () => mainIpc.invoke("mpv:cancelInstall"),
+  clearManualPath: () => mainIpc.invoke("mpv:clearManualPath"),
+  install: (method: MpvInstallMethod) => mainIpc.invoke("mpv:install", method),
+  locate: () => mainIpc.invoke("mpv:locate"),
+  recheck: () => mainIpc.invoke("mpv:recheck"),
+  subscribeInstallOutput: (listener: (output: MpvInstallOutput) => void) =>
+    rendererIpc.on("mpv:installOutput", (_event, output) => {
+      listener(output);
     }),
 };
 

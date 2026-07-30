@@ -96,7 +96,15 @@ export function usePlayerPositionSeconds() {
 }
 
 export function usePlayerMpvAvailable() {
-  return useStore(PlayerMetaStore, (state) => state.mpvAvailable);
+  return useStore(PlayerMetaStore, (state) => state.mpv.status === "ready");
+}
+
+export function usePlayerMpvState() {
+  return useStore(PlayerMetaStore, (state) => state.mpv);
+}
+
+export function usePlayerMpvInstallState() {
+  return useStore(PlayerMetaStore, (state) => state.mpvInstall);
 }
 
 export function usePlayerMuted() {

@@ -1,11 +1,13 @@
 import { createStore } from "@tanstack/react-store";
 
-import type { PlayQueueInput, PlayerQueueItem, PlayerState } from "../../shared/player";
+import type { MpvInstallState, MpvState, PlayQueueInput, PlayerQueueItem, PlayerState } from "../../shared/player";
 import {
   createDefaultPlayerMetaState,
   createDefaultPlayerNowPlayingState,
   createDefaultPlayerQueueState,
   createDefaultPlayerVolumeState,
+  isSameMpvInstallState,
+  isSameMpvState,
   type PlayerVolumeState,
 } from "../../shared/player";
 
@@ -244,20 +246,33 @@ export function handleMutedChanged(muted: boolean): void {
   }));
 }
 
-export function markMpvAvailable(): void {
-  if (metaStore.state.mpvAvailable) {
+export function applyMpvState(mpv: MpvState): void {
+  if (isSameMpvState(mpv, metaStore.state.mpv)) {
     return;
   }
 
-  metaStore.setState(() => ({
-    mpvAvailable: true,
+  metaStore.setState((state) => ({
+    ...state,
+    mpv,
   }));
 }
 
-export function applyError(message: string): void {
-  metaStore.setState(() => ({
-    mpvAvailable: !message.includes("mpv binary was not found"),
+export function applyMpvInstallState(mpvInstall: MpvInstallState): void {
+  if (isSameMpvInstallState(mpvInstall, metaStore.state.mpvInstall)) {
+    return;
+  }
+
+  metaStore.setState((state) => ({
+    ...state,
+    mpvInstall,
   }));
+}
+
+export function getMpvState(): MpvState {
+  return metaStore.state.mpv;
+}
+
+export function applyError(message: string): void {
   nowPlayingStore.setState((state) => ({
     ...state,
     error: message,

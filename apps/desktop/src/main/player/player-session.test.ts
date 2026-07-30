@@ -54,7 +54,8 @@ describe("PlayerSession", () => {
 
     expect(getState()).toMatchObject({
       meta: {
-        mpvAvailable: true,
+        mpv: { status: "checking" },
+        mpvInstall: { status: "idle" },
       },
       queue: {
         currentIndex: 1,

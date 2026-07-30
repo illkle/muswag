@@ -1,28 +1,33 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
 import type { MuswagRendererIpc } from "../shared/ipc";
 import {
+  cancelMpvInstall,
+  clearManualMpvPath,
   disposePlayer,
   getDefaultMpvIpcPath,
   initializePlayer,
+  installMpv,
   next,
   pause,
   play,
   playQueue,
   previous,
+  refreshMpvAvailability,
   seek,
   setCredentials,
+  setManualMpvPath,
   setMuted,
   setVolume,
   subscribe,
   toggle,
 } from "./player/mpv-controller";
-import { getState } from "./player/player-session";
+import { getMpvState, getState } from "./player/player-session";
 import { disposeDB } from "./db";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, subscribeToAppUpdateState } from "./app-updater";
 
@@ -52,10 +57,16 @@ function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void
   }
 }
 
+function broadcastMpvInstallOutput(output: MuswagRendererIpc["mpv:installOutput"][0]): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    rendererIpc.send(window.webContents, "mpv:installOutput", output);
+  }
+}
+
 function initializeDesktopPlayer(): void {
   initializePlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
-    mpvBinaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv",
+    mpvPathStatePath: join(app.getPath("userData"), "mpv.json"),
     volumeStatePath: join(app.getPath("userData"), "player-volume.json"),
   });
 
@@ -64,6 +75,32 @@ function initializeDesktopPlayer(): void {
       broadcastPlayerEvent(event);
     });
   }
+}
+
+function registerMpvIpc(): void {
+  mainIpc.handle("mpv:recheck", async () => refreshMpvAvailability());
+  mainIpc.handle("mpv:cancelInstall", async () => {
+    cancelMpvInstall();
+  });
+  mainIpc.handle("mpv:clearManualPath", async () => clearManualMpvPath());
+  mainIpc.handle("mpv:install", async (_, method) => {
+    return installMpv(method, broadcastMpvInstallOutput);
+  });
+  mainIpc.handle("mpv:locate", async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      buttonLabel: "Use this binary",
+      message: "Select the mpv executable",
+      properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"],
+      title: "Locate mpv",
+    });
+
+    const [selectedPath] = filePaths;
+    if (canceled || !selectedPath) {
+      return getMpvState();
+    }
+
+    return setManualMpvPath(selectedPath);
+  });
 }
 
 function registerCoverArtIpc(): void {
@@ -152,6 +189,8 @@ app.whenReady().then(() => {
       rendererIpc.send(window.webContents, "appUpdate:state", state);
     }
   });
+
+  registerMpvIpc();
 
   mainIpc.handle("player:getState", async () => {
     return getState();

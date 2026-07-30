@@ -1,5 +1,10 @@
-import type { PlayQueueInput, PlayerEvent, PlayerState } from "./player";
+import type { MpvInstallMethod, MpvState, PlayQueueInput, PlayerEvent, PlayerState } from "./player";
 import type { UserCredentialsToLogin } from "@muswag/shared";
+
+export type MpvInstallOutput = {
+  line: string;
+  stream: "stdout" | "stderr";
+};
 
 export type AppUpdateStatus = "disabled" | "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error";
 
@@ -18,6 +23,12 @@ export type MuswagMainIpc = {
   "appUpdate:getState": () => AppUpdateState;
   "coverArt:removeFiles": (albumId: string) => void;
   "coverArt:writeFile": (albumId: string, extension: string, bytes: Uint8Array) => string;
+  "mpv:cancelInstall": () => void;
+  "mpv:clearManualPath": () => MpvState;
+  "mpv:install": (method: MpvInstallMethod) => MpvState;
+  /** Opens a file picker so the user can point at an mpv binary. Returns the unchanged state when cancelled. */
+  "mpv:locate": () => MpvState;
+  "mpv:recheck": () => MpvState;
   "player:getState": () => PlayerState;
   "player:next": () => void;
   "player:pause": () => void;
@@ -33,5 +44,6 @@ export type MuswagMainIpc = {
 
 export type MuswagRendererIpc = {
   "appUpdate:state": [state: AppUpdateState];
+  "mpv:installOutput": [output: MpvInstallOutput];
   "player:event": [event: PlayerEvent];
 };

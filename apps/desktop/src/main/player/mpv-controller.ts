@@ -1,6 +1,21 @@
-import type { PlayQueueInput, PlayerEvent, PlayerNowPlayingState, PlayerQueueState, PlayerState } from "../../shared/player";
+import { isAbsolute } from "node:path";
+
+import type {
+  MpvInstallMethod,
+  MpvState,
+  PlayQueueInput,
+  PlayerEvent,
+  PlayerNowPlayingState,
+  PlayerQueueState,
+  PlayerState,
+} from "../../shared/player";
+import { getMpvUnavailableReason, isSamePlayerMetaState } from "../../shared/player";
 import type { UserCredentialsToLogin } from "@muswag/shared";
 import { bridgeMainStoreToEvent } from "../../shared/store-sync";
+import { isMpvResolutionError, MpvUnavailableError } from "./mpv-errors";
+import { cancelMpvInstall as cancelRunningInstall, runMpvInstall, type MpvInstallOutput } from "./mpv-installer";
+import { detectInstallCandidates, resolveMpvBinary } from "./mpv-locator";
+import { createDefaultMpvPathState, loadMpvPathState, saveMpvPathState, type MpvPathState } from "./mpv-path-persistence";
 import {
   disposeMpvIpcClient,
   getDefaultMpvIpcPath,
@@ -18,10 +33,13 @@ import { createMpvStreamSource } from "./mpv-stream-source";
 import {
   advanceToNextTrack,
   applyError as applySessionError,
+  applyMpvInstallState,
+  applyMpvState,
   clampPosition,
   clampVolumePercent,
   clearQueue,
   getCurrentQueueItem,
+  getMpvState,
   getStatus,
   handleFileLoaded,
   handleMutedChanged,
@@ -32,7 +50,6 @@ import {
   hasCurrentTrack,
   loadQueue,
   markCurrentTrackLoading,
-  markMpvAvailable,
   metaStore,
   moveToPreviousTrack,
   nowPlayingStore,
@@ -64,33 +81,114 @@ let nowPlayingBridgeDispose: (() => void) | undefined;
 let volumeBridgeDispose: (() => void) | undefined;
 let volumePersistenceDispose: (() => void) | undefined;
 let credentials: UserCredentialsToLogin | null = null;
+let mpvPathStatePath: string | undefined;
+let mpvPathState: MpvPathState = createDefaultMpvPathState();
+let resolvedMpvBinaryPath: string | null = null;
+let pendingMpvResolution: Promise<MpvState> | undefined;
 
-export function initializePlayer(options: { ipcPath: string; mpvBinaryPath: string; volumeStatePath: string }): void {
+export function initializePlayer(options: { ipcPath: string; mpvPathStatePath: string; volumeStatePath: string }): void {
   if (streamSource) {
     return;
   }
 
   console.debug("[player][mpv][main]", "controller:init", {
     ipcPath: options.ipcPath,
-    mpvBinaryPath: options.mpvBinaryPath,
+    mpvPathStatePath: options.mpvPathStatePath,
   });
 
   streamSource = createMpvStreamSource(() => credentials);
+  mpvPathStatePath = options.mpvPathStatePath;
+  mpvPathState = loadMpvPathState(options.mpvPathStatePath);
   restoreVolumeState(loadPlayerVolumeState(options.volumeStatePath));
   volumePersistenceDispose = subscribeToVolumePersistence(options.volumeStatePath);
   initializeMpvIpcClient({
+    getMpvBinaryPath: () => resolvedMpvBinaryPath,
     ipcPath: options.ipcPath,
-    mpvBinaryPath: options.mpvBinaryPath,
   });
   clientSubscription = subscribeToMpvIpcClient((event) => {
     handleClientEvent(event);
   });
   subscribeToStores();
+
+  // Resolve up front so a missing binary is reported at startup instead of on first play.
+  void refreshMpvAvailability();
+}
+
+/** Looks for a usable mpv binary and publishes the result to the renderer. */
+export function refreshMpvAvailability(): Promise<MpvState> {
+  if (pendingMpvResolution) {
+    return pendingMpvResolution;
+  }
+
+  applyMpvState({ status: "checking" });
+
+  pendingMpvResolution = resolveMpvBinary({
+    cachedPath: mpvPathState.cachedPath,
+    manualPath: mpvPathState.manualPath,
+  })
+    .catch((cause): MpvState => {
+      console.error("[player][mpv][main]", "mpv:resolve:error", cause);
+      return { checkedPaths: [], installOptions: [], status: "missing" };
+    })
+    .then((state) => {
+      applyResolvedMpvState(state);
+      return state;
+    })
+    .finally(() => {
+      pendingMpvResolution = undefined;
+    });
+
+  return pendingMpvResolution;
+}
+
+/** Points the player at a binary the user picked by hand. */
+export async function setManualMpvPath(binaryPath: string): Promise<MpvState> {
+  updateMpvPathState({ cachedPath: null, manualPath: binaryPath });
+  return refreshMpvAvailability();
+}
+
+/** Drops a hand-picked binary and goes back to automatic discovery. */
+export async function clearManualMpvPath(): Promise<MpvState> {
+  updateMpvPathState({ cachedPath: null, manualPath: null });
+  return refreshMpvAvailability();
+}
+
+/** Runs a package manager install for mpv, then re-resolves. */
+export async function installMpv(method: MpvInstallMethod, onOutput: (output: MpvInstallOutput) => void): Promise<MpvState> {
+  const candidate = (await detectInstallCandidates()).find((installCandidate) => installCandidate.option.method === method);
+
+  if (!candidate) {
+    applyMpvInstallState({
+      command: method,
+      error: `${method} is not available on this machine.`,
+      method,
+      status: "failed",
+    });
+    return getMpvState();
+  }
+
+  applyMpvInstallState({ command: candidate.option.command, method, status: "running" });
+
+  const result = await runMpvInstall(candidate, onOutput);
+  if (!result.ok) {
+    applyMpvInstallState({ command: candidate.option.command, error: result.error, method, status: "failed" });
+    return getMpvState();
+  }
+
+  applyMpvInstallState({ command: candidate.option.command, method, status: "succeeded" });
+  // The freshly installed binary may sit somewhere the stale cache does not point at.
+  updateMpvPathState({ cachedPath: null });
+  return refreshMpvAvailability();
+}
+
+export function cancelMpvInstall(): void {
+  cancelRunningInstall();
 }
 
 export function disposePlayer(): void {
   console.debug("[player][mpv][main]", "controller:dispose");
 
+  cancelRunningInstall();
   metaBridgeDispose?.();
   metaBridgeDispose = undefined;
   queueBridgeDispose?.();
@@ -106,6 +204,10 @@ export function disposePlayer(): void {
   disposeMpvIpcClient();
   streamSource = undefined;
   credentials = null;
+  mpvPathStatePath = undefined;
+  mpvPathState = createDefaultMpvPathState();
+  resolvedMpvBinaryPath = null;
+  pendingMpvResolution = undefined;
   resetPlayerSession();
 }
 
@@ -251,6 +353,57 @@ export async function previous(): Promise<void> {
   });
 }
 
+function applyResolvedMpvState(state: MpvState): void {
+  console.debug("[player][mpv][main]", "mpv:resolved", state);
+
+  if (state.status === "ready") {
+    resolvedMpvBinaryPath = state.binaryPath;
+    // A bare `mpv` only works while PATH happens to contain it, so it is not worth caching.
+    updateMpvPathState({ cachedPath: isAbsolute(state.binaryPath) ? state.binaryPath : null });
+  } else {
+    resolvedMpvBinaryPath = null;
+    updateMpvPathState({ cachedPath: null });
+  }
+
+  applyMpvState(state);
+}
+
+function updateMpvPathState(patch: Partial<MpvPathState>): void {
+  const nextState = { ...mpvPathState, ...patch };
+  if (nextState.cachedPath === mpvPathState.cachedPath && nextState.manualPath === mpvPathState.manualPath) {
+    return;
+  }
+
+  mpvPathState = nextState;
+  if (!mpvPathStatePath) {
+    return;
+  }
+
+  try {
+    saveMpvPathState(mpvPathStatePath, mpvPathState);
+  } catch (cause) {
+    console.error("[player][mpv][main]", "mpv:path:persist:error", cause);
+  }
+}
+
+/** Blocks playback with a useful message when no usable mpv binary is known. */
+async function ensureMpvResolved(): Promise<void> {
+  if (pendingMpvResolution) {
+    await pendingMpvResolution;
+  }
+
+  if (getMpvState().status === "checking") {
+    await refreshMpvAvailability();
+  }
+
+  const mpvState = getMpvState();
+  if (mpvState.status === "ready") {
+    return;
+  }
+
+  throw new MpvUnavailableError(getMpvUnavailableReason(mpvState) ?? "mpv is unavailable.");
+}
+
 function subscribeToStores(): void {
   if (metaBridgeDispose || queueBridgeDispose || nowPlayingBridgeDispose || volumeBridgeDispose) {
     return;
@@ -259,7 +412,7 @@ function subscribeToStores(): void {
   metaBridgeDispose = bridgeMainStoreToEvent({
     createEvent: (state) => ({ state, type: "meta" as const }),
     emitEvent: emitState,
-    isEqual: isSameMetaState,
+    isEqual: isSamePlayerMetaState,
     store: metaStore,
   });
   queueBridgeDispose = bridgeMainStoreToEvent({
@@ -372,6 +525,8 @@ async function playCurrentTrack(options: { resumePlayback: boolean }): Promise<v
       throw new Error("Player module has not been initialized.");
     }
 
+    await ensureMpvResolved();
+
     const streamUrl = await nextStreamSource.getStreamUrl(currentTrack.id);
     console.debug("[player][mpv][main]", "track:load", {
       streamUrl,
@@ -384,7 +539,6 @@ async function playCurrentTrack(options: { resumePlayback: boolean }): Promise<v
       await setMpvPause(false);
     }
     await loadMpvFile(streamUrl);
-    markMpvAvailable();
   } catch (cause) {
     applyError(cause);
   }
@@ -401,7 +555,6 @@ async function setPause(paused: boolean): Promise<void> {
   try {
     console.debug("[player][mpv][main]", "track:setPause", { paused });
     await setMpvPause(paused);
-    markMpvAvailable();
     setPauseRequested(paused);
   } catch (cause) {
     applyError(cause);
@@ -416,7 +569,6 @@ async function performSeek(positionSeconds: number): Promise<void> {
   try {
     console.debug("[player][mpv][main]", "track:seek", { boundedPosition });
     await seekAbsolute(boundedPosition);
-    markMpvAvailable();
     handleSeekApplied(boundedPosition);
   } catch (cause) {
     applyError(cause);
@@ -429,7 +581,6 @@ async function performSetVolume(volumePercent: number): Promise<void> {
   try {
     console.debug("[player][mpv][main]", "track:setVolume", { volumePercent });
     await setMpvVolume(volumePercent);
-    markMpvAvailable();
     setVolumeRequested(volumePercent);
   } catch (cause) {
     applyError(cause);
@@ -442,7 +593,6 @@ async function performSetMuted(muted: boolean): Promise<void> {
   try {
     console.debug("[player][mpv][main]", "track:setMuted", { muted });
     await setMpvMuted(muted);
-    markMpvAvailable();
     setMutedRequested(muted);
   } catch (cause) {
     applyError(cause);
@@ -473,16 +623,17 @@ function emitState(event: PlayerEvent): void {
 function applyError(cause: unknown): void {
   console.error("[player][mpv][main]", "state:error", cause);
   applySessionError(cause instanceof Error ? cause.message : "Playback failed");
+
+  // The binary went away or was never there: look again so the UI can offer a fix.
+  if (isMpvResolutionError(cause) && getMpvState().status === "ready") {
+    void refreshMpvAvailability();
+  }
 }
 
 function ensureInitialized(): void {
   if (!streamSource) {
     throw new Error("Player module has not been initialized.");
   }
-}
-
-function isSameMetaState(nextState: PlayerState["meta"], previousState: PlayerState["meta"]): boolean {
-  return nextState.mpvAvailable === previousState.mpvAvailable;
 }
 
 function isSameQueueState(nextState: PlayerQueueState, previousState: PlayerQueueState): boolean {

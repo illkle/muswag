@@ -6,6 +6,8 @@ import type { Socket } from "node:net";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { MpvBinaryMissingError, MpvUnavailableError } from "./mpv-errors";
+
 const SOCKET_CONNECT_ATTEMPTS = 50;
 const SOCKET_CONNECT_DELAY_MS = 100;
 const TIME_POS_LOG_INTERVAL_MS = 500;
@@ -29,8 +31,9 @@ type MpvEventPayload = {
 };
 
 export type MpvIpcClientOptions = {
+  /** Resolved absolute path of the mpv binary, or null while none is known. */
+  getMpvBinaryPath: () => string | null;
   ipcPath: string;
-  mpvBinaryPath: string;
 };
 
 export type MpvClientEvent =
@@ -153,6 +156,11 @@ async function ensureReady(): Promise<void> {
 
 async function startMpv(): Promise<void> {
   const options = getClientOptions();
+  const mpvBinaryPath = options.getMpvBinaryPath();
+
+  if (!mpvBinaryPath) {
+    throw new MpvUnavailableError("No usable mpv binary is configured.");
+  }
 
   if (process.platform !== "win32") {
     rmSync(options.ipcPath, { force: true });
@@ -166,13 +174,13 @@ async function startMpv(): Promise<void> {
     "--terminal=no",
     `--input-ipc-server=${options.ipcPath}`,
   ];
-  const child = spawn(options.mpvBinaryPath, args, {
+  const child = spawn(mpvBinaryPath, args, {
     stdio: ["ignore", "ignore", "ignore"],
   });
 
   console.debug("[player][mpv][main]", "mpv:spawn", {
     args,
-    binary: options.mpvBinaryPath,
+    binary: mpvBinaryPath,
   });
 
   mpvProcess = child;
@@ -217,8 +225,9 @@ async function startMpv(): Promise<void> {
     console.error("[player][mpv][main]", "mpv:start:error", cause);
     child.kill();
 
+    // The binary moved since it was resolved (package manager upgrade, uninstall, …).
     if ((cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      throw new Error("The mpv binary was not found on PATH.");
+      throw new MpvBinaryMissingError(mpvBinaryPath);
     }
 
     throw cause;
