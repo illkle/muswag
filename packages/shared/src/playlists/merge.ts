@@ -35,6 +35,16 @@ function sameEditableState(left: PlaylistState, right: PlaylistState): boolean {
   );
 }
 
+/**
+ * True when the record still owes the server something: a create, a delete, or an edit not yet in `base`.
+ * Used to decide whether a remote playlist may be reused from `base` instead of refetched.
+ */
+export function hasPendingLocalChanges(record: PlaylistRecord): boolean {
+  if (record.local === null) return true;
+  if (record.serverId === null || record.base === null) return true;
+  return !sameEditableState(record.local, record.base);
+}
+
 function reconcileRemoteEntries(remote: RemotePlaylist, base: readonly PlaylistEntry[]): PlaylistEntry[] {
   const available = new Map<string, PlaylistEntry[]>();
   for (const entry of base) {

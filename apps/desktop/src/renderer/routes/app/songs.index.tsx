@@ -8,6 +8,7 @@ import { useUser } from "#/lib/queries";
 import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
+import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
@@ -51,6 +52,7 @@ function LibraryScreen() {
           scrollId="library-screen-songs"
           onSongPlay={() => null}
           SongComponent={SongRenderSongsList}
+          rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
         />
       ) : null}
     </section>

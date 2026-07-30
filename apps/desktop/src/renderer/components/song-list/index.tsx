@@ -18,14 +18,28 @@ export const SongListRoot = ({
   playerStatus,
   SongComponent = SongRenderAlbum,
   scrollId,
+  rowKeys,
+  playingRowKey,
+  unavailableRowKeys,
+  rowActions,
 }: {
   songs: Song[];
   discTitles?: Album["discTitles"];
-  onSongPlay: (v: Song) => void;
+  onSongPlay: (song: Song, index: number) => void;
   currentTrackID: string | null;
   playerStatus: PlayerStatus | null;
   SongComponent?: SongComponent;
   scrollId: string;
+  /**
+   * Stable per-row identity, defaulting to the song id. Playlists pass entry ids so that the same
+   * song appearing twice is two independently selectable rows.
+   */
+  rowKeys?: readonly string[];
+  /** Takes precedence over matching on `currentTrackID` when the caller knows which row is playing. */
+  playingRowKey?: string | null;
+  unavailableRowKeys?: ReadonlySet<string>;
+  /** Per-row controls, rendered in a trailing column that appears on hover. */
+  rowActions?: (song: Song, index: number) => ReactNode;
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -63,10 +77,12 @@ export const SongListRoot = ({
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const song = songs[virtualRow.index]!;
+          const rowKey = rowKeys?.[virtualRow.index] ?? song.id;
+          const isPlaying = playingRowKey === undefined ? song.id === currentTrackID : playingRowKey === rowKey;
 
           return (
             <div
-              key={virtualRow.index}
+              key={rowKey}
               style={{
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
@@ -88,18 +104,20 @@ export const SongListRoot = ({
               <SongComponent
                 song={song}
                 index={virtualRow.index}
-                onDoubleClick={() => onSongPlay(song)}
+                onDoubleClick={() => onSongPlay(song, virtualRow.index)}
                 onClick={(e) => {
                   if (e.metaKey) {
-                    setSelectionState((v) => ({ ...v, [song.id]: !v[song.id] }));
+                    setSelectionState((v) => ({ ...v, [rowKey]: !v[rowKey] }));
                     return;
                   }
 
-                  setSelectionState(() => ({ [song.id]: true }));
+                  setSelectionState(() => ({ [rowKey]: true }));
                 }}
-                isSelected={selectionState[song.id]}
-                isPlaying={song.id === currentTrackID}
-                status={song.id === currentTrackID ? playerStatus : null}
+                isSelected={selectionState[rowKey]}
+                isPlaying={isPlaying}
+                status={isPlaying ? playerStatus : null}
+                isUnavailable={unavailableRowKeys?.has(rowKey)}
+                actions={rowActions?.(song, virtualRow.index)}
               />
             </div>
           );
@@ -109,22 +127,34 @@ export const SongListRoot = ({
   );
 };
 
-type SongVisualProps = {
+export type SongVisualProps = {
   song: Song;
   isSelected?: boolean;
   isPlaying?: boolean;
   status?: PlayerStatus | null;
   index: number;
+  /** The playlist references this song but it is not in the synced local library. */
+  isUnavailable?: boolean;
+  actions?: ReactNode;
 } & React.ComponentProps<"div">;
 
 type SongComponent = (v: SongVisualProps) => JSX.Element;
 
-export const SongRenderAlbum = ({ song, isPlaying, isSelected, status, ...props }: SongVisualProps) => {
+// `isUnavailable` is destructured only to keep it off the spread onto the DOM node.
+export const SongRenderAlbum = ({
+  song,
+  isPlaying,
+  isSelected,
+  status,
+  isUnavailable: _isUnavailable,
+  actions,
+  ...props
+}: SongVisualProps) => {
   return (
     <div
       key={song.id}
       className={cn(
-        "grid h-12 w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px] md:items-center",
+        "group grid h-12 w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px_32px] md:items-center",
         "hover:bg-muted/30 focus-visible:bg-muted/60 focus-visible:outline-none",
         isSelected && "bg-muted/60 hover:bg-muted/70",
       )}
@@ -145,6 +175,7 @@ export const SongRenderAlbum = ({ song, isPlaying, isSelected, status, ...props 
         linkClassName="hover:text-foreground hover:underline"
       />
       <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
+      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
     </div>
   );
 };
@@ -163,9 +194,9 @@ const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
   return <AlbumCover coverArtPath={cover.data?.cover} />;
 };
 
-export function SongRenderSongsList({ song, index }: SongVisualProps) {
+export function SongRenderSongsList({ song, index, actions }: SongVisualProps) {
   return (
-    <div className="grid px-4 grid-cols-[40px_64px_1fr_1fr_48px] gap-4 w-full h-12 items-center">
+    <div className="group grid px-4 grid-cols-[40px_64px_1fr_1fr_48px_32px] gap-4 w-full h-12 items-center">
       <div className="text-muted-foreground text-xs font-mono text-center">{index + 1}</div>
       <div className="w-10 h-10">{song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <></>}</div>
       <div className="flex flex-col overflow-hidden">
@@ -180,6 +211,59 @@ export function SongRenderSongsList({ song, index }: SongVisualProps) {
       </div>
       <div className="text-sm text-muted-foreground">{song.album}</div>
       <div className="text-xs text-muted-foreground">{formatDuration(song.duration)}</div>
+      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
+    </div>
+  );
+}
+
+export function SongRenderPlaylist({
+  song,
+  index,
+  isPlaying,
+  isSelected,
+  status,
+  isUnavailable,
+  actions,
+  ...props
+}: SongVisualProps) {
+  return (
+    <div
+      className={cn(
+        "group grid px-4 grid-cols-[40px_64px_1fr_1fr_48px_32px] gap-4 w-full h-12 items-center transition-colors duration-100",
+        "hover:bg-muted/30",
+        isSelected && "bg-muted/60 hover:bg-muted/70",
+        isUnavailable && "opacity-50",
+      )}
+      {...props}
+    >
+      <div className="text-muted-foreground text-xs font-mono text-center">
+        {isPlaying && status ? renderTrackStateIcon(status) : index + 1}
+      </div>
+      <div className="w-10 h-10">
+        {!isUnavailable && song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <div className="size-10 rounded bg-muted" />}
+      </div>
+
+      {isUnavailable ? (
+        <div className="flex flex-col overflow-hidden">
+          <div className="truncate text-sm italic">Not in local library</div>
+          <div className="truncate text-xs text-muted-foreground font-mono">{song.id}</div>
+        </div>
+      ) : (
+        <div className="flex flex-col overflow-hidden">
+          <div className={cn("truncate text-sm", isPlaying && "font-bold")}>{song.title}</div>
+          <ArtistLinks
+            artist={song.artist}
+            artistId={song.artistId}
+            artists={song.artists}
+            className="truncate text-xs text-muted-foreground"
+            linkClassName="hover:text-foreground hover:underline"
+          />
+        </div>
+      )}
+
+      <div className="text-sm text-muted-foreground truncate">{isUnavailable ? "" : song.album}</div>
+      <div className="text-xs text-muted-foreground">{isUnavailable ? "-" : formatDuration(song.duration)}</div>
+      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
     </div>
   );
 }

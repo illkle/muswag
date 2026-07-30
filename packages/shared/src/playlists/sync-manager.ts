@@ -4,12 +4,14 @@ import { queryOnce } from "@tanstack/db";
 
 import type { MuswagDb } from "../db/database.js";
 import { getUserInfo } from "../syncManager.js";
-import { mergePlaylists } from "./merge.js";
+import { hasPendingLocalChanges, mergePlaylists } from "./merge.js";
 import type { PlaylistRecord, PlaylistState, RemotePlaylist, RemotePlaylistMutation } from "./types.js";
 
 const DEFAULT_DEBOUNCE_MS = 500;
 const DEFAULT_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_RETRY_MS = 5_000;
+const DEFAULT_MAX_RETRY_MS = 5 * 60_000;
+const DEFAULT_FETCH_CONCURRENCY = 5;
 
 export interface PlaylistSyncStatus {
   state: "idle" | "scheduled" | "syncing" | "paused" | "error";
@@ -22,14 +24,23 @@ type PlaylistApi = Pick<SubsonicAPI, "getPlaylists" | "getPlaylist" | "createPla
 export interface PlaylistSyncManagerOptions {
   debounceMs?: number;
   intervalMs?: number;
+  /** First retry delay after a failed pass. Doubles per consecutive failure up to `maxRetryMs`. */
   retryMs?: number;
+  maxRetryMs?: number;
+  /** Concurrent `getPlaylist` requests per pass. */
+  fetchConcurrency?: number;
+  /**
+   * The API must be able to POST: a playlist replacement sends every song index and id, which
+   * overruns URL length limits on large playlists.
+   */
   apiFactory?: (credentials: { url: string; username: string; password: string }, signal: AbortSignal) => PlaylistApi;
 }
 
 export interface PlaylistSyncManager {
   getStatus(): PlaylistSyncStatus;
   subscribe(listener: (status: PlaylistSyncStatus) => void): () => void;
-  sync(): Promise<void>;
+  /** Runs a pass (or joins the one in flight) and resolves with the resulting status. Never rejects. */
+  sync(): Promise<PlaylistSyncStatus>;
   pause(): void;
   resume(): void;
   cancel(): void;
@@ -45,13 +56,23 @@ function defaultApiFactory(credentials: { url: string; username: string; passwor
   });
 }
 
-function toRemotePlaylist(playlist: PlaylistWithSongs): RemotePlaylist {
+/**
+ * Most servers (Navidrome included) never send `readonly`, so ownership is what actually decides
+ * whether we may edit a playlist. A playlist with no owner is treated as ours.
+ */
+function isReadonlyForUser(playlist: { owner?: string | undefined; readonly?: boolean | undefined }, currentUsername: string): boolean {
+  if (playlist.readonly === true) return true;
+  if (playlist.owner === undefined) return false;
+  return playlist.owner.toLowerCase() !== currentUsername.toLowerCase();
+}
+
+function toRemotePlaylist(playlist: PlaylistWithSongs, currentUsername: string): RemotePlaylist {
   return {
     id: playlist.id,
     name: playlist.name,
     comment: playlist.comment ?? "",
     public: playlist.public ?? false,
-    readonly: playlist.readonly ?? false,
+    readonly: isReadonlyForUser(playlist, currentUsername),
     songIds: (playlist.entry ?? []).map(({ id }) => id),
     ...(playlist.owner !== undefined && { owner: playlist.owner }),
     created: playlist.created,
@@ -63,10 +84,76 @@ function toRemotePlaylist(playlist: PlaylistWithSongs): RemotePlaylist {
   };
 }
 
-async function fetchRemotePlaylists(api: PlaylistApi): Promise<RemotePlaylist[]> {
+/** Rebuilds the remote view of an unchanged playlist from its last-synced snapshot, skipping a request. */
+function baseToRemotePlaylist(serverId: string, base: PlaylistState): RemotePlaylist {
+  return {
+    id: serverId,
+    name: base.name,
+    comment: base.comment,
+    public: base.public,
+    readonly: base.readonly,
+    songIds: base.entries.map(({ songId }) => songId),
+    ...(base.owner !== undefined && { owner: base.owner }),
+    ...(base.created !== undefined && { created: base.created }),
+    ...(base.changed !== undefined && { changed: base.changed }),
+    ...(base.duration !== undefined && { duration: base.duration }),
+    ...(base.coverArt !== undefined && { coverArt: base.coverArt }),
+    ...(base.allowedUser !== undefined && { allowedUser: base.allowedUser }),
+    ...(base.validUntil !== undefined && { validUntil: base.validUntil }),
+  };
+}
+
+/**
+ * Snapshots of playlists that are fully in sync, keyed by server id. Anything with local work pending
+ * is left out so it always gets refetched.
+ */
+function reusableBases(records: readonly PlaylistRecord[]): Map<string, PlaylistState> {
+  const bases = new Map<string, PlaylistState>();
+  for (const record of records) {
+    if (record.serverId === null || record.base === null) continue;
+    if (hasPendingLocalChanges(record)) continue;
+    bases.set(record.serverId, record.base);
+  }
+  return bases;
+}
+
+function matchesSummary(base: PlaylistState, summary: { changed: string; songCount: number }): boolean {
+  return base.changed === summary.changed && base.entries.length === summary.songCount;
+}
+
+async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results = Array.from<R>({ length: items.length });
+  let cursor = 0;
+
+  const worker = async () => {
+    for (let index = cursor++; index < items.length; index = cursor++) {
+      results[index] = await run(items[index]!);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
+
+/**
+ * `reusable` is empty for full passes (startup, interval, manual sync), which self-heals anything the
+ * `changed` timestamp missed — it has second granularity, so two edits inside one second can look equal.
+ */
+async function fetchRemotePlaylists(
+  api: PlaylistApi,
+  currentUsername: string,
+  concurrency: number,
+  reusable: ReadonlyMap<string, PlaylistState>,
+): Promise<RemotePlaylist[]> {
   const summaries = (await api.getPlaylists()).playlists.playlist ?? [];
-  const playlists = await Promise.all(summaries.map(({ id }) => api.getPlaylist({ id })));
-  return playlists.map(({ playlist }) => toRemotePlaylist(playlist));
+
+  return mapWithConcurrency(summaries, concurrency, async (summary) => {
+    const base = reusable.get(summary.id);
+    if (base && matchesSummary(base, summary)) {
+      return baseToRemotePlaylist(summary.id, base);
+    }
+    return toRemotePlaylist((await api.getPlaylist({ id: summary.id })).playlist, currentUsername);
+  });
 }
 
 async function readLocalPlaylists(db: MuswagDb): Promise<PlaylistRecord[]> {
@@ -173,14 +260,19 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
+  const maxRetryMs = options.maxRetryMs ?? DEFAULT_MAX_RETRY_MS;
+  const fetchConcurrency = options.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY;
   const apiFactory = options.apiFactory ?? defaultApiFactory;
   const listeners = new Set<(status: PlaylistSyncStatus) => void>();
   let status: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
   let scheduled: ReturnType<typeof setTimeout> | undefined;
-  let syncInFlight: Promise<void> | undefined;
+  let syncInFlight: Promise<PlaylistSyncStatus> | undefined;
   let abortController: AbortController | undefined;
   let rerunRequested = false;
   let retryAfter: number | undefined;
+  let retryDelay = retryMs;
+  /** Startup refetches everything; edit-triggered passes may reuse unchanged snapshots. */
+  let fullNextPass = true;
   let paused = false;
   let destroyed = false;
   let applyingLocalState = false;
@@ -195,7 +287,8 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     scheduled = undefined;
   };
 
-  const schedule = (delay: number) => {
+  const schedule = (delay: number, full = false) => {
+    if (full) fullNextPass = true;
     if (destroyed || paused || !getUserInfo(db)) return;
     if (syncInFlight) {
       rerunRequested = true;
@@ -209,22 +302,33 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     }, delay);
   };
 
-  const runPass = async () => {
+  const runPass = async (full: boolean) => {
     const credentials = getUserInfo(db);
     if (!credentials) return;
 
     abortController = new AbortController();
     const api = apiFactory(credentials, abortController.signal);
-    let remote = await fetchRemotePlaylists(api);
+
+    const fetchPlaylists = async () => {
+      // Records with pending local work are never reused, so a mutated playlist is always verified.
+      const reusable = full ? new Map<string, PlaylistState>() : reusableBases(await readLocalPlaylists(db));
+      return fetchRemotePlaylists(api, credentials.username, fetchConcurrency, reusable);
+    };
+
+    const applyMerged = (local: readonly PlaylistRecord[]) => {
+      try {
+        applyingLocalState = true;
+        applyLocalState(db, local);
+      } finally {
+        applyingLocalState = false;
+      }
+    };
+
+    let remote = await fetchPlaylists();
     assertCredentials(db, credentials);
 
     let merged = mergePlaylists(await readLocalPlaylists(db), remote);
-    try {
-      applyingLocalState = true;
-      applyLocalState(db, merged.local);
-    } finally {
-      applyingLocalState = false;
-    }
+    applyMerged(merged.local);
 
     for (const mutation of merged.remote) {
       assertCredentials(db, credentials);
@@ -232,30 +336,32 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     }
 
     if (merged.remote.length > 0) {
-      remote = await fetchRemotePlaylists(api);
+      remote = await fetchPlaylists();
       assertCredentials(db, credentials);
       merged = mergePlaylists(await readLocalPlaylists(db), remote);
-      try {
-        applyingLocalState = true;
-        applyLocalState(db, merged.local);
-      } finally {
-        applyingLocalState = false;
-      }
+      applyMerged(merged.local);
       if (merged.remote.length > 0) rerunRequested = true;
     }
   };
 
-  const startSync = (): Promise<void> => {
+  const startSync = (): Promise<PlaylistSyncStatus> => {
     if (syncInFlight) {
       rerunRequested = true;
       return syncInFlight;
     }
-    if (!getUserInfo(db) || destroyed) return Promise.resolve();
+    if (!getUserInfo(db) || destroyed) return Promise.resolve(status);
 
     clearScheduled();
     setStatus({ ...status, state: "syncing", error: null });
-    syncInFlight = runPass()
+
+    const full = fullNextPass;
+    fullNextPass = false;
+    // Captured before the retry scheduling in `finally` overwrites the state with "scheduled".
+    let passStatus = status;
+
+    syncInFlight = runPass(full)
       .then(() => {
+        retryDelay = retryMs;
         setStatus({ state: paused ? "paused" : "idle", error: null, lastSyncedAt: new Date().toISOString() });
       })
       .catch((error: unknown) => {
@@ -264,7 +370,12 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
           return;
         }
         setStatus({ ...status, state: "error", error: error instanceof Error ? error.message : String(error) });
-        retryAfter = retryMs;
+        retryAfter = retryDelay;
+        retryDelay = Math.min(retryDelay * 2, maxRetryMs);
+        fullNextPass = true;
+      })
+      .then(() => {
+        passStatus = status;
       })
       .finally(() => {
         syncInFlight = undefined;
@@ -280,7 +391,8 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
           rerunRequested = false;
           schedule(0);
         }
-      });
+      })
+      .then(() => passStatus);
 
     return syncInFlight;
   };
@@ -300,12 +412,12 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
         setStatus({ ...status, state: "idle", error: null });
         return;
       }
-      schedule(0);
+      schedule(0, true);
     },
     { includeInitialState: false },
   );
 
-  const interval = intervalMs > 0 ? setInterval(() => schedule(0), intervalMs) : undefined;
+  const interval = intervalMs > 0 ? setInterval(() => schedule(0, true), intervalMs) : undefined;
   if (interval && typeof interval === "object" && "unref" in interval) interval.unref();
   void queryOnce((query) => query.from({ credentials: db.userCredentials })).then(() => {
     if (!destroyed && !paused) void startSync();
@@ -317,7 +429,10 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    sync: startSync,
+    sync() {
+      fullNextPass = true;
+      return startSync();
+    },
     pause() {
       paused = true;
       clearScheduled();
@@ -326,7 +441,7 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     },
     resume() {
       paused = false;
-      schedule(0);
+      schedule(0, true);
     },
     cancel() {
       abortController?.abort();

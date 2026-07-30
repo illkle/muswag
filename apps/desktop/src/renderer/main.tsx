@@ -8,6 +8,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { scan } from "react-scan";
 import { ThemeProvider } from "#/components/theme-provider";
+// Imported for its side effect: starts the single playlist sync manager for this renderer.
+import "#/lib/playlist-sync";
 scan({
   enabled: true,
 });

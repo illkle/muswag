@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addPlaylistEntries,
   addPlaylistEntry,
   createPlaylist,
   deletePlaylist,
@@ -62,6 +63,60 @@ describe("playlist controls", () => {
       local: null,
       revision: 1,
     });
+  });
+
+  it("adds many songs as one revision with unique entry ids", () => {
+    const db = createInMemoryDb();
+    const playlist = createPlaylist(db, { name: "Album drop", songIds: ["song-a"] });
+
+    const added = addPlaylistEntries(db, playlist.id, ["song-b", "song-c", "song-b"]);
+
+    const saved = db.playlists.get(playlist.id)!;
+    expect(saved.revision).toBe(1);
+    expect(saved.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b", "song-c", "song-b"]);
+    expect(new Set(saved.local!.entries.map(({ id }) => id)).size).toBe(4);
+    expect(added.map(({ songId }) => songId)).toEqual(["song-b", "song-c", "song-b"]);
+  });
+
+  it("inserts bulk additions before the anchor entry", () => {
+    const db = createInMemoryDb();
+    const playlist = createPlaylist(db, { name: "Anchored", songIds: ["song-a", "song-b"] });
+
+    addPlaylistEntries(db, playlist.id, ["song-x", "song-y"], playlist.local!.entries[1]!.id);
+
+    expect(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId)).toEqual([
+      "song-a",
+      "song-x",
+      "song-y",
+      "song-b",
+    ]);
+  });
+
+  it("does not mint entry ids that collide across revisions", () => {
+    const db = createInMemoryDb();
+    const playlist = createPlaylist(db, { name: "Repeated", songIds: ["song-a"] });
+
+    addPlaylistEntries(db, playlist.id, ["song-b", "song-c"]);
+    addPlaylistEntry(db, playlist.id, "song-d");
+    addPlaylistEntries(db, playlist.id, ["song-e", "song-f"]);
+
+    const ids = db.playlists.get(playlist.id)!.local!.entries.map(({ id }) => id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("leaves the playlist untouched when an entry id is unknown", () => {
+    const db = createInMemoryDb();
+    const playlist = createPlaylist(db, { name: "Intact", songIds: ["song-a", "song-b"] });
+    const before = db.playlists.get(playlist.id)!;
+
+    expect(() => removePlaylistEntry(db, playlist.id, "nope")).toThrow("Playlist entry not found");
+    expect(() => movePlaylistEntry(db, playlist.id, "nope", null)).toThrow("Playlist entry not found");
+    expect(() => movePlaylistEntry(db, playlist.id, before.local!.entries[0]!.id, "nope")).toThrow("Playlist entry not found");
+    expect(() => addPlaylistEntries(db, playlist.id, ["song-c"], "nope")).toThrow("Playlist entry not found");
+
+    const after = db.playlists.get(playlist.id)!;
+    expect(after.revision).toBe(0);
+    expect(after.local?.entries).toEqual(before.local?.entries);
   });
 
   it("rejects edits to read-only playlists", () => {

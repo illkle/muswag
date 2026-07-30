@@ -5,7 +5,9 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 
 import { AlbumCover } from "#/components/album-cover";
+import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { ArtistLinks } from "#/components/artist-links";
+import { Button } from "#/components/ui/button";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
@@ -144,6 +146,14 @@ function RouteComponent() {
 
           <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{album.name}</h1>
           {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
+
+          <div className="mt-4">
+            <AddToPlaylistMenu songIds={songs.map(({ id }) => id)}>
+              <Button variant="secondary" size="sm" render={<span />}>
+                Add to playlist
+              </Button>
+            </AddToPlaylistMenu>
+          </div>
         </div>
       </header>
 
@@ -155,6 +165,7 @@ function RouteComponent() {
           currentTrackID={currentTrackId}
           playerStatus={playerStatus}
           scrollId={"album-" + album.id}
+          rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
         />
       </div>
     </section>

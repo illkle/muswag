@@ -47,6 +47,19 @@ function requireName(name: string): string {
   return trimmed;
 }
 
+function requireEntryIndex(entries: readonly PlaylistEntry[], entryId: string): number {
+  const index = entries.findIndex(({ id }) => id === entryId);
+  if (index < 0) {
+    throw new Error(`Playlist entry not found: ${entryId}`);
+  }
+  return index;
+}
+
+/** Resolves the insertion point for `beforeEntryId`, where `null` means "append". */
+function requireAnchorIndex(entries: readonly PlaylistEntry[], beforeEntryId: string | null): number {
+  return beforeEntryId === null ? entries.length : requireEntryIndex(entries, beforeEntryId);
+}
+
 export function createPlaylist(db: MuswagDb, input: CreatePlaylistInput): PlaylistRecord {
   const id = createId();
   const entries = (input.songIds ?? []).map(
@@ -92,25 +105,43 @@ export function setPlaylistVisibility(db: MuswagDb, playlistId: string, isPublic
   });
 }
 
-export function addPlaylistEntry(db: MuswagDb, playlistId: string, songId: string, beforeEntryId: string | null = null): PlaylistEntry {
-  let entry: PlaylistEntry | undefined;
-  updatePlaylist(db, playlistId, (state, revision) => {
-    entry = { id: `local:${playlistId}:${revision}`, songId };
-    const index = beforeEntryId === null ? state.entries.length : state.entries.findIndex(({ id }) => id === beforeEntryId);
-    if (index < 0) {
-      throw new Error(`Playlist entry not found: ${beforeEntryId}`);
-    }
-    state.entries.splice(index, 0, entry);
+/**
+ * Inserts every song as one revision, so adding an album costs a single write and a single sync pass.
+ * Entry ids carry the index because they all share the revision that makes them unique.
+ */
+export function addPlaylistEntries(
+  db: MuswagDb,
+  playlistId: string,
+  songIds: readonly string[],
+  beforeEntryId: string | null = null,
+): PlaylistEntry[] {
+  const playlist = getWritablePlaylist(db, playlistId);
+  const insertAt = requireAnchorIndex(playlist.local.entries, beforeEntryId);
+  if (songIds.length === 0) {
+    return [];
+  }
+
+  const revision = playlist.revision + 1;
+  const entries = songIds.map((songId, index): PlaylistEntry => ({ id: `local:${playlistId}:${revision}:${index}`, songId }));
+
+  db.playlists.update(playlistId, (draft) => {
+    if (!draft.local) return;
+    draft.local.entries.splice(insertAt, 0, ...entries);
+    draft.revision = revision;
   });
-  return entry!;
+
+  return entries;
+}
+
+export function addPlaylistEntry(db: MuswagDb, playlistId: string, songId: string, beforeEntryId: string | null = null): PlaylistEntry {
+  return addPlaylistEntries(db, playlistId, [songId], beforeEntryId)[0]!;
 }
 
 export function removePlaylistEntry(db: MuswagDb, playlistId: string, entryId: string): PlaylistRecord {
+  const playlist = getWritablePlaylist(db, playlistId);
+  const index = requireEntryIndex(playlist.local.entries, entryId);
+
   return updatePlaylist(db, playlistId, (state) => {
-    const index = state.entries.findIndex(({ id }) => id === entryId);
-    if (index < 0) {
-      throw new Error(`Playlist entry not found: ${entryId}`);
-    }
     state.entries.splice(index, 1);
   });
 }
@@ -120,16 +151,15 @@ export function movePlaylistEntry(db: MuswagDb, playlistId: string, entryId: str
     return getWritablePlaylist(db, playlistId);
   }
 
+  const playlist = getWritablePlaylist(db, playlistId);
+  const sourceIndex = requireEntryIndex(playlist.local.entries, entryId);
+  if (beforeEntryId !== null) {
+    requireEntryIndex(playlist.local.entries, beforeEntryId);
+  }
+
   return updatePlaylist(db, playlistId, (state) => {
-    const sourceIndex = state.entries.findIndex(({ id }) => id === entryId);
-    if (sourceIndex < 0) {
-      throw new Error(`Playlist entry not found: ${entryId}`);
-    }
     const [entry] = state.entries.splice(sourceIndex, 1);
-    const targetIndex = beforeEntryId === null ? state.entries.length : state.entries.findIndex(({ id }) => id === beforeEntryId);
-    if (targetIndex < 0) {
-      throw new Error(`Playlist entry not found: ${beforeEntryId}`);
-    }
+    const targetIndex = requireAnchorIndex(state.entries, beforeEntryId);
     state.entries.splice(targetIndex, 0, entry!);
   });
 }
