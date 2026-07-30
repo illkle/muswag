@@ -1,9 +1,7 @@
-import { useMemo } from "react";
-
 import { AlbumList } from "#/components/album-list";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { db } from "#/lib/db-renderer";
-import { eq, inArray, not, useLiveQuery } from "@tanstack/react-db";
+import { eq, not, useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
