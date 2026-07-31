@@ -44,5 +44,5 @@ export interface RemotePlaylist {
 
 export type RemotePlaylistMutation =
   | { type: "create"; localId: string; state: PlaylistState }
-  | { type: "replace"; localId: string; serverId: string; previousSongCount: number; state: PlaylistState }
+  | { type: "replace"; localId: string; serverId: string; expected: RemotePlaylist; state: PlaylistState }
   | { type: "delete"; localId: string; serverId: string };

@@ -4,7 +4,16 @@ import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
 
 import type { CreatePlaylistArgs, DeletePlaylistArgs, GetPlaylistArgs, PlaylistWithSongs, UpdatePlaylistArgs } from "@muswag/subsonic-api";
-import { createMuswagDb, createPlaylist, createPlaylistSyncManager, logout, renamePlaylist } from "@muswag/shared";
+import {
+  addPlaylistEntry,
+  createMuswagDb,
+  createPlaylist,
+  createPlaylistSyncManager,
+  deletePlaylist,
+  logout,
+  removePlaylistEntry,
+  renamePlaylist,
+} from "@muswag/shared";
 import { createInMemoryDb } from "../navidrome-testkit.js";
 
 type FakePlaylist = {
@@ -32,10 +41,14 @@ function apiPlaylist(playlist: FakePlaylist): PlaylistWithSongs {
 class FakePlaylistApi {
   readonly playlists = new Map<string, FakePlaylist>();
   readonly getPlaylistCalls: string[] = [];
+  readonly updatePlaylistCalls: UpdatePlaylistArgs[] = [];
   createError: Error | undefined;
+  createPlaylistStarted: (() => void) | undefined;
+  createPlaylistGate: Promise<void> | undefined;
   listError: Error | undefined;
   getPlaylistStarted: (() => void) | undefined;
   getPlaylistGate: Promise<void> | undefined;
+  getPlaylistHook: ((id: string, callNumber: number) => void) | undefined;
   nextId = 1;
 
   async getPlaylists() {
@@ -53,6 +66,7 @@ class FakePlaylistApi {
     this.getPlaylistCalls.push(id);
     this.getPlaylistStarted?.();
     await this.getPlaylistGate;
+    this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
     const playlist = this.playlists.get(id);
     if (!playlist) throw new Error(`Missing playlist: ${id}`);
     return { status: "ok", version: "1.16.1", playlist: apiPlaylist(playlist) };
@@ -60,6 +74,8 @@ class FakePlaylistApi {
 
   async createPlaylist(args: CreatePlaylistArgs) {
     if (this.createError) throw this.createError;
+    this.createPlaylistStarted?.();
+    await this.createPlaylistGate;
     const id = `server-${this.nextId++}`;
     const playlist = {
       id,
@@ -73,6 +89,7 @@ class FakePlaylistApi {
   }
 
   async updatePlaylist(args: UpdatePlaylistArgs) {
+    this.updatePlaylistCalls.push(args);
     const playlist = this.playlists.get(args.playlistId);
     if (!playlist) throw new Error(`Missing playlist: ${args.playlistId}`);
     for (const index of args.songIndexToRemove ?? []) {
@@ -231,6 +248,92 @@ describe("playlist sync manager", () => {
     expect(db.playlists.get(playlist.id)).toMatchObject({ serverId: null, base: null });
     expect(db.playlists.get(playlist.id)?.local?.name).toBe("Still local");
     expect(manager.getStatus().error).toBe("create failed");
+    manager.destroy();
+  });
+
+  it("deletes a playlist that is removed while its create request is in flight", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    insertCredentials(db);
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    let releaseCreate!: () => void;
+    let createStarted!: () => void;
+    const createStartedPromise = new Promise<void>((resolve) => {
+      createStarted = resolve;
+    });
+    api.createPlaylistStarted = createStarted;
+    api.createPlaylistGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+
+    const playlist = createPlaylist(db, { name: "Delete me", songIds: ["song-a"] });
+    const firstPass = manager.sync();
+    await createStartedPromise;
+    deletePlaylist(db, playlist.id);
+    releaseCreate();
+    await firstPass;
+    await settle();
+    await manager.sync();
+
+    expect(api.playlists.size).toBe(0);
+    expect(db.playlists.get(playlist.id)).toBeUndefined();
+    manager.destroy();
+  });
+
+  it("does not rewrite entries for a metadata-only edit", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    renamePlaylist(db, "server-1", "Renamed");
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toEqual([
+      expect.objectContaining({
+        playlistId: "server-1",
+        name: "Renamed",
+      }),
+    ]);
+    expect(api.updatePlaylistCalls[0]?.songIndexToRemove).toBeUndefined();
+    expect(api.updatePlaylistCalls[0]?.songIdToAdd).toBeUndefined();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a"]);
+    manager.destroy();
+  });
+
+  it("re-merges instead of replacing from a stale remote snapshot", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.getPlaylistCalls.length = 0;
+    api.updatePlaylistCalls.length = 0;
+
+    addPlaylistEntry(db, "server-1", "song-local");
+    api.getPlaylistHook = (id, callNumber) => {
+      if (id === "server-1" && callNumber === 2) {
+        api.playlists.get(id)!.songIds.push("song-remote");
+        api.getPlaylistHook = undefined;
+      }
+    };
+
+    await manager.sync();
+    await settle();
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-remote", "song-local"]);
+    expect(db.playlists.get("server-1")?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-remote", "song-local"]);
     manager.destroy();
   });
 
@@ -403,6 +506,88 @@ describe("playlist sync manager", () => {
 
     expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Written offline"]);
     expect(cold.playlists.get(created.id)?.serverId).toBe("server-1");
+    manager.destroy();
+  });
+
+  it("does not re-add an entry pushed to an already-synced playlist", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    addPlaylistEntry(db, "server-1", "song-b");
+    await manager.sync();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b"]);
+
+    // The song used to come back as a remote addition on every verification pass, so the playlist
+    // grew by one copy per sync.
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b"]);
+    expect(db.playlists.get("server-1")?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b"]);
+    manager.destroy();
+  });
+
+  it("settles with nothing left to push after an edit", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    addPlaylistEntry(db, "server-1", "song-b");
+    await manager.sync();
+    await settle();
+
+    const record = db.playlists.get("server-1")!;
+    expect(record.base).toEqual(record.local);
+    // A converged pass must not leave another one queued.
+    expect(manager.getStatus().state).toBe("idle");
+    manager.destroy();
+  });
+
+  it("keeps duplicates the user added on purpose", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    addPlaylistEntry(db, "server-1", "song-a");
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-a"]);
+    manager.destroy();
+  });
+
+  it("pushes a removal without the entry reappearing", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b"] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const entries = db.playlists.get("server-1")!.local!.entries;
+    removePlaylistEntry(db, "server-1", entries[0]!.id);
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-b"]);
     manager.destroy();
   });
 

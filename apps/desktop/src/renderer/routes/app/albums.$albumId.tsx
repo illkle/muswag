@@ -126,6 +126,7 @@ function RouteComponent() {
     void PlayerIPC.playQueue({
       queue: songs,
       startIndex: queueIndex,
+      context: { type: "album", albumId },
     });
   };
 
@@ -148,11 +149,14 @@ function RouteComponent() {
           {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
 
           <div className="mt-4">
-            <AddToPlaylistMenu songIds={songs.map(({ id }) => id)}>
-              <Button variant="secondary" size="sm" render={<span />}>
-                Add to playlist
-              </Button>
-            </AddToPlaylistMenu>
+            <AddToPlaylistMenu
+              songIds={songs.map(({ id }) => id)}
+              trigger={
+                <Button variant="secondary" size="sm">
+                  Add to playlist
+                </Button>
+              }
+            />
           </div>
         </div>
       </header>

@@ -640,8 +640,21 @@ function isSameQueueState(nextState: PlayerQueueState, previousState: PlayerQueu
   return (
     nextState.currentIndex === previousState.currentIndex &&
     nextState.currentTrackId === previousState.currentTrackId &&
+    isSameQueueContext(nextState.context, previousState.context) &&
     nextState.queue.length === previousState.queue.length &&
     nextState.queue.every((trackId, index) => trackId === previousState.queue[index])
+  );
+}
+
+function isSameQueueContext(nextContext: PlayerQueueState["context"], previousContext: PlayerQueueState["context"]): boolean {
+  if (nextContext?.type !== previousContext?.type) return false;
+  if (nextContext === null || previousContext === null) return true;
+  if (nextContext.type === "album" && previousContext.type === "album") return nextContext.albumId === previousContext.albumId;
+  if (nextContext.type !== "playlist" || previousContext.type !== "playlist") return false;
+  return (
+    nextContext.playlistId === previousContext.playlistId &&
+    nextContext.entryIds.length === previousContext.entryIds.length &&
+    nextContext.entryIds.every((entryId, index) => entryId === previousContext.entryIds[index])
   );
 }
 

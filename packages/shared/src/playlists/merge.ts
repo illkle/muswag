@@ -213,7 +213,7 @@ export function mergePlaylists(local: readonly PlaylistRecord[], remote: readonl
       type: "replace",
       localId: playlist.id,
       serverId: currentRemote.id,
-      previousSongCount: currentRemote.songIds.length,
+      expected: currentRemote,
       state: merged,
     });
   }

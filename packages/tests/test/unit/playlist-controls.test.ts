@@ -36,13 +36,18 @@ describe("playlist controls", () => {
     expect(saved.base).toBeNull();
   });
 
-  it("removes an unsynced create without leaving a tombstone", () => {
+  it("keeps a tombstone for an unsynced create until sync can rule out an in-flight create", () => {
     const db = createInMemoryDb();
     const playlist = createPlaylist(db, { name: "Temporary" });
 
     deletePlaylist(db, playlist.id);
 
-    expect(db.playlists.get(playlist.id)).toBeUndefined();
+    expect(db.playlists.get(playlist.id)).toMatchObject({
+      serverId: null,
+      base: null,
+      local: null,
+      revision: 1,
+    });
   });
 
   it("keeps a tombstone for a server playlist", () => {
@@ -84,12 +89,7 @@ describe("playlist controls", () => {
 
     addPlaylistEntries(db, playlist.id, ["song-x", "song-y"], playlist.local!.entries[1]!.id);
 
-    expect(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId)).toEqual([
-      "song-a",
-      "song-x",
-      "song-y",
-      "song-b",
-    ]);
+    expect(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-x", "song-y", "song-b"]);
   });
 
   it("does not mint entry ids that collide across revisions", () => {

@@ -3,9 +3,9 @@ import { useMutation } from "@tanstack/react-query";
 import { ListMusic, Pencil, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
-import { usePlayerCurrentIndex, usePlayerQueue, usePlayerStatus } from "#/components/player-provider";
+import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
+import { usePlayerCurrentIndex, usePlayerQueueContext, usePlayerStatus } from "#/components/player-provider";
 import { SongListRoot, SongRenderPlaylist } from "#/components/song-list";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
@@ -13,7 +13,7 @@ import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
 import { PlayerIPC } from "#/lib/ipc";
 import { PlaylistActions } from "#/lib/playlist-actions";
-import { buildPlayQueue, totalDuration, usePlaylist, type PlaylistRow } from "#/lib/playlist-queries";
+import { buildPlayQueue, currentPlaylistEntryId, totalDuration, usePlaylist } from "#/lib/playlist-queries";
 import type { Song } from "@muswag/shared";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -35,41 +35,25 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const navigate = useNavigate();
   const { state, rows, isLoading, isError } = usePlaylist(playlistId);
   const playerStatus = usePlayerStatus();
-  const playerQueue = usePlayerQueue();
+  const playerQueueContext = usePlayerQueueContext();
   const playerIndex = usePlayerCurrentIndex();
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { queue, queueIndexByEntryId } = useMemo(() => buildPlayQueue(rows), [rows]);
 
-  // Only claim a row is playing when the player is actually running this playlist's queue,
-  // otherwise a duplicated song would light up while a different album is playing.
-  const playingRowKey = useMemo(() => {
-    if (playerIndex < 0 || playerQueue.length !== queue.length) return null;
-    if (!playerQueue.every((id, index) => id === queue[index]?.id)) return null;
-    for (const [entryId, index] of queueIndexByEntryId) {
-      if (index === playerIndex) return entryId;
-    }
-    return null;
-  }, [playerIndex, playerQueue, queue, queueIndexByEntryId]);
+  const playingRowKey = currentPlaylistEntryId(playerQueueContext, playlistId, playerIndex);
 
   const removeEntryMutation = useMutation({
     mutationFn: (entryId: string) => PlaylistActions.removeEntry(playlistId, entryId),
   });
-  const deleteMutation = useMutation({
-    mutationFn: () => PlaylistActions.remove(playlistId),
-    onSuccess: () => navigate({ to: "/app/playlists" }),
-  });
-
   const songs = useMemo(
     // Unavailable entries still need a row, so stand in a minimal song carrying the raw id.
     (): Song[] => rows.map(({ songId, song }) => song ?? { id: songId, title: songId, isDir: false }),
     [rows],
   );
   const rowKeys = useMemo(() => rows.map(({ entryId }) => entryId), [rows]);
-  const unavailableRowKeys = useMemo(
-    () => new Set(rows.flatMap(({ entryId, song }) => (song ? [] : [entryId]))),
-    [rows],
-  );
+  const unavailableRowKeys = useMemo(() => new Set(rows.flatMap(({ entryId, song }) => (song ? [] : [entryId]))), [rows]);
 
   if (isLoading) {
     return (
@@ -118,7 +102,11 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     const queueIndex = entryId === undefined ? undefined : queueIndexByEntryId.get(entryId);
     if (queueIndex === undefined) return;
 
-    void PlayerIPC.playQueue({ queue, startIndex: queueIndex });
+    void PlayerIPC.playQueue({
+      queue,
+      startIndex: queueIndex,
+      context: { type: "playlist", playlistId, entryIds: [...queueIndexByEntryId.keys()] },
+    });
   };
 
   return (
@@ -139,7 +127,16 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           </div>
 
           <div className="flex shrink-0 gap-2">
-            <Button disabled={queue.length === 0} onClick={() => void PlayerIPC.playQueue({ queue, startIndex: 0 })}>
+            <Button
+              disabled={queue.length === 0}
+              onClick={() =>
+                void PlayerIPC.playQueue({
+                  queue,
+                  startIndex: 0,
+                  context: { type: "playlist", playlistId, entryIds: [...queueIndexByEntryId.keys()] },
+                })
+              }
+            >
               Play
             </Button>
             {canEdit ? (
@@ -147,13 +144,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                 <Button variant="secondary" size="icon" aria-label="Edit playlist" onClick={() => setEditOpen(true)}>
                   <Pencil className="size-4" />
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  aria-label="Delete playlist"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate()}
-                >
+                <Button variant="destructive" size="icon" aria-label="Delete playlist" onClick={() => setDeleteOpen(true)}>
                   <Trash2 className="size-4" />
                 </Button>
               </>
@@ -169,9 +160,6 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
 
         {removeEntryMutation.isError ? (
           <p className="mt-2 text-xs text-destructive">{getErrorMessage(removeEntryMutation.error, "The song could not be removed.")}</p>
-        ) : null}
-        {deleteMutation.isError ? (
-          <p className="mt-2 text-xs text-destructive">{getErrorMessage(deleteMutation.error, "The playlist could not be deleted.")}</p>
         ) : null}
       </header>
 
@@ -224,6 +212,14 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           if (comment !== state.comment) await PlaylistActions.setComment(playlistId, comment);
           if (isPublic !== state.public) await PlaylistActions.setVisibility(playlistId, isPublic);
         }}
+      />
+
+      <PlaylistDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        playlistName={state.name}
+        onConfirm={() => PlaylistActions.remove(playlistId)}
+        onDeleted={() => void navigate({ to: "/app/playlists" })}
       />
     </section>
   );

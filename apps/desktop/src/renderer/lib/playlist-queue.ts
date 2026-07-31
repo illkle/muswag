@@ -1,4 +1,5 @@
 import type { Song } from "@muswag/shared";
+import type { PlayerQueueContext } from "#shared/player";
 
 /** One playlist entry with its library song, or `null` when the song is not in the local library. */
 export type PlaylistRow = {
@@ -26,4 +27,9 @@ export function buildPlayQueue(rows: readonly PlaylistRow[]): { queue: Song[]; q
 
 export function totalDuration(rows: readonly PlaylistRow[]): number {
   return rows.reduce((total, { song }) => total + (song?.duration ?? 0), 0);
+}
+
+export function currentPlaylistEntryId(context: PlayerQueueContext, playlistId: string, currentIndex: number): string | null {
+  if (context?.type !== "playlist" || context.playlistId !== playlistId || currentIndex < 0) return null;
+  return context.entryIds[currentIndex] ?? null;
 }

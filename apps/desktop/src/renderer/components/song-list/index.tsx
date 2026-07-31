@@ -216,16 +216,7 @@ export function SongRenderSongsList({ song, index, actions }: SongVisualProps) {
   );
 }
 
-export function SongRenderPlaylist({
-  song,
-  index,
-  isPlaying,
-  isSelected,
-  status,
-  isUnavailable,
-  actions,
-  ...props
-}: SongVisualProps) {
+export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status, isUnavailable, actions, ...props }: SongVisualProps) {
   return (
     <div
       className={cn(

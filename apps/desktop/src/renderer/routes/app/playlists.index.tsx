@@ -49,7 +49,9 @@ function PlaylistsScreen() {
       </header>
 
       {isLoading ? (
-        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading playlists...</div>
+        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">
+          Loading playlists...
+        </div>
       ) : null}
 
       {isError ? (

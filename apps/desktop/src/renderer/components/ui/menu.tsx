@@ -49,6 +49,11 @@ function MenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
   );
 }
 
+function MenuGroup({ ...props }: MenuPrimitive.Group.Props) {
+  return <MenuPrimitive.Group data-slot="menu-group" {...props} />;
+}
+
+/** Must be rendered inside a `MenuGroup`; Base UI reads the group context. */
 function MenuGroupLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
   return (
     <MenuPrimitive.GroupLabel
@@ -63,4 +68,4 @@ function MenuSeparator({ className, ...props }: MenuPrimitive.Separator.Props) {
   return <MenuPrimitive.Separator data-slot="menu-separator" className={cn("-mx-1 my-1 h-px bg-border", className)} {...props} />;
 }
 
-export { Menu, MenuContent, MenuGroupLabel, MenuItem, MenuSeparator, MenuTrigger };
+export { Menu, MenuContent, MenuGroup, MenuGroupLabel, MenuItem, MenuSeparator, MenuTrigger };

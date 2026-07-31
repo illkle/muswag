@@ -165,12 +165,10 @@ export function movePlaylistEntry(db: MuswagDb, playlistId: string, entryId: str
 }
 
 export function deletePlaylist(db: MuswagDb, playlistId: string): void {
-  const playlist = getWritablePlaylist(db, playlistId);
-  if (playlist.base === null && playlist.serverId === null) {
-    db.playlists.delete(playlistId);
-    return;
-  }
+  getWritablePlaylist(db, playlistId);
 
+  // Keep local-only deletes as tombstones too. A create request may already be in flight; retaining
+  // the row lets the sync manager attach the returned server id and delete that remote playlist.
   db.playlists.update(playlistId, (draft) => {
     draft.local = null;
     draft.revision += 1;

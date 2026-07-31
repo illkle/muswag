@@ -202,14 +202,57 @@ function songIds(state: PlaylistState): string[] {
   return state.entries.map(({ songId }) => songId);
 }
 
-async function executeRemoteMutation(db: MuswagDb, api: PlaylistApi, mutation: RemotePlaylistMutation): Promise<void> {
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameRemoteVersion(left: RemotePlaylist, right: RemotePlaylist): boolean {
+  return (
+    left.name === right.name &&
+    left.comment === right.comment &&
+    left.public === right.public &&
+    left.readonly === right.readonly &&
+    left.owner === right.owner &&
+    left.changed === right.changed &&
+    sameStringArray(left.songIds, right.songIds)
+  );
+}
+
+/**
+ * Records the state we just pushed as the new `base`, because the server now holds it.
+ *
+ * Without this the pushed entries stay absent from `base`, so on the verification pass
+ * `reconcileRemoteEntries` cannot match them and mints fresh `remote:` ids. The merge then sees the
+ * local entry and the server's echo of that same entry as two independent additions and keeps both,
+ * re-pushing a longer playlist every pass. If the push did not land exactly, the verification fetch
+ * re-merges against the real remote state and corrects this.
+ */
+function commitPushedBase(db: MuswagDb, localId: string, state: PlaylistState, suppressed: (write: () => void) => void): void {
+  if (!db.playlists.get(localId)) return;
+
+  suppressed(() => {
+    db.playlists.update(localId, (draft) => {
+      draft.base = state;
+    });
+  });
+}
+
+async function executeRemoteMutation(
+  db: MuswagDb,
+  api: PlaylistApi,
+  mutation: RemotePlaylistMutation,
+  currentUsername: string,
+  suppressed: (write: () => void) => void,
+): Promise<"applied" | "stale"> {
   switch (mutation.type) {
     case "create": {
       const created = await api.createPlaylist({ name: mutation.state.name, songId: songIds(mutation.state) });
       const playlist = db.playlists.get(mutation.localId);
       if (playlist?.serverId === null) {
-        db.playlists.update(mutation.localId, (draft) => {
-          draft.serverId = created.playlist.id;
+        suppressed(() => {
+          db.playlists.update(mutation.localId, (draft) => {
+            draft.serverId = created.playlist.id;
+          });
         });
       }
       await api.updatePlaylist({
@@ -218,22 +261,40 @@ async function executeRemoteMutation(db: MuswagDb, api: PlaylistApi, mutation: R
         comment: mutation.state.comment,
         public: mutation.state.public,
       });
-      return;
+      commitPushedBase(db, mutation.localId, mutation.state, suppressed);
+      return "applied";
     }
 
-    case "replace":
+    case "replace": {
+      const nextSongIds = songIds(mutation.state);
+      const entriesChanged = !sameStringArray(nextSongIds, mutation.expected.songIds);
+      let previousSongCount = mutation.expected.songIds.length;
+
+      // Subsonic has no conditional update operation. Re-reading immediately before a destructive
+      // replacement narrows the race and, crucially, avoids applying indices from an older version.
+      if (entriesChanged) {
+        const latest = toRemotePlaylist((await api.getPlaylist({ id: mutation.serverId })).playlist, currentUsername);
+        if (!sameRemoteVersion(latest, mutation.expected)) return "stale";
+        previousSongCount = latest.songIds.length;
+      }
+
       await api.updatePlaylist({
         playlistId: mutation.serverId,
         name: mutation.state.name,
         comment: mutation.state.comment,
         public: mutation.state.public,
-        songIndexToRemove: Array.from({ length: mutation.previousSongCount }, (_, index) => mutation.previousSongCount - index - 1),
-        songIdToAdd: songIds(mutation.state),
+        ...(entriesChanged && {
+          songIndexToRemove: Array.from({ length: previousSongCount }, (_, index) => previousSongCount - index - 1),
+          songIdToAdd: nextSongIds,
+        }),
       });
-      return;
+      commitPushedBase(db, mutation.localId, mutation.state, suppressed);
+      return "applied";
+    }
 
     case "delete":
       await api.deletePlaylist({ id: mutation.serverId });
+      return "applied";
   }
 }
 
@@ -309,19 +370,25 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     abortController = new AbortController();
     const api = apiFactory(credentials, abortController.signal);
 
-    const fetchPlaylists = async () => {
+    const fetchPlaylists = async (forceIds: ReadonlySet<string> = new Set()) => {
       // Records with pending local work are never reused, so a mutated playlist is always verified.
       const reusable = full ? new Map<string, PlaylistState>() : reusableBases(await readLocalPlaylists(db));
+      for (const serverId of forceIds) reusable.delete(serverId);
       return fetchRemotePlaylists(api, credentials.username, fetchConcurrency, reusable);
     };
 
-    const applyMerged = (local: readonly PlaylistRecord[]) => {
+    // Sync's own writes must not re-trigger the debounce, or every pass schedules another one.
+    const suppressed = (write: () => void) => {
       try {
         applyingLocalState = true;
-        applyLocalState(db, local);
+        write();
       } finally {
         applyingLocalState = false;
       }
+    };
+
+    const applyMerged = (local: readonly PlaylistRecord[]) => {
+      suppressed(() => applyLocalState(db, local));
     };
 
     let remote = await fetchPlaylists();
@@ -330,13 +397,23 @@ export function createPlaylistSyncManager(db: MuswagDb, options: PlaylistSyncMan
     let merged = mergePlaylists(await readLocalPlaylists(db), remote);
     applyMerged(merged.local);
 
+    const mutatedServerIds = new Set<string>();
     for (const mutation of merged.remote) {
       assertCredentials(db, credentials);
-      await executeRemoteMutation(db, api, mutation);
+      const result = await executeRemoteMutation(db, api, mutation, credentials.username, suppressed);
+      if (result === "stale") rerunRequested = true;
+      if (mutation.type === "create") {
+        const serverId = db.playlists.get(mutation.localId)?.serverId;
+        if (serverId) mutatedServerIds.add(serverId);
+      } else {
+        mutatedServerIds.add(mutation.serverId);
+      }
     }
 
     if (merged.remote.length > 0) {
-      remote = await fetchPlaylists();
+      // Never verify a write from `base`: servers may normalize or reject parts of an update while
+      // still returning success, and a stale mutation needs the actual latest remote state.
+      remote = await fetchPlaylists(mutatedServerIds);
       assertCredentials(db, credentials);
       merged = mergePlaylists(await readLocalPlaylists(db), remote);
       applyMerged(merged.local);

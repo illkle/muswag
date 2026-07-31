@@ -50,7 +50,11 @@ describe("PlayerSession", () => {
   });
 
   it("initializes a loaded queue into split loading state", () => {
-    loadQueue({ queue, startIndex: 1 });
+    loadQueue({
+      queue,
+      startIndex: 1,
+      context: { type: "playlist", playlistId: "playlist-1", entryIds: ["entry-1", "entry-2"] },
+    });
 
     expect(getState()).toMatchObject({
       meta: {
@@ -61,6 +65,7 @@ describe("PlayerSession", () => {
         currentIndex: 1,
         currentTrackId: "track-2",
         queue: ["track-1", "track-2"],
+        context: { type: "playlist", playlistId: "playlist-1", entryIds: ["entry-1", "entry-2"] },
       },
       nowPlaying: {
         durationSeconds: 200,

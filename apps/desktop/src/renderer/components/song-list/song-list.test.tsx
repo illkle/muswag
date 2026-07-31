@@ -47,12 +47,7 @@ const entryKeys = ["entry-1", "entry-2", "entry-3"];
 
 function Row({ song: rowSong, index, isSelected, isPlaying, status: _status, isUnavailable: _isUnavailable, ...props }: SongVisualProps) {
   return (
-    <div
-      data-testid={`row-${index}`}
-      data-selected={isSelected ? "true" : "false"}
-      data-playing={isPlaying ? "true" : "false"}
-      {...props}
-    >
+    <div data-testid={`row-${index}`} data-selected={isSelected ? "true" : "false"} data-playing={isPlaying ? "true" : "false"} {...props}>
       {rowSong.title}
     </div>
   );

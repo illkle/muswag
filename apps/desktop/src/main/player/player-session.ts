@@ -29,6 +29,7 @@ export function getState(): PlayerState {
     queue: {
       ...queueStore.state,
       queue: [...queueStore.state.queue],
+      context: cloneQueueContext(queueStore.state.context),
     },
     nowPlaying: { ...nowPlayingStore.state },
     volume: { ...volumeStore.state },
@@ -76,6 +77,7 @@ export function loadQueue(input: PlayQueueInput): void {
     currentIndex,
     currentTrackId: playbackQueue[currentIndex]?.id ?? null,
     queue: playbackQueue.map((item) => item.id),
+    context: cloneQueueContext(input.context ?? null),
   }));
   nowPlayingStore.setState(() => ({
     durationSeconds: playbackQueue[currentIndex]?.duration ?? null,
@@ -295,4 +297,8 @@ function clampIndex(index: number, length: number): number {
 
 function cloneQueueItem(item: PlayerQueueItem): PlayerQueueItem {
   return { ...item };
+}
+
+function cloneQueueContext(context: PlayerState["queue"]["context"]): PlayerState["queue"]["context"] {
+  return context?.type === "playlist" ? { ...context, entryIds: [...context.entryIds] } : context ? { ...context } : null;
 }

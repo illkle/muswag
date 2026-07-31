@@ -52,6 +52,10 @@ export function usePlayerQueue() {
   return useStore(PlayerQueueStore, (state) => state.queue);
 }
 
+export function usePlayerQueueContext() {
+  return useStore(PlayerQueueStore, (state) => state.context);
+}
+
 export function usePlayerCurrentTrackId() {
   return useStore(PlayerQueueStore, (state) => state.currentTrackId);
 }

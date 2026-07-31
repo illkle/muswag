@@ -4,9 +4,12 @@ export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "ended" |
 
 export type PlayerQueueItem = Song;
 
+export type PlayerQueueContext = { type: "playlist"; playlistId: string; entryIds: string[] } | { type: "album"; albumId: string } | null;
+
 export interface PlayQueueInput {
   queue: PlayerQueueItem[];
   startIndex: number;
+  context?: PlayerQueueContext;
 }
 
 /** How the mpv binary in use was found. */
@@ -47,6 +50,7 @@ export interface PlayerQueueState {
   queue: string[];
   currentIndex: number;
   currentTrackId: string | null;
+  context: PlayerQueueContext;
 }
 
 export interface PlayerNowPlayingState {
@@ -98,6 +102,7 @@ export function createDefaultPlayerQueueState(): PlayerQueueState {
     queue: [],
     currentIndex: -1,
     currentTrackId: null,
+    context: null,
   };
 }
 

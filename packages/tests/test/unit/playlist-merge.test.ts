@@ -72,7 +72,7 @@ describe("mergePlaylists", () => {
         type: "replace",
         localId: "local-1",
         serverId: "server-1",
-        previousSongCount: 2,
+        expected: remote(),
         state: expect.objectContaining({ name: "Renamed locally" }),
       },
     ]);
