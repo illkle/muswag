@@ -13,6 +13,7 @@ import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
 import { PlayerIPC } from "#/lib/ipc";
 import type { Song } from "@muswag/shared";
+import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -40,6 +41,7 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
+  useAlbumStatsRefresh(albumId);
 
   const scrollRestorationId = "album-" + albumId;
   useElementScrollRestoration({
@@ -133,7 +135,11 @@ function RouteComponent() {
   return (
     <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
       <header className="border-b border-border/70 bg-card/80 grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
-        <AlbumCover coverArtPath={album.coverArtPath} instantLoad />
+        <AlbumCover
+          coverArtPath={album.coverArtPath}
+          instantLoad
+          target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+        />
 
         <div className="min-w-0 self-end">
           <ArtistLinks

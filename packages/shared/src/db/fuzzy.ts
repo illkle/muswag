@@ -5,18 +5,23 @@ import { eq, queryOnce } from "@tanstack/db";
 export type SearchResultSong = {
   type: "song";
   coverArtPath: Album["coverArtPath"];
+  coverArt: Album["coverArt"];
 } & Pick<Song, "id" | "albumId" | "artist" | "artistId" | "album" | "year" | "title">;
 
-export type SearchResultAlbum = { type: "album" } & Pick<Album, "id" | "artist" | "artistId" | "coverArtPath" | "year" | "name">;
+export type SearchResultAlbum = { type: "album" } & Pick<
+  Album,
+  "id" | "artist" | "artistId" | "coverArt" | "coverArtPath" | "year" | "name"
+>;
 
 export type SearchResult = SearchResultSong | SearchResultAlbum;
 
-const toAlbum = ({ id, artistId, artist, coverArtPath, year, name }: Album): SearchResult => ({
+const toAlbum = ({ id, artistId, artist, coverArt, coverArtPath, year, name }: Album): SearchResult => ({
   type: "album",
   id,
   artist,
   artistId,
   coverArtPath,
+  coverArt,
   year,
   name,
 });
@@ -31,6 +36,7 @@ const toSong = ({ id, artistId, artist, year, title, albumId, album }: Song, alb
   album,
   albumId,
   coverArtPath: albumData.coverArtPath,
+  coverArt: albumData.coverArt,
 });
 
 export function CreateFuse(db: MuswagDb) {

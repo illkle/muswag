@@ -1,13 +1,17 @@
 import { cn } from "#/lib/utils";
+import { CoverArt } from "#/lib/sync-manager";
+import type { CoverTarget } from "@muswag/shared";
 import { startTransition, useEffect, useState } from "react";
 
 export function AlbumCover({
   coverArtPath,
   instantLoad = false,
+  target,
   className,
 }: {
   coverArtPath: string | undefined;
   instantLoad?: boolean;
+  target?: CoverTarget;
   className?: string;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -26,6 +30,15 @@ export function AlbumCover({
       clearTimeout(t);
     };
   }, []);
+
+  useEffect(() => {
+    if (!loadImage || coverArtPath || !target?.coverArtId) return;
+    void CoverArt.ensure(target).catch((error: unknown) => {
+      console.warn("On-demand cover fetch failed.", { target, error });
+    });
+  }, [coverArtPath, loadImage, target?.type, target?.id, target?.coverArtId]);
+
+  useEffect(() => setImageFailed(false), [coverArtPath]);
 
   return (
     <div className={cn("relative aspect-square overflow-hidden rounded", className)}>

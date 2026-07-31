@@ -6,7 +6,7 @@ import { getErrorMessage } from "#/lib/err";
 import { useSyncs, useUser } from "#/lib/queries";
 import { SyncManager } from "#/lib/sync-manager";
 import { cn } from "#/lib/utils";
-import type { SyncProgress, SyncRecord, SyncStep } from "@muswag/shared";
+import type { SyncMode, SyncProgress, SyncRecord, SyncStep } from "@muswag/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
 import { ChevronDown, ChevronLeft, ChevronRight, LoaderCircle, RefreshCw, X } from "lucide-react";
@@ -14,12 +14,16 @@ import { useMemo } from "react";
 
 const syncStepLabels: Record<SyncStep, string> = {
   starting: "Starting sync",
+  "fetching-artists": "Fetching artists",
+  "saving-artists": "Saving artists",
   "fetching-album-list": "Fetching album page",
   "fetching-album-details": "Fetching album details",
   "saving-albums": "Saving albums",
   "removing-missing-albums": "Removing missing albums",
   "removing-dangling-songs": "Removing dangling songs",
   "removing-cover-art": "Removing cover art",
+  "fetching-cover-art": "Fetching cover art",
+  "skipped-unchanged": "Library unchanged",
   completed: "Completed",
   failed: "Failed",
   aborted: "Aborted",
@@ -63,7 +67,12 @@ const SyncProgressSummary = ({ syncRecord }: { syncRecord: SyncRecord | null }) 
             {syncRecord.timeEnded ? `, ended ${formatSyncTime(syncRecord.timeEnded)}` : null}
           </div>
         </div>
-        <Badge variant={syncRecord.lastStatus === "failed" ? "destructive" : "secondary"}>{syncRecord.lastStatus}</Badge>
+        <div className="flex gap-1">
+          <Badge variant="secondary">{syncRecord.mode ?? "full"}</Badge>
+          <Badge variant={syncRecord.lastStatus === "failed" ? "destructive" : "secondary"}>
+            {syncRecord.currentStep === "skipped-unchanged" ? "unchanged" : syncRecord.lastStatus}
+          </Badge>
+        </div>
       </div>
 
       {progress ? (
@@ -86,6 +95,10 @@ const SyncProgressSummary = ({ syncRecord }: { syncRecord: SyncRecord | null }) 
           ) : null}
 
           <div className="grid grid-cols-3 gap-2 text-xs">
+            <div>
+              <div className="text-muted-foreground">Artists</div>
+              <div className="font-medium">{progress.artistsFetched}</div>
+            </div>
             <div>
               <div className="text-muted-foreground">Fetched</div>
               <div className="font-medium">{progress.albumsFetched}</div>
@@ -110,6 +123,12 @@ const SyncProgressSummary = ({ syncRecord }: { syncRecord: SyncRecord | null }) 
               <div className="text-muted-foreground">Pages</div>
               <div className="font-medium">{progress.pagesFetched}</div>
             </div>
+            <div>
+              <div className="text-muted-foreground">Covers</div>
+              <div className="font-medium">
+                {progress.coverArtFetched}/{progress.coverArtTotal}
+              </div>
+            </div>
           </div>
         </>
       ) : null}
@@ -124,7 +143,7 @@ const ServerInfo = () => {
   const syncsQuery = useSyncs();
 
   const syncMutation = useMutation({
-    mutationFn: () => SyncManager.sync(),
+    mutationFn: (mode: SyncMode) => SyncManager.sync({ mode }),
   });
   const logoutMutation = useMutation({
     mutationFn: () => SyncManager.logout(),
@@ -171,10 +190,15 @@ const ServerInfo = () => {
           <div className="text-xs text-destructive">{getErrorMessage(syncMutation.error, "The library could not be synced.")}</div>
         ) : null}
         <div className="flex gap-2">
-          <Button className="flex-1" disabled={syncRunning || syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+          <Button className="flex-1" disabled={syncRunning || syncMutation.isPending} onClick={() => syncMutation.mutate("quick")}>
             {syncRunning || syncMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {syncRunning || syncMutation.isPending ? "Syncing" : "Sync"}
           </Button>
+          {!syncRunning ? (
+            <Button variant="secondary" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate("full")}>
+              Full sync
+            </Button>
+          ) : null}
           {syncRunning ? (
             <Button variant="destructive" disabled={cancelSyncMutation.isPending} onClick={() => cancelSyncMutation.mutate()}>
               <X className="size-4" />

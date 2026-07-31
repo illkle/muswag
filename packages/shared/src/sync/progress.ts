@@ -3,6 +3,9 @@ import type { SyncProgress, SyncStep } from "../db/types.js";
 
 export function createInitialSyncProgress(): SyncProgress {
   return {
+    artistsFetched: 0,
+    artistsInserted: 0,
+    artistsDeleted: 0,
     pagesFetched: 0,
     albumsFetched: 0,
     currentPage: 0,
@@ -14,6 +17,8 @@ export function createInitialSyncProgress(): SyncProgress {
     albumsDeleted: 0,
     songsDeleted: 0,
     coverArtDeleted: 0,
+    coverArtFetched: 0,
+    coverArtTotal: 0,
   };
 }
 

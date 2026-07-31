@@ -28,6 +28,28 @@ function createApi(payload: unknown, urls: string[] = []): SubsonicAPI {
 }
 
 describe("SubsonicAPI", () => {
+  it("parses indexes and sends the millisecond watermark", async () => {
+    const urls: string[] = [];
+    const api = createApi(
+      {
+        "subsonic-response": {
+          status: "ok",
+          version: "1.16.1",
+          indexes: {
+            lastModified: 1_700_000_000_123,
+            ignoredArticles: "The El La Los Las Le Les",
+            index: [{ name: "A", artist: [{ id: "artist-1", name: "Artist One", userRating: 4 }] }],
+          },
+        },
+      },
+      urls,
+    );
+
+    const result = await api.getIndexes({ ifModifiedSince: 1_700_000_000_000 });
+    expect(result.indexes.index?.[0]?.artist?.[0]).toMatchObject({ id: "artist-1", name: "Artist One" });
+    expect(new URL(urls[0]!).searchParams.get("ifModifiedSince")).toBe("1700000000000");
+  });
+
   it("parses and returns verified album list responses", async () => {
     const urls: string[] = [];
     const api = createApi(

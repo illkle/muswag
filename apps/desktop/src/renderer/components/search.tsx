@@ -7,13 +7,19 @@ const InnerResult = ({
   title,
   subtitle,
   coverPath,
+  target,
   className,
   ...props
-}: React.ComponentProps<"div"> & { title?: string; subtitle?: string; coverPath?: string }) => {
+}: React.ComponentProps<"div"> & {
+  title?: string;
+  subtitle?: string;
+  coverPath?: string;
+  target?: import("@muswag/shared").CoverTarget;
+}) => {
   return (
     <div className={cn("flex gap-2 h-12 items-center data-highlighted:bg-primary/10  rounded-lg px-2", className)} {...props}>
       <div className="w-10 shrink-0">
-        <AlbumCover key={coverPath} coverArtPath={coverPath} />
+        <AlbumCover key={coverPath} coverArtPath={coverPath} target={target} />
       </div>
       <div>
         <div className="line-clamp-1 text-xs">{title}</div>
@@ -27,7 +33,14 @@ const SongResult = ({ song }: { song: SearchResultSong }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={<InnerResult title={song.title} subtitle={song.artist} coverPath={song.coverArtPath} />}
+      render={
+        <InnerResult
+          title={song.title}
+          subtitle={song.artist}
+          coverPath={song.coverArtPath}
+          target={song.albumId ? { type: "album", id: song.albumId, coverArtId: song.coverArt ?? null } : undefined}
+        />
+      }
       onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: song.albumId ?? "n" }, resetScroll: true })}
     ></Autocomplete.Item>
   );
@@ -37,7 +50,14 @@ const AlbumResult = ({ album }: { album: SearchResultAlbum }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={<InnerResult title={album.name} subtitle={album.artist} coverPath={album.coverArtPath} />}
+      render={
+        <InnerResult
+          title={album.name}
+          subtitle={album.artist}
+          coverPath={album.coverArtPath}
+          target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+        />
+      }
       onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: album.id }, resetScroll: true })}
     ></Autocomplete.Item>
   );

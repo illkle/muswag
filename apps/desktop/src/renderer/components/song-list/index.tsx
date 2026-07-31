@@ -188,10 +188,17 @@ const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
       .findOne()
       .select((v) => ({
         cover: v.album.coverArtPath,
+        coverArtId: v.album.coverArt,
+        albumId: v.album.id,
       })),
   );
 
-  return <AlbumCover coverArtPath={cover.data?.cover} />;
+  return (
+    <AlbumCover
+      coverArtPath={cover.data?.cover}
+      target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined}
+    />
+  );
 };
 
 export function SongRenderSongsList({ song, index, actions }: SongVisualProps) {

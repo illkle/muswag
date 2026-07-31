@@ -176,6 +176,27 @@ const albumList2Schema = z.object({
   album: z.array(albumID3Schema).optional(),
 });
 
+const indexArtistSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  starred: z.string().optional(),
+  userRating: z.number().optional(),
+  averageRating: z.number().optional(),
+  coverArt: z.string().optional(),
+  artistImageUrl: z.string().optional(),
+});
+
+const indexSchema = z.object({
+  name: z.string(),
+  artist: z.array(indexArtistSchema).optional(),
+});
+
+const indexesSchema = z.object({
+  index: z.array(indexSchema).optional(),
+  lastModified: z.number(),
+  ignoredArticles: z.string().optional(),
+});
+
 const playlistSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -207,6 +228,9 @@ const getAlbumResponseSchema = z.object({
 const getAlbumList2ResponseSchema = z.object({
   albumList2: albumList2Schema,
 });
+const getIndexesResponseSchema = z.object({
+  indexes: indexesSchema,
+});
 const getPlaylistsResponseSchema = z.object({
   playlists: playlistsSchema,
 });
@@ -235,6 +259,9 @@ export type Child = z.infer<typeof childSchema>;
 export type AlbumID3 = z.infer<typeof albumID3Schema>;
 export type AlbumWithSongsID3 = z.infer<typeof albumWithSongsID3Schema>;
 export type AlbumList2 = z.infer<typeof albumList2Schema>;
+export type IndexArtist = z.infer<typeof indexArtistSchema>;
+export type SubsonicIndex = z.infer<typeof indexSchema>;
+export type Indexes = z.infer<typeof indexesSchema>;
 export type Playlist = z.infer<typeof playlistSchema>;
 export type PlaylistWithSongs = z.infer<typeof playlistWithSongsSchema>;
 export type Playlists = z.infer<typeof playlistsSchema>;
@@ -251,6 +278,11 @@ export type GetAlbumList2Args = {
 
 export type GetAlbumArgs = {
   id: string;
+};
+
+export type GetIndexesArgs = {
+  musicFolderId?: string | number;
+  ifModifiedSince?: number;
 };
 
 export type GetCoverArtArgs = {
@@ -451,6 +483,10 @@ export default class SubsonicAPI {
 
   async getAlbumList2(args: GetAlbumList2Args): Promise<SubsonicBaseResponse & { albumList2: AlbumList2 }> {
     return this.#json("getAlbumList2", args, getAlbumList2ResponseSchema);
+  }
+
+  async getIndexes(args: GetIndexesArgs = {}): Promise<SubsonicBaseResponse & { indexes: Indexes }> {
+    return this.#json("getIndexes", args, getIndexesResponseSchema);
   }
 
   async getCoverArt(args: GetCoverArtArgs): Promise<Response> {

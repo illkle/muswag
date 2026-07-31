@@ -15,6 +15,7 @@ import { PlayerIPC } from "#/lib/ipc";
 import { PlaylistActions } from "#/lib/playlist-actions";
 import { buildPlayQueue, currentPlaylistEntryId, totalDuration, usePlaylist } from "#/lib/playlist-queries";
 import type { Song } from "@muswag/shared";
+import { usePlaylistSongStatsRefresh } from "#/lib/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
   component: RouteComponent,
@@ -33,7 +34,8 @@ function formatDuration(totalSeconds: number): string {
 
 function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const navigate = useNavigate();
-  const { state, rows, isLoading, isError } = usePlaylist(playlistId);
+  const { record, state, rows, isLoading, isError } = usePlaylist(playlistId);
+  usePlaylistSongStatsRefresh(record?.serverId ?? null);
   const playerStatus = usePlayerStatus();
   const playerQueueContext = usePlayerQueueContext();
   const playerIndex = usePlayerCurrentIndex();

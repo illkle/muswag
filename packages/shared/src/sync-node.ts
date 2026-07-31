@@ -1,1 +1,1 @@
-export { createNodeCoverArtFileSystem } from "./sync/node-covers-helper.js";
+export { createNodeCoverArtFileSystem } from "./covers/node-covers-helper.js";

@@ -2,14 +2,16 @@ import { expect } from "vitest";
 import { queryOnce } from "@tanstack/db";
 
 import type SubsonicAPI from "@muswag/subsonic-api";
-import type { AlbumID3, AlbumWithSongsID3, Child, GetAlbumArgs, GetAlbumList2Args } from "@muswag/subsonic-api";
-import {
-  type Album,
-  createCoverArtStore,
-  type CoverArtStore,
-  type MuswagDb,
-  syncAlbums,
-} from "@muswag/shared";
+import type {
+  AlbumID3,
+  AlbumWithSongsID3,
+  Child,
+  GetAlbumArgs,
+  GetAlbumList2Args,
+  GetIndexesArgs,
+  IndexArtist,
+} from "@muswag/subsonic-api";
+import { type Album, createCoverArtStore, type CoverArtStore, type MuswagDb, syncAlbums } from "@muswag/shared";
 import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
 import { createInMemoryDb } from "../navidrome-testkit.js";
 
@@ -19,11 +21,12 @@ export interface FakeSubsonicApi {
   api: SubsonicAPI;
   albumListCalls: GetAlbumList2Args[];
   albumDetailCalls: GetAlbumArgs[];
+  getIndexesCalls: GetIndexesArgs[];
 }
 
 export interface MemoryCoverArtStore extends CoverArtStore {
-  fetchCalls: Array<{ albumId: string; coverArtId: string | null }>;
-  removedAlbumIds: string[];
+  fetchCalls: Array<{ key: string; coverArtId: string | null }>;
+  removedKeys: string[];
 }
 
 export function stripVirtualProps<T extends object>(obj: T): T {
@@ -65,10 +68,7 @@ export function assertNoDanglingRelations(state: FullDbState): void {
   }
 }
 
-export function coverArtStoreFor(
-  connection: { baseUrl: string; username: string; password: string },
-  coverArtDir: string,
-): CoverArtStore {
+export function coverArtStoreFor(connection: { baseUrl: string; username: string; password: string }, coverArtDir: string): CoverArtStore {
   return createCoverArtStore({
     url: connection.baseUrl,
     username: connection.username,
@@ -130,14 +130,31 @@ function toAlbumListItem(album: AlbumWithSongsID3): AlbumID3 {
 export function createFakeSubsonicApi(
   pages: AlbumID3[][],
   details: ReadonlyMap<string, AlbumWithSongsID3> | Record<string, AlbumWithSongsID3>,
-  options: { failAlbumListAttempts?: number } = {},
+  options: {
+    failAlbumListAttempts?: number;
+    indexesLastModified?: number;
+    indexesPresent?: boolean;
+    indexArtists?: IndexArtist[];
+  } = {},
 ): FakeSubsonicApi {
   const albumListCalls: GetAlbumList2Args[] = [];
   const albumDetailCalls: GetAlbumArgs[] = [];
+  const getIndexesCalls: GetIndexesArgs[] = [];
   const detailMap = details instanceof Map ? details : new Map(Object.entries(details));
   let remainingAlbumListFailures = options.failAlbumListAttempts ?? 0;
 
   const api = {
+    async getIndexes(args: GetIndexesArgs = {}) {
+      getIndexesCalls.push(args);
+      return {
+        status: "ok",
+        version: "1.16.1",
+        indexes: {
+          lastModified: options.indexesLastModified ?? 1_700_000_000_000,
+          ...(options.indexesPresent === false ? {} : { index: [{ name: "A", artist: options.indexArtists ?? [] }] }),
+        },
+      };
+    },
     async getAlbumList2(args: GetAlbumList2Args) {
       albumListCalls.push(args);
       if (remainingAlbumListFailures > 0) {
@@ -176,6 +193,7 @@ export function createFakeSubsonicApi(
     api: api as unknown as SubsonicAPI,
     albumListCalls,
     albumDetailCalls,
+    getIndexesCalls,
   };
 }
 
@@ -185,26 +203,26 @@ export function createMemoryCoverArtStore(
     fetchResults?: Record<string, string | null | undefined>;
   } = {},
 ): MemoryCoverArtStore {
-  const fetchCalls: Array<{ albumId: string; coverArtId: string | null }> = [];
-  const removedAlbumIds: string[] = [];
+  const fetchCalls: Array<{ key: string; coverArtId: string | null }> = [];
+  const removedKeys: string[] = [];
 
   return {
     fetchCalls,
-    removedAlbumIds,
+    removedKeys,
 
-    async fetch(albumId, coverArtId) {
-      fetchCalls.push({ albumId, coverArtId });
-      if (options.fetchResults && albumId in options.fetchResults) {
-        return options.fetchResults[albumId];
+    async fetch(key, coverArtId) {
+      fetchCalls.push({ key, coverArtId });
+      if (options.fetchResults && key in options.fetchResults) {
+        return options.fetchResults[key];
       }
       if ("fetchResult" in options) {
         return options.fetchResult;
       }
-      return `/covers/${albumId}.jpg`;
+      return `/covers/${encodeURIComponent(key)}.jpg`;
     },
 
-    async remove(albumId) {
-      removedAlbumIds.push(albumId);
+    async remove(key) {
+      removedKeys.push(key);
     },
   };
 }
@@ -228,8 +246,7 @@ export async function syncAlbumsInMemory({
 
   for (const album of existingAlbums) {
     const { song: _song, ...albumRecord } = album as AlbumWithSongsID3 & { coverArtPath?: string | undefined };
-    const coverArtPath =
-      "coverArtPath" in album ? album.coverArtPath : album.coverArt ? `/covers/${album.id}.jpg` : undefined;
+    const coverArtPath = "coverArtPath" in album ? album.coverArtPath : album.coverArt ? `/covers/${album.id}.jpg` : undefined;
     db.albums.insert({ ...albumRecord, coverArtPath });
   }
 
@@ -237,17 +254,15 @@ export async function syncAlbumsInMemory({
     db.songs.insert(song);
   }
 
-  const fakeApi = createFakeSubsonicApi(
-    pages ?? [albums.map(toAlbumListItem)],
-    new Map(albums.map((album) => [album.id, album])),
-    { failAlbumListAttempts },
-  );
+  const fakeApi = createFakeSubsonicApi(pages ?? [albums.map(toAlbumListItem)], new Map(albums.map((album) => [album.id, album])), {
+    ...(failAlbumListAttempts === undefined ? {} : { failAlbumListAttempts }),
+  });
 
   const result = await syncAlbums({
     api: fakeApi.api,
     db,
-    coverArt,
     syncId: "test-sync",
+    mode: "full",
   });
   const state = await readFullState(db);
 
@@ -258,4 +273,20 @@ export async function syncAlbumsInMemory({
     coverArt,
     fakeApi,
   };
+}
+
+export async function syncQuickInMemory(params: Parameters<typeof syncAlbumsInMemory>[0]) {
+  const db = createInMemoryDb();
+  for (const album of params.existingAlbums ?? []) {
+    const { song: _song, ...albumRecord } = album as AlbumWithSongsID3 & { coverArtPath?: string | undefined };
+    db.albums.insert({ ...albumRecord, coverArtPath: albumRecord.coverArtPath });
+  }
+  for (const song of params.existingSongs ?? []) db.songs.insert(song);
+  const fakeApi = createFakeSubsonicApi(
+    params.pages ?? [params.albums.map(toAlbumListItem)],
+    new Map(params.albums.map((album) => [album.id, album])),
+    { ...(params.failAlbumListAttempts === undefined ? {} : { failAlbumListAttempts: params.failAlbumListAttempts }) },
+  );
+  const result = await syncAlbums({ api: fakeApi.api, db, syncId: "test-quick-sync", mode: "quick" });
+  return { db, result, state: await readFullState(db), fakeApi };
 }

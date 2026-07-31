@@ -110,14 +110,20 @@ function registerCoverArtIpc(): void {
 
   const coverArtFileSystem = createNodeCoverArtFileSystem(join(app.getPath("userData"), "cover-art"));
 
-  ipcMain.handle("coverArt:removeFiles", async (_, albumId: string) => {
-    await coverArtFileSystem.removeCoverFiles(albumId);
+  ipcMain.handle("coverArt:listFiles", async () => coverArtFileSystem.listCoverFiles?.() ?? []);
+  ipcMain.handle("coverArt:removeFile", async (_, path: string) => {
+    await coverArtFileSystem.removeCoverFile?.(path);
   });
-  ipcMain.handle("coverArt:writeFile", async (_, albumId: string, extension: string, bytes: Uint8Array) => {
-    return coverArtFileSystem.writeCoverFile(albumId, extension, bytes);
+  ipcMain.handle("coverArt:removeFiles", async (_, key: string) => {
+    await coverArtFileSystem.removeCoverFiles(key);
+  });
+  ipcMain.handle("coverArt:writeFile", async (_, key: string, extension: string, bytes: Uint8Array) => {
+    return coverArtFileSystem.writeCoverFile(key, extension, bytes);
   });
 
   disposeCoverArtIpc = () => {
+    ipcMain.removeHandler("coverArt:listFiles");
+    ipcMain.removeHandler("coverArt:removeFile");
     ipcMain.removeHandler("coverArt:removeFiles");
     ipcMain.removeHandler("coverArt:writeFile");
     disposeCoverArtIpc = undefined;

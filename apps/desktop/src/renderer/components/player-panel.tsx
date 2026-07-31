@@ -248,7 +248,11 @@ const CurrentTrack = () => {
 
   return (
     <div className="min-w-0 col-span-2 h-full   flex gap-2 items-center">
-      <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" />
+      <AlbumCover
+        coverArtPath={alb?.coverArtPath}
+        className="w-10 shrink-0"
+        target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined}
+      />
 
       {currentTrackId && currentTrack && (
         <div className="flex-col w-full">

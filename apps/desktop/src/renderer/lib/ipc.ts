@@ -47,6 +47,8 @@ export const PlayerIPC = {
 };
 
 export const CoverArtIPC = {
-  removeFiles: (albumId: string) => mainIpc.invoke("coverArt:removeFiles", albumId),
-  writeFile: (albumId: string, extension: string, bytes: Uint8Array) => mainIpc.invoke("coverArt:writeFile", albumId, extension, bytes),
+  listFiles: () => mainIpc.invoke("coverArt:listFiles"),
+  removeFile: (path: string) => mainIpc.invoke("coverArt:removeFile", path),
+  removeFiles: (key: string) => mainIpc.invoke("coverArt:removeFiles", key),
+  writeFile: (key: string, extension: string, bytes: Uint8Array) => mainIpc.invoke("coverArt:writeFile", key, extension, bytes),
 };

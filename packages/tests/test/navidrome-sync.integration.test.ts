@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import type { MuswagDb, SyncRecord } from "@muswag/shared";
-import { login, sync } from "@muswag/shared";
+import { createCoverManager, login, sync } from "@muswag/shared";
 import { librarySetA, librarySetB, type AlbumFixture } from "./fixtures/library-sets.js";
 import {
   assertNoDanglingRelations,
@@ -66,7 +66,11 @@ async function withSyncedNavidromeLibrary<T>(
       db,
       connection,
       coverArt,
-      syncOnce: () => sync(db, coverArtStoreFor(connection!, coverArt!.path)),
+      syncOnce: () =>
+        sync(db, createCoverManager({ db, store: coverArtStoreFor(connection!, coverArt!.path) }), {
+          mode: "full",
+          covers: "inline",
+        }),
       readState: () => readFullState(db),
     });
   } finally {
@@ -76,6 +80,23 @@ async function withSyncedNavidromeLibrary<T>(
 }
 
 describeIfReady("navidrome sync integration", () => {
+  it("round-trips the getIndexes watermark on an unchanged quick sync", async () => {
+    await withSyncedNavidromeLibrary(librarySetA, async ({ db, connection, coverArt, syncOnce }) => {
+      await syncOnce();
+      const before = db.syncState.get(1)?.indexesLastModified;
+      expect(before).toBeTypeOf("number");
+
+      const result = await sync(db, createCoverManager({ db, store: coverArtStoreFor(connection, coverArt.path) }), {
+        mode: "quick",
+        covers: "skip",
+      });
+
+      expect(result.mode).toBe("quick");
+      expect(result.currentStep).toBe("skipped-unchanged");
+      expect(db.syncState.get(1)?.indexesLastModified).toBe(before);
+    });
+  });
+
   it("syncs a real Navidrome library into albums and songs", async () => {
     await withSyncedNavidromeLibrary(librarySetA, async ({ syncOnce, readState }) => {
       const result = await syncOnce();
@@ -149,7 +170,10 @@ describeIfReady("navidrome sync integration", () => {
         password: connection.password,
       });
 
-      const resultB = await sync(db, coverArtStoreFor(connection, coverArt.path));
+      const resultB = await sync(db, createCoverManager({ db, store: coverArtStoreFor(connection, coverArt.path) }), {
+        mode: "quick",
+        covers: "inline",
+      });
       expect(resultB.lastStatus).toBe("completed");
 
       const afterState = await readState();

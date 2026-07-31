@@ -3,8 +3,9 @@ import SubsonicAPI from "@muswag/subsonic-api";
 import type { MuswagDb } from "./db/database.js";
 import type { SyncRecord, UserCredentials } from "./db/types.js";
 import { syncAlbums } from "./sync/sync-albums.js";
-import { createInitialSyncProgress } from "./sync/progress.js";
-import type { CoverArtStore } from "./sync/covers-helper.js";
+import { syncArtists } from "./sync/sync-artists.js";
+import { createInitialSyncProgress, updateSyncProgress } from "./sync/progress.js";
+import type { CoverManager } from "./covers/cover-manager.js";
 
 const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
@@ -14,7 +15,7 @@ export type UserInfo = { url: string; username: string; password: string } | nul
 export type UserCredentialsToLogin = { url: string; username: string; password: string };
 export type SyncInfo = SyncRecord | null;
 
-function createApi(credentials: UserCredentialsToLogin) {
+export function createSubsonicApi(credentials: UserCredentialsToLogin) {
   return new SubsonicAPI({
     url: credentials.url,
     auth: {
@@ -165,7 +166,7 @@ export function getSyncInfo(db: MuswagDb): SyncInfo {
 // --- Hooks ---
 
 export async function login(db: MuswagDb, credentials: UserCredentialsToLogin): Promise<UserInfo> {
-  const api = createApi(credentials);
+  const api = createSubsonicApi(credentials);
   await verifyConnection(api);
 
   const existing = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
@@ -184,7 +185,7 @@ export async function login(db: MuswagDb, credentials: UserCredentialsToLogin): 
   return { url: credentials.url, username: credentials.username, password: credentials.password };
 }
 
-export async function logout(db: MuswagDb): Promise<null> {
+export async function logout(db: MuswagDb, covers?: CoverManager): Promise<null> {
   const existing = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
   if (existing) {
     db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
@@ -193,17 +194,31 @@ export async function logout(db: MuswagDb): Promise<null> {
   for (const [id] of db.playlists.entries()) db.playlists.delete(id);
   for (const [id] of db.songs.entries()) db.songs.delete(id);
   for (const [id] of db.albums.entries()) db.albums.delete(id);
+  for (const [id] of db.artists.entries()) db.artists.delete(id);
   for (const [id] of db.syncs.entries()) db.syncs.delete(id);
+  for (const [id] of db.syncState.entries()) db.syncState.delete(id);
+  await covers?.pruneOrphans();
   return null;
 }
 
-export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncRecord> {
+export type SyncMode = "full" | "quick";
+
+export async function sync(
+  db: MuswagDb,
+  covers: CoverManager,
+  options: { mode?: SyncMode; covers?: "background" | "inline" | "skip" } = {},
+): Promise<SyncRecord> {
   const user = getUserInfo(db);
   if (!user) {
     throw new Error("login() must be called before sync()");
   }
 
-  const api = createApi(user);
+  const api = createSubsonicApi(user);
+
+  const existingState = db.syncState.get(1);
+  const requestedMode = options.mode ?? "quick";
+  const mode: SyncMode = db.albums.size === 0 || !existingState || existingState.indexesLastModified === null ? "full" : requestedMode;
+  const coverMode = options.covers ?? "background";
 
   const syncId = randomHex(16);
   const timeStarted = new Date().toISOString();
@@ -214,6 +229,7 @@ export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncR
     timeEnded: null,
     lastStatus: "running",
     error: null,
+    mode,
     currentStep: "starting",
     progress: createInitialSyncProgress(),
     progressUpdatedAt: timeStarted,
@@ -221,14 +237,66 @@ export async function sync(db: MuswagDb, coverArt: CoverArtStore): Promise<SyncR
   db.syncs.insert(syncRecord);
 
   try {
-    await syncAlbums({ api, db, coverArt, syncId });
+    const artists = await syncArtists({
+      api,
+      db,
+      syncId,
+      ...(mode === "quick" && existingState?.indexesLastModified !== null && existingState?.indexesLastModified !== undefined
+        ? { ifModifiedSince: existingState.indexesLastModified }
+        : {}),
+    });
+    const albums = await syncAlbums({ api, db, syncId, mode });
+
+    await Promise.all([
+      ...albums.deletedAlbumIds.map((id) => covers.remove({ type: "album", id })),
+      ...artists.deletedArtistIds.map((id) => covers.remove({ type: "artist", id })),
+    ]);
+
+    if (coverMode === "inline") {
+      updateSyncProgress(db, syncId, { currentStep: "fetching-cover-art" });
+      await covers.sweep({
+        onProgress: (done, total) => {
+          updateSyncProgress(db, syncId, { progress: { coverArtFetched: done, coverArtTotal: total } });
+        },
+      });
+      if (mode === "full") await covers.pruneOrphans();
+    } else if (coverMode === "skip" && mode === "full") {
+      await covers.pruneOrphans();
+    }
+
+    const finishedAt = new Date().toISOString();
+    const nextState = {
+      id: 1,
+      indexesLastModified: artists.lastModified ?? existingState?.indexesLastModified ?? null,
+      lastFullSyncAt: mode === "full" ? finishedAt : (existingState?.lastFullSyncAt ?? null),
+      lastQuickSyncAt: mode === "quick" ? finishedAt : (existingState?.lastQuickSyncAt ?? null),
+    };
+    if (existingState) {
+      db.syncState.update(1, (draft) => Object.assign(draft, nextState));
+    } else {
+      db.syncState.insert(nextState);
+    }
 
     db.syncs.update(syncId, (draft) => {
       draft.timeEnded = new Date().toISOString();
       draft.lastStatus = "completed";
-      draft.currentStep = "completed";
+      draft.currentStep =
+        mode === "quick" && !artists.libraryChanged && albums.detailRequests === 0 && albums.deleted === 0
+          ? "skipped-unchanged"
+          : "completed";
       draft.progressUpdatedAt = draft.timeEnded;
     });
+
+    if (coverMode === "background") {
+      void covers
+        .sweep()
+        .then(async () => {
+          if (mode === "full") await covers.pruneOrphans();
+        })
+        .catch((error: unknown) => {
+          console.warn("Background cover sweep failed.", { error });
+        });
+    }
 
     return db.syncs.get(syncId)!;
   } catch (error) {
@@ -265,8 +333,8 @@ export function abortSync(db: MuswagDb): void {
 
 // --- Helpers ---
 
-export { createCoverArtStore } from "./sync/covers-helper.js";
-export type { CoverArtFileSystem } from "./sync/covers-helper.js";
+export { createCoverArtStore } from "./covers/covers-helper.js";
+export type { CoverArtFileSystem } from "./covers/covers-helper.js";
 export { createInitialSyncProgress } from "./sync/progress.js";
 
 export function buildSubsonicStreamUrl(credentials: UserCredentialsToLogin, songId: string): string {

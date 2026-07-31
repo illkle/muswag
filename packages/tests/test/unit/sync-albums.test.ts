@@ -13,7 +13,7 @@ import {
   syncAlbumsInMemory,
 } from "../helpers/sync-testkit.js";
 import { createInMemoryDb } from "../navidrome-testkit.js";
-import { createInitialSyncProgress, sync, syncAlbums } from "@muswag/shared";
+import { createCoverManager, createInitialSyncProgress, sync, syncAlbums } from "@muswag/shared";
 
 describe("syncAlbums", () => {
   it("persists nested song metadata", async () => {
@@ -168,7 +168,7 @@ describe("syncAlbums", () => {
       song: [songFixture({ id: "song-b", albumId: "album-b" })],
     });
 
-    const { state, coverArt, result } = await syncAlbumsInMemory({
+    const { state, result } = await syncAlbumsInMemory({
       albums: [keptAlbum],
       existingAlbums: [removedAlbum, keptAlbum],
       existingSongs: [...(removedAlbum.song ?? []), ...(keptAlbum.song ?? [])],
@@ -177,10 +177,10 @@ describe("syncAlbums", () => {
     expect(result.deleted).toBe(1);
     expect(state.albums.map((album) => album.id)).toEqual(["album-b"]);
     expect(state.songs.some((song) => song.albumId === "album-a")).toBe(false);
-    expect(coverArt.removedAlbumIds).toEqual(["album-a"]);
+    expect(result.deletedAlbumIds).toEqual(["album-a"]);
   });
 
-  it("preserves existing coverArtPath when coverArt.fetch returns undefined", async () => {
+  it("preserves existing coverArtPath while refreshing metadata", async () => {
     const album = albumWithSongsFixture({
       id: "album-preserve-cover",
       coverArt: "cover-preserve",
@@ -193,13 +193,12 @@ describe("syncAlbums", () => {
     const { state } = await syncAlbumsInMemory({
       albums: [album],
       existingAlbums: [existingAlbum],
-      coverArt: createMemoryCoverArtStore({ fetchResult: undefined }),
     });
 
     expect(state.albums[0]?.coverArtPath).toBe("/covers/existing.jpg");
   });
 
-  it("clears coverArtPath when coverArt.fetch returns null", async () => {
+  it("does not fetch or clear cover art while refreshing metadata", async () => {
     const album = albumWithSongsFixture({
       id: "album-clear-cover",
       coverArt: "cover-clear",
@@ -209,13 +208,15 @@ describe("syncAlbums", () => {
       coverArtPath: "/covers/existing.jpg",
     };
 
+    const coverArt = createMemoryCoverArtStore({ fetchResult: null });
     const { state } = await syncAlbumsInMemory({
       albums: [album],
       existingAlbums: [existingAlbum],
-      coverArt: createMemoryCoverArtStore({ fetchResult: null }),
+      coverArt,
     });
 
-    expect(state.albums[0]?.coverArtPath).toBeUndefined();
+    expect(state.albums[0]?.coverArtPath).toBe("/covers/existing.jpg");
+    expect(coverArt.fetchCalls).toEqual([]);
   });
 
   it("paginates album list requests", async () => {
@@ -255,7 +256,9 @@ describe("syncAlbums", () => {
   it("requires login before syncManager sync", async () => {
     const db = createInMemoryDb();
 
-    await expect(sync(db, createMemoryCoverArtStore())).rejects.toThrow("login() must be called before sync()");
+    await expect(sync(db, createCoverManager({ db, store: createMemoryCoverArtStore() }))).rejects.toThrow(
+      "login() must be called before sync()",
+    );
   });
 
   it("can run directly with a fake API and fake cover art store", async () => {
@@ -271,14 +274,14 @@ describe("syncAlbums", () => {
     const result = await syncAlbums({
       api: fakeApi.api,
       db,
-      coverArt,
       syncId: "direct-sync",
+      mode: "full",
     });
     const state = await readFullState(db);
 
     expect(result.inserted).toBe(1);
-    expect(state.albums[0]?.coverArtPath).toBe("/covers/direct.jpg");
-    expect(coverArt.fetchCalls).toEqual([{ albumId: "album-direct", coverArtId: "cover-1" }]);
+    expect(state.albums[0]?.coverArtPath).toBeUndefined();
+    expect(coverArt.fetchCalls).toEqual([]);
   });
 
   it("writes sync progress counters to the sync record", async () => {
@@ -296,6 +299,7 @@ describe("syncAlbums", () => {
       timeStarted: "2026-06-29T00:00:00.000Z",
       timeEnded: null,
       lastStatus: "running",
+      mode: "full",
       error: null,
       currentStep: "starting",
       progress: createInitialSyncProgress(),
@@ -305,13 +309,13 @@ describe("syncAlbums", () => {
     await syncAlbums({
       api: fakeApi.api,
       db,
-      coverArt,
       syncId: "progress-sync",
+      mode: "full",
     });
 
     const syncRecord = db.syncs.get("progress-sync");
     expect(syncRecord).toMatchObject({
-      currentStep: "removing-cover-art",
+      currentStep: "removing-dangling-songs",
       progress: {
         pagesFetched: 1,
         albumsFetched: 1,

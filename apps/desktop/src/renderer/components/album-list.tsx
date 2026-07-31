@@ -44,7 +44,11 @@ const AlbumItem = ({
       tabIndex={0}
       {...props}
     >
-      <AlbumCover coverArtPath={album.coverArtPath} instantLoad={instantCovers} />
+      <AlbumCover
+        coverArtPath={album.coverArtPath}
+        instantLoad={instantCovers}
+        target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+      />
 
       <p className="mt-2 line-clamp-1 truncate text-xs">
         {getArtistCredits(album)
