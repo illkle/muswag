@@ -46,7 +46,7 @@ export function AlbumCover({
         <img
           src={coverSrc}
           alt={`cover art`}
-          className="size-full relative z-10 object-cover fade-in-0 animate-in"
+          className="relative z-10 size-full animate-in object-cover fade-in-0"
           decoding="async"
           loading="lazy"
           onError={() => {
@@ -54,7 +54,7 @@ export function AlbumCover({
           }}
         />
       )}
-      <div className="size-full absolute top-0 border border-border bg-muted "> </div>
+      <div className="absolute top-0 size-full border border-border bg-muted"> </div>
     </div>
   );
 }

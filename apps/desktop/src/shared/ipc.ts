@@ -21,6 +21,8 @@ export type AppUpdateState = {
 export type MuswagMainIpc = {
   "appUpdate:check": () => AppUpdateState;
   "appUpdate:getState": () => AppUpdateState;
+  /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
+  "appUpdate:install": () => void;
   "coverArt:listFiles": () => string[];
   "coverArt:removeFile": (path: string) => void;
   "coverArt:removeFiles": (key: string) => void;

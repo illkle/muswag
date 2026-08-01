@@ -70,6 +70,14 @@ export function checkForAppUpdates(): Promise<AppUpdateState> {
   return pendingCheck;
 }
 
+export function installAppUpdate(): void {
+  if (updateState.status !== "ready") {
+    return;
+  }
+
+  autoUpdater.quitAndInstall();
+}
+
 export function initializeAutoUpdater(): void {
   if (initialized || !app.isPackaged) {
     return;

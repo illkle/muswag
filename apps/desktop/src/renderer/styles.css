@@ -1,6 +1,6 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -137,6 +137,16 @@
 
   .app-no-drag {
     -webkit-app-region: no-drag;
+  }
+}
+
+/* Indeterminate sync progress: a segment sweeping the bottom edge of the server button. */
+@keyframes sync-line {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
   }
 }
 

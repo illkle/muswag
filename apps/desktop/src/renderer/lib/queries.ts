@@ -1,8 +1,8 @@
-import { db } from '#/lib/db-renderer';
-import { PlaylistSync } from '#/lib/playlist-sync';
-import type { PlaylistSyncStatus } from '@muswag/shared';
-import { useLiveQuery } from '@tanstack/react-db';
-import { useSyncExternalStore } from 'react';
+import { db } from "#/lib/db-renderer";
+import { PlaylistSync } from "#/lib/playlist-sync";
+import type { PlaylistSyncStatus } from "@muswag/shared";
+import { useLiveQuery } from "@tanstack/react-db";
+import { useSyncExternalStore } from "react";
 
 export const useUser = () => {
   return useLiveQuery((q) => q.from({ users: db.userCredentials }).findOne());

@@ -29,7 +29,7 @@ import {
 } from "./player/mpv-controller";
 import { getMpvState, getState } from "./player/player-session";
 import { disposeDB } from "./db";
-import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, subscribeToAppUpdateState } from "./app-updater";
+import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
@@ -190,6 +190,9 @@ app.whenReady().then(() => {
 
   mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
   mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());
+  mainIpc.handle("appUpdate:install", async () => {
+    installAppUpdate();
+  });
   unsubscribeAppUpdateState = subscribeToAppUpdateState((state) => {
     for (const window of BrowserWindow.getAllWindows()) {
       rendererIpc.send(window.webContents, "appUpdate:state", state);

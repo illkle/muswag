@@ -1,9 +1,9 @@
-import { resolve } from 'node:path';
+import { resolve } from "node:path";
 
-import { defineConfig } from 'electron-vite';
-import { mergeConfig } from 'vite';
+import { defineConfig } from "electron-vite";
+import { mergeConfig } from "vite";
 
-import { rendererConfig } from './vite.config';
+import { rendererConfig } from "./vite.config";
 
 export default defineConfig({
   main: {
@@ -19,7 +19,7 @@ export default defineConfig({
   renderer: mergeConfig(rendererConfig, {
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'index.html'),
+        input: resolve(__dirname, "index.html"),
       },
     },
   }),

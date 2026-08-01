@@ -10,6 +10,7 @@ const rendererIpc = new IpcListener<MuswagRendererIpc>();
 export const AppUpdateIPC = {
   check: () => mainIpc.invoke("appUpdate:check"),
   getState: () => mainIpc.invoke("appUpdate:getState"),
+  install: () => mainIpc.invoke("appUpdate:install"),
   subscribe: (listener: (state: AppUpdateState) => void) =>
     rendererIpc.on("appUpdate:state", (_event, state) => {
       listener(state);

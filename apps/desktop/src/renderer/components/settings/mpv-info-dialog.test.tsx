@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps, ReactNode } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MpvInstallState, MpvState } from "#shared/player";
@@ -38,10 +39,6 @@ vi.mock("#/components/player-provider", () => ({
   usePlayerStatus: () => "idle",
 }));
 
-vi.mock("#/components/ui/sidebar", () => ({
-  SidebarMenuButton: ({ tooltip: _tooltip, ...props }: ComponentProps<"button"> & { tooltip?: string }) => <button {...props} />,
-}));
-
 vi.mock("#/components/ui/dialog", () => ({
   Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -51,6 +48,12 @@ vi.mock("#/components/ui/dialog", () => ({
 }));
 
 import { MpvInfoDialog } from "./mpv-info-dialog";
+
+/** Mirrors how ServerMenu owns the dialog state: the dialog can open itself, the parent can close it. */
+function MpvInfoDialogHarness({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
+  return <MpvInfoDialog onOpenChange={setOpen} open={open} />;
+}
 
 const readyState: MpvState = { binaryPath: "/opt/homebrew/bin/mpv", source: "well-known", status: "ready", version: "0.40.0" };
 
@@ -81,8 +84,7 @@ describe("MpvInfoDialog", () => {
   it("shows the resolved binary once mpv is available", async () => {
     mocks.playerState.mpvState = readyState;
 
-    render(<MpvInfoDialog />);
-    fireEvent.click(screen.getByRole("button", { name: /MPV information/ }));
+    render(<MpvInfoDialogHarness initialOpen />);
 
     expect(await screen.findByText("/opt/homebrew/bin/mpv")).toBeTruthy();
     expect(screen.getByText("0.40.0")).toBeTruthy();
@@ -92,7 +94,7 @@ describe("MpvInfoDialog", () => {
   it("opens itself and offers a one-click install when mpv is missing", async () => {
     mocks.playerState.mpvState = missingState;
 
-    render(<MpvInfoDialog />);
+    render(<MpvInfoDialogHarness />);
 
     expect(await screen.findByText("Not installed")).toBeTruthy();
     expect(screen.getByText("brew install mpv")).toBeTruthy();
@@ -111,7 +113,7 @@ describe("MpvInfoDialog", () => {
       status: "invalid",
     };
 
-    render(<MpvInfoDialog />);
+    render(<MpvInfoDialogHarness />);
 
     expect(await screen.findByText(/could not be run: The file is not executable\./)).toBeTruthy();
 
@@ -133,7 +135,7 @@ describe("MpvInfoDialog", () => {
       status: "missing",
     };
 
-    render(<MpvInfoDialog />);
+    render(<MpvInfoDialogHarness />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Copy" }));
 
@@ -145,7 +147,7 @@ describe("MpvInfoDialog", () => {
     mocks.playerState.mpvState = missingState;
     mocks.playerState.installState = { command: "brew install mpv", method: "brew", status: "running" };
 
-    render(<MpvInfoDialog />);
+    render(<MpvInfoDialogHarness />);
     await screen.findByText("Not installed");
 
     const emit = mocks.subscribeInstallOutput.mock.calls[0]?.[0];
