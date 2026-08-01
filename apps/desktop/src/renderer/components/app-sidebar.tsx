@@ -1,6 +1,7 @@
 import { AppContentSizeProvider } from "#/components/app-content-size";
 import { AppVersionButton } from "#/components/app-version-button";
 import { MpvInfoDialog } from "#/components/mpv-info-dialog";
+import { ServerInfo } from "#/components/settings/serverInfo";
 import { ThemeSwitcher } from "#/components/settings/themeSwitcher";
 
 import {
@@ -27,7 +28,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="pt-(--top-height)">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/albums" }))} onClick={() => n({ to: "/app/albums" })}>
@@ -48,6 +49,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <ServerInfo />
         <AppVersionButton />
         <MpvInfoDialog />
         <ThemeSwitcher className="w-full" />
@@ -67,29 +69,3 @@ export const AppSidebarWrapper = ({ children }: { children: React.ReactNode }) =
     </SidebarProvider>
   );
 };
-
-/*
-
- <Button
-          render={() => (
-            <Link
-              to="/app/albums"
-              className="transition-colors px-2"
-              activeProps={{ className: "bg-muted-foreground text-secondary" }}
-              preload="intent"
-            >
-              Albums
-            </Link>
-          )}
-        ></Button>
-
-        <Link
-          to="/app/songs"
-          className="transition-colors px-2"
-          activeProps={{ className: "bg-muted-foreground text-secondary" }}
-          preload="intent"
-        >
-          <Button>Songs</Button>
-        </Link>
-
-        */

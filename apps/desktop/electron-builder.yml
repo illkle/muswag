@@ -2,6 +2,7 @@ appId: com.muswag.desktop
 productName: Muswag
 directories:
   buildResources: build
+icon: icon.png
 files:
   - out/**
   - package.json

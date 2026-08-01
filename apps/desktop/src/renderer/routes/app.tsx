@@ -3,6 +3,7 @@ import { TopBar } from "#/components/top-bar";
 import { AppSidebarWrapper } from "#/components/app-sidebar";
 import { PlayerPanel } from "#/components/player-panel";
 import { useUser } from "#/lib/queries";
+import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export const Route = createFileRoute("/app")({
   component: RouteComponent,
@@ -20,14 +21,22 @@ function RouteComponent() {
   }
 
   return (
-    <div>
+    <div
+      style={
+        {
+          "--top-height": TOP_HEIGHT + "px",
+          "--player-height": PLAYER_HEIGHT + "px",
+          "--main-height": "100vh",
+        } as React.CSSProperties
+      }
+    >
       <TopBar />
 
       <AppSidebarWrapper>
         <Outlet />
-      </AppSidebarWrapper>
 
-      <PlayerPanel />
+        <PlayerPanel />
+      </AppSidebarWrapper>
     </div>
   );
 }

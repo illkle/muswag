@@ -23,14 +23,14 @@ import { AlbumCover } from "#/components/album-cover";
 import { ArtistLinks } from "#/components/artist-links";
 import { Link } from "@tanstack/react-router";
 
-const PlayerButtonControls = () => {
+const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canGoBack = usePlayerCanGoBack();
   const canGoForward = usePlayerCanGoForward();
   const canPlay = usePlayerCanPlay();
   const status = usePlayerStatus();
 
   return (
-    <div className="flex items-center justify-center gap-2 md:justify-end">
+    <div {...props} className={cn("flex items-center justify-center gap-2 md:justify-end", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -81,7 +81,7 @@ const PlayerButtonControls = () => {
   );
 };
 
-const PlayerSeek = () => {
+const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const ds = usePlayerDuration();
   const canSeek = usePlayerCanSeek();
   const currentTrackId = usePlayerCurrentTrackId();
@@ -154,8 +154,8 @@ const PlayerSeek = () => {
   };
 
   return (
-    <div className="flex items-center gap-1 w-full max-w-190">
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDuration(positionSeconds)}</span>
+    <div {...props} className={cn("flex items-center gap-1 w-full", props.className)}>
+      <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDuration(positionSeconds)}</span>
       <input
         type="range"
         min={0}
@@ -224,12 +224,12 @@ const PlayerSeek = () => {
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
       />
-      <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(durationSeconds)}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(durationSeconds)}</span>
     </div>
   );
 };
 
-const CurrentTrack = () => {
+const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const currentTrackId = usePlayerCurrentTrackId();
   const currentTrackQuery = useLiveQuery(
     (q) =>
@@ -247,7 +247,7 @@ const CurrentTrack = () => {
   const alb = currentTrackQuery.data?.alb;
 
   return (
-    <div className="min-w-0 col-span-2 h-full   flex gap-2 items-center">
+    <div {...props} className={cn("min-w-0 w-full h-full flex gap-2 items-center", props.className)}>
       <AlbumCover
         coverArtPath={alb?.coverArtPath}
         className="w-10 shrink-0"
@@ -272,7 +272,7 @@ const CurrentTrack = () => {
   );
 };
 
-const PlayerVolume = () => {
+const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const muted = usePlayerMuted();
   const volumePercent = usePlayerVolumePercent();
   const [draftVolumePercent, setDraftVolumePercent] = useState<number | null>(null);
@@ -294,7 +294,7 @@ const PlayerVolume = () => {
   };
 
   return (
-    <div className="col-span-2 flex min-w-0 items-center justify-end gap-2">
+    <div {...props} className={cn("flex min-w-0 items-center justify-center h-full", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -322,22 +322,22 @@ const PlayerVolume = () => {
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
       />
-
-      <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{visibleVolumePercent}%</span>
     </div>
   );
 };
 
+//
+
 export function PlayerPanel() {
   return (
-    <section className=" border-t h-(--player-height) overflow-hidden grid grid-cols-10 px-4 py-1 gap-10">
-      <CurrentTrack />
-      <div className="flex flex-col grow items-center justify-center col-span-6">
-        <PlayerButtonControls />
-        <PlayerSeek />
-      </div>
-      <PlayerVolume />
-    </section>
+    <div className="h-(--player-height) pb-2 left-1/2 -translate-x-1/2  absolute z-100 bottom-0 w-6/10  ">
+      <section className="   flex-col justify-between h-full grid gap-y-2 col-span-9 gap-0 border-muted/20 border  p-2 bg-background/90 backdrop-blur-sm  overflow-hidden rounded-lg">
+        <CurrentTrack className="col-span-2 row-start-1" />
+        <PlayerButtonControls className="col-span-3 row-start-1" />
+        <PlayerVolume className="col-span-3 row-start-1" />
+        <PlayerSeek className="col-span-9 row-start-2 row-end-2" />
+      </section>
+    </div>
   );
 }
 

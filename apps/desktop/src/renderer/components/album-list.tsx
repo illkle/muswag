@@ -8,6 +8,7 @@ import type { Album } from "@muswag/shared";
 import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";
+import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export type AlbumListSection = {
   id: string;
@@ -40,7 +41,7 @@ const AlbumItem = ({
   return (
     <button
       key={album.id}
-      className="flex w-full cursor-pointer flex-col justify-start rounded p-1 text-left align-bottom transition hover:bg-accent"
+      className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10"
       tabIndex={0}
       {...props}
     >
@@ -50,25 +51,30 @@ const AlbumItem = ({
         target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
       />
 
-      <p className="mt-2 line-clamp-1 truncate text-xs">
-        {getArtistCredits(album)
-          .map((artist) => artist.name)
-          .join(", ")}
-      </p>
-      <h2 className="line-clamp-2 text-xs font-semibold">{album.name}</h2>
-      <p className="line-clamp-1 text-xs text-muted-foreground">{album.year}</p>
+      <div className="mt-1">
+        <h2 className="line-clamp-1 text-xs ">{album.name}</h2>
+        <p className=" line-clamp-1 truncate text-xs text-muted-foreground">
+          {getArtistCredits(album)
+            .map((artist) => artist.name)
+            .join(", ")}
+          <span className="line-clamp-1 text-xs text-muted-foreground/50">{album.year}</span>
+        </p>
+      </div>
     </button>
   );
 };
 
 const calcSize = (totalSpace: number) => {
-  const chunks = Math.max(1, Math.floor(totalSpace / 150));
+  const chunks = Math.max(1, Math.floor(totalSpace / 170));
+
+  const BETWEEN_TEXT_AND_IMAGE = 8;
+  const PAD_TOP_PLUS_BOTTOM = 2 * 2;
 
   const fullWidth = totalSpace / chunks;
-  const paddings = 8;
+  const paddings = BETWEEN_TEXT_AND_IMAGE + PAD_TOP_PLUS_BOTTOM;
   const coverSize = fullWidth - paddings;
-  const textSize = 64;
-  const fullHeight = textSize + 16 + coverSize + paddings;
+  const textSize = 16 * 3;
+  const fullHeight = textSize + coverSize + paddings;
 
   return { fullWidth, fullHeight, chunks };
 };
@@ -145,10 +151,12 @@ export function AlbumList({ albums, sections, scrollId, className }: AlbumListPr
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 4,
     initialOffset: scrollEntry?.scrollY,
+    paddingStart: TOP_HEIGHT,
+    paddingEnd: PLAYER_HEIGHT,
   });
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("overflow-y-auto", className)}>
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("overflow-y-auto px-2", className)}>
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
