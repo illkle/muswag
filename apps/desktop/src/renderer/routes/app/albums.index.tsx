@@ -3,7 +3,7 @@ import { Disc3 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
-import { AlbumList } from "#/components/album-list";
+import { AlbumList } from "#/components/album-list/album-list";
 import { useUser } from "#/lib/queries";
 import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";

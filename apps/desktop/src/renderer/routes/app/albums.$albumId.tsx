@@ -4,16 +4,16 @@ import { Disc3 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 
-import { AlbumCover } from "#/components/album-cover";
+import { AlbumCover } from "#/components/album-list/album-cover";
 import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
-import { ArtistLinks } from "#/components/artist-links";
-import { Button } from "#/components/ui/button";
+import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
 import { PlayerIPC } from "#/lib/ipc";
 import type { Song } from "@muswag/shared";
 import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
+import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -132,42 +132,11 @@ function RouteComponent() {
     });
   };
 
+  const HEADER_HEIGHT = 200;
+
   return (
     <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
-      <header className="border-b border-border/70 bg-card/80 grid gap-4 p-4 md:grid-cols-[160px_minmax(0,1fr)] md:p-6">
-        <AlbumCover
-          coverArtPath={album.coverArtPath}
-          instantLoad
-          target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
-        />
-
-        <div className="min-w-0 self-end">
-          <ArtistLinks
-            artist={album.artist}
-            artistId={album.artistId}
-            artists={album.artists}
-            displayArtist={album.displayArtist}
-            className="block truncate text-sm text-muted-foreground"
-            linkClassName="hover:text-foreground hover:underline"
-          />
-
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{album.name}</h1>
-          {albumMeta ? <p className="mt-2 text-sm text-muted-foreground">{albumMeta}</p> : null}
-
-          <div className="mt-4">
-            <AddToPlaylistMenu
-              songIds={songs.map(({ id }) => id)}
-              trigger={
-                <Button variant="secondary" size="sm">
-                  Add to playlist
-                </Button>
-              }
-            />
-          </div>
-        </div>
-      </header>
-
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1" style={{ "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}>
         <SongListRoot
           songs={songs}
           discTitles={album.discTitles}
@@ -176,6 +145,30 @@ function RouteComponent() {
           playerStatus={playerStatus}
           scrollId={"album-" + album.id}
           rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
+          topPadding={HEADER_HEIGHT + TOP_HEIGHT + 16}
+          bottomPadding={PLAYER_HEIGHT + 16}
+          topContent={
+            <header className="absolute top-0 mt-(--top-height) grid h-(--header-height) gap-4 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]">
+              <AlbumCover
+                coverArtPath={album.coverArtPath}
+                className="w-full"
+                instantLoad
+                target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+              />
+
+              <div className="flex min-w-0 flex-col gap-1 self-end">
+                <h1 className="text-2xl font-semibold tracking-tight md:text-4xl">{album.name}</h1>
+                <ArtistLinks
+                  artist={album.artist}
+                  artistId={album.artistId}
+                  displayArtist={album.displayArtist}
+                  className="block text-lg text-muted-foreground"
+                  linkClassName="hover:text-foreground hover:underline"
+                />
+                {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
+              </div>
+            </header>
+          }
         />
       </div>
     </section>

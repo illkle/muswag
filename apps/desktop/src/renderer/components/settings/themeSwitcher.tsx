@@ -1,5 +1,5 @@
-import { RadioTabs, RadioTabItem } from "#/components/custom/radio-tabs";
-import { useTheme, type Theme } from "#/components/theme-provider";
+import { RadioTabs, RadioTabItem } from "#/components/ui-custom/radio-tabs";
+import { useTheme, type Theme } from "#/components/utils/theme-provider";
 import { cn } from "#/lib/utils";
 import { LaptopIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useIsClient } from "usehooks-ts";

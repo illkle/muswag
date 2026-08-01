@@ -19,8 +19,8 @@ import {
   usePlayerStatus,
   usePlayerVolumePercent,
 } from "./player-provider";
-import { AlbumCover } from "#/components/album-cover";
-import { ArtistLinks } from "#/components/artist-links";
+import { AlbumCover } from "#/components/album-list/album-cover";
+import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
 
 const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
@@ -30,7 +30,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const status = usePlayerStatus();
 
   return (
-    <div {...props} className={cn("flex items-center justify-center gap-2 md:justify-end", props.className)}>
+    <div {...props} className={cn("flex items-center justify-center gap-2", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -45,7 +45,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
       <Button
         size="icon"
-        className="rounded-full h-7"
+        className="h-7 rounded-full"
         onClick={() => {
           if (status === "playing") {
             void PlayerIPC.pause();
@@ -154,8 +154,8 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   };
 
   return (
-    <div {...props} className={cn("flex items-center gap-1 w-full", props.className)}>
-      <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDuration(positionSeconds)}</span>
+    <div {...props} className={cn("flex w-full items-center gap-1", props.className)}>
+      <span className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatDuration(positionSeconds)}</span>
       <input
         type="range"
         min={0}
@@ -224,7 +224,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
       />
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(durationSeconds)}</span>
+      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{formatDuration(durationSeconds)}</span>
     </div>
   );
 };
@@ -247,7 +247,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const alb = currentTrackQuery.data?.alb;
 
   return (
-    <div {...props} className={cn("min-w-0 w-full h-full flex gap-2 items-center", props.className)}>
+    <div {...props} className={cn("flex h-full w-full items-center gap-2 overflow-hidden", !currentTrack && "opacity-0", props.className)}>
       <AlbumCover
         coverArtPath={alb?.coverArtPath}
         className="w-10 shrink-0"
@@ -255,8 +255,12 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
       />
 
       {currentTrackId && currentTrack && (
-        <div className="flex-col w-full">
-          <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="truncate text-xs font-semibold block">
+        <div className="flex w-full max-w-[calc(100%-48px)] flex-col">
+          <Link
+            to={"/app/albums/$albumId"}
+            params={{ albumId: alb?.id ?? "" }}
+            className="line-clamp-1 block truncate text-xs font-semibold"
+          >
             {currentTrack.title}
           </Link>
           <ArtistLinks
@@ -294,7 +298,7 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   };
 
   return (
-    <div {...props} className={cn("flex min-w-0 items-center justify-center h-full", props.className)}>
+    <div {...props} className={cn("flex h-full min-w-0 items-center justify-end", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -330,9 +334,9 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
 export function PlayerPanel() {
   return (
-    <div className="h-(--player-height) pb-2 left-1/2 -translate-x-1/2  absolute z-100 bottom-0 w-6/10  ">
-      <section className="   flex-col justify-between h-full grid gap-y-2 col-span-9 gap-0 border-muted/20 border  p-2 bg-background/90 backdrop-blur-sm  overflow-hidden rounded-lg">
-        <CurrentTrack className="col-span-2 row-start-1" />
+    <div className="absolute bottom-0 left-1/2 z-100 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
+      <section className="grid h-full grid-cols-9 flex-col justify-between gap-1 overflow-hidden rounded-lg border border-muted/20 bg-background/90 p-2 px-2 backdrop-blur-sm">
+        <CurrentTrack className="col-span-3 row-start-1" />
         <PlayerButtonControls className="col-span-3 row-start-1" />
         <PlayerVolume className="col-span-3 row-start-1" />
         <PlayerSeek className="col-span-9 row-start-2 row-end-2" />

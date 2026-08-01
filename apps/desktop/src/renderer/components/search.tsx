@@ -1,4 +1,4 @@
-import { AlbumCover } from "#/components/album-cover";
+import { AlbumCover } from "#/components/album-list/album-cover";
 import { FuzeSearch } from "#/lib/db-renderer";
 import type { SearchResult, SearchResultAlbum, SearchResultSong } from "@muswag/shared";
 import { useNavigate } from "@tanstack/react-router";
@@ -17,7 +17,7 @@ const InnerResult = ({
   target?: import("@muswag/shared").CoverTarget;
 }) => {
   return (
-    <div className={cn("flex gap-2 h-12 items-center data-highlighted:bg-primary/10  rounded-lg px-2", className)} {...props}>
+    <div className={cn("flex h-12 items-center gap-2 rounded-lg px-2 data-highlighted:bg-primary/10", className)} {...props}>
       <div className="w-10 shrink-0">
         <AlbumCover key={coverPath} coverArtPath={coverPath} target={target} />
       </div>
@@ -109,16 +109,16 @@ export function MiniSearch() {
     >
       <Autocomplete.Input
         placeholder="Search..."
-        className="h-8 w-full min-w-0 relative z-20 rounded-md border border-input bg-background px-2.5 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
+        className="relative z-20 h-full w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
       />
 
       <Autocomplete.Portal>
-        <Autocomplete.Positioner className="outline-hidden z-20" sideOffset={4} align="start">
+        <Autocomplete.Positioner className="z-20 outline-hidden" sideOffset={4} align="start">
           <Autocomplete.Popup
-            className="w-(--anchor-width) max-w-(--available-width) bg-background shadow-2xl rounded-md  px-1"
+            className="w-(--anchor-width) max-w-(--available-width) rounded-md bg-background px-1 shadow-2xl"
             aria-busy={isPending || undefined}
           >
-            <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain scroll-pt-1 scroll-pb-1">
+            <div className="max-h-[min(var(--available-height),22.5rem)] scroll-pt-1 scroll-pb-1 overflow-y-auto overscroll-contain">
               <Autocomplete.List>
                 {(v: FuseResult<SearchResult>) => {
                   if (v.item.type === "album") return <AlbumResult album={v.item} />;

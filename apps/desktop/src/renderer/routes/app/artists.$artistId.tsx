@@ -1,6 +1,6 @@
-import { AlbumList } from "#/components/album-list";
-import { AlbumCover } from "#/components/album-cover";
-import { getArtistCredits } from "#/components/artist-links";
+import { AlbumList } from "#/components/album-list/album-list";
+import { AlbumCover } from "#/components/album-list/album-cover";
+import { getArtistCredits } from "#/components/utils/artist-links";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { db } from "#/lib/db-renderer";
 import { eq, not, useLiveQuery } from "@tanstack/react-db";

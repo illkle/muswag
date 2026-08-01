@@ -1,5 +1,5 @@
-import { AlbumCover } from "#/components/album-cover";
-import { ArtistLinks } from "#/components/artist-links";
+import { AlbumCover } from "#/components/album-list/album-cover";
+import { ArtistLinks } from "#/components/utils/artist-links";
 import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 import type { PlayerStatus } from "#shared/player.ts";
@@ -22,6 +22,9 @@ export const SongListRoot = ({
   playingRowKey,
   unavailableRowKeys,
   rowActions,
+  topPadding,
+  topContent,
+  bottomPadding,
 }: {
   songs: Song[];
   discTitles?: Album["discTitles"];
@@ -40,6 +43,11 @@ export const SongListRoot = ({
   unavailableRowKeys?: ReadonlySet<string>;
   /** Per-row controls, rendered in a trailing column that appears on hover. */
   rowActions?: (song: Song, index: number) => ReactNode;
+
+  topPadding?: number;
+  bottomPadding?: number;
+
+  topContent?: JSX.Element;
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +68,8 @@ export const SongListRoot = ({
     estimateSize: (i) => (shouldRenderTitle(i) ? SIZE * 2 : SIZE),
     overscan: 10,
     initialOffset: scrollEntry?.scrollY,
+    paddingStart: topPadding,
+    paddingEnd: bottomPadding,
   });
 
   const renderDiscTitles = discTitles && discTitles?.length > 1;
@@ -67,7 +77,7 @@ export const SongListRoot = ({
   const [selectionState, setSelectionState] = useState<Record<string, boolean>>({});
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="overflow-y-auto h-full">
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="h-full overflow-y-auto">
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -75,6 +85,8 @@ export const SongListRoot = ({
           position: "relative",
         }}
       >
+        {topContent}
+
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const song = songs[virtualRow.index]!;
           const rowKey = rowKeys?.[virtualRow.index] ?? song.id;
@@ -87,7 +99,7 @@ export const SongListRoot = ({
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
-              className="absolute top-0 left-0 w-full flex z-5"
+              className="absolute top-0 left-0 z-5 flex w-full"
             >
               {shouldRenderTitle(virtualRow.index) && renderDiscTitles && song.discNumber && (
                 <>
@@ -160,12 +172,11 @@ export const SongRenderAlbum = ({
       )}
       {...props}
     >
-      <div className="text-sm font-medium text-muted-foreground line-clamp-1">
+      <div className="line-clamp-1 text-sm font-medium text-muted-foreground">
         {isPlaying && status ? renderTrackStateIcon(status) : (song.track ?? "•")}
       </div>
       <div className="min-w-0">
         <p className={cn("truncate font-light", isPlaying && "font-bold")}>{song.title}</p>
-        {song.comment ? <p className="truncate text-sm text-muted-foreground line-clamp-1">{song.comment}</p> : null}
       </div>
       <ArtistLinks
         artist={song.artist}
@@ -203,9 +214,9 @@ const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
 
 export function SongRenderSongsList({ song, index, actions }: SongVisualProps) {
   return (
-    <div className="group grid px-4 grid-cols-[40px_64px_1fr_1fr_48px_32px] gap-4 w-full h-12 items-center">
-      <div className="text-muted-foreground text-xs font-mono text-center">{index + 1}</div>
-      <div className="w-10 h-10">{song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <></>}</div>
+    <div className="group grid h-12 w-full grid-cols-[40px_64px_1fr_1fr_48px_32px] items-center gap-4 px-4">
+      <div className="text-center font-mono text-xs text-muted-foreground">{index + 1}</div>
+      <div className="h-10 w-10">{song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <></>}</div>
       <div className="flex flex-col overflow-hidden">
         <div className="truncate text-sm">{song.title}</div>
         <ArtistLinks
@@ -227,24 +238,24 @@ export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status,
   return (
     <div
       className={cn(
-        "group grid px-4 grid-cols-[40px_64px_1fr_1fr_48px_32px] gap-4 w-full h-12 items-center transition-colors duration-100",
+        "group grid h-12 w-full grid-cols-[40px_64px_1fr_1fr_48px_32px] items-center gap-4 px-4 transition-colors duration-100",
         "hover:bg-muted/30",
         isSelected && "bg-muted/60 hover:bg-muted/70",
         isUnavailable && "opacity-50",
       )}
       {...props}
     >
-      <div className="text-muted-foreground text-xs font-mono text-center">
+      <div className="text-center font-mono text-xs text-muted-foreground">
         {isPlaying && status ? renderTrackStateIcon(status) : index + 1}
       </div>
-      <div className="w-10 h-10">
+      <div className="h-10 w-10">
         {!isUnavailable && song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <div className="size-10 rounded bg-muted" />}
       </div>
 
       {isUnavailable ? (
         <div className="flex flex-col overflow-hidden">
           <div className="truncate text-sm italic">Not in local library</div>
-          <div className="truncate text-xs text-muted-foreground font-mono">{song.id}</div>
+          <div className="truncate font-mono text-xs text-muted-foreground">{song.id}</div>
         </div>
       ) : (
         <div className="flex flex-col overflow-hidden">
@@ -259,7 +270,7 @@ export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status,
         </div>
       )}
 
-      <div className="text-sm text-muted-foreground truncate">{isUnavailable ? "" : song.album}</div>
+      <div className="truncate text-sm text-muted-foreground">{isUnavailable ? "" : song.album}</div>
       <div className="text-xs text-muted-foreground">{isUnavailable ? "-" : formatDuration(song.duration)}</div>
       <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
     </div>
@@ -292,7 +303,7 @@ function renderTrackStateIcon(status: PlayerStatus): ReactNode {
   }
 
   return (
-    <div className="w-4 h-4 flex gap-0.5 playing-indicator">
+    <div className="playing-indicator flex h-4 w-4 gap-0.5">
       <div className="bg-primary"></div>
       <div className="bg-primary"></div>
       <div className="bg-primary"></div>

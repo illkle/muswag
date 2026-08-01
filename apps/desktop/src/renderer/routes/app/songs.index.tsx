@@ -1,4 +1,3 @@
-
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Disc3 } from "lucide-react";
 
@@ -9,6 +8,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
 import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
+import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
@@ -53,6 +53,8 @@ function LibraryScreen() {
           onSongPlay={() => null}
           SongComponent={SongRenderSongsList}
           rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
+          topPadding={TOP_HEIGHT}
+          bottomPadding={PLAYER_HEIGHT}
         />
       ) : null}
     </section>

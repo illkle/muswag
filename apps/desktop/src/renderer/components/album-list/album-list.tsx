@@ -1,8 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
-import { useContentSize } from "#/components/app-content-size";
-import { AlbumCover } from "#/components/album-cover";
-import { getArtistCredits } from "#/components/artist-links";
+import { useContentSize } from "#/components/utils/app-content-size";
+import { AlbumCover } from "#/components/album-list/album-cover";
+import { getArtistCredits } from "#/components/utils/artist-links";
 import { cn } from "#/lib/utils";
 import type { Album } from "@muswag/shared";
 import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
@@ -52,8 +52,8 @@ const AlbumItem = ({
       />
 
       <div className="mt-1">
-        <h2 className="line-clamp-1 text-xs ">{album.name}</h2>
-        <p className=" line-clamp-1 truncate text-xs text-muted-foreground">
+        <h2 className="line-clamp-1 text-xs">{album.name}</h2>
+        <p className="line-clamp-1 truncate text-xs text-muted-foreground">
           {getArtistCredits(album)
             .map((artist) => artist.name)
             .join(", ")}

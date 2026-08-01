@@ -1,6 +1,6 @@
-import { AppContentSizeProvider } from "#/components/app-content-size";
-import { AppVersionButton } from "#/components/app-version-button";
-import { MpvInfoDialog } from "#/components/mpv-info-dialog";
+import { AppContentSizeProvider } from "#/components/utils/app-content-size";
+import { AppVersionButton } from "#/components/settings/app-version-button";
+import { MpvInfoDialog } from "#/components/settings/mpv-info-dialog";
 import { ServerInfo } from "#/components/settings/serverInfo";
 import { ThemeSwitcher } from "#/components/settings/themeSwitcher";
 
@@ -19,6 +19,7 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { DiscAlbum, ListMusic, LogsIcon } from "lucide-react";
 
 import React from "react";
+import { NavButtons } from "#/components/shell/nav-buttons";
 
 export function AppSidebar() {
   const r = useMatchRoute();
@@ -28,7 +29,11 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarContent>
-        <SidebarGroup className="pt-(--top-height)">
+        <SidebarGroup className="">
+          <div className="flex h-(--top-height) w-full gap-4">
+            <div className="app-drag-region w-full"></div>
+            <NavButtons />
+          </div>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/albums" }))} onClick={() => n({ to: "/app/albums" })}>
