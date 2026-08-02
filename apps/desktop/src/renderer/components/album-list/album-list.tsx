@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type JSX } from "react";
 
 import { useContentSize } from "#/components/utils/app-content-size";
 import { AlbumCover } from "#/components/album-list/album-cover";
@@ -103,6 +103,10 @@ export function createAlbumListRows(sections: AlbumListSection[], columns: numbe
 type AlbumListProps = {
   scrollId: string;
   className?: string;
+  topPadding?: number;
+  bottomPadding?: number;
+  /** Rendered above the grid, absolutely positioned inside the scrolled area — reserve room with `topPadding`. */
+  topContent?: JSX.Element;
 } & (
   | {
       albums: Album[];
@@ -114,7 +118,15 @@ type AlbumListProps = {
     }
 );
 
-export function AlbumList({ albums, sections, scrollId, className }: AlbumListProps) {
+export function AlbumList({
+  albums,
+  sections,
+  scrollId,
+  className,
+  topPadding = TOP_HEIGHT,
+  bottomPadding = PLAYER_HEIGHT,
+  topContent,
+}: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
@@ -151,8 +163,8 @@ export function AlbumList({ albums, sections, scrollId, className }: AlbumListPr
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 4,
     initialOffset: scrollEntry?.scrollY,
-    paddingStart: TOP_HEIGHT,
-    paddingEnd: PLAYER_HEIGHT,
+    paddingStart: topPadding,
+    paddingEnd: bottomPadding,
   });
 
   return (
@@ -164,6 +176,8 @@ export function AlbumList({ albums, sections, scrollId, className }: AlbumListPr
           position: "relative",
         }}
       >
+        {topContent}
+
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index];
 

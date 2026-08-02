@@ -135,6 +135,10 @@
     --sb-size: 10px;
   }
 
+  .scrollbar {
+    scrollbar-gutter: stable;
+  }
+
   .scrollbar::-webkit-scrollbar {
     width: var(--sb-size);
   }
@@ -148,6 +152,15 @@
   .scrollbar::-webkit-scrollbar-thumb {
     background: var(--sb-thumb-color);
     border-radius: 1px;
+  }
+
+  /* The track clears the top bar by default; areas outside the main column start at their own edge. */
+  .scrollbar-flush::-webkit-scrollbar-track {
+    margin-top: 0;
+  }
+
+  .scrollbar-flush::-webkit-scrollbar {
+    width: 6px;
   }
 
   @supports not selector(::-webkit-scrollbar) {

@@ -13,10 +13,11 @@ import {
   SidebarMenuButton,
 } from "#/components/ui/sidebar";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { MusicNotesIcon, PlaylistIcon, VinylRecordIcon } from "@phosphor-icons/react";
+import { MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
 
 import React from "react";
 import { NavButtons } from "#/components/shell/nav-buttons";
+import { SidebarPlaylists } from "#/components/shell/sidebar-playlists";
 
 export function AppSidebar() {
   const r = useMatchRoute();
@@ -26,7 +27,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarContent>
-        <SidebarGroup className="">
+        <SidebarGroup className="shrink-0">
           <div className="flex h-(--top-height) w-full gap-4">
             <div className="app-drag-region w-full"></div>
             <NavButtons />
@@ -42,13 +43,10 @@ export function AppSidebar() {
                 <MusicNotesIcon /> Songs
               </SidebarMenuButton>
             </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton isActive={Boolean(r({ to: "/app/playlists" }))} onClick={() => n({ to: "/app/playlists" })}>
-                <PlaylistIcon /> Playlists
-              </SidebarMenuButton>
-            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
+
+        <SidebarPlaylists />
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
