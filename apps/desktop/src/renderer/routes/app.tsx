@@ -4,7 +4,6 @@ import { AppSidebarWrapper } from "#/components/shell/app-sidebar";
 import { PlayerPanel } from "#/components/player-panel";
 import { useUser } from "#/lib/queries";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
-import { MiniSearch } from "#/components/search";
 
 export const Route = createFileRoute("/app")({
   component: RouteComponent,
