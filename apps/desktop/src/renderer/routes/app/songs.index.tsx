@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { Disc3 } from "lucide-react";
+import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
@@ -35,7 +35,7 @@ function LibraryScreen() {
       {!songsQuery.isLoading && !songsQuery.isError && (songsQuery.data?.length ?? 0) === 0 ? (
         <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-14">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Disc3 className="size-5" />
+            <DiscIcon className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="font-medium">No albums in the local database yet.</p>

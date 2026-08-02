@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -128,6 +128,36 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  body {
+    --sb-track-color: var(--primary-foreground);
+    --sb-thumb-color: var(--input);
+    --sb-size: 10px;
+  }
+
+  .scrollbar::-webkit-scrollbar {
+    width: var(--sb-size);
+  }
+
+  .scrollbar::-webkit-scrollbar-track {
+    background: var(--sb-track-color);
+    border-radius: 1px;
+    margin-top: var(--top-height);
+  }
+
+  .scrollbar::-webkit-scrollbar-thumb {
+    background: var(--sb-thumb-color);
+    border-radius: 1px;
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    .scrollbar {
+      scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+    }
+  }
+}
+
+@layer theme {
 }
 
 @layer utilities {

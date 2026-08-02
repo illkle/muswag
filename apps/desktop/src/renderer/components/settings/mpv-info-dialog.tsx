@@ -1,4 +1,12 @@
-import { AlertCircle, CheckCircle2, CircleX, Download, FolderOpen, Loader2, RefreshCw } from "lucide-react";
+import {
+  ArrowsClockwiseIcon,
+  CheckCircleIcon,
+  DownloadSimpleIcon,
+  FolderOpenIcon,
+  SpinnerGapIcon,
+  WarningCircleIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "#/components/ui/badge";
@@ -36,12 +44,12 @@ export const mpvStatusLabels: Record<MpvState["status"], string> = {
 
 function MpvStatusIcon({ status }: { status: MpvState["status"] }) {
   if (status === "ready") {
-    return <CheckCircle2 className="size-4 text-emerald-500" />;
+    return <CheckCircleIcon className="size-4 text-emerald-500" />;
   }
   if (status === "checking") {
-    return <Loader2 className="size-4 animate-spin" />;
+    return <SpinnerGapIcon className="size-4 animate-spin" />;
   }
-  return <CircleX className="size-4" />;
+  return <XCircleIcon className="size-4" />;
 }
 
 function InstallOptionRow({
@@ -59,7 +67,7 @@ function InstallOptionRow({
         <code className="min-w-0 truncate font-mono text-xs">{option.command}</code>
         {option.automatic ? (
           <Button disabled={busy} onClick={() => onInstall(option)} size="sm">
-            <Download />
+            <DownloadSimpleIcon />
             Install
           </Button>
         ) : (
@@ -172,7 +180,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
           {unavailableReason && mpvState.status !== "checking" ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <div className="flex items-center gap-2 font-medium">
-                <AlertCircle className="size-4" />
+                <WarningCircleIcon className="size-4" />
                 mpv cannot be used
               </div>
               <p className="mt-2 break-words text-destructive/90">{unavailableReason}</p>
@@ -199,11 +207,11 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
 
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={busy || installing} onClick={recheck} size="sm" variant="outline">
-              <RefreshCw className={busy && !installing ? "animate-spin" : undefined} />
+              <ArrowsClockwiseIcon className={busy && !installing ? "animate-spin" : undefined} />
               Re-check
             </Button>
             <Button disabled={busy || installing} onClick={locate} size="sm" variant="outline">
-              <FolderOpen />
+              <FolderOpenIcon />
               Locate mpv…
             </Button>
             {(mpvState.status === "ready" || mpvState.status === "invalid") && mpvState.source === "manual" ? (
@@ -240,14 +248,14 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
           {playerError ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <div className="flex items-center gap-2 font-medium">
-                <AlertCircle className="size-4" />
+                <WarningCircleIcon className="size-4" />
                 Last playback error
               </div>
               <p className="mt-2 break-words text-destructive/90">{playerError}</p>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="size-4 text-emerald-500" />
+              <CheckCircleIcon className="size-4 text-emerald-500" />
               No errors reported.
             </div>
           )}

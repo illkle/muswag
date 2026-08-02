@@ -13,7 +13,7 @@ import {
   SidebarMenuButton,
 } from "#/components/ui/sidebar";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { DiscAlbum, ListMusic, LogsIcon } from "lucide-react";
+import { MusicNotesIcon, PlaylistIcon, VinylRecordIcon } from "@phosphor-icons/react";
 
 import React from "react";
 import { NavButtons } from "#/components/shell/nav-buttons";
@@ -34,17 +34,17 @@ export function AppSidebar() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/albums" }))} onClick={() => n({ to: "/app/albums" })}>
-                <DiscAlbum /> Albums
+                <VinylRecordIcon /> Albums
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/songs" }))} onClick={() => n({ to: "/app/songs" })}>
-                <LogsIcon /> Songs
+                <MusicNotesIcon /> Songs
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/playlists" }))} onClick={() => n({ to: "/app/playlists" })}>
-                <ListMusic /> Playlists
+                <PlaylistIcon /> Playlists
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

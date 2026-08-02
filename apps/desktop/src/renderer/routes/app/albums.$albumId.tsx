@@ -1,5 +1,5 @@
 import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
-import { Disc3 } from "lucide-react";
+import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
@@ -97,7 +97,7 @@ function RouteComponent() {
       <section className="flex h-full w-full flex-col">
         <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/70 bg-card/85 px-6 py-14 text-center shadow-xl shadow-primary/5 backdrop-blur">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Disc3 className="size-5" />
+            <DiscIcon className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="font-medium">Album not found.</p>
@@ -135,7 +135,7 @@ function RouteComponent() {
   const HEADER_HEIGHT = 200;
 
   return (
-    <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
+    <section data-scroll-restoration-id={scrollRestorationId} className="scrollbar flex h-full w-full flex-col overflow-auto">
       <div className="min-h-0 flex-1" style={{ "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}>
         <SongListRoot
           songs={songs}

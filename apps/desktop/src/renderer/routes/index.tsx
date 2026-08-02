@@ -9,7 +9,7 @@ import { SyncManager } from "#/lib/sync-manager";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheckIcon } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/")({
   component: App,
@@ -47,7 +47,7 @@ function LoginScreen() {
         <CardHeader className="gap-3">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <ShieldCheck className="size-5" />
+              <ShieldCheckIcon className="size-5" />
             </div>
             <div>
               <CardTitle>Connect your Subsonic server</CardTitle>

@@ -1,4 +1,13 @@
-import { LoaderCircle, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
+import {
+  PauseIcon,
+  PlayIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  SpeakerHighIcon,
+  SpeakerLowIcon,
+  SpeakerXIcon,
+  SpinnerGapIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
@@ -40,7 +49,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         disabled={!canGoBack}
         aria-label="Previous track"
       >
-        <SkipBack className="size-4" />
+        <SkipBackIcon className="size-4" />
       </Button>
 
       <Button
@@ -58,11 +67,11 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         aria-label={status === "playing" ? "Pause playback" : "Play track"}
       >
         {status === "playing" ? (
-          <Pause className="size-3" />
+          <PauseIcon className="size-3" />
         ) : status === "loading" ? (
-          <LoaderCircle className="size-3 animate-spin" />
+          <SpinnerGapIcon className="size-3 animate-spin" />
         ) : (
-          <Play className="size-3" />
+          <PlayIcon className="size-3" />
         )}
       </Button>
 
@@ -75,7 +84,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         disabled={!canGoForward}
         aria-label="Next track"
       >
-        <SkipForward className="size-4" />
+        <SkipForwardIcon className="size-4" />
       </Button>
     </div>
   );
@@ -281,7 +290,7 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const volumePercent = usePlayerVolumePercent();
   const [draftVolumePercent, setDraftVolumePercent] = useState<number | null>(null);
   const visibleVolumePercent = draftVolumePercent ?? volumePercent;
-  const VolumeIcon = muted || visibleVolumePercent === 0 ? VolumeX : visibleVolumePercent < 50 ? Volume1 : Volume2;
+  const VolumeIcon = muted || visibleVolumePercent === 0 ? SpeakerXIcon : visibleVolumePercent < 50 ? SpeakerLowIcon : SpeakerHighIcon;
 
   useEffect(() => {
     setDraftVolumePercent(null);

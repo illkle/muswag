@@ -1,6 +1,6 @@
 import { Button } from "#/components/ui/button";
 import { useCanGoBack, useRouter } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 
 export const NavButtons = () => {
   const router = useRouter();
@@ -18,7 +18,7 @@ export const NavButtons = () => {
           router.history.back();
         }}
       >
-        <ChevronLeft className="size-4" />
+        <CaretLeftIcon className="size-4" />
       </Button>
       <Button
         variant="ghost"
@@ -29,7 +29,7 @@ export const NavButtons = () => {
           router.history.forward();
         }}
       >
-        <ChevronRight className="size-4" />
+        <CaretRightIcon className="size-4" />
       </Button>
     </div>
   );

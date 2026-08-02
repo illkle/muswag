@@ -1,4 +1,15 @@
-import { AudioLines, ChevronsUpDown, Library, LoaderCircle, LogOut, Package, RefreshCw, Server, TriangleAlert, X } from "lucide-react";
+import {
+  ArrowsClockwiseIcon,
+  BooksIcon,
+  CaretUpDownIcon,
+  HardDrivesIcon,
+  PackageIcon,
+  SignOutIcon,
+  SpinnerGapIcon,
+  WarningIcon,
+  WaveformIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
@@ -109,15 +120,15 @@ export function ServerMenu() {
             >
               {/* A sync is transient, so it takes the icon slot; the alert falls back to the right of the name. */}
               {syncRunning ? (
-                <LoaderCircle className="animate-spin" />
+                <SpinnerGapIcon className="animate-spin" />
               ) : playbackBroken ? (
-                <TriangleAlert />
+                <WarningIcon />
               ) : (
-                <Server className="opacity-70" />
+                <HardDrivesIcon className="opacity-70" />
               )}
               <span className="flex-1 truncate text-left font-medium">{hostName}</span>
-              {playbackBroken && syncRunning ? <TriangleAlert /> : null}
-              <ChevronsUpDown className={playbackBroken ? "opacity-70" : "text-muted-foreground"} />
+              {playbackBroken && syncRunning ? <WarningIcon /> : null}
+              <CaretUpDownIcon className={playbackBroken ? "opacity-70" : "text-muted-foreground"} />
               {syncRunning ? <SyncLine percent={syncPercent} /> : null}
             </SidebarMenuButton>
           }
@@ -134,11 +145,11 @@ export function ServerMenu() {
           <div className="flex items-center gap-1">
             <MenuItem className="min-w-0 flex-1" onClick={() => setDialog("sync")}>
               {syncRunning ? (
-                <LoaderCircle className="size-4 shrink-0 animate-spin" />
+                <SpinnerGapIcon className="size-4 shrink-0 animate-spin" />
               ) : syncFailed ? (
-                <TriangleAlert className="size-4 shrink-0 text-destructive" />
+                <WarningIcon className="size-4 shrink-0 text-destructive" />
               ) : (
-                <Library className="size-4 shrink-0 text-muted-foreground" />
+                <BooksIcon className="size-4 shrink-0 text-muted-foreground" />
               )}
               <span className="min-w-0 flex-1 truncate">{syncSummary}</span>
             </MenuItem>
@@ -149,7 +160,7 @@ export function ServerMenu() {
               disabled={syncRunning && syncControls.cancelling}
               onClick={() => (syncRunning ? syncControls.cancelSync() : syncControls.startSync("quick"))}
             >
-              {syncRunning ? <X className="size-4" /> : <RefreshCw className="size-4" />}
+              {syncRunning ? <XIcon className="size-4" /> : <ArrowsClockwiseIcon className="size-4" />}
             </MenuItem>
           </div>
 
@@ -159,7 +170,7 @@ export function ServerMenu() {
             )}
             onClick={() => setDialog("mpv")}
           >
-            {playbackBroken ? <TriangleAlert className="size-4" /> : <AudioLines className="size-4 text-muted-foreground" />}
+            {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
             <span className="flex-1 truncate">Playback engine</span>
             {playbackBroken ? (
               <StatusPill tone="destructive">{playerError ? "Error" : mpvStatusLabels[mpvState.status]}</StatusPill>
@@ -169,7 +180,7 @@ export function ServerMenu() {
           </MenuItem>
 
           <MenuItem onClick={() => setDialog("update")}>
-            <Package className="size-4 text-muted-foreground" />
+            <PackageIcon className="size-4 text-muted-foreground" />
             <span className="flex-1 truncate">
               Muswag <span className="font-mono tabular-nums">v{appUpdate?.currentVersion ?? "…"}</span>
             </span>
@@ -190,7 +201,7 @@ export function ServerMenu() {
             disabled={logoutMutation.isPending}
             onClick={() => logoutMutation.mutate()}
           >
-            <LogOut className="size-4 text-muted-foreground group-data-highlighted:text-destructive" />
+            <SignOutIcon className="size-4 text-muted-foreground group-data-highlighted:text-destructive" />
             Log out
           </MenuItem>
         </MenuContent>

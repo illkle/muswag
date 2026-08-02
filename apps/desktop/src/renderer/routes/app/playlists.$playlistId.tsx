@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { ListMusic, Pencil, Trash2, X } from "lucide-react";
+import { PencilSimpleIcon, PlaylistIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
@@ -85,7 +85,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
       <section className="flex h-full w-full flex-col">
         <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/70 bg-card/85 px-6 py-14 text-center">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <ListMusic className="size-5" />
+            <PlaylistIcon className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="font-medium">Playlist not found.</p>
@@ -144,10 +144,10 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
             {canEdit ? (
               <>
                 <Button variant="secondary" size="icon" aria-label="Edit playlist" onClick={() => setEditOpen(true)}>
-                  <Pencil className="size-4" />
+                  <PencilSimpleIcon className="size-4" />
                 </Button>
                 <Button variant="destructive" size="icon" aria-label="Delete playlist" onClick={() => setDeleteOpen(true)}>
-                  <Trash2 className="size-4" />
+                  <TrashIcon className="size-4" />
                 </Button>
               </>
             ) : null}
@@ -195,7 +195,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                     removeEntryMutation.mutate(entryId);
                   }}
                 >
-                  <X className="size-3.5" />
+                  <XIcon className="size-3.5" />
                 </button>
               );
             }}

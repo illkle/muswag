@@ -4,6 +4,7 @@ import { AppSidebarWrapper } from "#/components/shell/app-sidebar";
 import { PlayerPanel } from "#/components/player-panel";
 import { useUser } from "#/lib/queries";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
+import { IconContext } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/app")({
   component: RouteComponent,
@@ -30,11 +31,13 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
-      <AppSidebarWrapper>
-        <TopBar />
-        <Outlet />
-        <PlayerPanel />
-      </AppSidebarWrapper>
+      <IconContext.Provider value={{ weight: "fill" }}>
+        <AppSidebarWrapper>
+          <TopBar />
+          <Outlet />
+          <PlayerPanel />
+        </AppSidebarWrapper>
+      </IconContext.Provider>
     </div>
   );
 }

@@ -156,7 +156,7 @@ export function AlbumList({ albums, sections, scrollId, className }: AlbumListPr
   });
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("overflow-y-auto px-2", className)}>
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("scrollbar overflow-y-auto px-2", className)}>
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,

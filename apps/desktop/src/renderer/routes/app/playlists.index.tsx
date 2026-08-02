@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
-import { ListMusic, LoaderCircle, Plus, RefreshCw } from "lucide-react";
+import { ArrowsClockwiseIcon, PlaylistIcon, PlusIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
@@ -38,11 +38,11 @@ function PlaylistsScreen() {
 
         <div className="flex shrink-0 gap-2">
           <Button variant="secondary" disabled={syncing} onClick={() => syncMutation.mutate()}>
-            {syncing ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {syncing ? <SpinnerGapIcon className="size-4 animate-spin" /> : <ArrowsClockwiseIcon className="size-4" />}
             {syncing ? "Syncing" : "Sync"}
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
+            <PlusIcon className="size-4" />
             New playlist
           </Button>
         </div>
@@ -66,7 +66,7 @@ function PlaylistsScreen() {
       {!isLoading && !isError && playlists.length === 0 ? (
         <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-14">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <ListMusic className="size-5" />
+            <PlaylistIcon className="size-5" />
           </div>
           <div className="space-y-1 text-center">
             <p className="font-medium">No playlists yet.</p>
@@ -87,7 +87,7 @@ function PlaylistsScreen() {
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/40"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <ListMusic className="size-4" />
+                    <PlaylistIcon className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">

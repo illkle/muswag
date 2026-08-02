@@ -1,4 +1,4 @@
-import { LaptopIcon, MoonIcon, SunIcon } from "lucide-react";
+import { LaptopIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 
 import { MenuRadioGroup, MenuRadioItem } from "#/components/ui/menu";
 import { useTheme, type Theme } from "#/components/utils/theme-provider";
