@@ -26,6 +26,7 @@ function getCoverManager(): CoverManager {
 
 export const CoverArt = {
   ensure: (target: CoverTarget) => getCoverManager().ensure(target),
+  repair: (target: CoverTarget, failedPath: string) => getCoverManager().repair(target, failedPath),
 };
 
 export const SyncManager = {

@@ -7,7 +7,7 @@ import type { Album, Song } from "@muswag/shared";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { useElementScrollRestoration } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { LoaderCircle, PauseIcon } from "lucide-react";
+import { PauseIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { useRef, useState, type JSX, type ReactNode } from "react";
 
 export const SongListRoot = ({
@@ -77,7 +77,7 @@ export const SongListRoot = ({
   const [selectionState, setSelectionState] = useState<Record<string, boolean>>({});
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="h-full overflow-y-auto">
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="scrollbar h-full overflow-y-auto">
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -295,7 +295,7 @@ function formatDuration(totalSeconds: number | null | undefined): string {
 
 function renderTrackStateIcon(status: PlayerStatus): ReactNode {
   if (status === "loading") {
-    return <LoaderCircle className="size-4 animate-spin text-primary" />;
+    return <SpinnerGapIcon className="size-4 animate-spin text-primary" />;
   }
 
   if (status === "paused") {

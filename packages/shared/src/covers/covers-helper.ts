@@ -18,8 +18,32 @@ async function fetchCoverArt(api: SubsonicAPI, key: string, coverArtId: string, 
     throw new Error(`Fetching cover failed for ${key}: empty response body`);
   }
 
-  const extension = getAlbumCoverExtension(response.headers.get("content-type"));
+  const extension = detectCoverExtension(bytes);
+  if (!extension) {
+    throw new Error(`Fetching cover failed for ${key}: response is not a supported image`);
+  }
   return fileSystem.writeCoverFile(key, extension, bytes);
+}
+
+function detectCoverExtension(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return ".jpg";
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return ".png";
+  }
+  const header = String.fromCharCode(...bytes.subarray(0, 32));
+  if (header.startsWith("GIF87a") || header.startsWith("GIF89a")) return ".gif";
+  if (header.startsWith("RIFF") && header.slice(8, 12) === "WEBP") return ".webp";
+  if (header.slice(4, 8) === "ftyp" && (header.includes("avif", 8) || header.includes("avis", 8))) return ".avif";
+  return null;
 }
 
 export interface SubsonicCoverArtStoreOptions {

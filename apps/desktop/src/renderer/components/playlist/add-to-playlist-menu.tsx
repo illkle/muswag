@@ -3,7 +3,7 @@ import { Menu, MenuContent, MenuGroup, MenuGroupLabel, MenuItem, MenuSeparator, 
 import { PlaylistActions } from "#/lib/playlist-actions";
 import { usePlaylists } from "#/lib/playlist-queries";
 import { useMutation } from "@tanstack/react-query";
-import { ListPlus, Plus } from "lucide-react";
+import { ListPlusIcon, PlusIcon } from "@phosphor-icons/react";
 import { useState, type ReactElement } from "react";
 
 /**
@@ -36,7 +36,7 @@ export function AddToPlaylistMenu({ songIds, trigger }: { songIds: readonly stri
             className="inline-flex size-7 items-center justify-center rounded-md hover:bg-muted disabled:opacity-50"
             onClick={(event) => event.stopPropagation()}
           >
-            <ListPlus className="size-4" />
+            <ListPlusIcon className="size-4" />
           </MenuTrigger>
         )}
 
@@ -59,7 +59,7 @@ export function AddToPlaylistMenu({ songIds, trigger }: { songIds: readonly stri
 
           <MenuSeparator />
           <MenuItem onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
+            <PlusIcon className="size-4" />
             New playlist...
           </MenuItem>
         </MenuContent>

@@ -13,10 +13,11 @@ import {
   SidebarMenuButton,
 } from "#/components/ui/sidebar";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { DiscAlbum, ListMusic, LogsIcon } from "lucide-react";
+import { MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
 
 import React from "react";
 import { NavButtons } from "#/components/shell/nav-buttons";
+import { SidebarPlaylists } from "#/components/shell/sidebar-playlists";
 
 export function AppSidebar() {
   const r = useMatchRoute();
@@ -26,7 +27,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarContent>
-        <SidebarGroup className="">
+        <SidebarGroup className="shrink-0">
           <div className="flex h-(--top-height) w-full gap-4">
             <div className="app-drag-region w-full"></div>
             <NavButtons />
@@ -34,21 +35,18 @@ export function AppSidebar() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/albums" }))} onClick={() => n({ to: "/app/albums" })}>
-                <DiscAlbum /> Albums
+                <VinylRecordIcon /> Albums
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton isActive={Boolean(r({ to: "/app/songs" }))} onClick={() => n({ to: "/app/songs" })}>
-                <LogsIcon /> Songs
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton isActive={Boolean(r({ to: "/app/playlists" }))} onClick={() => n({ to: "/app/playlists" })}>
-                <ListMusic /> Playlists
+                <MusicNotesIcon /> Songs
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
+
+        <SidebarPlaylists />
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>

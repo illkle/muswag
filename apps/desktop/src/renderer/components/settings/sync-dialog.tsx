@@ -1,4 +1,4 @@
-import { LoaderCircle, RefreshCw, X } from "lucide-react";
+import { ArrowsClockwiseIcon, SpinnerGapIcon, XIcon } from "@phosphor-icons/react";
 
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -110,12 +110,12 @@ export function SyncDialog({
 
         <DialogFooter className="sm:justify-start">
           <Button disabled={running} onClick={() => startSync("quick")}>
-            {running ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+            {running ? <SpinnerGapIcon className="animate-spin" /> : <ArrowsClockwiseIcon />}
             {running ? "Syncing" : "Sync now"}
           </Button>
           {running ? (
             <Button disabled={cancelling} onClick={() => cancelSync()} variant="destructive">
-              <X />
+              <XIcon />
               Cancel sync
             </Button>
           ) : (

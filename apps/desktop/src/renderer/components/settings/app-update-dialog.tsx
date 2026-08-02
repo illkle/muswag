@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Download, PackageCheck, RefreshCw } from "lucide-react";
+import { ArrowsClockwiseIcon, CheckCircleIcon, DownloadSimpleIcon, PackageIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "#/components/ui/dialog";
@@ -18,18 +18,18 @@ const statusLabels: Record<AppUpdateStatus, string> = {
 
 function StatusIcon({ status }: { status: AppUpdateStatus }) {
   if (status === "checking") {
-    return <RefreshCw className="size-4 animate-spin" />;
+    return <ArrowsClockwiseIcon className="size-4 animate-spin" />;
   }
   if (status === "downloading") {
-    return <Download className="size-4" />;
+    return <DownloadSimpleIcon className="size-4" />;
   }
   if (status === "ready") {
-    return <PackageCheck className="size-4 text-emerald-500" />;
+    return <PackageIcon className="size-4 text-emerald-500" />;
   }
   if (status === "error") {
-    return <AlertTriangle className="size-4 text-destructive" />;
+    return <WarningIcon className="size-4 text-destructive" />;
   }
-  return <CheckCircle2 className="size-4 text-emerald-500" />;
+  return <CheckCircleIcon className="size-4 text-emerald-500" />;
 }
 
 function formatLastChecked(value: string | null): string {
@@ -95,7 +95,7 @@ export function AppUpdateDialog({
         <DialogFooter className="sm:justify-start">
           {status === "ready" ? (
             <Button onClick={() => void AppUpdateIPC.install()}>
-              <PackageCheck />
+              <PackageIcon />
               Restart and install
             </Button>
           ) : null}
@@ -104,7 +104,7 @@ export function AppUpdateDialog({
             onClick={() => void AppUpdateIPC.check()}
             variant={status === "ready" ? "secondary" : "default"}
           >
-            <RefreshCw className={busy ? "animate-spin" : undefined} />
+            <ArrowsClockwiseIcon className={busy ? "animate-spin" : undefined} />
             Check for updates
           </Button>
         </DialogFooter>

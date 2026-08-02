@@ -9,6 +9,7 @@ export type CoverSweepResult = { completed: number; total: number };
 
 export interface CoverManager {
   ensure(target: CoverTarget): Promise<string | null>;
+  repair(target: CoverTarget, failedPath: string): Promise<string | null>;
   sweep(opts?: {
     signal?: AbortSignal;
     concurrency?: number;
@@ -43,6 +44,26 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
     }
   };
 
+  const fetchAndUpdate = async (target: CoverTarget, previousPath: string | undefined, fallbackPath: string | null) => {
+    const key = keyOf(target);
+    const result = await store.fetch(key, target.coverArtId);
+    if (result === undefined) {
+      negativeCache.set(key, Date.now() + NEGATIVE_CACHE_MS);
+      return fallbackPath;
+    }
+
+    negativeCache.delete(key);
+    updateRow(target, result);
+    if (previousPath && previousPath !== result && store.removePath) {
+      try {
+        await store.removePath(previousPath);
+      } catch (error) {
+        console.warn("Failed to remove superseded cover art.", { path: previousPath, error });
+      }
+    }
+    return result;
+  };
+
   const manager: CoverManager = {
     async ensure(target) {
       const key = keyOf(target);
@@ -61,39 +82,65 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
       }
       if ((negativeCache.get(key) ?? 0) > Date.now()) return row.coverArtPath ?? null;
 
-      const promise = (async () => {
-        const result = await store.fetch(key, target.coverArtId);
-        if (result === undefined) {
-          negativeCache.set(key, Date.now() + NEGATIVE_CACHE_MS);
-          return row.coverArtPath ?? null;
-        }
-        negativeCache.delete(key);
-        updateRow(target, result);
-        return result;
-      })().finally(() => inFlight.delete(key));
+      const promise = fetchAndUpdate(target, row.coverArtPath, row.coverArtPath ?? null).finally(() => inFlight.delete(key));
 
       inFlight.set(key, promise);
       return promise;
     },
 
+    async repair(target, failedPath) {
+      const key = keyOf(target);
+      const existingPromise = inFlight.get(key);
+      if (existingPromise) return existingPromise;
+
+      const row = rowFor(target);
+      if (!row) return null;
+      if (row.coverArtPath !== failedPath) return manager.ensure(target);
+
+      negativeCache.delete(key);
+      updateRow(target, null);
+      const promise = fetchAndUpdate(target, failedPath, null).finally(() => inFlight.delete(key));
+      inFlight.set(key, promise);
+      return promise;
+    },
+
     async sweep(opts = {}) {
-      const targets: CoverTarget[] = [];
+      let cachedPaths: Set<string> | undefined;
+      if (store.list) {
+        try {
+          cachedPaths = new Set(await store.list());
+        } catch (error) {
+          console.warn("Failed to inspect the cover cache; continuing without reconciliation.", { error });
+        }
+      }
+
+      const targets: Array<{ target: CoverTarget; failedPath?: string }> = [];
       for (const [, album] of db.albums.entries()) {
+        const missingFile = album.coverArtPath && cachedPaths && !cachedPaths.has(album.coverArtPath) ? album.coverArtPath : undefined;
         if (
           (album.coverArt &&
-            (!album.coverArtPath || (album.coverArtSourceId !== undefined && album.coverArtSourceId !== album.coverArt))) ||
+            (!album.coverArtPath || missingFile || (album.coverArtSourceId !== undefined && album.coverArtSourceId !== album.coverArt))) ||
           (!album.coverArt && album.coverArtPath)
         ) {
-          targets.push({ type: "album", id: album.id, coverArtId: album.coverArt ?? null });
+          targets.push({
+            target: { type: "album", id: album.id, coverArtId: album.coverArt ?? null },
+            ...(missingFile ? { failedPath: missingFile } : {}),
+          });
         }
       }
       for (const [, artist] of db.artists.entries()) {
+        const missingFile = artist.coverArtPath && cachedPaths && !cachedPaths.has(artist.coverArtPath) ? artist.coverArtPath : undefined;
         if (
           (artist.coverArt &&
-            (!artist.coverArtPath || (artist.coverArtSourceId !== undefined && artist.coverArtSourceId !== artist.coverArt))) ||
+            (!artist.coverArtPath ||
+              missingFile ||
+              (artist.coverArtSourceId !== undefined && artist.coverArtSourceId !== artist.coverArt))) ||
           (!artist.coverArt && artist.coverArtPath)
         ) {
-          targets.push({ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null });
+          targets.push({
+            target: { type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null },
+            ...(missingFile ? { failedPath: missingFile } : {}),
+          });
         }
       }
 
@@ -106,9 +153,13 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
         Array.from({ length: workerCount }, async () => {
           while (nextIndex < total) {
             if (opts.signal?.aborted) return;
-            const target = targets[nextIndex++];
-            if (!target) return;
-            await manager.ensure(target);
+            const candidate = targets[nextIndex++];
+            if (!candidate) return;
+            if (candidate.failedPath) {
+              await manager.repair(candidate.target, candidate.failedPath);
+            } else {
+              await manager.ensure(candidate.target);
+            }
             completed += 1;
             opts.onProgress?.(completed, total);
           }

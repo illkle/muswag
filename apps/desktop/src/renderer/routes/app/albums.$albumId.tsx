@@ -1,5 +1,5 @@
 import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
-import { Disc3 } from "lucide-react";
+import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
@@ -13,7 +13,7 @@ import { SongListRoot } from "#/components/song-list";
 import { PlayerIPC } from "#/lib/ipc";
 import type { Song } from "@muswag/shared";
 import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
-import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
+import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -97,7 +97,7 @@ function RouteComponent() {
       <section className="flex h-full w-full flex-col">
         <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/70 bg-card/85 px-6 py-14 text-center shadow-xl shadow-primary/5 backdrop-blur">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Disc3 className="size-5" />
+            <DiscIcon className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="font-medium">Album not found.</p>
@@ -132,11 +132,9 @@ function RouteComponent() {
     });
   };
 
-  const HEADER_HEIGHT = 200;
-
   return (
-    <section data-scroll-restoration-id={scrollRestorationId} className="flex h-full w-full flex-col overflow-auto">
-      <div className="min-h-0 flex-1" style={{ "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}>
+    <section data-scroll-restoration-id={scrollRestorationId} className="scrollbar flex h-full w-full flex-col overflow-auto">
+      <div className="min-h-0 flex-1">
         <SongListRoot
           songs={songs}
           discTitles={album.discTitles}
@@ -145,29 +143,29 @@ function RouteComponent() {
           playerStatus={playerStatus}
           scrollId={"album-" + album.id}
           rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
-          topPadding={HEADER_HEIGHT + TOP_HEIGHT + 16}
-          bottomPadding={PLAYER_HEIGHT + 16}
+          topPadding={DETAIL_TOP_PADDING}
+          bottomPadding={DETAIL_BOTTOM_PADDING}
           topContent={
-            <header className="absolute top-0 mt-(--top-height) grid h-(--header-height) gap-4 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]">
-              <AlbumCover
-                coverArtPath={album.coverArtPath}
-                className="w-full"
-                instantLoad
-                target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
-              />
-
-              <div className="flex min-w-0 flex-col gap-1 self-end">
-                <h1 className="text-2xl font-semibold tracking-tight md:text-4xl">{album.name}</h1>
-                <ArtistLinks
-                  artist={album.artist}
-                  artistId={album.artistId}
-                  displayArtist={album.displayArtist}
-                  className="block text-lg text-muted-foreground"
-                  linkClassName="hover:text-foreground hover:underline"
+            <DetailHeader
+              title={album.name}
+              art={
+                <AlbumCover
+                  coverArtPath={album.coverArtPath}
+                  className="w-full"
+                  instantLoad
+                  target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
                 />
-                {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
-              </div>
-            </header>
+              }
+            >
+              <ArtistLinks
+                artist={album.artist}
+                artistId={album.artistId}
+                displayArtist={album.displayArtist}
+                className="block text-lg text-muted-foreground"
+                linkClassName="hover:text-foreground hover:underline"
+              />
+              {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
+            </DetailHeader>
           }
         />
       </div>
