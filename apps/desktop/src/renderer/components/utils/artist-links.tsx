@@ -1,16 +1,8 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment } from "react";
 
-import { Link } from '@tanstack/react-router';
+import { Link } from "@tanstack/react-router";
 
-export function ArtistLink({
-  artistId,
-  children,
-  className,
-}: {
-  artistId: string | null | undefined;
-  children: React.ReactNode;
-  className?: string;
-}) {
+export function ArtistLink({ artistId, children, className }: { artistId: string | null | undefined; children: React.ReactNode; className?: string }) {
   if (!artistId) {
     return <span className={className}>{children}</span>;
   }
@@ -49,12 +41,7 @@ export type ArtistCredit = {
   name: string;
 };
 
-export function getArtistCredits({
-  displayArtist,
-  artistId,
-  artists,
-  artist,
-}: ArtistFields): ArtistCredit[] {
+export function getArtistCredits({ displayArtist, artistId, artists, artist }: ArtistFields): ArtistCredit[] {
   if (displayArtist) {
     /* This is super dumb but in navidrome artists is all artists on all album(so all featured) and the only way to get both artist for collab albums is to split "displayArtist" property */
 
@@ -66,7 +53,7 @@ export function getArtistCredits({
       }
     }
 
-    const splitted = displayArtist.split(' • ');
+    const splitted = displayArtist.split(" • ");
 
     const mapped: ArtistCredit[] = [];
     let ok = true;
@@ -98,7 +85,7 @@ export function getArtistCredits({
     return [{ name: artist }];
   }
 
-  return [{ name: 'Unknown artist' }];
+  return [{ name: "Unknown artist" }];
 }
 
 export function ArtistLinks({
@@ -123,7 +110,7 @@ export function ArtistLinks({
     <span className={className}>
       {credits.map((credit, index) => (
         <Fragment key={credit.id ?? `${credit.name}-${index}`}>
-          {index > 0 ? ', ' : null}
+          {index > 0 ? ", " : null}
           <ArtistLink artistId={credit.id} className={linkClassName}>
             {credit.name}
           </ArtistLink>

@@ -1,12 +1,4 @@
-import {
-  ArrowsClockwiseIcon,
-  CheckCircleIcon,
-  DownloadSimpleIcon,
-  FolderOpenIcon,
-  SpinnerGapIcon,
-  WarningCircleIcon,
-  XCircleIcon,
-} from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, CheckCircleIcon, DownloadSimpleIcon, FolderOpenIcon, SpinnerGapIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "#/components/ui/badge";
@@ -52,15 +44,7 @@ function MpvStatusIcon({ status }: { status: MpvState["status"] }) {
   return <XCircleIcon className="size-4" />;
 }
 
-function InstallOptionRow({
-  busy,
-  onInstall,
-  option,
-}: {
-  busy: boolean;
-  onInstall: (option: MpvInstallOption) => void;
-  option: MpvInstallOption;
-}) {
+function InstallOptionRow({ busy, onInstall, option }: { busy: boolean; onInstall: (option: MpvInstallOption) => void; option: MpvInstallOption }) {
   return (
     <div className="space-y-2 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-3">

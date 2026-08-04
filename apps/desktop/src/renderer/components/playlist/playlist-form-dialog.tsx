@@ -65,24 +65,12 @@ export function PlaylistFormDialog({
         >
           <div className="space-y-2">
             <Label htmlFor="playlist-name">Name</Label>
-            <Input
-              id="playlist-name"
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Late night mix"
-            />
+            <Input id="playlist-name" autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Late night mix" />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="playlist-comment">Description</Label>
-            <Textarea
-              id="playlist-comment"
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Optional"
-              rows={3}
-            />
+            <Textarea id="playlist-comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Optional" rows={3} />
           </div>
 
           <label className="flex items-center gap-2 text-sm">
@@ -90,9 +78,7 @@ export function PlaylistFormDialog({
             Visible to other users on the server
           </label>
 
-          {submitMutation.isError ? (
-            <div className="text-xs text-destructive">{getErrorMessage(submitMutation.error, "The playlist could not be saved.")}</div>
-          ) : null}
+          {submitMutation.isError ? <div className="text-xs text-destructive">{getErrorMessage(submitMutation.error, "The playlist could not be saved.")}</div> : null}
 
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>

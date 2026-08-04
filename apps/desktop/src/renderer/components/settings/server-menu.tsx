@@ -1,15 +1,4 @@
-import {
-  ArrowsClockwiseIcon,
-  BooksIcon,
-  CaretUpDownIcon,
-  HardDrivesIcon,
-  PackageIcon,
-  SignOutIcon,
-  SpinnerGapIcon,
-  WarningIcon,
-  WaveformIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, BooksIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, SignOutIcon, SpinnerGapIcon, WarningIcon, WaveformIcon, XIcon } from "@phosphor-icons/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
@@ -44,12 +33,7 @@ function SyncLine({ percent }: { percent: number | null }) {
 
 function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" | "destructive" }) {
   return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-1.5 py-0.5 text-[11px] leading-none font-medium",
-        tone === "primary" ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive",
-      )}
-    >
+    <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[11px] leading-none font-medium", tone === "primary" ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive")}>
       {children}
     </span>
   );
@@ -91,14 +75,7 @@ export function ServerMenu() {
   const updateWaiting = hasAppUpdate(updateStatus);
 
   // The button's colour and spinner carry state, so the accessible name has to carry it too.
-  const triggerLabel = [
-    hostName,
-    "server and app settings",
-    syncRunning ? "syncing" : null,
-    playbackBroken ? "playback engine unavailable" : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const triggerLabel = [hostName, "server and app settings", syncRunning ? "syncing" : null, playbackBroken ? "playback engine unavailable" : null].filter(Boolean).join(", ");
 
   if (!userStateQuery.data) {
     console.warn("No user data in ServerMenu component");
@@ -119,13 +96,7 @@ export function ServerMenu() {
               )}
             >
               {/* A sync is transient, so it takes the icon slot; the alert falls back to the right of the name. */}
-              {syncRunning ? (
-                <SpinnerGapIcon className="animate-spin" />
-              ) : playbackBroken ? (
-                <WarningIcon />
-              ) : (
-                <HardDrivesIcon className="opacity-70" />
-              )}
+              {syncRunning ? <SpinnerGapIcon className="animate-spin" /> : playbackBroken ? <WarningIcon /> : <HardDrivesIcon className="opacity-70" />}
               <span className="flex-1 truncate text-left font-medium">{hostName}</span>
               {playbackBroken && syncRunning ? <WarningIcon /> : null}
               <CaretUpDownIcon className={playbackBroken ? "opacity-70" : "text-muted-foreground"} />
@@ -164,12 +135,7 @@ export function ServerMenu() {
             </MenuItem>
           </div>
 
-          <MenuItem
-            className={cn(
-              playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive",
-            )}
-            onClick={() => setDialog("mpv")}
-          >
+          <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={() => setDialog("mpv")}>
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
             <span className="flex-1 truncate">Playback engine</span>
             {playbackBroken ? (
@@ -196,11 +162,7 @@ export function ServerMenu() {
 
           <MenuSeparator />
 
-          <MenuItem
-            className="group data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
-            disabled={logoutMutation.isPending}
-            onClick={() => logoutMutation.mutate()}
-          >
+          <MenuItem className="group data-highlighted:bg-destructive/10 data-highlighted:text-destructive" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>
             <SignOutIcon className="size-4 text-muted-foreground group-data-highlighted:text-destructive" />
             Log out
           </MenuItem>

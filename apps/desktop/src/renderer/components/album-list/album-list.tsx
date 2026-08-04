@@ -1,24 +1,14 @@
-import {
-  startTransition,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-} from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState, type JSX } from "react";
 
-import { useContentSize } from '#/components/utils/app-content-size';
-import { AlbumCover } from '#/components/album-list/album-cover';
-import { getArtistCredits } from '#/components/utils/artist-links';
-import { cn } from '#/lib/utils';
-import type { Album } from '@muswag/shared';
-import {
-  useElementScrollRestoration,
-  useNavigate,
-} from '@tanstack/react-router';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { chunk } from 'lodash-es';
-import { PLAYER_HEIGHT, TOP_HEIGHT } from '#/styles';
+import { useContentSize } from "#/components/utils/app-content-size";
+import { AlbumCover } from "#/components/album-list/album-cover";
+import { getArtistCredits } from "#/components/utils/artist-links";
+import { cn } from "#/lib/utils";
+import type { Album } from "@muswag/shared";
+import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { chunk } from "lodash-es";
+import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export type AlbumListSection = {
   id: string;
@@ -29,13 +19,13 @@ export type AlbumListSection = {
 type AlbumListRow =
   | {
       id: string;
-      type: 'section';
+      type: "section";
       title: string;
     }
   | {
       albums: Album[];
       id: string;
-      type: 'albums';
+      type: "albums";
     };
 
 const SECTION_HEIGHT = 32;
@@ -49,17 +39,12 @@ const AlbumItem = ({
   instantCovers: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   return (
-    <button
-      key={album.id}
-      className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10"
-      tabIndex={0}
-      {...props}
-    >
+    <button key={album.id} className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10" tabIndex={0} {...props}>
       <AlbumCover
         coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
         target={{
-          type: 'album',
+          type: "album",
           id: album.id,
           coverArtId: album.coverArt ?? null,
         }}
@@ -70,11 +55,9 @@ const AlbumItem = ({
         <p className="line-clamp-1 truncate text-xs text-muted-foreground">
           {getArtistCredits(album)
             .map((artist) => artist.name)
-            .join(', ')}
+            .join(", ")}
         </p>
-        <span className="line-clamp-1 text-xs text-muted-foreground/50">
-          {album.year}
-        </span>
+        <span className="line-clamp-1 text-xs text-muted-foreground/50">{album.year}</span>
       </div>
     </button>
   );
@@ -95,10 +78,7 @@ const calcSize = (totalSpace: number) => {
   return { fullWidth, fullHeight, chunks };
 };
 
-export function createAlbumListRows(
-  sections: AlbumListSection[],
-  columns: number,
-): AlbumListRow[] {
+export function createAlbumListRows(sections: AlbumListSection[], columns: number): AlbumListRow[] {
   return sections.flatMap((section) => {
     if (section.albums.length === 0) {
       return [];
@@ -107,13 +87,13 @@ export function createAlbumListRows(
     return [
       {
         id: `section-${section.id}`,
-        type: 'section' as const,
+        type: "section" as const,
         title: section.title,
       },
       ...chunk(section.albums, columns).map((albums, index) => ({
         albums,
         id: `albums-${section.id}-${index}`,
-        type: 'albums' as const,
+        type: "albums" as const,
       })),
     ];
   });
@@ -137,28 +117,17 @@ type AlbumListProps = {
     }
 );
 
-export function AlbumList({
-  albums,
-  sections,
-  scrollId,
-  className,
-  topPadding = TOP_HEIGHT,
-  bottomPadding = PLAYER_HEIGHT,
-  topContent,
-}: AlbumListProps) {
+export function AlbumList({ albums, sections, scrollId, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
-  const scrollRestorationId = 'album-list-' + scrollId;
+  const scrollRestorationId = "album-list-" + scrollId;
   const scrollEntry = useElementScrollRestoration({
     id: scrollRestorationId,
   });
 
   const contentSize = useContentSize();
-  const sizes = useMemo(
-    () => calcSize(contentSize.width || 600),
-    [contentSize.width],
-  );
+  const sizes = useMemo(() => calcSize(contentSize.width || 600), [contentSize.width]);
   const rows = useMemo(
     () =>
       sections
@@ -166,7 +135,7 @@ export function AlbumList({
         : chunk(albums, sizes.chunks).map((rowAlbums, index) => ({
             albums: rowAlbums,
             id: `albums-${index}`,
-            type: 'albums' as const,
+            type: "albums" as const,
           })),
     [albums, sections, sizes.chunks],
   );
@@ -181,8 +150,7 @@ export function AlbumList({
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) =>
-      rows[index]?.type === 'section' ? SECTION_HEIGHT : sizes.fullHeight,
+    estimateSize: (index) => (rows[index]?.type === "section" ? SECTION_HEIGHT : sizes.fullHeight),
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 4,
     initialOffset: scrollEntry?.scrollY,
@@ -191,16 +159,12 @@ export function AlbumList({
   });
 
   return (
-    <div
-      ref={parentRef}
-      data-scroll-restoration-id={scrollRestorationId}
-      className={cn('scrollbar overflow-y-auto px-2', className)}
-    >
+    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("scrollbar overflow-y-auto px-2", className)}>
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
+          width: "100%",
+          position: "relative",
         }}
       >
         {topContent}
@@ -212,7 +176,7 @@ export function AlbumList({
             return null;
           }
 
-          if (row.type === 'section') {
+          if (row.type === "section") {
             return (
               <div
                 key={row.id}
@@ -222,9 +186,7 @@ export function AlbumList({
                 }}
                 className="absolute top-0 left-0 flex w-full items-end px-1 pb-2"
               >
-                <h2 className="text-xl font-semibold tracking-tight">
-                  {row.title}
-                </h2>
+                <h2 className="text-xl font-semibold tracking-tight">{row.title}</h2>
               </div>
             );
           }
@@ -249,7 +211,7 @@ export function AlbumList({
                   }}
                   onClick={() => {
                     void navigate({
-                      to: '/app/albums/$albumId',
+                      to: "/app/albums/$albumId",
                       params: { albumId: album.id },
                     });
                   }}

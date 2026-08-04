@@ -16,11 +16,7 @@ export function createNodeCoverArtFileSystem(coverArtDir: string): CoverArtFileS
     await mkdir(coverArtDir, { recursive: true });
     const prefix = `${encodeCoverFilename(key)}${VERSION_SEPARATOR}`;
     const entries = await readdir(coverArtDir, { withFileTypes: true });
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && entry.name.startsWith(prefix))
-        .map((entry) => rm(join(coverArtDir, entry.name), { force: true })),
-    );
+    await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.startsWith(prefix)).map((entry) => rm(join(coverArtDir, entry.name), { force: true })));
 
     // Remove files written by versions that used non-versioned cache names.
     const legacyFilename = encodeCoverFilename(key);

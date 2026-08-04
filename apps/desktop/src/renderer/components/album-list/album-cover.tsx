@@ -3,17 +3,7 @@ import { CoverArt } from "#/lib/sync-manager";
 import type { CoverTarget } from "@muswag/shared";
 import { startTransition, useEffect, useRef, useState } from "react";
 
-export function AlbumCover({
-  coverArtPath,
-  instantLoad = false,
-  target,
-  className,
-}: {
-  coverArtPath: string | undefined;
-  instantLoad?: boolean;
-  target?: CoverTarget;
-  className?: string;
-}) {
+export function AlbumCover({ coverArtPath, instantLoad = false, target, className }: { coverArtPath: string | undefined; instantLoad?: boolean; target?: CoverTarget; className?: string }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [repairedPath, setRepairedPath] = useState<string | null>(null);
   const [retryRevision, setRetryRevision] = useState(0);

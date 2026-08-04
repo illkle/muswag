@@ -40,15 +40,7 @@ function formatLastChecked(value: string | null): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-export function AppUpdateDialog({
-  onOpenChange,
-  open,
-  state,
-}: {
-  onOpenChange: (open: boolean) => void;
-  open: boolean;
-  state: AppUpdateState | null;
-}) {
+export function AppUpdateDialog({ onOpenChange, open, state }: { onOpenChange: (open: boolean) => void; open: boolean; state: AppUpdateState | null }) {
   const status = getAppUpdateStatus(state);
   const busy = isAppUpdateBusy(status);
   const version = state?.currentVersion ?? "…";
@@ -69,10 +61,7 @@ export function AppUpdateDialog({
 
           {status === "downloading" && state?.progressPercent !== null ? (
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-300"
-                style={{ width: `${state?.progressPercent ?? 0}%` }}
-              />
+              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${state?.progressPercent ?? 0}%` }} />
             </div>
           ) : null}
 
@@ -99,11 +88,7 @@ export function AppUpdateDialog({
               Restart and install
             </Button>
           ) : null}
-          <Button
-            disabled={!state?.canCheck || busy}
-            onClick={() => void AppUpdateIPC.check()}
-            variant={status === "ready" ? "secondary" : "default"}
-          >
+          <Button disabled={!state?.canCheck || busy} onClick={() => void AppUpdateIPC.check()} variant={status === "ready" ? "secondary" : "default"}>
             <ArrowsClockwiseIcon className={busy ? "animate-spin" : undefined} />
             Check for updates
           </Button>

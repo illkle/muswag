@@ -129,9 +129,7 @@ describe("MpvInfoDialog", () => {
     Object.assign(navigator, { clipboard: { writeText } });
     mocks.playerState.mpvState = {
       checkedPaths: [],
-      installOptions: [
-        { automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null },
-      ],
+      installOptions: [{ automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null }],
       status: "missing",
     };
 

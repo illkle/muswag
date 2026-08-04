@@ -17,12 +17,7 @@ function assignFields<T extends object, K extends keyof T>(draft: T, source: T, 
   }
 }
 
-export async function refreshAlbumStats(
-  db: MuswagDb,
-  api: SubsonicAPI,
-  albumId: string,
-  opts: { maxAgeMs?: number } = {},
-): Promise<boolean> {
+export async function refreshAlbumStats(db: MuswagDb, api: SubsonicAPI, albumId: string, opts: { maxAgeMs?: number } = {}): Promise<boolean> {
   const album = db.albums.get(albumId);
   if (!album) return false;
   const maxAgeMs = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
@@ -54,12 +49,7 @@ export async function refreshAlbumStats(
   return promise;
 }
 
-export async function refreshPlaylistSongStats(
-  db: MuswagDb,
-  api: SubsonicAPI,
-  playlistId: string,
-  opts: { maxAgeMs?: number } = {},
-): Promise<number> {
+export async function refreshPlaylistSongStats(db: MuswagDb, api: SubsonicAPI, playlistId: string, opts: { maxAgeMs?: number } = {}): Promise<number> {
   const maxAgeMs = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   let refreshed = playlistRefreshedAt.get(db);
   if (!refreshed) {

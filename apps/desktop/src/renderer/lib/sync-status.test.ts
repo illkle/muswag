@@ -94,10 +94,7 @@ describe("getSyncSummaryLine", () => {
   });
 
   it("reports how long ago a finished sync ended", () => {
-    const line = getSyncSummaryLine(
-      makeSync({ lastStatus: "completed", timeEnded: "2026-08-02T12:00:00.000Z", currentStep: "completed" }),
-      now,
-    );
+    const line = getSyncSummaryLine(makeSync({ lastStatus: "completed", timeEnded: "2026-08-02T12:00:00.000Z", currentStep: "completed" }), now);
 
     expect(line).toBe("Synced 30 minutes ago");
   });

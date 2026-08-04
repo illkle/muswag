@@ -60,8 +60,6 @@ export const SongListRoot = ({
   /** Takes precedence over matching on `currentTrackID` when the caller knows which row is playing. */
   playingRowKey?: string | null;
   unavailableRowKeys?: ReadonlySet<string>;
-  /** Per-row controls, rendered in a trailing column that appears on hover. */
-  rowActions?: (song: Song, index: number) => ReactNode;
 
   topPadding?: number;
   bottomPadding?: number;

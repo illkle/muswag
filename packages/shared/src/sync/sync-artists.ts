@@ -24,12 +24,7 @@ function artistMatches(existing: Artist, incoming: IndexArtist): boolean {
   );
 }
 
-export async function syncArtists(params: {
-  api: SubsonicAPI;
-  db: MuswagDb;
-  syncId: string;
-  ifModifiedSince?: number;
-}): Promise<SyncArtistsResult> {
+export async function syncArtists(params: { api: SubsonicAPI; db: MuswagDb; syncId: string; ifModifiedSince?: number }): Promise<SyncArtistsResult> {
   const { api, db, syncId, ifModifiedSince } = params;
   updateSyncProgress(db, syncId, { currentStep: "fetching-artists" });
 

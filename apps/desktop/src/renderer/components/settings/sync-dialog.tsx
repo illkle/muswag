@@ -34,9 +34,7 @@ function SyncDetails({ syncRecord }: { syncRecord: SyncRecord }) {
         </div>
         <div className="flex shrink-0 gap-1">
           <Badge variant="secondary">{syncRecord.mode ?? "full"}</Badge>
-          <Badge variant={syncRecord.lastStatus === "failed" ? "destructive" : "secondary"}>
-            {syncRecord.currentStep === "skipped-unchanged" ? "unchanged" : syncRecord.lastStatus}
-          </Badge>
+          <Badge variant={syncRecord.lastStatus === "failed" ? "destructive" : "secondary"}>{syncRecord.currentStep === "skipped-unchanged" ? "unchanged" : syncRecord.lastStatus}</Badge>
         </div>
       </div>
 
@@ -47,10 +45,7 @@ function SyncDetails({ syncRecord }: { syncRecord: SyncRecord }) {
             <span className="font-mono tabular-nums">{percent}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full rounded-full bg-primary transition-[width]", running && "duration-300")}
-              style={{ width: `${percent}%` }}
-            />
+            <div className={cn("h-full rounded-full bg-primary transition-[width]", running && "duration-300")} style={{ width: `${percent}%` }} />
           </div>
         </div>
       ) : null}
@@ -76,24 +71,12 @@ function SyncDetails({ syncRecord }: { syncRecord: SyncRecord }) {
         </dl>
       ) : null}
 
-      {syncRecord.error ? (
-        <p className="rounded-md bg-destructive/10 p-3 text-xs break-words text-destructive">{syncRecord.error}</p>
-      ) : null}
+      {syncRecord.error ? <p className="rounded-md bg-destructive/10 p-3 text-xs break-words text-destructive">{syncRecord.error}</p> : null}
     </div>
   );
 }
 
-export function SyncDialog({
-  controls,
-  onOpenChange,
-  open,
-  serverName,
-}: {
-  controls: SyncControls;
-  onOpenChange: (open: boolean) => void;
-  open: boolean;
-  serverName: string;
-}) {
+export function SyncDialog({ controls, onOpenChange, open, serverName }: { controls: SyncControls; onOpenChange: (open: boolean) => void; open: boolean; serverName: string }) {
   const { cancelSync, cancelling, error, latestSync, running, startSync } = controls;
 
   return (

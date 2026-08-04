@@ -21,12 +21,7 @@ describe("buildPlayQueue", () => {
   });
 
   it("maps a row to its queue index rather than its playlist index", () => {
-    const rows = [
-      row("e1", "song-missing", null),
-      row("e2", "song-a", song("song-a")),
-      row("e3", "song-gone", null),
-      row("e4", "song-b", song("song-b")),
-    ];
+    const rows = [row("e1", "song-missing", null), row("e2", "song-a", song("song-a")), row("e3", "song-gone", null), row("e4", "song-b", song("song-b"))];
 
     const { queueIndexByEntryId } = buildPlayQueue(rows);
 
@@ -55,12 +50,7 @@ describe("buildPlayQueue", () => {
 
 describe("totalDuration", () => {
   it("sums resolved songs and ignores unavailable ones", () => {
-    const rows = [
-      row("e1", "song-a", song("song-a", 90)),
-      row("e2", "song-missing", null),
-      row("e3", "song-b", song("song-b", 30)),
-      row("e4", "song-c", song("song-c")),
-    ];
+    const rows = [row("e1", "song-a", song("song-a", 90)), row("e2", "song-missing", null), row("e3", "song-b", song("song-b", 30)), row("e4", "song-c", song("song-c"))];
 
     expect(totalDuration(rows)).toBe(120);
   });

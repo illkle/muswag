@@ -5,7 +5,6 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
@@ -14,7 +13,6 @@ import { PlayerIPC } from "#/lib/ipc";
 import type { Song } from "@muswag/shared";
 import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
-import { DebugModal } from "#/components/debug-info";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -68,9 +66,7 @@ function RouteComponent() {
   if (albumQuery.isLoading || songsQuery.isLoading) {
     return (
       <section className="flex h-full w-full flex-col">
-        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">
-          Loading album details...
-        </div>
+        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">Loading album details...</div>
       </section>
     );
   }
@@ -109,12 +105,7 @@ function RouteComponent() {
   const songs = songsQuery.data;
   const queueIndexBySongId = new Map(songs.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
-  const albumMeta = formatMetaLine([
-    album.year ? String(album.year) : null,
-    `${album.songCount} track${album.songCount === 1 ? "" : "s"}`,
-    formatDuration(album.duration),
-    primaryGenre,
-  ]);
+  const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const onPlay = (song: Song) => {
     const queueIndex = queueIndexBySongId.get(song.id);
@@ -130,7 +121,6 @@ function RouteComponent() {
 
   return (
     <>
-      <DebugModal>{JSON.stringify(album, null, 2)}</DebugModal>
       <SongListRoot
         songs={songs}
         discTitles={album.discTitles}
@@ -138,7 +128,6 @@ function RouteComponent() {
         currentTrackID={currentTrackId}
         playerStatus={playerStatus}
         scrollId={"album-" + album.id}
-        rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
         topPadding={DETAIL_TOP_PADDING}
         bottomPadding={DETAIL_BOTTOM_PADDING}
         topContent={

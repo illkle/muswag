@@ -109,12 +109,7 @@ export function setPlaylistVisibility(db: MuswagDb, playlistId: string, isPublic
  * Inserts every song as one revision, so adding an album costs a single write and a single sync pass.
  * Entry ids carry the index because they all share the revision that makes them unique.
  */
-export function addPlaylistEntries(
-  db: MuswagDb,
-  playlistId: string,
-  songIds: readonly string[],
-  beforeEntryId: string | null = null,
-): PlaylistEntry[] {
+export function addPlaylistEntries(db: MuswagDb, playlistId: string, songIds: readonly string[], beforeEntryId: string | null = null): PlaylistEntry[] {
   const playlist = getWritablePlaylist(db, playlistId);
   const insertAt = requireAnchorIndex(playlist.local.entries, beforeEntryId);
   if (songIds.length === 0) {

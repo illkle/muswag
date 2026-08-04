@@ -71,8 +71,8 @@ function md5(input: string): string {
   let d0 = 0x10325476;
 
   const shifts = [
-    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4,
-    11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6,
+    10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
   ];
   const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0);
 
@@ -203,11 +203,7 @@ export async function logout(db: MuswagDb, covers?: CoverManager): Promise<null>
 
 export type SyncMode = "full" | "quick";
 
-export async function sync(
-  db: MuswagDb,
-  covers: CoverManager,
-  options: { mode?: SyncMode; covers?: "background" | "inline" | "skip" } = {},
-): Promise<SyncRecord> {
+export async function sync(db: MuswagDb, covers: CoverManager, options: { mode?: SyncMode; covers?: "background" | "inline" | "skip" } = {}): Promise<SyncRecord> {
   const user = getUserInfo(db);
   if (!user) {
     throw new Error("login() must be called before sync()");
@@ -241,16 +237,11 @@ export async function sync(
       api,
       db,
       syncId,
-      ...(mode === "quick" && existingState?.indexesLastModified !== null && existingState?.indexesLastModified !== undefined
-        ? { ifModifiedSince: existingState.indexesLastModified }
-        : {}),
+      ...(mode === "quick" && existingState?.indexesLastModified !== null && existingState?.indexesLastModified !== undefined ? { ifModifiedSince: existingState.indexesLastModified } : {}),
     });
     const albums = await syncAlbums({ api, db, syncId, mode });
 
-    await Promise.all([
-      ...albums.deletedAlbumIds.map((id) => covers.remove({ type: "album", id })),
-      ...artists.deletedArtistIds.map((id) => covers.remove({ type: "artist", id })),
-    ]);
+    await Promise.all([...albums.deletedAlbumIds.map((id) => covers.remove({ type: "album", id })), ...artists.deletedArtistIds.map((id) => covers.remove({ type: "artist", id }))]);
 
     if (coverMode === "inline") {
       updateSyncProgress(db, syncId, { currentStep: "fetching-cover-art" });
@@ -280,10 +271,7 @@ export async function sync(
     db.syncs.update(syncId, (draft) => {
       draft.timeEnded = new Date().toISOString();
       draft.lastStatus = "completed";
-      draft.currentStep =
-        mode === "quick" && !artists.libraryChanged && albums.detailRequests === 0 && albums.deleted === 0
-          ? "skipped-unchanged"
-          : "completed";
+      draft.currentStep = mode === "quick" && !artists.libraryChanged && albums.detailRequests === 0 && albums.deleted === 0 ? "skipped-unchanged" : "completed";
       draft.progressUpdatedAt = draft.timeEnded;
     });
 

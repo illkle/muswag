@@ -1,4 +1,4 @@
-/** Thrown when no usable mpv binary is known, so playback cannot even be attempted. */
+/** Thrown when no usable mpv binary is configured. */
 export class MpvUnavailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -6,7 +6,7 @@ export class MpvUnavailableError extends Error {
   }
 }
 
-/** Thrown when a previously resolved mpv binary has disappeared (for example after a package manager upgrade). */
+/** Thrown when a previously resolved mpv binary can no longer be spawned. */
 export class MpvBinaryMissingError extends Error {
   readonly binaryPath: string;
 
@@ -17,7 +17,6 @@ export class MpvBinaryMissingError extends Error {
   }
 }
 
-/** True when the error means the resolved mpv path has to be looked up again. */
 export function isMpvResolutionError(cause: unknown): boolean {
   return cause instanceof MpvUnavailableError || cause instanceof MpvBinaryMissingError;
 }
