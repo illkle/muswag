@@ -1,7 +1,11 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { FuzeSearch } from "#/lib/db-renderer";
-import type { SearchResult, SearchResultAlbum, SearchResultSong } from "@muswag/shared";
+import type { CoverTarget, SearchResult, SearchResultAlbum, SearchResultArtist, SearchResultSong } from "@muswag/shared";
 import { useNavigate } from "@tanstack/react-router";
+import { Autocomplete } from "@base-ui/react/autocomplete";
+import type { FuseResult } from "fuse.js";
+import { useRef, useState, useTransition } from "react";
+import { cn } from "#/lib/utils";
 
 const InnerResult = ({
   title,
@@ -14,7 +18,7 @@ const InnerResult = ({
   title?: string;
   subtitle?: string;
   coverPath?: string;
-  target?: import("@muswag/shared").CoverTarget;
+  target?: CoverTarget;
 }) => {
   return (
     <div className={cn("flex h-12 items-center gap-2 rounded-lg px-2 data-highlighted:bg-primary/10", className)} {...props}>
@@ -29,7 +33,37 @@ const InnerResult = ({
   );
 };
 
-const SongResult = ({ song }: { song: SearchResultSong }) => {
+const ArtistResult = ({ artist }: { artist: SearchResultArtist["artist"] }) => {
+  const n = useNavigate();
+  return (
+    <Autocomplete.Item
+      render={
+        <InnerResult
+          title={artist.name}
+          coverPath={artist.coverArtPath}
+          target={
+            artist.id
+              ? {
+                  type: "artist",
+                  id: artist.id,
+                  coverArtId: artist.coverArt ?? null,
+                }
+              : undefined
+          }
+        />
+      }
+      onClick={() =>
+        n({
+          to: "/app/artists/$artistId",
+          params: { artistId: artist.id },
+          resetScroll: true,
+        })
+      }
+    />
+  );
+};
+
+const SongResult = ({ song }: { song: SearchResultSong["song"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
@@ -38,15 +72,29 @@ const SongResult = ({ song }: { song: SearchResultSong }) => {
           title={song.title}
           subtitle={song.artist}
           coverPath={song.coverArtPath}
-          target={song.albumId ? { type: "album", id: song.albumId, coverArtId: song.coverArt ?? null } : undefined}
+          target={
+            song.albumId
+              ? {
+                  type: "album",
+                  id: song.albumId,
+                  coverArtId: song.coverArt ?? null,
+                }
+              : undefined
+          }
         />
       }
-      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: song.albumId ?? "n" }, resetScroll: true })}
-    ></Autocomplete.Item>
+      onClick={() =>
+        n({
+          to: "/app/albums/$albumId",
+          params: { albumId: song.albumId ?? "n" },
+          resetScroll: true,
+        })
+      }
+    />
   );
 };
 
-const AlbumResult = ({ album }: { album: SearchResultAlbum }) => {
+const AlbumResult = ({ album }: { album: SearchResultAlbum["album"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
@@ -55,18 +103,23 @@ const AlbumResult = ({ album }: { album: SearchResultAlbum }) => {
           title={album.name}
           subtitle={album.artist}
           coverPath={album.coverArtPath}
-          target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+          target={{
+            type: "album",
+            id: album.id,
+            coverArtId: album.coverArt ?? null,
+          }}
         />
       }
-      onClick={() => n({ to: "/app/albums/$albumId", params: { albumId: album.id }, resetScroll: true })}
-    ></Autocomplete.Item>
+      onClick={() =>
+        n({
+          to: "/app/albums/$albumId",
+          params: { albumId: album.id },
+          resetScroll: true,
+        })
+      }
+    />
   );
 };
-
-import { Autocomplete } from "@base-ui/react/autocomplete";
-import type { FuseResult } from "fuse.js";
-import { useRef, useState, useTransition } from "react";
-import { cn } from "#/lib/utils";
 
 export function MiniSearch() {
   const [searchValue, setSearchValue] = useState("");
@@ -94,7 +147,9 @@ export function MiniSearch() {
         }
 
         startTransition(async () => {
-          const result = await FuzeSearch.search(nextSearchValue, { limit: 20 });
+          const result = await FuzeSearch.search(nextSearchValue, {
+            limit: 20,
+          });
           if (controller.signal.aborted) {
             return;
           }
@@ -114,16 +169,14 @@ export function MiniSearch() {
 
       <Autocomplete.Portal>
         <Autocomplete.Positioner className="z-20 outline-hidden" sideOffset={4} align="start">
-          <Autocomplete.Popup
-            className="w-(--anchor-width) max-w-(--available-width) rounded-md bg-background px-1 shadow-2xl"
-            aria-busy={isPending || undefined}
-          >
+          <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-md bg-background px-1 shadow-2xl" aria-busy={isPending || undefined}>
             <div className="max-h-[min(var(--available-height),22.5rem)] scroll-pt-1 scroll-pb-1 overflow-y-auto overscroll-contain">
               <Autocomplete.List>
                 {(v: FuseResult<SearchResult>) => {
-                  if (v.item.type === "album") return <AlbumResult album={v.item} />;
-
-                  return <SongResult song={v.item} />;
+                  if (v.item.type === "song") return <SongResult song={v.item.song} />;
+                  if (v.item.type === "album") return <AlbumResult album={v.item.album} />;
+                  if (v.item.type === "artist") return <ArtistResult artist={v.item.artist} />;
+                  return;
                 }}
               </Autocomplete.List>
             </div>

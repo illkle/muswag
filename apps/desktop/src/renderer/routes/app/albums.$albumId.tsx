@@ -1,4 +1,4 @@
-import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
@@ -14,6 +14,7 @@ import { PlayerIPC } from "#/lib/ipc";
 import type { Song } from "@muswag/shared";
 import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { DebugModal } from "#/components/debug-info";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -42,11 +43,6 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 function RouteComponent() {
   const { albumId } = Route.useParams();
   useAlbumStatsRefresh(albumId);
-
-  const scrollRestorationId = "album-" + albumId;
-  useElementScrollRestoration({
-    id: scrollRestorationId,
-  });
 
   const albumQuery = useLiveQuery(
     (q) =>
@@ -133,42 +129,46 @@ function RouteComponent() {
   };
 
   return (
-    <section data-scroll-restoration-id={scrollRestorationId} className="scrollbar flex h-full w-full flex-col overflow-auto">
-      <div className="min-h-0 flex-1">
-        <SongListRoot
-          songs={songs}
-          discTitles={album.discTitles}
-          onSongPlay={onPlay}
-          currentTrackID={currentTrackId}
-          playerStatus={playerStatus}
-          scrollId={"album-" + album.id}
-          rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
-          topPadding={DETAIL_TOP_PADDING}
-          bottomPadding={DETAIL_BOTTOM_PADDING}
-          topContent={
-            <DetailHeader
-              title={album.name}
-              art={
-                <AlbumCover
-                  coverArtPath={album.coverArtPath}
-                  className="w-full"
-                  instantLoad
-                  target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
-                />
-              }
-            >
-              <ArtistLinks
-                artist={album.artist}
-                artistId={album.artistId}
-                displayArtist={album.displayArtist}
-                className="block text-lg text-muted-foreground"
-                linkClassName="hover:text-foreground hover:underline"
+    <>
+      <DebugModal>{JSON.stringify(album, null, 2)}</DebugModal>
+      <SongListRoot
+        songs={songs}
+        discTitles={album.discTitles}
+        onSongPlay={onPlay}
+        currentTrackID={currentTrackId}
+        playerStatus={playerStatus}
+        scrollId={"album-" + album.id}
+        rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
+        topPadding={DETAIL_TOP_PADDING}
+        bottomPadding={DETAIL_BOTTOM_PADDING}
+        topContent={
+          <DetailHeader
+            title={album.name}
+            art={
+              <AlbumCover
+                coverArtPath={album.coverArtPath}
+                className="w-full"
+                instantLoad
+                target={{
+                  type: "album",
+                  id: album.id,
+                  coverArtId: album.coverArt ?? null,
+                }}
               />
-              {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
-            </DetailHeader>
-          }
-        />
-      </div>
-    </section>
+            }
+          >
+            <ArtistLinks
+              artist={album.artist}
+              artists={album.artists}
+              artistId={album.artistId}
+              displayArtist={album.displayArtist}
+              className="block text-lg text-muted-foreground"
+              linkClassName="hover:text-foreground hover:underline"
+            />
+            {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
+          </DetailHeader>
+        }
+      />
+    </>
   );
 }

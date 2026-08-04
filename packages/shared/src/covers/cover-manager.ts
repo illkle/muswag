@@ -28,6 +28,12 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
   const rowFor = (target: Pick<CoverTarget, "type" | "id">) =>
     target.type === "album" ? db.albums.get(target.id) : db.artists.get(target.id);
 
+  const resolveTarget = (target: CoverTarget): CoverTarget => {
+    if (target.type !== "artist" || target.coverArtId !== null) return target;
+    const artist = db.artists.get(target.id);
+    return artist ? { ...target, coverArtId: artist.coverArt ?? artist.id } : target;
+  };
+
   const updateRow = (target: CoverTarget, path: string | null): void => {
     if (target.type === "album") {
       if (!db.albums.get(target.id)) return;
@@ -72,6 +78,7 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
 
       const row = rowFor(target);
       if (!row) return null;
+      target = resolveTarget(target);
       if (target.coverArtId === null) {
         await store.remove(key);
         updateRow(target, null);
@@ -95,6 +102,7 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
 
       const row = rowFor(target);
       if (!row) return null;
+      target = resolveTarget(target);
       if (row.coverArtPath !== failedPath) return manager.ensure(target);
 
       negativeCache.delete(key);
@@ -129,16 +137,15 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
         }
       }
       for (const [, artist] of db.artists.entries()) {
+        const coverArtId = artist.coverArt ?? artist.id;
         const missingFile = artist.coverArtPath && cachedPaths && !cachedPaths.has(artist.coverArtPath) ? artist.coverArtPath : undefined;
         if (
-          (artist.coverArt &&
-            (!artist.coverArtPath ||
-              missingFile ||
-              (artist.coverArtSourceId !== undefined && artist.coverArtSourceId !== artist.coverArt))) ||
-          (!artist.coverArt && artist.coverArtPath)
+          !artist.coverArtPath ||
+          missingFile ||
+          (artist.coverArtSourceId !== undefined && artist.coverArtSourceId !== coverArtId)
         ) {
           targets.push({
-            target: { type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null },
+            target: { type: "artist", id: artist.id, coverArtId },
             ...(missingFile ? { failedPath: missingFile } : {}),
           });
         }

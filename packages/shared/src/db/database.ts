@@ -1,10 +1,13 @@
-import { BasicIndex, type Collection } from "@tanstack/db";
-import { persistedCollectionOptions, type PersistedCollectionPersistence } from "@tanstack/db-sqlite-persistence-core";
+import { BasicIndex, type Collection } from '@tanstack/db';
+import {
+  persistedCollectionOptions,
+  type PersistedCollectionPersistence,
+} from '@tanstack/db-sqlite-persistence-core';
 
-import type { SyncRecord, SyncState, UserCredentials } from "./types.js";
-import { createCollection } from "@tanstack/react-db";
-import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api";
-import type { PlaylistRecord } from "../playlists/types.js";
+import type { SyncRecord, SyncState, UserCredentials } from './types.js';
+import { createCollection } from '@tanstack/react-db';
+import type { AlbumID3, Child, IndexArtist } from '@muswag/subsonic-api';
+import type { PlaylistRecord } from '../playlists/types.js';
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;
@@ -16,7 +19,10 @@ export type Album = AlbumID3 & {
   coverArtSourceId?: string | undefined;
   statsRefreshedAt?: string | undefined;
 };
-export type Artist = IndexArtist & { coverArtPath?: string | undefined; coverArtSourceId?: string | undefined };
+export type Artist = IndexArtist & {
+  coverArtPath?: string | undefined;
+  coverArtSourceId?: string | undefined;
+};
 export type Song = Child;
 
 export interface MuswagDb {
@@ -29,10 +35,12 @@ export interface MuswagDb {
   syncState: Collection<SyncState, number>;
 }
 
-export function createMuswagDb(persistence: PersistedCollectionPersistence): MuswagDb {
+export function createMuswagDb(
+  persistence: PersistedCollectionPersistence,
+): MuswagDb {
   const albums = createCollection(
     persistedCollectionOptions<Album, string>({
-      id: "albums",
+      id: 'albums',
       getKey: (album) => album.id,
       persistence,
       schemaVersion: 1,
@@ -44,7 +52,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const artists = createCollection(
     persistedCollectionOptions<Artist, string>({
-      id: "artists",
+      id: 'artists',
       getKey: (artist) => artist.id,
       persistence,
       schemaVersion: 1,
@@ -56,7 +64,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const songs = createCollection(
     persistedCollectionOptions<Child, string>({
-      id: "songs",
+      id: 'songs',
       getKey: (song) => song.id,
       persistence,
       schemaVersion: 1,
@@ -65,10 +73,11 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
   );
 
   songs.createIndex(({ id }) => id);
+  songs.createIndex(({ albumId }) => albumId);
 
   const playlists = createCollection(
     persistedCollectionOptions<PlaylistRecord, string>({
-      id: "playlists",
+      id: 'playlists',
       getKey: (playlist) => playlist.id,
       persistence,
       schemaVersion: 1,
@@ -81,7 +90,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const userCredentials = createCollection(
     persistedCollectionOptions<UserCredentials, number>({
-      id: "userCredentials",
+      id: 'userCredentials',
       getKey: (cred) => cred.id,
       persistence,
       schemaVersion: 2,
@@ -90,7 +99,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const syncs = createCollection(
     persistedCollectionOptions<SyncRecord, string>({
-      id: "syncs",
+      id: 'syncs',
       getKey: (sync) => sync.id,
       persistence,
       schemaVersion: 1,
@@ -99,12 +108,20 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const syncState = createCollection(
     persistedCollectionOptions<SyncState, number>({
-      id: "syncState",
+      id: 'syncState',
       getKey: (state) => state.id,
       persistence,
       schemaVersion: 1,
     }),
   );
 
-  return { albums, artists, songs, playlists, userCredentials, syncs, syncState };
+  return {
+    albums,
+    artists,
+    songs,
+    playlists,
+    userCredentials,
+    syncs,
+    syncState,
+  };
 }

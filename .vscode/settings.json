@@ -15,5 +15,9 @@
     "**/dist/**": true,
     "**/build/**": true,
     "**/out/**": true
+  },
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   }
 }

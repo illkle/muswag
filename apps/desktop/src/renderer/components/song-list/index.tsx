@@ -5,10 +5,30 @@ import { cn } from "#/lib/utils";
 import type { PlayerStatus } from "#shared/player.ts";
 import type { Album, Song } from "@muswag/shared";
 import { eq, useLiveQuery } from "@tanstack/react-db";
-import { useElementScrollRestoration } from "@tanstack/react-router";
+import { Link, useElementScrollRestoration } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PauseIcon, SpinnerGapIcon } from "@phosphor-icons/react";
-import { useRef, useState, type JSX, type ReactNode } from "react";
+import { useMemo, useRef, useState, type JSX, type ReactNode } from "react";
+import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger } from "#/components/ui/context-menu";
+import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
+import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
+import { PlaylistActions } from "#/lib/playlist-actions";
+
+function makeGridSvg(size: number) {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg"
+         width="${size}"
+         height="${size}"
+         viewBox="0 0 ${size} ${size}">
+      <path
+        d="M ${size} 0 H 0 V ${size}"
+        fill="red"
+      />
+    </svg>
+  `;
+
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 
 export const SongListRoot = ({
   songs,
@@ -21,7 +41,6 @@ export const SongListRoot = ({
   rowKeys,
   playingRowKey,
   unavailableRowKeys,
-  rowActions,
   topPadding,
   topContent,
   bottomPadding,
@@ -75,67 +94,110 @@ export const SongListRoot = ({
   const renderDiscTitles = discTitles && discTitles?.length > 1;
 
   const [selectionState, setSelectionState] = useState<Record<string, boolean>>({});
+  const songIds = useMemo(() => Object.keys(selectionState), [selectionState]);
+
+  const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
+
+  const toggleSelection = ({ rowKey, append, onlyAdd }: { rowKey: string; append?: boolean; onlyAdd?: boolean }) => {
+    if (append) {
+      setSelectionState((v) => ({ ...v, [rowKey]: onlyAdd ? true : !v[rowKey] }));
+      return;
+    }
+
+    setSelectionState(() => ({ [rowKey]: true }));
+  };
+
+  const backgroundImage = useMemo(() => `url("${makeGridSvg(SIZE)}")`, []);
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="scrollbar h-full overflow-y-auto">
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
+    <ContextMenu>
+      <PlaylistFormDialog
+        open={playlistCreatorOpen}
+        onOpenChange={setPlaylistCreatorOpen}
+        title="New playlist"
+        submitLabel="Create"
+        onSubmit={async ({ name, comment, public: isPublic }) => {
+          const created = await PlaylistActions.createWithSongs(name, songIds);
+          if (comment) await PlaylistActions.setComment(created.id, comment);
+          if (isPublic) await PlaylistActions.setVisibility(created.id, true);
         }}
-      >
-        {topContent}
+      />
 
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const song = songs[virtualRow.index]!;
-          const rowKey = rowKeys?.[virtualRow.index] ?? song.id;
-          const isPlaying = playingRowKey === undefined ? song.id === currentTrackID : playingRowKey === rowKey;
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <AddToPlaylistMenu setCreateOpen={setPlaylistCreatorOpen} songIds={songIds} />
+          <ContextMenuItem>hello</ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+      <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="scrollbar h-full overflow-y-auto">
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+          }}
+          className="overflow relative w-full"
+        >
+          <div
+            className="absolute hidden h-full w-full"
+            style={{
+              height: `calc(100% - ${topPadding ?? 0}px - ${bottomPadding ?? 0}px)`,
+              backgroundImage,
+              backgroundRepeat: "repeat",
+              backgroundSize: `${SIZE}px ${SIZE}px`,
+              top: topPadding + "px",
+            }}
+          ></div>
 
-          return (
-            <div
-              key={rowKey}
-              style={{
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-              className="absolute top-0 left-0 z-5 flex w-full"
-            >
-              {shouldRenderTitle(virtualRow.index) && renderDiscTitles && song.discNumber && (
-                <>
-                  <div className="flex items-center justify-between bg-muted/35 px-4 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">Disc {song.discNumber}</p>
-                      {discTitles[song.discNumber]!.title ? (
-                        <p className="truncate text-sm text-muted-foreground">{discTitles[song.discNumber]?.title}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </>
-              )}
-              <SongComponent
-                song={song}
-                index={virtualRow.index}
-                onDoubleClick={() => onSongPlay(song, virtualRow.index)}
-                onClick={(e) => {
-                  if (e.metaKey) {
-                    setSelectionState((v) => ({ ...v, [rowKey]: !v[rowKey] }));
-                    return;
-                  }
+          {topContent}
 
-                  setSelectionState(() => ({ [rowKey]: true }));
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const song = songs[virtualRow.index]!;
+            const rowKey = rowKeys?.[virtualRow.index] ?? song.id;
+            const isPlaying = playingRowKey === undefined ? song.id === currentTrackID : playingRowKey === rowKey;
+
+            return (
+              <div
+                key={rowKey}
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
                 }}
-                isSelected={selectionState[rowKey]}
-                isPlaying={isPlaying}
-                status={isPlaying ? playerStatus : null}
-                isUnavailable={unavailableRowKeys?.has(rowKey)}
-                actions={rowActions?.(song, virtualRow.index)}
-              />
-            </div>
-          );
-        })}
+                className="absolute top-0 left-0 z-5 flex w-full"
+              >
+                {shouldRenderTitle(virtualRow.index) && renderDiscTitles && song.discNumber && (
+                  <>
+                    <div className="flex items-center justify-between bg-muted/35 px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Disc {song.discNumber}</p>
+                        {discTitles[song.discNumber]!.title ? <p className="truncate text-sm text-muted-foreground">{discTitles[song.discNumber]?.title}</p> : null}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <SongComponent
+                  song={song}
+                  index={virtualRow.index}
+                  onDoubleClick={() => onSongPlay(song, virtualRow.index)}
+                  onClick={(e) => {
+                    if (e.button == 0) {
+                      toggleSelection({ rowKey, append: e.metaKey });
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    if (e.button == 2) {
+                      toggleSelection({ rowKey, append: true, onlyAdd: true });
+                    }
+                  }}
+                  isSelected={selectionState[rowKey]}
+                  isPlaying={isPlaying}
+                  status={isPlaying ? playerStatus : null}
+                  isUnavailable={unavailableRowKeys?.has(rowKey)}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </ContextMenu>
   );
 };
 
@@ -152,45 +214,6 @@ export type SongVisualProps = {
 
 type SongComponent = (v: SongVisualProps) => JSX.Element;
 
-// `isUnavailable` is destructured only to keep it off the spread onto the DOM node.
-export const SongRenderAlbum = ({
-  song,
-  isPlaying,
-  isSelected,
-  status,
-  isUnavailable: _isUnavailable,
-  actions,
-  ...props
-}: SongVisualProps) => {
-  return (
-    <div
-      key={song.id}
-      className={cn(
-        "group grid h-12 w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px_32px] md:items-center",
-        "hover:bg-muted/30 focus-visible:bg-muted/60 focus-visible:outline-none",
-        isSelected && "bg-muted/60 hover:bg-muted/70",
-      )}
-      {...props}
-    >
-      <div className="line-clamp-1 text-sm font-medium text-muted-foreground">
-        {isPlaying && status ? renderTrackStateIcon(status) : (song.track ?? "•")}
-      </div>
-      <div className="min-w-0">
-        <p className={cn("truncate font-light", isPlaying && "font-bold")}>{song.title}</p>
-      </div>
-      <ArtistLinks
-        artist={song.artist}
-        artistId={song.artistId}
-        artists={song.artists}
-        className="line-clamp-1 text-sm text-muted-foreground"
-        linkClassName="hover:text-foreground hover:underline"
-      />
-      <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
-      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
-    </div>
-  );
-};
-
 const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
   const cover = useLiveQuery((q) =>
     q
@@ -204,39 +227,63 @@ const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
       })),
   );
 
+  return <AlbumCover coverArtPath={cover.data?.cover} target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined} />;
+};
+
+// `isUnavailable` is destructured only to keep it off the spread onto the DOM node.
+export const SongRenderAlbum = ({ song, isPlaying, isSelected, status, isUnavailable: _isUnavailable, actions, ...props }: SongVisualProps) => {
   return (
-    <AlbumCover
-      coverArtPath={cover.data?.cover}
-      target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined}
-    />
+    <ContextMenuTrigger
+      key={song.id}
+      className={cn(
+        "group grid h-12 w-full gap-3 px-4 py-2 text-left transition-colors duration-100 md:grid-cols-[56px_minmax(0,1fr)_minmax(120px,0.45fr)_72px_32px] md:items-center",
+        "hover:bg-muted/30 focus-visible:bg-muted/60 focus-visible:outline-none",
+        isSelected && "bg-muted/60 hover:bg-muted/70",
+      )}
+      {...props}
+    >
+      <div className="line-clamp-1 text-sm font-medium text-muted-foreground">{isPlaying && status ? renderTrackStateIcon(status) : (song.track ?? "•")}</div>
+      <div className="min-w-0">
+        <p className={cn("truncate font-light", isPlaying && "font-bold")}>{song.title}</p>
+      </div>
+      <ArtistLinks artist={song.artist} artistId={song.artistId} artists={song.artists} className="line-clamp-1 text-sm text-muted-foreground" linkClassName="hover:text-foreground hover:underline" />
+      <div className="text-sm font-medium text-muted-foreground md:text-right">{formatDuration(song.duration)}</div>
+      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
+    </ContextMenuTrigger>
   );
 };
 
-export function SongRenderSongsList({ song, index, actions }: SongVisualProps) {
+export function SongRenderSongsList({ song, index, status, actions, isPlaying, isSelected, ...props }: SongVisualProps) {
   return (
-    <div className="group grid h-12 w-full grid-cols-[40px_64px_1fr_1fr_48px_32px] items-center gap-4 px-4">
-      <div className="text-center font-mono text-xs text-muted-foreground">{index + 1}</div>
+    <ContextMenuTrigger
+      key={song.id}
+      className={cn(
+        "group grid h-12 w-full grid-cols-[40px_64px_1fr_1fr_48px_32px] items-center gap-4 px-4",
+        "hover:bg-muted/30 focus-visible:bg-muted/60 focus-visible:outline-none",
+        isSelected && "bg-muted/60 hover:bg-muted/70",
+      )}
+      {...props}
+    >
+      <div className="line-clamp-1 font-mono text-sm text-muted-foreground">{isPlaying && status ? renderTrackStateIcon(status) : index + 1}</div>
       <div className="h-10 w-10">{song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <></>}</div>
       <div className="flex flex-col overflow-hidden">
         <div className="truncate text-sm">{song.title}</div>
-        <ArtistLinks
-          artist={song.artist}
-          artistId={song.artistId}
-          artists={song.artists}
-          className="truncate text-xs text-muted-foreground"
-          linkClassName="hover:text-foreground hover:underline"
-        />
+        <ArtistLinks artist={song.artist} artistId={song.artistId} artists={song.artists} className="truncate text-xs text-muted-foreground" linkClassName="hover:text-foreground hover:underline" />
       </div>
-      <div className="text-sm text-muted-foreground">{song.album}</div>
+      <div className="text-sm text-muted-foreground">
+        <Link to="/app/albums/$albumId" params={{ albumId: song.albumId ?? "" }} className="hover:underline">
+          {song.album}
+        </Link>
+      </div>
       <div className="text-xs text-muted-foreground">{formatDuration(song.duration)}</div>
       <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
-    </div>
+    </ContextMenuTrigger>
   );
 }
 
 export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status, isUnavailable, actions, ...props }: SongVisualProps) {
   return (
-    <div
+    <ContextMenuTrigger
       className={cn(
         "group grid h-12 w-full grid-cols-[40px_64px_1fr_1fr_48px_32px] items-center gap-4 px-4 transition-colors duration-100",
         "hover:bg-muted/30",
@@ -245,12 +292,8 @@ export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status,
       )}
       {...props}
     >
-      <div className="text-center font-mono text-xs text-muted-foreground">
-        {isPlaying && status ? renderTrackStateIcon(status) : index + 1}
-      </div>
-      <div className="h-10 w-10">
-        {!isUnavailable && song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <div className="size-10 rounded bg-muted" />}
-      </div>
+      <div className="text-center font-mono text-xs text-muted-foreground">{isPlaying && status ? renderTrackStateIcon(status) : index + 1}</div>
+      <div className="h-10 w-10">{!isUnavailable && song.albumId ? <SongListCoverLoader albumID={song.albumId} /> : <div className="size-10 rounded bg-muted" />}</div>
 
       {isUnavailable ? (
         <div className="flex flex-col overflow-hidden">
@@ -260,20 +303,14 @@ export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status,
       ) : (
         <div className="flex flex-col overflow-hidden">
           <div className={cn("truncate text-sm", isPlaying && "font-bold")}>{song.title}</div>
-          <ArtistLinks
-            artist={song.artist}
-            artistId={song.artistId}
-            artists={song.artists}
-            className="truncate text-xs text-muted-foreground"
-            linkClassName="hover:text-foreground hover:underline"
-          />
+          <ArtistLinks artist={song.artist} artistId={song.artistId} artists={song.artists} className="truncate text-xs text-muted-foreground" linkClassName="hover:text-foreground hover:underline" />
         </div>
       )}
 
       <div className="truncate text-sm text-muted-foreground">{isUnavailable ? "" : song.album}</div>
       <div className="text-xs text-muted-foreground">{isUnavailable ? "-" : formatDuration(song.duration)}</div>
       <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">{actions}</div>
-    </div>
+    </ContextMenuTrigger>
   );
 }
 
