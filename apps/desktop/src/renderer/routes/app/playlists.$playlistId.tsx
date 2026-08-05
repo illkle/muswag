@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
+import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader, DetailHeaderPlaceholder } from "#/components/detail-header";
@@ -64,9 +64,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   if (isLoading) {
     return (
       <section className="flex h-full w-full flex-col">
-        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">
-          Loading playlist...
-        </div>
+        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">Loading playlist...</div>
       </section>
     );
   }
@@ -149,9 +147,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                   {missingCount} {missingCount === 1 ? "song is" : "songs are"} not in your synced library and will be skipped.
                 </p>
               ) : null}
-              {removeEntryMutation.isError ? (
-                <p className="text-xs text-destructive">{getErrorMessage(removeEntryMutation.error, "The song could not be removed.")}</p>
-              ) : null}
+              {removeEntryMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntryMutation.error, "The song could not be removed.")}</p> : null}
 
               <div className="mt-2 flex items-center gap-1">
                 <Button size="sm" disabled={queue.length === 0} onClick={() => playFrom(0)}>
@@ -177,24 +173,6 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
               </div>
             </DetailHeader>
           }
-          rowActions={(_song, index) => {
-            const entryId = rows[index]?.entryId;
-            if (!canEdit || entryId === undefined) return null;
-
-            return (
-              <button
-                type="button"
-                aria-label="Remove from playlist"
-                className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  removeEntryMutation.mutate(entryId);
-                }}
-              >
-                <XIcon className="size-3.5" />
-              </button>
-            );
-          }}
         />
       </div>
 

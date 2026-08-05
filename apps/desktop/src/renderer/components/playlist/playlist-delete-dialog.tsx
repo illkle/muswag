@@ -35,14 +35,10 @@ export function PlaylistDeleteDialog({
       <DialogContent showCloseButton={!deleteMutation.isPending} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Delete playlist?</DialogTitle>
-          <DialogDescription>
-            “{playlistName}” will be removed from this device and from the server. This action cannot be undone.
-          </DialogDescription>
+          <DialogDescription>“{playlistName}” will be removed from this device and from the server. This action cannot be undone.</DialogDescription>
         </DialogHeader>
 
-        {deleteMutation.isError ? (
-          <p className="text-xs text-destructive">{getErrorMessage(deleteMutation.error, "The playlist could not be deleted.")}</p>
-        ) : null}
+        {deleteMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(deleteMutation.error, "The playlist could not be deleted.")}</p> : null}
 
         <DialogFooter>
           <Button type="button" variant="secondary" disabled={deleteMutation.isPending} onClick={() => setOpen(false)}>

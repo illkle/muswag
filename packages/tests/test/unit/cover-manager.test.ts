@@ -27,6 +27,29 @@ describe("cover manager", () => {
     expect(result).toEqual({ completed: 2, total: 2 });
   });
 
+  it("uses the artist id when an artist has no explicit coverArt id", async () => {
+    const db = createInMemoryDb();
+    db.artists.insert({ id: "artist-1", name: "Artist" });
+    const calls: Array<{ key: string; coverArtId: string | null }> = [];
+    const store: CoverArtStore = {
+      async fetch(key, coverArtId) {
+        calls.push({ key, coverArtId });
+        return "/covers/artist-1.jpg";
+      },
+      async remove() {},
+    };
+
+    const covers = createCoverManager({ db, store });
+    const result = await covers.ensure({ type: "artist", id: "artist-1", coverArtId: null });
+
+    expect(result).toBe("/covers/artist-1.jpg");
+    expect(calls).toEqual([{ key: "artist:artist-1", coverArtId: "artist-1" }]);
+    expect(db.artists.get("artist-1")).toMatchObject({
+      coverArtPath: "/covers/artist-1.jpg",
+      coverArtSourceId: "artist-1",
+    });
+  });
+
   it("deduplicates concurrent ensure calls", async () => {
     const db = createInMemoryDb();
     insertAlbum(db, "dedup");

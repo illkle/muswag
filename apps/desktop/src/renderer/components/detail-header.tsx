@@ -27,10 +27,7 @@ export function DetailHeader({
 }) {
   return (
     <header
-      className={cn(
-        "absolute top-0 mt-(--top-height) grid h-(--header-height) gap-4 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]",
-        className,
-      )}
+      className={cn("absolute top-0 mt-(--top-height) grid h-(--header-height) gap-4 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]", className)}
       style={{ "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}
     >
       {art}

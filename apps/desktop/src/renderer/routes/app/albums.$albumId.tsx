@@ -1,11 +1,10 @@
-import { createFileRoute, useElementScrollRestoration } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
@@ -43,11 +42,6 @@ function RouteComponent() {
   const { albumId } = Route.useParams();
   useAlbumStatsRefresh(albumId);
 
-  const scrollRestorationId = "album-" + albumId;
-  useElementScrollRestoration({
-    id: scrollRestorationId,
-  });
-
   const albumQuery = useLiveQuery(
     (q) =>
       q
@@ -72,9 +66,7 @@ function RouteComponent() {
   if (albumQuery.isLoading || songsQuery.isLoading) {
     return (
       <section className="flex h-full w-full flex-col">
-        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">
-          Loading album details...
-        </div>
+        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">Loading album details...</div>
       </section>
     );
   }
@@ -113,12 +105,7 @@ function RouteComponent() {
   const songs = songsQuery.data;
   const queueIndexBySongId = new Map(songs.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
-  const albumMeta = formatMetaLine([
-    album.year ? String(album.year) : null,
-    `${album.songCount} track${album.songCount === 1 ? "" : "s"}`,
-    formatDuration(album.duration),
-    primaryGenre,
-  ]);
+  const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const onPlay = (song: Song) => {
     const queueIndex = queueIndexBySongId.get(song.id);
@@ -133,42 +120,44 @@ function RouteComponent() {
   };
 
   return (
-    <section data-scroll-restoration-id={scrollRestorationId} className="scrollbar flex h-full w-full flex-col overflow-auto">
-      <div className="min-h-0 flex-1">
-        <SongListRoot
-          songs={songs}
-          discTitles={album.discTitles}
-          onSongPlay={onPlay}
-          currentTrackID={currentTrackId}
-          playerStatus={playerStatus}
-          scrollId={"album-" + album.id}
-          rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
-          topPadding={DETAIL_TOP_PADDING}
-          bottomPadding={DETAIL_BOTTOM_PADDING}
-          topContent={
-            <DetailHeader
-              title={album.name}
-              art={
-                <AlbumCover
-                  coverArtPath={album.coverArtPath}
-                  className="w-full"
-                  instantLoad
-                  target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
-                />
-              }
-            >
-              <ArtistLinks
-                artist={album.artist}
-                artistId={album.artistId}
-                displayArtist={album.displayArtist}
-                className="block text-lg text-muted-foreground"
-                linkClassName="hover:text-foreground hover:underline"
+    <>
+      <SongListRoot
+        songs={songs}
+        discTitles={album.discTitles}
+        onSongPlay={onPlay}
+        currentTrackID={currentTrackId}
+        playerStatus={playerStatus}
+        scrollId={"album-" + album.id}
+        topPadding={DETAIL_TOP_PADDING}
+        bottomPadding={DETAIL_BOTTOM_PADDING}
+        topContent={
+          <DetailHeader
+            title={album.name}
+            art={
+              <AlbumCover
+                coverArtPath={album.coverArtPath}
+                className="w-full"
+                instantLoad
+                target={{
+                  type: "album",
+                  id: album.id,
+                  coverArtId: album.coverArt ?? null,
+                }}
               />
-              {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
-            </DetailHeader>
-          }
-        />
-      </div>
-    </section>
+            }
+          >
+            <ArtistLinks
+              artist={album.artist}
+              artists={album.artists}
+              artistId={album.artistId}
+              displayArtist={album.displayArtist}
+              className="block text-lg text-muted-foreground"
+              linkClassName="hover:text-foreground hover:underline"
+            />
+            {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
+          </DetailHeader>
+        }
+      />
+    </>
   );
 }

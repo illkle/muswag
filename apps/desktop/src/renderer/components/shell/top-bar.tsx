@@ -10,7 +10,7 @@ export const TopBar = () => {
       <div className="w-1/3">
         <MiniSearch />
       </div>
-      <div className="mr-4 h-full grow"></div>
+      <div className="app-drag-region h-full grow"></div>
       <div className="absolute h-full w-full bg-background [-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_100%)]"></div>
     </div>
   );

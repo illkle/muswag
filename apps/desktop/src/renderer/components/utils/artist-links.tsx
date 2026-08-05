@@ -2,15 +2,7 @@ import { Fragment } from "react";
 
 import { Link } from "@tanstack/react-router";
 
-export function ArtistLink({
-  artistId,
-  children,
-  className,
-}: {
-  artistId: string | null | undefined;
-  children: React.ReactNode;
-  className?: string;
-}) {
+export function ArtistLink({ artistId, children, className }: { artistId: string | null | undefined; children: React.ReactNode; className?: string }) {
   if (!artistId) {
     return <span className={className}>{children}</span>;
   }
@@ -50,12 +42,39 @@ export type ArtistCredit = {
 };
 
 export function getArtistCredits({ displayArtist, artistId, artists, artist }: ArtistFields): ArtistCredit[] {
-  if (artists?.length) {
-    return artists.map(({ id, name }) => ({ id, name }));
+  if (displayArtist) {
+    /* This is super dumb but in navidrome artists is all artists on all album(so all featured) and the only way to get both artist for collab albums is to split "displayArtist" property */
+
+    const m = new Map<string, string>();
+
+    if (artists) {
+      for (const a of artists) {
+        m.set(a.name, a.id);
+      }
+    }
+
+    const splitted = displayArtist.split(" • ");
+
+    const mapped: ArtistCredit[] = [];
+    let ok = true;
+
+    for (const s of splitted) {
+      const id = m.get(s);
+      if (id) {
+        mapped.push({ id, name: s });
+      } else {
+        ok = false;
+        break;
+      }
+    }
+
+    if (ok) {
+      return mapped;
+    }
   }
 
-  if (displayArtist) {
-    return [{ id: artistId, name: displayArtist }];
+  if (artists?.length) {
+    return artists.map(({ id, name }) => ({ id, name }));
   }
 
   if (artist && artistId) {
@@ -80,7 +99,12 @@ export function ArtistLinks({
   className?: string;
   linkClassName?: string;
 }) {
-  const credits = getArtistCredits({ artist, artistId, artists, displayArtist });
+  const credits = getArtistCredits({
+    artist,
+    artistId,
+    artists,
+    displayArtist,
+  });
 
   return (
     <span className={className}>

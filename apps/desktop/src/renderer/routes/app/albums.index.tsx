@@ -17,9 +17,7 @@ function LibraryScreen() {
 
   return (
     <section className="flex h-full w-full flex-col">
-      {albumsQuery.isLoading ? (
-        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div>
-      ) : null}
+      {albumsQuery.isLoading ? <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div> : null}
 
       {albumsQuery.isError ? (
         <div className="m-6">

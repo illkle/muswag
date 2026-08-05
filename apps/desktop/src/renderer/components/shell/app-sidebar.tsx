@@ -1,17 +1,7 @@
 import { AppContentSizeProvider } from "#/components/utils/app-content-size";
 import { ServerMenu } from "#/components/settings/server-menu";
 
-import {
-  SidebarProvider,
-  SidebarContent,
-  SidebarInset,
-  Sidebar,
-  SidebarGroup,
-  SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-} from "#/components/ui/sidebar";
+import { SidebarProvider, SidebarContent, SidebarInset, Sidebar, SidebarGroup, SidebarFooter, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "#/components/ui/sidebar";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
 

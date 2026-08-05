@@ -14,9 +14,7 @@ function entryIds(entries: readonly PlaylistEntry[]): string[] {
 }
 
 function sameEntries(left: readonly PlaylistEntry[], right: readonly PlaylistEntry[]): boolean {
-  return (
-    left.length === right.length && left.every((entry, index) => entry.id === right[index]?.id && entry.songId === right[index]?.songId)
-  );
+  return left.length === right.length && left.every((entry, index) => entry.id === right[index]?.id && entry.songId === right[index]?.songId);
 }
 
 function sameRemoteEntries(left: readonly PlaylistEntry[], right: readonly PlaylistEntry[]): boolean {
@@ -27,12 +25,7 @@ function sameRemoteEntries(left: readonly PlaylistEntry[], right: readonly Playl
 }
 
 function sameEditableState(left: PlaylistState, right: PlaylistState): boolean {
-  return (
-    left.name === right.name &&
-    left.comment === right.comment &&
-    left.public === right.public &&
-    sameRemoteEntries(left.entries, right.entries)
-  );
+  return left.name === right.name && left.comment === right.comment && left.public === right.public && sameRemoteEntries(left.entries, right.entries);
 }
 
 /**
@@ -87,11 +80,7 @@ function remoteState(remote: RemotePlaylist, base: readonly PlaylistEntry[]): Pl
   };
 }
 
-function additionsByAnchor(
-  entries: readonly PlaylistEntry[],
-  baseIds: ReadonlySet<string>,
-  survivingIds: ReadonlySet<string>,
-): Map<string | null, PlaylistEntry[]> {
+function additionsByAnchor(entries: readonly PlaylistEntry[], baseIds: ReadonlySet<string>, survivingIds: ReadonlySet<string>): Map<string | null, PlaylistEntry[]> {
   const additions = new Map<string | null, PlaylistEntry[]>();
   let anchor: string | null = null;
 

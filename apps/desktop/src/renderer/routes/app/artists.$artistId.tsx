@@ -58,9 +58,7 @@ function RouteComponent() {
     [artistId],
   );
 
-  const embeddedCredit = [...(albumsQuery.data ?? []), ...(appearsOnQuery.data ?? [])]
-    .flatMap((album) => getArtistCredits(album))
-    .find((credit) => credit.id === artistId);
+  const embeddedCredit = [...(albumsQuery.data ?? []), ...(appearsOnQuery.data ?? [])].flatMap((album) => getArtistCredits(album)).find((credit) => credit.id === artistId);
   const songCredit = matchingSongQuery.data ? getArtistCredits(matchingSongQuery.data).find((credit) => credit.id === artistId) : undefined;
   const artistName = artistQuery.data?.name ?? embeddedCredit?.name ?? songCredit?.name ?? artistId;
 
@@ -106,14 +104,18 @@ function RouteComponent() {
         topContent={
           // The grid below pads its rows by 10px, so the artwork has to sit on the same edge.
           <DetailHeader
-            className="px-2.5"
+            className="px-0"
             title={artistName}
             art={
               <AlbumCover
                 coverArtPath={artistQuery.data?.coverArtPath}
                 className="w-full"
                 instantLoad
-                target={{ type: "artist", id: artistId, coverArtId: artistQuery.data?.coverArt ?? null }}
+                target={{
+                  type: "artist",
+                  id: artistId,
+                  coverArtId: artistQuery.data?.coverArt ?? null,
+                }}
               />
             }
           >

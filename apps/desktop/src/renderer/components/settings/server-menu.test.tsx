@@ -15,9 +15,7 @@ const mocks = vi.hoisted(() => ({
   mpvState: { binaryPath: "/opt/homebrew/bin/mpv", source: "well-known", status: "ready", version: "0.40.0" } as MpvState,
   startSync: vi.fn(),
   syncs: [] as SyncRecord[],
-  user: { id: 1, password: "secret", url: "https://music.example.com/", username: "tester" } as
-    | { id: number; password: string; url: string; username: string }
-    | undefined,
+  user: { id: 1, password: "secret", url: "https://music.example.com/", username: "tester" } as { id: number; password: string; url: string; username: string } | undefined,
 }));
 
 vi.mock("#/lib/queries", () => ({

@@ -28,7 +28,7 @@ type AlbumListRow =
       type: "albums";
     };
 
-const SECTION_HEIGHT = 56;
+const SECTION_HEIGHT = 32;
 
 const AlbumItem = ({
   album,
@@ -39,16 +39,15 @@ const AlbumItem = ({
   instantCovers: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   return (
-    <button
-      key={album.id}
-      className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10"
-      tabIndex={0}
-      {...props}
-    >
+    <button key={album.id} className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10" tabIndex={0} {...props}>
       <AlbumCover
         coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
-        target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}
+        target={{
+          type: "album",
+          id: album.id,
+          coverArtId: album.coverArt ?? null,
+        }}
       />
 
       <div className="mt-1">
@@ -57,8 +56,8 @@ const AlbumItem = ({
           {getArtistCredits(album)
             .map((artist) => artist.name)
             .join(", ")}
-          <span className="line-clamp-1 text-xs text-muted-foreground/50">{album.year}</span>
         </p>
+        <span className="line-clamp-1 text-xs text-muted-foreground/50">{album.year}</span>
       </div>
     </button>
   );
@@ -118,15 +117,7 @@ type AlbumListProps = {
     }
 );
 
-export function AlbumList({
-  albums,
-  sections,
-  scrollId,
-  className,
-  topPadding = TOP_HEIGHT,
-  bottomPadding = PLAYER_HEIGHT,
-  topContent,
-}: AlbumListProps) {
+export function AlbumList({ albums, sections, scrollId, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
@@ -195,7 +186,7 @@ export function AlbumList({
                 }}
                 className="absolute top-0 left-0 flex w-full items-end px-1 pb-2"
               >
-                <h2 className="text-lg font-semibold tracking-tight">{row.title}</h2>
+                <h2 className="text-xl font-semibold tracking-tight">{row.title}</h2>
               </div>
             );
           }

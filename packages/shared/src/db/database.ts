@@ -16,7 +16,10 @@ export type Album = AlbumID3 & {
   coverArtSourceId?: string | undefined;
   statsRefreshedAt?: string | undefined;
 };
-export type Artist = IndexArtist & { coverArtPath?: string | undefined; coverArtSourceId?: string | undefined };
+export type Artist = IndexArtist & {
+  coverArtPath?: string | undefined;
+  coverArtSourceId?: string | undefined;
+};
 export type Song = Child;
 
 export interface MuswagDb {
@@ -65,6 +68,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
   );
 
   songs.createIndex(({ id }) => id);
+  songs.createIndex(({ albumId }) => albumId);
 
   const playlists = createCollection(
     persistedCollectionOptions<PlaylistRecord, string>({
@@ -106,5 +110,13 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
-  return { albums, artists, songs, playlists, userCredentials, syncs, syncState };
+  return {
+    albums,
+    artists,
+    songs,
+    playlists,
+    userCredentials,
+    syncs,
+    syncState,
+  };
 }

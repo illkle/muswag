@@ -18,11 +18,7 @@ export const ThemeMenuControl = ({ className }: { className?: string }) => {
   const { setTheme, theme } = useTheme();
 
   return (
-    <MenuRadioGroup
-      className={cn("flex gap-0.5 rounded-md bg-muted p-0.5", className)}
-      onValueChange={(value) => setTheme(value as Theme)}
-      value={theme || "system"}
-    >
+    <MenuRadioGroup className={cn("flex gap-0.5 rounded-md bg-muted p-0.5", className)} onValueChange={(value) => setTheme(value as Theme)} value={theme || "system"}>
       {themeOptions.map(({ icon: Icon, label, value }) => (
         <MenuRadioItem
           aria-label={label}

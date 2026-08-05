@@ -62,13 +62,7 @@ describe("AppUpdateDialog", () => {
   });
 
   it("offers a restart once an update has been downloaded", () => {
-    render(
-      <AppUpdateDialog
-        onOpenChange={() => undefined}
-        open
-        state={{ ...upToDate, latestVersion: "1.3.0", progressPercent: 100, status: "ready" }}
-      />,
-    );
+    render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, latestVersion: "1.3.0", progressPercent: 100, status: "ready" }} />);
 
     expect(screen.getByText("Update downloaded, restart to install")).toBeTruthy();
     expect(screen.getByText("v1.3.0")).toBeTruthy();
@@ -79,13 +73,7 @@ describe("AppUpdateDialog", () => {
   });
 
   it("disables the check in unpackaged builds", () => {
-    render(
-      <AppUpdateDialog
-        onOpenChange={() => undefined}
-        open
-        state={{ ...upToDate, canCheck: false, latestVersion: null, lastCheckedAt: null, status: "disabled" }}
-      />,
-    );
+    render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, canCheck: false, latestVersion: null, lastCheckedAt: null, status: "disabled" }} />);
 
     expect(screen.getByText("Updates are only checked in packaged builds")).toBeTruthy();
     expect(screen.getByText("Never")).toBeTruthy();

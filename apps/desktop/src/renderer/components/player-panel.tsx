@@ -1,13 +1,4 @@
-import {
-  PauseIcon,
-  PlayIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  SpeakerHighIcon,
-  SpeakerLowIcon,
-  SpeakerXIcon,
-  SpinnerGapIcon,
-} from "@phosphor-icons/react";
+import { PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
@@ -66,13 +57,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         disabled={!canPlay}
         aria-label={status === "playing" ? "Pause playback" : "Play track"}
       >
-        {status === "playing" ? (
-          <PauseIcon className="size-3" />
-        ) : status === "loading" ? (
-          <SpinnerGapIcon className="size-3 animate-spin" />
-        ) : (
-          <PlayIcon className="size-3" />
-        )}
+        {status === "playing" ? <PauseIcon className="size-3" /> : status === "loading" ? <SpinnerGapIcon className="size-3 animate-spin" /> : <PlayIcon className="size-3" />}
       </Button>
 
       <Button
@@ -207,31 +192,16 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           setDraft(null);
         }}
         onKeyDown={(event) => {
-          if (
-            event.key.startsWith("Arrow") ||
-            event.key === "Home" ||
-            event.key === "End" ||
-            event.key === "PageUp" ||
-            event.key === "PageDown"
-          ) {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
             seekInteractionRef.current = "keyboard";
           }
         }}
         onKeyUp={(event) => {
-          if (
-            event.key.startsWith("Arrow") ||
-            event.key === "Home" ||
-            event.key === "End" ||
-            event.key === "PageUp" ||
-            event.key === "PageDown"
-          ) {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
             void commitSeek(Number(event.currentTarget.value));
           }
         }}
-        className={cn(
-          "h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-        )}
+        className={cn("h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
       />
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{formatDuration(durationSeconds)}</span>
     </div>
@@ -257,19 +227,11 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
   return (
     <div {...props} className={cn("flex h-full w-full items-center gap-2 overflow-hidden", !currentTrack && "opacity-0", props.className)}>
-      <AlbumCover
-        coverArtPath={alb?.coverArtPath}
-        className="w-10 shrink-0"
-        target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined}
-      />
+      <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />
 
       {currentTrackId && currentTrack && (
         <div className="flex w-full max-w-[calc(100%-48px)] flex-col">
-          <Link
-            to={"/app/albums/$albumId"}
-            params={{ albumId: alb?.id ?? "" }}
-            className="line-clamp-1 block truncate text-xs font-semibold"
-          >
+          <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="line-clamp-1 block truncate text-xs font-semibold">
             {currentTrack.title}
           </Link>
           <ArtistLinks
@@ -330,10 +292,7 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
           commitVolume(Number(event.target.value));
         }}
         aria-label="Playback volume"
-        className={cn(
-          "h-1.5 w-full max-w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-        )}
+        className={cn("h-1.5 w-full max-w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
       />
     </div>
   );

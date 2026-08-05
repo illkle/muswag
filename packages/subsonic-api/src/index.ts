@@ -351,8 +351,8 @@ function md5(input: string): string {
   let d0 = 0x10325476;
 
   const shifts = [
-    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4,
-    11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6,
+    10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
   ];
   const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0);
 
@@ -513,11 +513,7 @@ export default class SubsonicAPI {
     return this.#json("deletePlaylist", args, pingResponseSchema);
   }
 
-  async #json<T extends z.AnyZodObject>(
-    method: string,
-    params: RequestParams,
-    payloadSchema: T,
-  ): Promise<SubsonicBaseResponse & z.output<T>> {
+  async #json<T extends z.AnyZodObject>(method: string, params: RequestParams, payloadSchema: T): Promise<SubsonicBaseResponse & z.output<T>> {
     const response = await this.#request(method, params);
     if (!response.ok) {
       throw new Error(`${method} failed: HTTP ${response.status}`);

@@ -6,33 +6,13 @@ import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
 import type { MuswagRendererIpc } from "../shared/ipc";
-import {
-  cancelMpvInstall,
-  clearManualMpvPath,
-  disposePlayer,
-  getDefaultMpvIpcPath,
-  initializePlayer,
-  installMpv,
-  next,
-  pause,
-  play,
-  playQueue,
-  previous,
-  refreshMpvAvailability,
-  seek,
-  setCredentials,
-  setManualMpvPath,
-  setMuted,
-  setVolume,
-  subscribe,
-  toggle,
-} from "./player/mpv-controller";
-import { getMpvState, getState } from "./player/player-session";
+import { createPlayer, getDefaultMpvIpcPath, type Player } from "./player";
 import { disposeDB } from "./db";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
+let player: Player | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -64,27 +44,28 @@ function broadcastMpvInstallOutput(output: MuswagRendererIpc["mpv:installOutput"
 }
 
 function initializeDesktopPlayer(): void {
-  initializePlayer({
+  if (player) return;
+  player = createPlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     mpvPathStatePath: join(app.getPath("userData"), "mpv.json"),
     volumeStatePath: join(app.getPath("userData"), "player-volume.json"),
   });
 
   if (!unsubscribePlayerEvents) {
-    unsubscribePlayerEvents = subscribe((event) => {
+    unsubscribePlayerEvents = player.subscribe((event) => {
       broadcastPlayerEvent(event);
     });
   }
 }
 
 function registerMpvIpc(): void {
-  mainIpc.handle("mpv:recheck", async () => refreshMpvAvailability());
+  mainIpc.handle("mpv:recheck", async () => getPlayer().refreshMpvAvailability());
   mainIpc.handle("mpv:cancelInstall", async () => {
-    cancelMpvInstall();
+    getPlayer().cancelMpvInstall();
   });
-  mainIpc.handle("mpv:clearManualPath", async () => clearManualMpvPath());
+  mainIpc.handle("mpv:clearManualPath", async () => getPlayer().clearManualMpvPath());
   mainIpc.handle("mpv:install", async (_, method) => {
-    return installMpv(method, broadcastMpvInstallOutput);
+    return getPlayer().installMpv(method, broadcastMpvInstallOutput);
   });
   mainIpc.handle("mpv:locate", async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -96,10 +77,10 @@ function registerMpvIpc(): void {
 
     const [selectedPath] = filePaths;
     if (canceled || !selectedPath) {
-      return getMpvState();
+      return getPlayer().getMpvState();
     }
 
-    return setManualMpvPath(selectedPath);
+    return getPlayer().setManualMpvPath(selectedPath);
   });
 }
 
@@ -149,10 +130,11 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      focusOnNavigation: process.env.NODE_ENV !== "development",
     },
   });
 
-  mainWindow.on("ready-to-show", () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
 
@@ -202,37 +184,37 @@ app.whenReady().then(() => {
   registerMpvIpc();
 
   mainIpc.handle("player:getState", async () => {
-    return getState();
+    return getPlayer().getState();
   });
   mainIpc.handle("player:next", async () => {
-    await next();
+    await getPlayer().next();
   });
   mainIpc.handle("player:pause", async () => {
-    await pause();
+    await getPlayer().pause();
   });
   mainIpc.handle("player:play", async () => {
-    await play();
+    await getPlayer().play();
   });
   mainIpc.handle("player:playQueue", async (_, input) => {
-    await playQueue(input);
+    await getPlayer().playQueue(input);
   });
   mainIpc.handle("player:previous", async () => {
-    await previous();
+    await getPlayer().previous();
   });
   mainIpc.handle("player:seek", async (_, positionSeconds) => {
-    await seek(positionSeconds);
+    await getPlayer().seek(positionSeconds);
   });
   mainIpc.handle("player:setCredentials", async (_, credentials) => {
-    setCredentials(credentials);
+    getPlayer().setCredentials(credentials);
   });
   mainIpc.handle("player:setMuted", async (_, muted) => {
-    await setMuted(muted);
+    await getPlayer().setMuted(muted);
   });
   mainIpc.handle("player:setVolume", async (_, volumePercent) => {
-    await setVolume(volumePercent);
+    await getPlayer().setVolume(volumePercent);
   });
   mainIpc.handle("player:toggle", async () => {
-    await toggle();
+    await getPlayer().toggle();
   });
 
   initializeDesktopPlayer();
@@ -257,6 +239,12 @@ app.on("before-quit", () => {
   disposeCoverArtIpc?.();
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;
-  disposePlayer();
+  player?.dispose();
+  player = undefined;
   disposeDB();
 });
+
+function getPlayer(): Player {
+  if (!player) throw new Error("Desktop player has not been initialized.");
+  return player;
+}

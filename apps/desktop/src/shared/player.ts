@@ -32,13 +32,28 @@ export interface MpvInstallOption {
 export type MpvState =
   | { status: "checking" }
   | { status: "ready"; binaryPath: string; source: MpvSource; version: string }
-  | { status: "missing"; checkedPaths: string[]; installOptions: MpvInstallOption[] }
-  | { status: "invalid"; binaryPath: string; source: MpvSource; reason: string; installOptions: MpvInstallOption[] };
+  | {
+      status: "missing";
+      checkedPaths: string[];
+      installOptions: MpvInstallOption[];
+    }
+  | {
+      status: "invalid";
+      binaryPath: string;
+      source: MpvSource;
+      reason: string;
+      installOptions: MpvInstallOption[];
+    };
 
 export type MpvInstallState =
   | { status: "idle" }
   | { status: "running"; command: string; method: MpvInstallMethod }
-  | { status: "failed"; command: string; error: string; method: MpvInstallMethod }
+  | {
+      status: "failed";
+      command: string;
+      error: string;
+      method: MpvInstallMethod;
+    }
   | { status: "succeeded"; command: string; method: MpvInstallMethod };
 
 export interface PlayerMetaState {
@@ -159,18 +174,11 @@ export function isSameMpvState(nextState: MpvState, previousState: MpvState): bo
   }
 
   if (nextState.status === "ready" && previousState.status === "ready") {
-    return (
-      nextState.binaryPath === previousState.binaryPath &&
-      nextState.source === previousState.source &&
-      nextState.version === previousState.version
-    );
+    return nextState.binaryPath === previousState.binaryPath && nextState.source === previousState.source && nextState.version === previousState.version;
   }
 
   if (nextState.status === "missing" && previousState.status === "missing") {
-    return (
-      isSameStringList(nextState.checkedPaths, previousState.checkedPaths) &&
-      isSameInstallOptions(nextState.installOptions, previousState.installOptions)
-    );
+    return isSameStringList(nextState.checkedPaths, previousState.checkedPaths) && isSameInstallOptions(nextState.installOptions, previousState.installOptions);
   }
 
   if (nextState.status === "invalid" && previousState.status === "invalid") {
@@ -205,6 +213,37 @@ export function isSamePlayerMetaState(nextState: PlayerMetaState, previousState:
   return isSameMpvState(nextState.mpv, previousState.mpv) && isSameMpvInstallState(nextState.mpvInstall, previousState.mpvInstall);
 }
 
+export function isSameQueueState(nextState: PlayerQueueState, previousState: PlayerQueueState): boolean {
+  return (
+    nextState.currentIndex === previousState.currentIndex &&
+    nextState.currentTrackId === previousState.currentTrackId &&
+    isSameQueueContext(nextState.context, previousState.context) &&
+    isSameStringList(nextState.queue, previousState.queue)
+  );
+}
+
+export function isSameNowPlayingState(nextState: PlayerNowPlayingState, previousState: PlayerNowPlayingState): boolean {
+  return (
+    nextState.durationSeconds === previousState.durationSeconds &&
+    nextState.error === previousState.error &&
+    nextState.positionSeconds === previousState.positionSeconds &&
+    nextState.status === previousState.status
+  );
+}
+
+export function isSameVolumeState(nextState: PlayerVolumeState, previousState: PlayerVolumeState): boolean {
+  return nextState.volumePercent === previousState.volumePercent && nextState.muted === previousState.muted;
+}
+
+export function isSamePositionOnlyChange(nextState: PlayerNowPlayingState, previousState: PlayerNowPlayingState): boolean {
+  return (
+    nextState.positionSeconds !== previousState.positionSeconds &&
+    nextState.durationSeconds === previousState.durationSeconds &&
+    nextState.error === previousState.error &&
+    nextState.status === previousState.status
+  );
+}
+
 function isSameStringList(nextList: string[], previousList: string[]): boolean {
   return nextList.length === previousList.length && nextList.every((value, index) => value === previousList[index]);
 }
@@ -224,6 +263,14 @@ function isSameInstallOptions(nextOptions: MpvInstallOption[], previousOptions: 
       );
     })
   );
+}
+
+function isSameQueueContext(nextContext: PlayerQueueContext, previousContext: PlayerQueueContext): boolean {
+  if (nextContext?.type !== previousContext?.type) return false;
+  if (nextContext === null || previousContext === null) return true;
+  if (nextContext.type === "album" && previousContext.type === "album") return nextContext.albumId === previousContext.albumId;
+  if (nextContext.type !== "playlist" || previousContext.type !== "playlist") return false;
+  return nextContext.playlistId === previousContext.playlistId && isSameStringList(nextContext.entryIds, previousContext.entryIds);
 }
 
 export function getPlayerCanPlay(queueState: PlayerQueueState, nowPlayingState: PlayerNowPlayingState): boolean {

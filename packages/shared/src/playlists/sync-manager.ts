@@ -139,12 +139,7 @@ async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, run:
  * `reusable` is empty for full passes (startup, interval, manual sync), which self-heals anything the
  * `changed` timestamp missed — it has second granularity, so two edits inside one second can look equal.
  */
-async function fetchRemotePlaylists(
-  api: PlaylistApi,
-  currentUsername: string,
-  concurrency: number,
-  reusable: ReadonlyMap<string, PlaylistState>,
-): Promise<RemotePlaylist[]> {
+async function fetchRemotePlaylists(api: PlaylistApi, currentUsername: string, concurrency: number, reusable: ReadonlyMap<string, PlaylistState>): Promise<RemotePlaylist[]> {
   const summaries = (await api.getPlaylists()).playlists.playlist ?? [];
 
   return mapWithConcurrency(summaries, concurrency, async (summary) => {
@@ -237,13 +232,7 @@ function commitPushedBase(db: MuswagDb, localId: string, state: PlaylistState, s
   });
 }
 
-async function executeRemoteMutation(
-  db: MuswagDb,
-  api: PlaylistApi,
-  mutation: RemotePlaylistMutation,
-  currentUsername: string,
-  suppressed: (write: () => void) => void,
-): Promise<"applied" | "stale"> {
+async function executeRemoteMutation(db: MuswagDb, api: PlaylistApi, mutation: RemotePlaylistMutation, currentUsername: string, suppressed: (write: () => void) => void): Promise<"applied" | "stale"> {
   switch (mutation.type) {
     case "create": {
       const created = await api.createPlaylist({ name: mutation.state.name, songId: songIds(mutation.state) });
@@ -298,10 +287,7 @@ async function executeRemoteMutation(
   }
 }
 
-function sameCredentials(
-  left: { url: string; username: string; password: string } | null,
-  right: { url: string; username: string; password: string } | null,
-): boolean {
+function sameCredentials(left: { url: string; username: string; password: string } | null, right: { url: string; username: string; password: string } | null): boolean {
   return left?.url === right?.url && left?.username === right?.username && left?.password === right?.password;
 }
 

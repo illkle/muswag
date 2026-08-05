@@ -90,12 +90,7 @@ function songIdsByAlbum(db: MuswagDb): Map<string, string[]> {
   return result;
 }
 
-function persistDetailedPage(
-  db: MuswagDb,
-  syncId: string,
-  albums: AlbumWithSongsID3[],
-  syncedAlbumIds: Set<string>,
-): { inserted: number; updated: number } {
+function persistDetailedPage(db: MuswagDb, syncId: string, albums: AlbumWithSongsID3[], syncedAlbumIds: Set<string>): { inserted: number; updated: number } {
   let inserted = 0;
   let updated = 0;
   const albumIdsToDelete: string[] = [];
@@ -239,12 +234,7 @@ export async function syncAlbums(params: SyncAlbumsParams) {
   updateSyncProgress(db, syncId, { currentStep: "removing-missing-albums" });
   const deletedAlbumIds = deleteMissingAlbums(db, syncId, syncedAlbumIds);
   updateSyncProgress(db, syncId, {
-    currentStep:
-      mode === "full"
-        ? "removing-dangling-songs"
-        : detailRequests === 0 && deletedAlbumIds.length === 0
-          ? "skipped-unchanged"
-          : "removing-missing-albums",
+    currentStep: mode === "full" ? "removing-dangling-songs" : detailRequests === 0 && deletedAlbumIds.length === 0 ? "skipped-unchanged" : "removing-missing-albums",
     progress: { albumsDeleted: deletedAlbumIds.length },
   });
   const songsDeleted = mode === "full" ? deleteDanglingSongs(db, syncedAlbumIds) : 0;

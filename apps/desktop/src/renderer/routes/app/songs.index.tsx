@@ -7,7 +7,6 @@ import { useUser } from "#/lib/queries";
 import { useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
-import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 export const Route = createFileRoute("/app/songs/")({
@@ -19,9 +18,7 @@ function LibraryScreen() {
 
   return (
     <section className="flex h-full w-full flex-col">
-      {songsQuery.isLoading ? (
-        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div>
-      ) : null}
+      {songsQuery.isLoading ? <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div> : null}
 
       {songsQuery.isError ? (
         <div className="m-6">
@@ -52,7 +49,6 @@ function LibraryScreen() {
           scrollId="library-screen-songs"
           onSongPlay={() => null}
           SongComponent={SongRenderSongsList}
-          rowActions={(song) => <AddToPlaylistMenu songIds={[song.id]} />}
           topPadding={TOP_HEIGHT}
           bottomPadding={PLAYER_HEIGHT}
         />

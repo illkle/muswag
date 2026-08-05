@@ -4,12 +4,7 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cn } from "#/lib/utils";
 
 function RadioTabs({ className, ...props }: React.ComponentProps<typeof RadioGroupPrimitive>) {
-  return (
-    <RadioGroupPrimitive
-      className={cn("flex h-11 items-stretch justify-center rounded-lg bg-muted p-1 text-muted-foreground", className)}
-      {...props}
-    />
-  );
+  return <RadioGroupPrimitive className={cn("flex h-11 items-stretch justify-center rounded-lg bg-muted p-1 text-muted-foreground", className)} {...props} />;
 }
 
 function RadioTabItem({ className, children, ...props }: React.ComponentProps<typeof RadioPrimitive.Root>) {

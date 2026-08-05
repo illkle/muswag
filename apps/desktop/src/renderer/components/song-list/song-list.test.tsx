@@ -55,17 +55,7 @@ function Row({ song: rowSong, index, isSelected, isPlaying, status: _status, isU
 
 describe("SongListRoot row identity", () => {
   it("selects only the clicked row when the same song repeats", () => {
-    render(
-      <SongListRoot
-        songs={duplicateSongs}
-        rowKeys={entryKeys}
-        onSongPlay={() => undefined}
-        currentTrackID={null}
-        playerStatus={null}
-        SongComponent={Row}
-        scrollId="test"
-      />,
-    );
+    render(<SongListRoot songs={duplicateSongs} rowKeys={entryKeys} onSongPlay={() => undefined} currentTrackID={null} playerStatus={null} SongComponent={Row} scrollId="test" />);
 
     fireEvent.click(screen.getByTestId("row-1"));
 
@@ -78,16 +68,7 @@ describe("SongListRoot row identity", () => {
     // React warns about the duplicate keys this fallback produces; that is the point of the test.
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    render(
-      <SongListRoot
-        songs={duplicateSongs}
-        onSongPlay={() => undefined}
-        currentTrackID={null}
-        playerStatus={null}
-        SongComponent={Row}
-        scrollId="test-no-keys"
-      />,
-    );
+    render(<SongListRoot songs={duplicateSongs} onSongPlay={() => undefined} currentTrackID={null} playerStatus={null} SongComponent={Row} scrollId="test-no-keys" />);
 
     fireEvent.click(screen.getByTestId("row-1"));
 
@@ -118,17 +99,7 @@ describe("SongListRoot row identity", () => {
 
   it("reports the clicked index so callers can resolve which duplicate was played", () => {
     const onSongPlay = vi.fn();
-    render(
-      <SongListRoot
-        songs={duplicateSongs}
-        rowKeys={entryKeys}
-        onSongPlay={onSongPlay}
-        currentTrackID={null}
-        playerStatus={null}
-        SongComponent={Row}
-        scrollId="test-play"
-      />,
-    );
+    render(<SongListRoot songs={duplicateSongs} rowKeys={entryKeys} onSongPlay={onSongPlay} currentTrackID={null} playerStatus={null} SongComponent={Row} scrollId="test-play" />);
 
     fireEvent.doubleClick(screen.getByTestId("row-2"));
 

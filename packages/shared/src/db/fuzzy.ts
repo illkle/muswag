@@ -1,56 +1,83 @@
 import Fuse from "fuse.js";
-import type { Album, MuswagDb, Song } from "./database.js";
+import type { Album, Artist, MuswagDb, Song } from "./database.js";
 import { eq, queryOnce } from "@tanstack/db";
 
 export type SearchResultSong = {
   type: "song";
-  coverArtPath: Album["coverArtPath"];
-  coverArt: Album["coverArt"];
-} & Pick<Song, "id" | "albumId" | "artist" | "artistId" | "album" | "year" | "title">;
+  id: string;
+  song: {
+    coverArtPath: Album["coverArtPath"];
+    coverArt: Album["coverArt"];
+  } & Pick<Song, "id" | "albumId" | "artist" | "artistId" | "album" | "year" | "title">;
+};
 
-export type SearchResultAlbum = { type: "album" } & Pick<
-  Album,
-  "id" | "artist" | "artistId" | "coverArt" | "coverArtPath" | "year" | "name"
->;
+export type SearchResultAlbum = {
+  type: "album";
+  id: string;
+  album: Pick<Album, "id" | "artist" | "artistId" | "coverArt" | "coverArtPath" | "year" | "name">;
+};
 
-export type SearchResult = SearchResultSong | SearchResultAlbum;
+export type SearchResultArtist = {
+  type: "artist";
+  id: string;
+  artist: Pick<Artist, "id" | "name" | "coverArtPath" | "coverArt">;
+};
+
+export type SearchResult = SearchResultSong | SearchResultAlbum | SearchResultArtist;
 
 const toAlbum = ({ id, artistId, artist, coverArt, coverArtPath, year, name }: Album): SearchResult => ({
   type: "album",
   id,
-  artist,
-  artistId,
-  coverArtPath,
-  coverArt,
-  year,
-  name,
+  album: {
+    id,
+    artist,
+    artistId,
+    coverArtPath,
+    coverArt,
+    year,
+    name,
+  },
 });
 
 const toSong = ({ id, artistId, artist, year, title, albumId, album }: Song, albumData: Album): SearchResult => ({
   type: "song",
   id,
-  artist,
-  artistId,
-  year,
-  title,
-  album,
-  albumId,
-  coverArtPath: albumData.coverArtPath,
-  coverArt: albumData.coverArt,
+  song: {
+    id,
+    artist,
+    artistId,
+    year,
+    title,
+    album,
+    albumId,
+    coverArtPath: albumData.coverArtPath,
+    coverArt: albumData.coverArt,
+  },
+});
+
+const toArtist = ({ id, name, coverArtPath, coverArt }: Artist): SearchResult => ({
+  type: "artist",
+  id,
+  artist: {
+    id,
+    name,
+    coverArtPath,
+    coverArt,
+  },
 });
 
 export function CreateFuse(db: MuswagDb) {
   const f = new Fuse([] as SearchResult[], {
-    keys: ["artist", "album", "title", "year", "name"],
+    keys: ["song.artist", "song.album", "song.title", "song.year", "song.name", "album.artist", { name: "album.name", weight: 3 }, "album.year", { name: "artist.name", weight: 2 }],
     shouldSort: true,
     ignoreLocation: true,
     findAllMatches: true,
     threshold: 0.2,
+    minMatchCharLength: 2,
   });
 
   db.albums.subscribeChanges(
     (v) => {
-      console.info("processing albums changes", v.length);
       for (const c of v) {
         switch (c.type) {
           case "delete": {
@@ -71,7 +98,6 @@ export function CreateFuse(db: MuswagDb) {
 
   db.songs.subscribeChanges(
     async (v) => {
-      console.info("processing song changes", v.length);
       for (const c of v) {
         switch (c.type) {
           case "delete": {
@@ -101,6 +127,26 @@ export function CreateFuse(db: MuswagDb) {
             if (!alb) continue;
 
             f.add(toSong(c.value, alb));
+          }
+        }
+      }
+    },
+    { includeInitialState: true },
+  );
+
+  db.artists.subscribeChanges(
+    (v) => {
+      for (const c of v) {
+        switch (c.type) {
+          case "delete": {
+            f.remove((v) => v.type === "artist" && v.id === c.value.id);
+          }
+          case "update": {
+            f.remove((v) => v.type === "artist" && v.id === c.value.id);
+            f.add(toArtist(c.value));
+          }
+          case "insert": {
+            f.add(toArtist(c.value));
           }
         }
       }
