@@ -12,6 +12,18 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("#/lib/db-renderer", () => ({ db: {} }));
 
+vi.mock("#/lib/playlist-actions", () => ({
+  PlaylistActions: {
+    addSongs: vi.fn(),
+    createWithSongs: vi.fn(),
+    setComment: vi.fn(),
+    setVisibility: vi.fn(),
+  },
+}));
+
+vi.mock("#/components/playlist/add-to-playlist-menu", () => ({ AddToPlaylistMenu: () => null }));
+vi.mock("#/components/playlist/playlist-form-dialog", () => ({ PlaylistFormDialog: () => null }));
+
 vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: undefined }),
   eq: () => undefined,
