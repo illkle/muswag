@@ -2,36 +2,85 @@ name: Release desktop app
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example, v0.1.14)
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and publish (${{ matrix.os }})
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate version tag
+        id: release
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Release tag must look like v0.1.14; got: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - platform: linux
+            os: ubuntu-latest
             electron_builder_target: --linux
-          - os: macos-latest
+            artifact_paths: |
+              apps/desktop/dist/*.AppImage
+              apps/desktop/dist/*.deb
+              apps/desktop/dist/latest-linux.yml
+          - platform: macos
+            os: macos-latest
             electron_builder_target: --mac
-          - os: windows-latest
+            artifact_paths: |
+              apps/desktop/dist/*.dmg
+              apps/desktop/dist/*.dmg.blockmap
+              apps/desktop/dist/*.zip
+              apps/desktop/dist/*.zip.blockmap
+              apps/desktop/dist/latest-mac.yml
+          - platform: windows
+            os: windows-latest
             electron_builder_target: --win
+            artifact_paths: |
+              apps/desktop/dist/*.exe
+              apps/desktop/dist/*.exe.blockmap
+              apps/desktop/dist/latest.yml
 
     env:
-      APP_VERSION: 0.1.${{ github.run_number }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: false
 
     steps:
-      - name: Check out repository
+      - name: Check out release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -50,6 +99,39 @@ jobs:
       - name: Build application
         run: pnpm turbo run build --filter=@muswag/desktop...
 
-      - name: Package and publish release
+      - name: Package application
         working-directory: apps/desktop
-        run: pnpm exec electron-builder ${{ matrix.electron_builder_target }} --publish always --config.extraMetadata.version=${{ env.APP_VERSION }}
+        run: pnpm exec electron-builder ${{ matrix.electron_builder_target }} --publish never --config.extraMetadata.version=${{ env.APP_VERSION }}
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-assets/*

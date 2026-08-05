@@ -30,4 +30,4 @@ publish:
   provider: github
   owner: illkle
   repo: muswag
-  releaseType: release
+  releaseType: draft
