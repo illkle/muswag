@@ -328,6 +328,20 @@ describe("Player", () => {
     expect(client.clearPlaylistExceptCurrent).not.toHaveBeenCalled();
   });
 
+  it("stops and clears playback when credentials are removed", async () => {
+    const { client, player } = setup();
+    await player.setCredentials({ password: "p", url: "https://server", username: "u" });
+    await player.playQueue({ queue: tracks.slice(0, 2), startIndex: 0 });
+
+    await player.setCredentials(null);
+
+    expect(client.stop).toHaveBeenCalledOnce();
+    expect(player.getState()).toMatchObject({
+      nowPlaying: { status: "idle" },
+      queue: { currentTrackId: null, queue: [] },
+    });
+  });
+
   it("ignores stop endings and fails malformed correlated lifecycle events", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { emit, player } = setup();

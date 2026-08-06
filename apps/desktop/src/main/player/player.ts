@@ -121,6 +121,16 @@ export class Player {
       const staleLookahead = this.lookaheadEntry;
       this.credentials = nextCredentials;
       this.lookaheadEntry = null;
+      if (!nextCredentials) {
+        this.clearEntryState();
+        try {
+          await this.client.stop();
+        } catch {
+          // Logging out still clears the player when mpv is already unavailable.
+        }
+        this.session.clear();
+        return;
+      }
       if (this.client.state !== "ready" || !staleLookahead) return;
       try {
         await this.client.clearPlaylistExceptCurrent();

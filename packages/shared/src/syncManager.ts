@@ -191,13 +191,14 @@ export async function logout(db: MuswagDb, covers?: CoverManager): Promise<null>
     db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
   }
 
-  for (const [id] of db.playlists.entries()) db.playlists.delete(id);
-  for (const [id] of db.songs.entries()) db.songs.delete(id);
-  for (const [id] of db.albums.entries()) db.albums.delete(id);
-  for (const [id] of db.artists.entries()) db.artists.delete(id);
-  for (const [id] of db.syncs.entries()) db.syncs.delete(id);
-  for (const [id] of db.syncState.entries()) db.syncState.delete(id);
+  await db.playlists.cleanup();
+  await db.songs.cleanup();
+  await db.albums.cleanup();
+  await db.artists.cleanup();
+  await db.syncs.cleanup();
+  await db.syncState.cleanup();
   await covers?.pruneOrphans();
+
   return null;
 }
 
