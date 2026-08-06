@@ -173,9 +173,9 @@ export function MiniSearch() {
             <div className="max-h-[min(var(--available-height),22.5rem)] scroll-pt-1 scroll-pb-1 overflow-y-auto overscroll-contain">
               <Autocomplete.List>
                 {(v: FuseResult<SearchResult>) => {
-                  if (v.item.type === "song") return <SongResult song={v.item.song} />;
-                  if (v.item.type === "album") return <AlbumResult album={v.item.album} />;
-                  if (v.item.type === "artist") return <ArtistResult artist={v.item.artist} />;
+                  if (v.item.type === "song") return <SongResult key={v.item.id} song={v.item.song} />;
+                  if (v.item.type === "album") return <AlbumResult key={v.item.id} album={v.item.album} />;
+                  if (v.item.type === "artist") return <ArtistResult key={v.item.id} artist={v.item.artist} />;
                   return;
                 }}
               </Autocomplete.List>
