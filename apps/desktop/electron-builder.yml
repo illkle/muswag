@@ -1,5 +1,5 @@
 appId: com.muswag.desktop
-productName: Muswag
+productName: muswag
 directories:
   buildResources: build
 icon: icon.png
@@ -9,7 +9,7 @@ files:
 asarUnpack:
   - node_modules/better-sqlite3/**
 win:
-  executableName: Muswag
+  executableName: muswag
   target:
     - nsis
 mac:
@@ -19,6 +19,7 @@ mac:
     - dmg
     - zip
 linux:
+  executableName: muswag
   category: AudioVideo
   maintainer: illkle <kelolov@gmail.com>
   artifactName: muswag-${version}-${arch}.${ext}
@@ -30,4 +31,4 @@ publish:
   provider: github
   owner: illkle
   repo: muswag
-  releaseType: release
+  releaseType: draft
