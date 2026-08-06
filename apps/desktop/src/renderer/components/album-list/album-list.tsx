@@ -39,7 +39,7 @@ const AlbumItem = ({
   instantCovers: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   return (
-    <button key={album.id} className="flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10" tabIndex={0} {...props}>
+    <button key={album.id} className="box-border flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10" tabIndex={0} {...props}>
       <AlbumCover
         coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
@@ -127,7 +127,7 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
   });
 
   const contentSize = useContentSize();
-  const sizes = useMemo(() => calcSize(contentSize.width || 600), [contentSize.width]);
+  const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
   const rows = useMemo(
     () =>
       sections
