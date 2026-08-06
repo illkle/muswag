@@ -34,6 +34,23 @@ describe("PlayerSession", () => {
     expect(session.previous({ resume: true })).toMatchObject({ track: { id: "one" } });
   });
 
+  it("peeks and auto-advances without losing paused intent", () => {
+    const session = new PlayerSession();
+    session.loadQueue({ queue: tracks, startIndex: 0 });
+    session.fileLoaded();
+    session.pauseRequested(true);
+    expect(session.peekNext()).toMatchObject({ id: "two" });
+    expect(session.autoAdvanceStarted()).toMatchObject({ id: "two" });
+    expect(session.getState()).toMatchObject({
+      nowPlaying: { durationSeconds: 200, positionSeconds: 0, status: "loading" },
+      queue: { currentIndex: 1, currentTrackId: "two" },
+    });
+    expect(session.autoAdvanceStarted()).toBeNull();
+    expect(session.reloadCurrentPreservingIntent()).toMatchObject({ resume: false, track: { id: "two" } });
+    session.fileLoaded();
+    expect(session.status).toBe("paused");
+  });
+
   it("preserves pause intent throughout loading and ended transitions", () => {
     const session = new PlayerSession();
     session.loadQueue({ queue: tracks, startIndex: 0 });

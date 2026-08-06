@@ -5,7 +5,7 @@ import { createConnection } from "node:net";
 import type { Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { MpvBinaryMissingError, MpvUnavailableError } from "../errors";
+import { MPV_ENTRY_ID_UNSUPPORTED, MpvBinaryMissingError, MpvUnavailableError } from "../errors";
 import { createLineSplitter } from "../support/line-splitter";
 import { encodeCommand, OBSERVED_PROPERTIES, parseMpvMessage, type MpvEvent } from "./mpv-protocol";
 
@@ -24,7 +24,7 @@ export type MpvClientDeps = {
 };
 
 export class MpvClient {
-  private readonly options: { ipcPath: string; getBinaryPath: () => string | null };
+  private readonly options: { ipcPath: string; getBinaryPath: () => string | null; extraArgs?: readonly string[] };
   private readonly deps: MpvClientDeps;
   private readonly listeners = new Set<(event: MpvClientEvent) => void>();
   private readonly pending = new Map<number, CommandResolver>();
@@ -35,7 +35,7 @@ export class MpvClient {
   private disposed = false;
   private lifecycleState: "stopped" | "starting" | "ready" = "stopped";
 
-  constructor(options: { ipcPath: string; getBinaryPath: () => string | null }, deps: Partial<MpvClientDeps> = {}) {
+  constructor(options: { ipcPath: string; getBinaryPath: () => string | null; extraArgs?: readonly string[] }, deps: Partial<MpvClientDeps> = {}) {
     this.options = options;
     this.deps = {
       connect: deps.connect ?? connectSocket,
@@ -54,8 +54,16 @@ export class MpvClient {
     return () => this.listeners.delete(listener);
   }
 
-  async loadFile(url: string): Promise<void> {
-    await this.command(["loadfile", url, "replace"]);
+  async loadFile(url: string): Promise<number> {
+    return parsePlaylistEntryId(await this.command(["loadfile", url, "replace"]));
+  }
+
+  async appendFile(url: string): Promise<number> {
+    return parsePlaylistEntryId(await this.command(["loadfile", url, "append"]));
+  }
+
+  async clearPlaylistExceptCurrent(): Promise<void> {
+    await this.command(["playlist-clear"]);
   }
 
   async setPause(paused: boolean): Promise<void> {
@@ -125,7 +133,17 @@ export class MpvClient {
     }
     if (this.deps.platform !== "win32") this.deps.removeSocketFile(this.options.ipcPath);
 
-    const args = ["--idle=yes", "--no-video", "--audio-display=no", "--force-window=no", "--terminal=no", `--input-ipc-server=${this.options.ipcPath}`];
+    const args = [
+      "--idle=yes",
+      "--no-video",
+      "--audio-display=no",
+      "--force-window=no",
+      "--terminal=no",
+      "--gapless-audio=weak",
+      "--prefetch-playlist=yes",
+      ...(this.options.extraArgs ?? []),
+      `--input-ipc-server=${this.options.ipcPath}`,
+    ];
 
     let child: ChildProcess;
     try {
@@ -246,6 +264,12 @@ export class MpvClient {
   private emit(event: MpvClientEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+function parsePlaylistEntryId(value: unknown): number {
+  const entryId = (value as { playlist_entry_id?: unknown } | null)?.playlist_entry_id;
+  if (typeof entryId !== "number" || !Number.isSafeInteger(entryId)) throw new Error(MPV_ENTRY_ID_UNSUPPORTED);
+  return entryId;
 }
 
 function connectSocket(ipcPath: string): Promise<Socket> {

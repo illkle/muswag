@@ -62,12 +62,10 @@ function requireAnchorIndex(entries: readonly PlaylistEntry[], beforeEntryId: st
 
 export function createPlaylist(db: MuswagDb, input: CreatePlaylistInput): PlaylistRecord {
   const id = createId();
-  const entries = (input.songIds ?? []).map(
-    (songId, index): PlaylistEntry => ({
-      id: `local:${id}:0:${index}`,
-      songId,
-    }),
-  );
+  const entries = (input.songIds ?? []).map((songId, index): PlaylistEntry => ({
+    id: `local:${id}:0:${index}`,
+    songId,
+  }));
   const local: PlaylistState = {
     name: requireName(input.name),
     comment: input.comment ?? "",

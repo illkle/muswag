@@ -19,5 +19,8 @@
   "editor.defaultFormatter": "oxc.oxc-vscode",
   "[typescriptreact]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   }
 }

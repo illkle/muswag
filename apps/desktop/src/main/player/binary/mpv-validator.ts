@@ -1,6 +1,7 @@
 import type { MpvLocatorDeps } from "./mpv-locator";
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
+const MINIMUM_MPV_VERSION = [0, 33, 0] as const;
 
 export type MpvValidation = { ok: true; version: string } | { ok: false; missing: boolean; reason: string };
 
@@ -16,11 +17,27 @@ export async function validateMpvBinary(binaryPath: string, deps: MpvLocatorDeps
       reason: detail ? `\`--version\` exited with code ${result.code}: ${detail}` : `\`--version\` exited with code ${result.code}.`,
     };
   }
-  return { ok: true, version: parseMpvVersion(result.stdout) };
+  const version = parseMpvVersion(result.stdout);
+  if (!version) return { missing: false, ok: false, reason: "The mpv version could not be parsed from `--version` output." };
+  if (isBelowMinimum(version.parts)) {
+    return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv 0.33.0 or newer.` };
+  }
+  return { ok: true, version: version.text };
 }
 
-function parseMpvVersion(stdout: string): string {
-  return /^mpv\s+v?(\S+)/im.exec(stdout)?.[1] ?? firstNonEmptyLine(stdout) ?? "unknown";
+type VersionParts = readonly [number, number, number];
+
+function parseMpvVersion(stdout: string): { parts: VersionParts; text: string } | null {
+  const [, text, major, minor, patch] = /^mpv\s+v?((\d+)\.(\d+)\.(\d+)(?:[-+]\S+)?)/im.exec(stdout) ?? [];
+  if (!text) return null;
+  return { parts: [Number(major), Number(minor), Number(patch)], text };
+}
+
+function isBelowMinimum([major, minor, patch]: VersionParts): boolean {
+  const [minimumMajor, minimumMinor, minimumPatch] = MINIMUM_MPV_VERSION;
+  if (major !== minimumMajor) return major < minimumMajor;
+  if (minor !== minimumMinor) return minor < minimumMinor;
+  return patch < minimumPatch;
 }
 
 function firstNonEmptyLine(value: string): string | null {

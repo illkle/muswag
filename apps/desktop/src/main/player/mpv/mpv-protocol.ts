@@ -1,11 +1,12 @@
 export type MpvEvent =
   | { type: "pause-change"; paused: boolean }
-  | { type: "time-pos-change"; positionSeconds: number }
+  | { type: "time-pos-change"; positionSeconds: number | null }
   | { type: "duration-change"; durationSeconds: number | null }
   | { type: "volume-change"; volumePercent: number }
   | { type: "mute-change"; muted: boolean }
   | { type: "file-loaded" }
-  | { type: "end-file"; reason: string | null };
+  | { type: "start-file"; playlistEntryId: number | null }
+  | { type: "end-file"; reason: string | null; playlistEntryId: number | null; fileError: string | null };
 
 export type MpvIncomingMessage = { kind: "response"; requestId: number; error: string | null; data: unknown } | { kind: "event"; event: MpvEvent };
 
@@ -41,9 +42,20 @@ export function parseMpvMessage(rawLine: string): MpvIncomingMessage | null {
   }
 
   if (payload.event === "file-loaded") return { event: { type: "file-loaded" }, kind: "event" };
+  if (payload.event === "start-file") {
+    return {
+      event: { playlistEntryId: typeof payload.playlist_entry_id === "number" ? payload.playlist_entry_id : null, type: "start-file" },
+      kind: "event",
+    };
+  }
   if (payload.event === "end-file") {
     return {
-      event: { reason: typeof payload.reason === "string" ? payload.reason : null, type: "end-file" },
+      event: {
+        fileError: typeof payload.file_error === "string" ? payload.file_error : null,
+        playlistEntryId: typeof payload.playlist_entry_id === "number" ? payload.playlist_entry_id : null,
+        reason: typeof payload.reason === "string" ? payload.reason : null,
+        type: "end-file",
+      },
       kind: "event",
     };
   }
@@ -54,7 +66,7 @@ export function parseMpvMessage(rawLine: string): MpvIncomingMessage | null {
       return { event: { paused: payload.data === true, type: "pause-change" }, kind: "event" };
     case "time-pos":
       return {
-        event: { positionSeconds: typeof payload.data === "number" ? payload.data : 0, type: "time-pos-change" },
+        event: { positionSeconds: typeof payload.data === "number" ? payload.data : null, type: "time-pos-change" },
         kind: "event",
       };
     case "duration":

@@ -12,9 +12,7 @@ export const db = createMuswagDb(persistence);
 
 const queryAndSetCredentials = () => {
   queryOnce((v) => v.from({ user: db.userCredentials }).findOne()).then((v) => {
-    if (v) {
-      PlayerIPC.setCredentials(v);
-    }
+    void PlayerIPC.setCredentials(v ?? null);
   });
 };
 

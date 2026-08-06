@@ -17,7 +17,7 @@ import { detectInstallCandidates, type MpvInstallCandidate } from "./binary/inst
 import { MpvBinaryManager } from "./binary/mpv-binary-manager";
 import { MpvInstaller, type MpvInstallOutput } from "./binary/mpv-installer";
 import { createMpvLocatorDeps } from "./binary/mpv-locator";
-import { isMpvResolutionError, MpvUnavailableError } from "./errors";
+import { isMpvResolutionError, MPV_ENTRY_ID_UNSUPPORTED, MpvUnavailableError } from "./errors";
 import { MpvClient, type MpvClientEvent } from "./mpv/mpv-client";
 import { PlayerSession, type TrackSelection } from "./session/player-session";
 import { resolveStreamUrl } from "./stream-source";
@@ -25,6 +25,22 @@ import { createJsonFileStore } from "./support/json-file-store";
 import { SerialQueue } from "./support/serial-queue";
 
 const POSITION_BROADCAST_INTERVAL_MS = 500;
+const MPV_FILE_ERROR = "mpv failed to play the track.";
+
+/**
+ * Phases a playlist entry moves through: mpv acknowledged the load command
+ * (`expected`), started reading the entry (`loading`), then opened it (`active`).
+ */
+type EntryPhase = "expected" | "loading" | "active";
+
+type EntryRecord = {
+  entryId: number;
+  loadAttempt: 0 | 1;
+  phase: EntryPhase;
+  trackId: string;
+};
+
+type LifecycleEvent = Extract<MpvClientEvent, { type: "start-file" | "file-loaded" | "end-file" }>;
 
 export type PlayerOptions = { ipcPath: string; mpvPathStatePath: string; volumeStatePath: string };
 
@@ -59,6 +75,10 @@ export class Player {
   private readonly metaStore;
   private readonly disposeCallbacks: Array<() => void> = [];
   private credentials: UserCredentialsToLogin | null = null;
+  private currentEntry: EntryRecord | null = null;
+  private lookaheadEntry: EntryRecord | null = null;
+  private pendingEntryCommands = 0;
+  private deferredLifecycleEvents: LifecycleEvent[] = [];
   private disposed = false;
 
   constructor(options: PlayerOptions, deps: Partial<PlayerDeps> = {}) {
@@ -93,13 +113,31 @@ export class Player {
     return this.binaries.store.state;
   }
 
-  setCredentials(credentials: UserCredentialsToLogin | null): void {
-    this.credentials = credentials;
+  setCredentials(credentials: UserCredentialsToLogin | null): Promise<void> {
+    const nextCredentials = credentials ? { ...credentials } : null;
+    return this.operationQueue.run(async () => {
+      if (areCredentialsEqual(this.credentials, nextCredentials)) return;
+      const transitionLookahead = this.currentEntry ? null : this.lookaheadEntry;
+      const staleLookahead = this.lookaheadEntry;
+      this.credentials = nextCredentials;
+      this.lookaheadEntry = null;
+      if (this.client.state !== "ready" || !staleLookahead) return;
+      try {
+        await this.client.clearPlaylistExceptCurrent();
+      } catch (cause) {
+        console.error("[player][mpv] failed to clear credential-bound lookahead", cause);
+      }
+      if (transitionLookahead && !this.currentEntry && this.session.peekNext()?.id === transitionLookahead.trackId) {
+        const selection = this.session.next({ resume: this.session.status !== "paused" });
+        if (selection) await this.loadSelection(selection);
+      }
+    });
   }
 
   playQueue(input: PlayQueueInput): Promise<void> {
     return this.operationQueue.run(async () => {
       if (input.queue.length === 0) {
+        this.clearEntryState();
         try {
           await this.client.stop();
         } catch {
@@ -241,13 +279,15 @@ export class Player {
     this.installer.cancel();
     for (const dispose of this.disposeCallbacks.splice(0)) dispose();
     this.client.dispose();
+    this.clearEntryState();
     this.session.reset();
     this.metaStore.setState(() => createDefaultPlayerMetaState());
     this.credentials = null;
     this.listeners.clear();
   }
 
-  private async loadSelection(selection: TrackSelection): Promise<void> {
+  private async loadSelection(selection: TrackSelection, loadAttempt: 0 | 1 = 0): Promise<void> {
+    this.clearEntryState();
     try {
       await this.ensureMpvReady();
       const url = this.streamResolver(this.credentials, selection.track.id);
@@ -255,7 +295,12 @@ export class Player {
       await this.client.setVolume(volume.volumePercent);
       await this.client.setMuted(volume.muted);
       if (selection.resume) await this.client.setPause(false);
-      await this.client.loadFile(url);
+      await this.runEntryCommand(
+        () => this.client.loadFile(url),
+        (entryId) => {
+          this.currentEntry = { entryId, loadAttempt, phase: "expected", trackId: selection.track.id };
+        },
+      );
     } catch (cause) {
       this.handleFailure(cause);
     }
@@ -280,22 +325,36 @@ export class Player {
 
   private handleFailure(cause: unknown): void {
     console.error("[player][mpv] playback failed", cause);
+    this.clearEntryState();
     this.session.fail(cause instanceof Error ? cause.message : "Playback failed");
+    // Stop mpv so a still-queued entry cannot keep playing behind the error state.
+    void this.operationQueue.run(async () => {
+      try {
+        await this.client.stop();
+      } catch (stopCause) {
+        console.error("[player][mpv] failed to stop after playback error", stopCause);
+      }
+    });
     if (isMpvResolutionError(cause) && this.binaries.store.state.status === "ready") {
       void this.binaries.invalidate().catch((error) => console.error("[player][mpv] re-resolution failed", error));
     }
   }
 
   private handleClientEvent(event: MpvClientEvent): void {
+    if (isLifecycleEvent(event) && this.pendingEntryCommands > 0) {
+      this.deferredLifecycleEvents.push(event);
+      return;
+    }
+
     switch (event.type) {
       case "pause-change":
         this.session.pauseChanged(event.paused);
         return;
       case "time-pos-change":
-        this.session.positionChanged(event.positionSeconds);
+        if (event.positionSeconds !== null) this.session.positionChanged(event.positionSeconds);
         return;
       case "duration-change":
-        this.session.durationChanged(event.durationSeconds);
+        if (event.durationSeconds !== null) this.session.durationChanged(event.durationSeconds);
         return;
       case "volume-change":
         this.session.volumeChanged(event.volumePercent);
@@ -304,24 +363,161 @@ export class Player {
         this.session.mutedChanged(event.muted);
         return;
       case "file-loaded":
-        this.session.fileLoaded();
+        this.handleFileLoaded();
+        return;
+      case "start-file":
+        this.handleStartFile(event.playlistEntryId);
         return;
       case "end-file":
-        if (event.reason === "eof") {
-          void this.operationQueue.run(async () => {
-            const selection = this.session.next({ resume: true });
-            if (selection) await this.loadSelection(selection);
-            else this.session.playbackEnded();
-          });
-        }
+        this.handleEndFile(event);
         return;
       case "exited":
+        this.clearEntryState();
+        this.deferredLifecycleEvents = [];
         if (!event.expected) this.session.fail("mpv exited unexpectedly.");
         return;
       case "error":
         this.handleFailure(event.cause);
         return;
     }
+  }
+
+  private handleStartFile(playlistEntryId: number | null): void {
+    if (!isEntryId(playlistEntryId)) {
+      this.failCompatibility();
+      return;
+    }
+    if (this.currentEntry?.entryId === playlistEntryId && this.currentEntry.phase === "expected") {
+      this.currentEntry = { ...this.currentEntry, phase: "loading" };
+      return;
+    }
+    const entry = this.lookaheadEntry;
+    if (entry?.entryId !== playlistEntryId) {
+      console.debug("[player][mpv] ignored stale start-file", playlistEntryId);
+      return;
+    }
+
+    const track = this.session.autoAdvanceStarted();
+    if (!track || track.id !== entry.trackId) {
+      this.handleFailure(new Error("The player queue changed unexpectedly during an mpv transition."));
+      return;
+    }
+    this.lookaheadEntry = null;
+    this.currentEntry = { ...entry, phase: "loading" };
+  }
+
+  private handleFileLoaded(): void {
+    const entry = this.currentEntry;
+    if (entry?.phase !== "loading") {
+      console.debug("[player][mpv] ignored stale file-loaded");
+      return;
+    }
+    this.currentEntry = { ...entry, phase: "active" };
+    this.session.fileLoaded();
+    this.queueLookaheadAppend(entry.entryId);
+  }
+
+  private handleEndFile(event: Extract<MpvClientEvent, { type: "end-file" }>): void {
+    if (event.reason === "stop" || event.reason === "quit" || event.reason === "redirect") return;
+    if (!isEntryId(event.playlistEntryId)) {
+      this.failCompatibility();
+      return;
+    }
+    if (event.reason !== "eof" && event.reason !== "error") return;
+
+    if (this.lookaheadEntry?.entryId === event.playlistEntryId) {
+      // A prefetched entry that never became current; the active entry's EOF still drives the queue.
+      if (event.reason === "error") this.lookaheadEntry = null;
+      return;
+    }
+    const entry = this.currentEntry?.entryId === event.playlistEntryId ? this.currentEntry : null;
+    if (!entry || entry.phase === "expected") {
+      console.debug("[player][mpv] ignored stale end-file", event.reason, event.playlistEntryId);
+      return;
+    }
+
+    if (event.reason === "eof") {
+      if (entry.phase !== "active") return;
+      this.currentEntry = null;
+      // mpv gaplessly starts the lookahead itself, so only drive the next load when there is none.
+      if (!this.lookaheadEntry) this.queueEntryFollowUp(entry, () => this.advanceAfterEof());
+      return;
+    }
+
+    if (entry.phase === "loading" && entry.loadAttempt === 0) {
+      this.currentEntry = null;
+      this.queueEntryFollowUp(entry, () => this.retryFailedLoad());
+      return;
+    }
+    this.handleFailure(new Error(event.fileError ?? MPV_FILE_ERROR));
+  }
+
+  private async advanceAfterEof(): Promise<void> {
+    const selection = this.session.next({ resume: true });
+    if (selection) await this.loadSelection(selection);
+    else this.session.playbackEnded();
+  }
+
+  private async retryFailedLoad(): Promise<void> {
+    const selection = this.session.reloadCurrentPreservingIntent();
+    if (selection) await this.loadSelection(selection, 1);
+  }
+
+  private queueLookaheadAppend(activeEntryId: number): void {
+    void this.operationQueue.run(async () => {
+      if (this.currentEntry?.entryId !== activeEntryId || this.lookaheadEntry) return;
+      const track = this.session.peekNext();
+      if (!track) return;
+      try {
+        const url = this.streamResolver(this.credentials, track.id);
+        await this.runEntryCommand(
+          () => this.client.appendFile(url),
+          (entryId) => {
+            this.lookaheadEntry = { entryId, loadAttempt: 0, phase: "expected", trackId: track.id };
+          },
+        );
+      } catch (cause) {
+        console.error("[player][mpv] lookahead append failed", cause);
+        this.lookaheadEntry = null;
+      }
+    });
+  }
+
+  /** Runs a follow-up load once the queue is idle, unless a newer command already claimed the player. */
+  private queueEntryFollowUp(entry: EntryRecord, follow: () => Promise<void>): void {
+    void this.operationQueue.run(async () => {
+      if (this.currentEntry || this.lookaheadEntry) return;
+      if (this.session.currentTrack?.id !== entry.trackId) return;
+      await follow();
+    });
+  }
+
+  /**
+   * Tracks in-flight entry commands so lifecycle events stay deferred until `record` has stored
+   * the returned entry ID; without that the replay below could not correlate them.
+   */
+  private async runEntryCommand(send: () => Promise<number>, record: (entryId: number) => void): Promise<void> {
+    this.pendingEntryCommands += 1;
+    try {
+      const entryId = await send();
+      record(entryId);
+    } finally {
+      this.pendingEntryCommands -= 1;
+      if (this.pendingEntryCommands === 0) {
+        const deferred = this.deferredLifecycleEvents;
+        this.deferredLifecycleEvents = [];
+        for (const event of deferred) this.handleClientEvent(event);
+      }
+    }
+  }
+
+  private failCompatibility(): void {
+    this.handleFailure(new Error(MPV_ENTRY_ID_UNSUPPORTED));
+  }
+
+  private clearEntryState(): void {
+    this.currentEntry = null;
+    this.lookaheadEntry = null;
   }
 
   private wireMetaStores(): void {
@@ -370,4 +566,18 @@ export class Player {
   private emit(event: PlayerEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+function isLifecycleEvent(event: MpvClientEvent): event is LifecycleEvent {
+  return event.type === "start-file" || event.type === "file-loaded" || event.type === "end-file";
+}
+
+function isEntryId(value: number | null): value is number {
+  return Number.isSafeInteger(value);
+}
+
+function areCredentialsEqual(left: UserCredentialsToLogin | null, right: UserCredentialsToLogin | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.url === right.url && left.username === right.username && left.password === right.password;
 }

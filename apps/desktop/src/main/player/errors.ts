@@ -1,3 +1,6 @@
+/** Shown when mpv omits the playlist entry IDs the player correlates lifecycle events with. */
+export const MPV_ENTRY_ID_UNSUPPORTED = "The installed mpv did not provide a valid playlist entry ID. Muswag requires mpv 0.33.0 or newer.";
+
 /** Thrown when no usable mpv binary is configured. */
 export class MpvUnavailableError extends Error {
   constructor(message: string) {

@@ -205,7 +205,7 @@ app.whenReady().then(() => {
     await getPlayer().seek(positionSeconds);
   });
   mainIpc.handle("player:setCredentials", async (_, credentials) => {
-    getPlayer().setCredentials(credentials);
+    await getPlayer().setCredentials(credentials);
   });
   mainIpc.handle("player:setMuted", async (_, muted) => {
     await getPlayer().setMuted(muted);

@@ -336,6 +336,12 @@ export function buildSubsonicStreamUrl(credentials: UserCredentialsToLogin, song
   url.searchParams.set("s", salt);
   url.searchParams.set("v", SUBSONIC_API_VERSION);
   url.searchParams.set("c", "muswag");
+  // mpv can decode the source formats itself. A live transcode is commonly sent as
+  // an unknown-length response, which mpv cannot finish reading early enough to
+  // prefetch the next playlist entry for gapless playback.
+  url.searchParams.set("format", "raw");
+  url.searchParams.set("maxBitRate", "0");
+  url.searchParams.set("estimateContentLength", "true");
 
   return url.toString();
 }

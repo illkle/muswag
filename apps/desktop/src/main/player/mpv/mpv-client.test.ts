@@ -9,12 +9,15 @@ import { MpvClient } from "./mpv-client";
 
 class FakeSocket extends Duplex {
   readonly commands: Array<Record<string, unknown>> = [];
+  private nextEntryId = 1;
   _read(): void {}
   _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     const payload = JSON.parse(chunk.toString()) as Record<string, unknown>;
     this.commands.push(payload);
     const requestId = payload.request_id;
-    if (typeof requestId === "number") queueMicrotask(() => this.push(`${JSON.stringify({ error: "success", request_id: requestId })}\n`));
+    const command = payload.command as unknown[] | undefined;
+    const data = command?.[0] === "loadfile" ? { playlist_entry_id: this.nextEntryId++ } : undefined;
+    if (typeof requestId === "number") queueMicrotask(() => this.push(`${JSON.stringify({ data, error: "success", request_id: requestId })}\n`));
     callback();
   }
 }
@@ -34,7 +37,7 @@ describe("MpvClient", () => {
   it("spawns once, observes properties, matches responses, and forwards events", async () => {
     const socket = new FakeSocket();
     const child = fakeChild();
-    const spawn = vi.fn(() => child);
+    const spawn = vi.fn((..._args: unknown[]) => child);
     const client = new MpvClient(
       { getBinaryPath: () => "/mpv", ipcPath: "/tmp/mpv.sock" },
       { connect: async () => socket as unknown as Socket, platform: "linux", removeSocketFile: vi.fn(), spawn: spawn as never },
@@ -43,6 +46,7 @@ describe("MpvClient", () => {
     client.subscribe((event) => events.push(event));
     await Promise.all([client.setPause(false), client.setMuted(true)]);
     expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["--gapless-audio=weak", "--prefetch-playlist=yes"]));
     expect(socket.commands.slice(0, 5).map((payload) => payload.command)).toEqual([
       ["observe_property", 1, "pause"],
       ["observe_property", 2, "time-pos"],
@@ -56,6 +60,40 @@ describe("MpvClient", () => {
     child.emit("exit", 2, null);
     expect(client.state).toBe("stopped");
     expect(events).toContainEqual({ expected: false, type: "exited" });
+  });
+
+  it("loads, appends, and clears playlist entries", async () => {
+    const socket = new FakeSocket();
+    const child = fakeChild();
+    const client = new MpvClient(
+      { getBinaryPath: () => "/mpv", ipcPath: "/tmp/mpv.sock" },
+      { connect: async () => socket as unknown as Socket, platform: "linux", removeSocketFile: vi.fn(), spawn: (() => child) as never },
+    );
+
+    await expect(client.loadFile("one")).resolves.toBe(1);
+    await expect(client.appendFile("two")).resolves.toBe(2);
+    await client.clearPlaylistExceptCurrent();
+
+    expect(socket.commands.slice(-3).map((payload) => payload.command)).toEqual([["loadfile", "one", "replace"], ["loadfile", "two", "append"], ["playlist-clear"]]);
+  });
+
+  it("rejects malformed playlist entry IDs", async () => {
+    class MissingIdSocket extends FakeSocket {
+      override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+        const payload = JSON.parse(chunk.toString()) as Record<string, unknown>;
+        this.commands.push(payload);
+        const requestId = payload.request_id;
+        if (typeof requestId === "number") queueMicrotask(() => this.push(`${JSON.stringify({ error: "success", request_id: requestId })}\n`));
+        callback();
+      }
+    }
+    const socket = new MissingIdSocket();
+    const client = new MpvClient(
+      { getBinaryPath: () => "/mpv", ipcPath: "/tmp/mpv.sock" },
+      { connect: async () => socket as unknown as Socket, platform: "linux", removeSocketFile: vi.fn(), spawn: (() => fakeChild()) as never },
+    );
+
+    await expect(client.loadFile("one")).rejects.toThrow("playlist entry ID");
   });
 
   it("maps spawn ENOENT to MpvBinaryMissingError and does not spawn without a path", async () => {

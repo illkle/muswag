@@ -33,6 +33,11 @@ export class PlayerSession {
     return this.playbackQueue[this.queueStore.state.currentIndex] ?? null;
   }
 
+  peekNext(): PlayerQueueItem | null {
+    const track = this.playbackQueue[this.queueStore.state.currentIndex + 1];
+    return track ? { ...track } : null;
+  }
+
   loadQueue(input: PlayQueueInput): TrackSelection | null {
     if (input.queue.length === 0) {
       this.clear();
@@ -86,6 +91,16 @@ export class PlayerSession {
 
   reloadCurrent(options: { resume: boolean }): TrackSelection | null {
     return this.currentTrack ? this.selectCurrent(options.resume) : null;
+  }
+
+  /** Reloads the current track without disturbing the user's play/pause intent. */
+  reloadCurrentPreservingIntent(): TrackSelection | null {
+    return this.reloadCurrent({ resume: !this.pausedIntent });
+  }
+
+  /** Advances the queue after mpv started the next playlist entry on its own. */
+  autoAdvanceStarted(): PlayerQueueItem | null {
+    return this.next({ resume: !this.pausedIntent })?.track ?? null;
   }
 
   pauseRequested(paused: boolean): void {
