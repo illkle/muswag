@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import { devtools } from "@tanstack/devtools-vite";
 
 import viteReact from "@vitejs/plugin-react";
@@ -13,6 +13,13 @@ export const rendererConfig = defineConfig({
     strictPort: true,
   },
   envPrefix: ["VITE_"],
+  test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      reportsDirectory: "coverage",
+    },
+  },
   resolve: {
     tsconfigPaths: true,
   },

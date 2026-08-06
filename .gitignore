@@ -13,3 +13,4 @@ coverage
 dev.db
 dev.db-shm
 dev.db-wal
+.claude

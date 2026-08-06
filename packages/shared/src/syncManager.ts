@@ -191,14 +191,26 @@ export async function logout(db: MuswagDb, covers?: CoverManager): Promise<null>
     db.userCredentials.delete(USER_CREDENTIALS_ROW_ID);
   }
 
-  await db.playlists.cleanup();
-  await db.songs.cleanup();
-  await db.albums.cleanup();
-  await db.artists.cleanup();
-  await db.syncs.cleanup();
-  await db.syncState.cleanup();
-  await covers?.pruneOrphans();
+  // This should probably use  db.playlists.cleanup() but currently is causes Unhandled Rejection on tests
+  const playlistIds = [...db.playlists.keys()];
+  if (playlistIds.length) db.playlists.delete(playlistIds);
 
+  const songIds = [...db.songs.keys()];
+  if (songIds.length) db.songs.delete(songIds);
+
+  const albumIds = [...db.albums.keys()];
+  if (albumIds.length) db.albums.delete(albumIds);
+
+  const artistIds = [...db.artists.keys()];
+  if (artistIds.length) db.artists.delete(artistIds);
+
+  const syncIds = [...db.syncs.keys()];
+  if (syncIds.length) db.syncs.delete(syncIds);
+
+  const syncStateIds = [...db.syncState.keys()];
+  if (syncStateIds.length) db.syncState.delete(syncStateIds);
+
+  await covers?.pruneOrphans();
   return null;
 }
 

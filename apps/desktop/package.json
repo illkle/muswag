@@ -30,6 +30,7 @@
     "format:check": "oxfmt --check src electron.vite.config.ts vite.config.ts tsconfig.json tsconfig.node.json tsconfig.renderer.json",
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:integration": "vitest run --passWithNoTests",
     "postinstall": "install-electron && electron-builder install-app-deps",
     "with-env": "dotenv -e ../../.env --"
@@ -91,6 +92,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "catalog:",
     "dotenv": "^17.4.2",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",

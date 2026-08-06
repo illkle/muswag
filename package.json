@@ -1,7 +1,6 @@
 {
   "name": "muswag",
   "private": true,
-  "packageManager": "pnpm@10.22.0",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -12,6 +11,7 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
     "test:integration": "turbo run test:integration"
   },
   "devDependencies": {
@@ -20,5 +20,6 @@
     "oxlint": "^1.77.0",
     "turbo": "^2.10.8",
     "typescript": "catalog:"
-  }
+  },
+  "packageManager": "pnpm@10.22.0"
 }

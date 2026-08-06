@@ -7,12 +7,8 @@
       "persistent": true
     },
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
     },
     "lint": {
       "outputs": []
@@ -29,33 +25,26 @@
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": [
-        "^build",
-        "^typecheck"
-      ],
+      "dependsOn": ["^build", "^typecheck"],
       "outputs": []
     },
     "test": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "outputs": []
     },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"]
+    },
     "test:integration": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "generate": {
-      "outputs": [
-        "src/generated.ts"
-      ]
+      "outputs": ["src/generated.ts"]
     },
     "openapi:update": {
-      "outputs": [
-        "openapi/openapi.json"
-      ]
+      "outputs": ["openapi/openapi.json"]
     }
   }
 }
