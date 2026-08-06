@@ -15,10 +15,10 @@
     "test:integration": "turbo run test:integration"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
-    "oxfmt": "^0.61.0",
-    "oxlint": "^1.76.0",
-    "turbo": "^2.5.8",
-    "typescript": "^5.9.2"
+    "@types/node": "catalog:",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
+    "turbo": "^2.10.8",
+    "typescript": "catalog:"
   }
 }

@@ -9,60 +9,60 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppSongsRouteImport } from './routes/app/songs'
+import { Route as AppRouteImport } from './routes/app'
 import { Route as AppAlbumsRouteImport } from './routes/app/albums'
-import { Route as AppSongsIndexRouteImport } from './routes/app/songs.index'
+import { Route as AppSongsRouteImport } from './routes/app/songs'
 import { Route as AppAlbumsIndexRouteImport } from './routes/app/albums.index'
-import { Route as AppPlaylistsPlaylistIdRouteImport } from './routes/app/playlists.$playlistId'
-import { Route as AppArtistsArtistIdRouteImport } from './routes/app/artists.$artistId'
 import { Route as AppAlbumsAlbumIdRouteImport } from './routes/app/albums.$albumId'
+import { Route as AppArtistsArtistIdRouteImport } from './routes/app/artists.$artistId'
+import { Route as AppPlaylistsPlaylistIdRouteImport } from './routes/app/playlists.$playlistId'
+import { Route as AppSongsIndexRouteImport } from './routes/app/songs.index'
 
-const AppRoute = AppRouteImport.update({
-  id: '/app',
-  path: '/app',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppSongsRoute = AppSongsRouteImport.update({
-  id: '/songs',
-  path: '/songs',
-  getParentRoute: () => AppRoute,
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppAlbumsRoute = AppAlbumsRouteImport.update({
   id: '/albums',
   path: '/albums',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSongsIndexRoute = AppSongsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppSongsRoute,
+const AppSongsRoute = AppSongsRouteImport.update({
+  id: '/songs',
+  path: '/songs',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAlbumsIndexRoute = AppAlbumsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAlbumsRoute,
 } as any)
-const AppPlaylistsPlaylistIdRoute = AppPlaylistsPlaylistIdRouteImport.update({
-  id: '/playlists/$playlistId',
-  path: '/playlists/$playlistId',
-  getParentRoute: () => AppRoute,
+const AppAlbumsAlbumIdRoute = AppAlbumsAlbumIdRouteImport.update({
+  id: '/$albumId',
+  path: '/$albumId',
+  getParentRoute: () => AppAlbumsRoute,
 } as any)
 const AppArtistsArtistIdRoute = AppArtistsArtistIdRouteImport.update({
   id: '/artists/$artistId',
   path: '/artists/$artistId',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAlbumsAlbumIdRoute = AppAlbumsAlbumIdRouteImport.update({
-  id: '/$albumId',
-  path: '/$albumId',
-  getParentRoute: () => AppAlbumsRoute,
+const AppPlaylistsPlaylistIdRoute = AppPlaylistsPlaylistIdRouteImport.update({
+  id: '/playlists/$playlistId',
+  path: '/playlists/$playlistId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSongsIndexRoute = AppSongsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSongsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -138,13 +138,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/app': {
-      id: '/app'
-      path: '/app'
-      fullPath: '/app'
-      preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -152,12 +145,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/app/songs': {
-      id: '/app/songs'
-      path: '/songs'
-      fullPath: '/app/songs'
-      preLoaderRoute: typeof AppSongsRouteImport
-      parentRoute: typeof AppRoute
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/app/albums': {
       id: '/app/albums'
@@ -166,12 +159,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAlbumsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/songs/': {
-      id: '/app/songs/'
-      path: '/'
-      fullPath: '/app/songs/'
-      preLoaderRoute: typeof AppSongsIndexRouteImport
-      parentRoute: typeof AppSongsRoute
+    '/app/songs': {
+      id: '/app/songs'
+      path: '/songs'
+      fullPath: '/app/songs'
+      preLoaderRoute: typeof AppSongsRouteImport
+      parentRoute: typeof AppRoute
     }
     '/app/albums/': {
       id: '/app/albums/'
@@ -180,12 +173,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAlbumsIndexRouteImport
       parentRoute: typeof AppAlbumsRoute
     }
-    '/app/playlists/$playlistId': {
-      id: '/app/playlists/$playlistId'
-      path: '/playlists/$playlistId'
-      fullPath: '/app/playlists/$playlistId'
-      preLoaderRoute: typeof AppPlaylistsPlaylistIdRouteImport
-      parentRoute: typeof AppRoute
+    '/app/albums/$albumId': {
+      id: '/app/albums/$albumId'
+      path: '/$albumId'
+      fullPath: '/app/albums/$albumId'
+      preLoaderRoute: typeof AppAlbumsAlbumIdRouteImport
+      parentRoute: typeof AppAlbumsRoute
     }
     '/app/artists/$artistId': {
       id: '/app/artists/$artistId'
@@ -194,12 +187,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppArtistsArtistIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/albums/$albumId': {
-      id: '/app/albums/$albumId'
-      path: '/$albumId'
-      fullPath: '/app/albums/$albumId'
-      preLoaderRoute: typeof AppAlbumsAlbumIdRouteImport
-      parentRoute: typeof AppAlbumsRoute
+    '/app/playlists/$playlistId': {
+      id: '/app/playlists/$playlistId'
+      path: '/playlists/$playlistId'
+      fullPath: '/app/playlists/$playlistId'
+      preLoaderRoute: typeof AppPlaylistsPlaylistIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/songs/': {
+      id: '/app/songs/'
+      path: '/'
+      fullPath: '/app/songs/'
+      preLoaderRoute: typeof AppSongsIndexRouteImport
+      parentRoute: typeof AppSongsRoute
     }
   }
 }

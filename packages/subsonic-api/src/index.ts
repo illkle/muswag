@@ -513,7 +513,7 @@ export default class SubsonicAPI {
     return this.#json("deletePlaylist", args, pingResponseSchema);
   }
 
-  async #json<T extends z.AnyZodObject>(method: string, params: RequestParams, payloadSchema: T): Promise<SubsonicBaseResponse & z.output<T>> {
+  async #json<T extends z.ZodObject>(method: string, params: RequestParams, payloadSchema: T): Promise<SubsonicBaseResponse & z.output<T>> {
     const response = await this.#request(method, params);
     if (!response.ok) {
       throw new Error(`${method} failed: HTTP ${response.status}`);

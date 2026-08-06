@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import { devtools } from "@tanstack/devtools-vite";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -14,13 +13,15 @@ export const rendererConfig = defineConfig({
     strictPort: true,
   },
   envPrefix: ["VITE_"],
+  resolve: {
+    tsconfigPaths: true,
+  },
   build: {
     outDir: "out/renderer",
     target: "chrome124",
   },
   plugins: [
     devtools(),
-    tsconfigPaths({ projects: ["./tsconfig.renderer.json"] }),
     tailwindcss(),
     tanstackRouter({
       target: "react",

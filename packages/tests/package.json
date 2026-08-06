@@ -19,15 +19,15 @@
   "dependencies": {
     "@muswag/shared": "workspace:*",
     "@muswag/subsonic-api": "workspace:*",
-    "@tanstack/db": "^0.6.8",
-    "@tanstack/node-db-sqlite-persistence": "^0.2.0",
-    "better-sqlite3-test": "npm:better-sqlite3@12.6.0",
-    "zod": "^3.25.76"
+    "@tanstack/db": "catalog:",
+    "@tanstack/node-db-sqlite-persistence": "catalog:",
+    "better-sqlite3-test": "npm:better-sqlite3@13.0.3",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@muswag/tsconfig": "workspace:*",
-    "@types/better-sqlite3": "^7.6.13",
-    "testcontainers": "^11.5.1",
-    "vitest": "^3.2.4"
+    "@types/better-sqlite3": "catalog:",
+    "testcontainers": "^12.1.0",
+    "vitest": "catalog:"
   }
 }
