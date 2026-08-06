@@ -154,7 +154,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
         type="range"
         min={0}
         max={Math.max(durationSeconds, 1)}
-        step={1}
+        step={0.01}
         value={Math.min(sliderValue, Math.max(durationSeconds, 1))}
         disabled={!canSeek}
         onPointerDown={(event) => {
