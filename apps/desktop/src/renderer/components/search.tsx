@@ -6,6 +6,7 @@ import { Autocomplete } from "@base-ui/react/autocomplete";
 import type { FuseResult } from "fuse.js";
 import { useRef, useState, useTransition } from "react";
 import { cn } from "#/lib/utils";
+import { useHotkey } from "@tanstack/react-hotkeys";
 
 const InnerResult = ({
   title,
@@ -129,8 +130,17 @@ export function MiniSearch() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const [open, setOpen] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useHotkey("Mod+F", () => inputRef.current?.focus());
+  useHotkey("Escape", () => inputRef.current?.blur(), { target: inputRef });
+
   return (
     <Autocomplete.Root
+      open={open}
+      onOpenChange={setOpen}
       items={searchResults}
       value={searchValue}
       openOnInputClick
@@ -163,6 +173,9 @@ export function MiniSearch() {
       filter={null}
     >
       <Autocomplete.Input
+        ref={inputRef}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
         placeholder="Search..."
         className="relative z-20 h-full w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
       />

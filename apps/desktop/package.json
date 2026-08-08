@@ -49,6 +49,7 @@
     "@tanstack/react-db": "catalog:",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-form": "^1.33.3",
+    "@tanstack/react-hotkeys": "^0.10.0",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-query-devtools": "^5.101.4",
     "@tanstack/react-router": "latest",

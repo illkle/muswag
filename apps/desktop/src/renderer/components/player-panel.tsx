@@ -22,12 +22,24 @@ import {
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
+import { useHotkey } from "@tanstack/react-hotkeys";
 
 const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canGoBack = usePlayerCanGoBack();
   const canGoForward = usePlayerCanGoForward();
   const canPlay = usePlayerCanPlay();
   const status = usePlayerStatus();
+
+  const togglePlay = () => {
+    if (status === "playing") {
+      void PlayerIPC.pause();
+      return;
+    }
+
+    void PlayerIPC.play();
+  };
+
+  useHotkey("Space", () => togglePlay());
 
   return (
     <div {...props} className={cn("flex items-center justify-center gap-2", props.className)}>
@@ -43,20 +55,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         <SkipBackIcon className="size-4" />
       </Button>
 
-      <Button
-        size="icon"
-        className="h-7 rounded-full"
-        onClick={() => {
-          if (status === "playing") {
-            void PlayerIPC.pause();
-            return;
-          }
-
-          void PlayerIPC.play();
-        }}
-        disabled={!canPlay}
-        aria-label={status === "playing" ? "Pause playback" : "Play track"}
-      >
+      <Button size="icon" className="h-7 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
         {status === "playing" ? <PauseIcon className="size-3" /> : status === "loading" ? <SpinnerGapIcon className="size-3 animate-spin" /> : <PlayIcon className="size-3" />}
       </Button>
 
