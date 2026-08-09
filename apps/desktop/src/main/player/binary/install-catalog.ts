@@ -58,6 +58,20 @@ async function detectMac(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
 async function detectWindows(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
   const candidates: MpvInstallCandidate[] = [];
   const profile = deps.env.USERPROFILE ?? deps.homeDirectory;
+  const localAppData = deps.env.LOCALAPPDATA;
+  const winget = await findManager("winget", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps);
+  if (winget)
+    candidates.push({
+      args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+      managerPath: winget,
+      option: {
+        automatic: true,
+        command: "winget install --id mpv-player.mpv-CI.MSVC --exact --source winget --scope user",
+        method: "winget",
+        note: null,
+        url: null,
+      },
+    });
   const scoop = await findManager("scoop", [joinWindowsPath(profile, "scoop\\shims\\scoop.cmd")], deps);
   if (scoop)
     candidates.push({
@@ -74,14 +88,14 @@ async function detectWindows(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[
     });
   if (candidates.length === 0)
     candidates.push({
-      args: ["install", "extras/mpv"],
+      args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user"],
       managerPath: null,
       option: {
         automatic: false,
-        command: "scoop install extras/mpv",
-        method: "scoop",
-        note: "No supported package manager was found. Install Scoop first, or locate mpv.exe manually.",
-        url: "https://scoop.sh",
+        command: "winget install --id mpv-player.mpv-CI.MSVC --exact --source winget --scope user",
+        method: "winget",
+        note: "No supported package manager was found. Install WinGet first, or locate mpv.exe manually.",
+        url: "https://learn.microsoft.com/windows/package-manager/winget/",
       },
     });
   return candidates;

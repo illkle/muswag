@@ -15,7 +15,7 @@ export interface PlayQueueInput {
 /** How the mpv binary in use was found. */
 export type MpvSource = "env" | "manual" | "cache" | "path" | "well-known" | "login-shell";
 
-export type MpvInstallMethod = "brew" | "scoop" | "choco" | "apt" | "dnf" | "pacman" | "zypper" | "flatpak";
+export type MpvInstallMethod = "brew" | "winget" | "scoop" | "choco" | "apt" | "dnf" | "pacman" | "zypper" | "flatpak";
 
 export interface MpvInstallOption {
   /** Command line shown to the user. */

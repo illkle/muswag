@@ -30,8 +30,29 @@ describe("install catalog", () => {
     expect(candidates[0]).toMatchObject({ args: ["install", "--user", "flathub", "io.mpv.Mpv"], option: { automatic: false, method: "flatpak" } });
   });
 
-  it("falls back to Scoop instructions when Windows has no manager", async () => {
+  it("offers an automatic user-scoped WinGet install when WinGet is available", async () => {
+    const candidates = await detectInstallCandidates(
+      deps({
+        env: { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local", USERPROFILE: "C:\\Users\\me" },
+        fileExists: async (path) => path === "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe",
+        platform: "win32",
+      }),
+    );
+
+    expect(candidates[0]).toMatchObject({
+      args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+      managerPath: "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe",
+      option: { automatic: true, method: "winget", url: null },
+    });
+  });
+
+  it("falls back to WinGet instructions when Windows has no manager", async () => {
     const candidates = await detectInstallCandidates(deps({ env: { USERPROFILE: "C:\\Users\\me" }, platform: "win32" }));
-    expect(candidates).toEqual([expect.objectContaining({ managerPath: null, option: expect.objectContaining({ method: "scoop", url: "https://scoop.sh" }) })]);
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        managerPath: null,
+        option: expect.objectContaining({ method: "winget", url: "https://learn.microsoft.com/windows/package-manager/winget/" }),
+      }),
+    ]);
   });
 });

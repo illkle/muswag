@@ -65,6 +65,7 @@ export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
       joinWindowsPath(userProfile, "scoop\\shims\\mpv.exe"),
       "C:\\ProgramData\\chocolatey\\bin\\mpv.exe",
       joinWindowsPath(programFiles, "mpv\\mpv.exe"),
+      joinWindowsPath(programFiles, "MPV Player\\mpv.exe"),
     ];
   }
   return [

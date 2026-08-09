@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CommandResult } from "../support/exec";
 import { MpvBinaryManager } from "./mpv-binary-manager";
-import { collectMpvCandidates, type MpvLocatorDeps } from "./mpv-locator";
+import { collectMpvCandidates, getWellKnownMpvPaths, type MpvLocatorDeps } from "./mpv-locator";
 import { validateMpvBinary } from "./mpv-validator";
 
 function result(patch: Partial<CommandResult> = {}): CommandResult {
@@ -24,6 +24,18 @@ function deps(overrides: Partial<MpvLocatorDeps> = {}): MpvLocatorDeps {
 }
 
 describe("mpv discovery and validation", () => {
+  it("checks WinGet's command alias and installed-app paths on Windows", () => {
+    const paths = getWellKnownMpvPaths(
+      deps({
+        env: { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local", ProgramFiles: "D:\\Programs", USERPROFILE: "C:\\Users\\me" },
+        platform: "win32",
+      }),
+    );
+
+    expect(paths).toContain("C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\mpv.exe");
+    expect(paths).toContain("D:\\Programs\\MPV Player\\mpv.exe");
+  });
+
   it("collects explicit, cached, PATH, well-known, then login-shell candidates", async () => {
     const candidates = await collectMpvCandidates(
       { cachedPath: " /cached ", manualPath: "/manual" },
