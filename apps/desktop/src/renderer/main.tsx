@@ -6,13 +6,12 @@ import ReactDOM from "react-dom/client";
 import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
-import { scan } from "react-scan";
 import { ThemeProvider } from "#/components/utils/theme-provider";
 // Imported for its side effect: starts the single playlist sync manager for this renderer.
 import "#/lib/playlist-sync";
-scan({
-  enabled: true,
-});
+if (import.meta.env.DEV) {
+  void import("react-scan").then(({ scan }) => scan({ enabled: true }));
+}
 
 const queryClient = new QueryClient();
 

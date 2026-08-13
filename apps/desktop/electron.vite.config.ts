@@ -8,12 +8,15 @@ import { rendererConfig } from "./vite.config";
 export default defineConfig({
   main: {
     build: {
-      externalizeDeps: true,
+      externalizeDeps: false,
+      rollupOptions: {
+        external: ["better-sqlite3", "electron-updater"],
+      },
     },
   },
   preload: {
     build: {
-      externalizeDeps: true,
+      externalizeDeps: false,
     },
   },
   renderer: mergeConfig(rendererConfig, {

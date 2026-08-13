@@ -1,6 +1,4 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { DiscIcon } from "@phosphor-icons/react";
-
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
 import { AlbumList } from "#/components/album-list/album-list";

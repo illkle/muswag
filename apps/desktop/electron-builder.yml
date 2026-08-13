@@ -6,8 +6,14 @@ icon: icon.png
 files:
   - out/**
   - package.json
+  - "!node_modules/better-sqlite3/{deps,src}/**"
+  - "!node_modules/better-sqlite3/binding.gyp"
+  - "!node_modules/better-sqlite3/build/{deps,Release/obj}/**"
+  - "!node_modules/better-sqlite3/build/Release/test_extension.node"
+asar:
+  smartUnpack: false
 asarUnpack:
-  - node_modules/better-sqlite3/**
+  - node_modules/better-sqlite3/**/*.node
 win:
   executableName: muswag
   target:

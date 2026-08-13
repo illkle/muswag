@@ -6,6 +6,9 @@ node_modules
 *.log
 dist
 out
+# Electron package and bundle-analysis outputs
+apps/desktop/dist-*/
+apps/desktop/out-*/
 coverage
 .DS_Store
 .cache
