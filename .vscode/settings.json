@@ -1,7 +1,5 @@
 {
-  "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.disableAutomaticTypeAcquisition": true,
-  "typescript.tsserver.maxTsServerMemory": 4096,
+  "js/ts.experimental.useTsgo": true,
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/.turbo/**": true,
@@ -22,5 +20,8 @@
   },
   "[typescript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
-  }
+  },
+  "js/ts.tsdk.additionalLocations": ["./node_modules/typescript/bin"],
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "js/ts.tsdk.path": "./node_modules/typescript/bin"
 }

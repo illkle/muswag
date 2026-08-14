@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - tooling/*
+minimumReleaseAge: 0
 
 catalog:
   "@vitest/coverage-v8": ^4.1.10
@@ -10,6 +11,8 @@ catalog:
   "@tanstack/react-db": ^0.1.95
   "@types/better-sqlite3": ^9.6.0
   "@types/node": ^26.1.2
+  "@effect/tsgo": "0.36.4"
+  effect: "4.0.0-rc.109"
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2
   fuse.js: ^7.5.0
@@ -26,3 +29,13 @@ onlyBuiltDependencies:
   - msw
   - protobufjs
   - ssh2
+
+allowBuilds:
+  better-sqlite3: true
+  cpu-features: true
+  electron-winstaller: true
+  esbuild: true
+  msgpackr-extract: true
+  msw: true
+  protobufjs: true
+  ssh2: true
