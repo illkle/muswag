@@ -265,7 +265,6 @@ export function buildSubsonicStreamUrl(md5: (v: string) => string, credentials: 
   const token = md5(`${credentials.password}${salt}`);
   const url = new URL("stream.view", getSubsonicRestBaseUrl(credentials.url));
 
-  url.searchParams
   url.searchParams.set("id", songId);
   url.searchParams.set("u", credentials.username);
   url.searchParams.set("t", token);
