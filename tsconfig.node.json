@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "vite.config.ts",
+    "vitest.integration.config.ts",
+    "vitest.sync-benchmark.config.ts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/core/**/*.ts",
+    "src/subsonic-api/**/*.ts"
+  ],
+  "exclude": ["src/core/**/*.test.ts", "src/core/testing", "src/subsonic-api/**/*.test.ts"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "paths": {
+      "#shared/*": ["./src/shared/*"],
+      "#core": ["./src/core/index.ts"],
+      "#core/*": ["./src/core/*"],
+      "#subsonic-api": ["./src/subsonic-api/index.ts"]
+    },
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": false,
+    "noUncheckedSideEffectImports": true
+  }
+}

@@ -1,24 +1,4 @@
-packages:
-  - apps/*
-  - packages/*
-  - tooling/*
 minimumReleaseAge: 0
-
-catalog:
-  "@vitest/coverage-v8": ^4.1.10
-  "@tanstack/db": ^0.6.17
-  "@tanstack/node-db-sqlite-persistence": ^0.2.9
-  "@tanstack/react-db": ^0.1.95
-  "@types/better-sqlite3": ^9.6.0
-  "@types/node": ^26.1.2
-  "@effect/tsgo": "0.36.4"
-  effect: "4.0.0-rc.109"
-  drizzle-kit: 0.31.10
-  drizzle-orm: 0.45.2
-  fuse.js: ^7.5.0
-  typescript: ^7.0.2
-  vitest: ^4.1.10
-  zod: ^4.4.3
 
 onlyBuiltDependencies:
   - better-sqlite3

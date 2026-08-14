@@ -1,11 +1,12 @@
 ### Running tests
 
-Run tests from the package that owns the changed code.
+Run commands from the repository root.
 
-Desktop app/player changes:
-`turbo run @muswag/desktop#test`
+Unit tests:
+`pnpm test`
 
-Shared sync/API tests:
-`turbo run @muswag/tests#test`
-`turbo run @muswag/tests#test:integration`
-`turbo run @muswag/tests#test:sync-benchmark` (run only when optimizing sync or adding new tables)
+Integration tests:
+`pnpm test:integration`
+
+Sync benchmark (run only when optimizing sync or adding new tables):
+`pnpm test:sync-benchmark`

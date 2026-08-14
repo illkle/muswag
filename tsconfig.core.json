@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["src/core/**/*.ts", "src/subsonic-api/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/core/testing", "node_modules", "out"],
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "paths": {
+      "#core": ["./src/core/index.ts"],
+      "#core/*": ["./src/core/*"],
+      "#subsonic-api": ["./src/subsonic-api/index.ts"]
+    }
+  }
+}

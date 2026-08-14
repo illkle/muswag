@@ -1,17 +1,23 @@
 node_modules
 .pnpm-store
-.turbo
 .env
 .env.*
 *.log
 dist
 out
 # Electron package and bundle-analysis outputs
-apps/desktop/dist-*/
-apps/desktop/out-*/
+dist-*/
+out-*/
 coverage
 .DS_Store
 .cache
+.nitro
+.output
+.tanstack
+.vinxi
+.wrangler
+__unconfig*
+todos.json
 
 dev.db
 dev.db-shm

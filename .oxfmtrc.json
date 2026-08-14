@@ -1,5 +1,10 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 200,
-  "ignorePatterns": []
+  "ignorePatterns": ["src/renderer/routeTree.gen.ts"],
+  "sortTailwindcss": {
+    "stylesheet": "./src/renderer/styles.css",
+    "functions": ["clsx", "cn"],
+    "preserveWhitespace": false
+  }
 }

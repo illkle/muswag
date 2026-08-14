@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["src/core/**/*.test.ts", "src/core/testing/**/*.ts", "src/subsonic-api/**/*.test.ts", "tests/**/*.ts"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "paths": {
+      "#core": ["./src/core/index.ts"],
+      "#core/*": ["./src/core/*"],
+      "#subsonic-api": ["./src/subsonic-api/index.ts"]
+    },
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "strict": true
+  }
+}
