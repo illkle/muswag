@@ -46,7 +46,7 @@ describe("MpvClient", () => {
     client.subscribe((event) => events.push(event));
     await Promise.all([client.setPause(false), client.setMuted(true)]);
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["--gapless-audio=weak", "--prefetch-playlist=yes"]));
+    expect(spawn.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["--no-config", "--gapless-audio=weak", "--prefetch-playlist=yes"]));
     expect(socket.commands.slice(0, 5).map((payload) => payload.command)).toEqual([
       ["observe_property", 1, "pause"],
       ["observe_property", 2, "time-pos"],
@@ -62,7 +62,7 @@ describe("MpvClient", () => {
     expect(events).toContainEqual({ expected: false, type: "exited" });
   });
 
-  it("loads, appends, and clears playlist entries", async () => {
+  it("loads, inserts, removes, selects, and clears playlist entries", async () => {
     const socket = new FakeSocket();
     const child = fakeChild();
     const client = new MpvClient(
@@ -72,9 +72,19 @@ describe("MpvClient", () => {
 
     await expect(client.loadFile("one")).resolves.toBe(1);
     await expect(client.appendFile("two")).resolves.toBe(2);
+    await expect(client.insertFile("middle", 1)).resolves.toBe(3);
+    await client.removePlaylistEntry(2);
+    await client.playPlaylistIndex(1);
     await client.clearPlaylistExceptCurrent();
 
-    expect(socket.commands.slice(-3).map((payload) => payload.command)).toEqual([["loadfile", "one", "replace"], ["loadfile", "two", "append"], ["playlist-clear"]]);
+    expect(socket.commands.slice(-6).map((payload) => payload.command)).toEqual([
+      ["loadfile", "one", "replace"],
+      ["loadfile", "two", "append"],
+      ["loadfile", "middle", "insert-at", 1],
+      ["playlist-remove", 2],
+      ["playlist-play-index", 1],
+      ["playlist-clear"],
+    ]);
   });
 
   it("rejects malformed playlist entry IDs", async () => {

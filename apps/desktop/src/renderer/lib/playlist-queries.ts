@@ -4,7 +4,7 @@ import type { PlaylistEntry } from "@muswag/shared";
 import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 
-export { buildPlayQueue, currentPlaylistEntryId, totalDuration, type PlaylistRow } from "#/lib/playlist-queue";
+export { totalDuration, type PlaylistRow } from "#/lib/playlist-queue";
 
 export type PlaylistSummary = {
   id: string;

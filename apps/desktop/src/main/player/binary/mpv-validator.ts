@@ -1,7 +1,7 @@
 import type { MpvLocatorDeps } from "./mpv-locator";
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
-const MINIMUM_MPV_VERSION = [0, 33, 0] as const;
+const MINIMUM_MPV_VERSION = [0, 41, 0] as const;
 
 export type MpvValidation = { ok: true; version: string } | { ok: false; missing: boolean; reason: string };
 
@@ -20,7 +20,7 @@ export async function validateMpvBinary(binaryPath: string, deps: MpvLocatorDeps
   const version = parseMpvVersion(result.stdout);
   if (!version) return { missing: false, ok: false, reason: "The mpv version could not be parsed from `--version` output." };
   if (isBelowMinimum(version.parts)) {
-    return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv 0.33.0 or newer.` };
+    return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv ${MINIMUM_MPV_VERSION.join(".")} or newer.` };
   }
   return { ok: true, version: version.text };
 }

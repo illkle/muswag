@@ -2,6 +2,7 @@ import { CoverArtIPC } from "#/lib/ipc";
 import { db } from "#/lib/db-renderer";
 import { abortSync, createCoverArtStore, createCoverManager, getUserInfo, login, logout, sync } from "@muswag/shared";
 import type { CoverArtFileSystem, CoverManager, CoverTarget, SyncMode, SyncRecord, UserCredentialsToLogin, UserInfo } from "@muswag/shared";
+import { queueManager } from "#/components/player-provider";
 
 const coverArtFileSystem: CoverArtFileSystem = {
   removeCoverFiles: (key) => CoverArtIPC.removeFiles(key),
@@ -36,6 +37,7 @@ export const SyncManager = {
   },
 
   async logout(): Promise<null> {
+    await queueManager.clear();
     const result = await logout(db, currentCovers?.manager);
     currentCovers = undefined;
     return result;

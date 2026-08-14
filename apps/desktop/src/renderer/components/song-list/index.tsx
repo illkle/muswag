@@ -13,6 +13,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, Con
 import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistActions } from "#/lib/playlist-actions";
+import { queueManager } from "#/components/player-provider";
 
 function makeGridSvg(size: number) {
   const svg = `
@@ -92,7 +93,8 @@ export const SongListRoot = ({
   const renderDiscTitles = discTitles && discTitles?.length > 1;
 
   const [selectionState, setSelectionState] = useState<Record<string, boolean>>({});
-  const songIds = useMemo(() => Object.keys(selectionState), [selectionState]);
+  const selectedSongs = useMemo(() => songs.filter((_, index) => selectionState[rowKeys?.[index] ?? songs[index]!.id]), [rowKeys, selectionState, songs]);
+  const songIds = useMemo(() => selectedSongs.map(({ id }) => id), [selectedSongs]);
 
   const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
 
@@ -124,7 +126,9 @@ export const SongListRoot = ({
       <ContextMenuContent>
         <ContextMenuGroup>
           <AddToPlaylistMenu setCreateOpen={setPlaylistCreatorOpen} songIds={songIds} />
-          <ContextMenuItem>hello</ContextMenuItem>
+          <ContextMenuItem disabled={selectedSongs.length === 0} onClick={() => void queueManager.enqueue(selectedSongs)}>
+            Add to queue
+          </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>
       <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className="scrollbar h-full overflow-y-auto">

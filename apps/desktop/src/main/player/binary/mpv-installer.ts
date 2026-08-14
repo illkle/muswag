@@ -3,7 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { delimiter } from "node:path";
 import { createStore } from "@tanstack/react-store";
 
-import type { MpvInstallState } from "../../../shared/player";
+import type { MpvInstallState } from "#shared/player";
 import type { MpvInstallCandidate } from "./install-catalog";
 import { getManagerBinDirectory } from "./install-catalog";
 import { createLineSplitter } from "../support/line-splitter";

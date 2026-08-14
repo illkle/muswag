@@ -210,6 +210,9 @@ export async function logout(db: MuswagDb, covers?: CoverManager): Promise<null>
   const syncStateIds = [...db.syncState.keys()];
   if (syncStateIds.length) db.syncState.delete(syncStateIds);
 
+  const playerQueueIds = [...db.playerQueue.keys()];
+  if (playerQueueIds.length) db.playerQueue.delete(playerQueueIds);
+
   await covers?.pruneOrphans();
   return null;
 }

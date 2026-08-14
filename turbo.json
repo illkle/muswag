@@ -40,6 +40,10 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "test:sync-benchmark": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "generate": {
       "outputs": ["src/generated.ts"]
     },

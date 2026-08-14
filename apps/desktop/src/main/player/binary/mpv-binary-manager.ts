@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
 import { createStore } from "@tanstack/react-store";
 
-import type { MpvSource, MpvState } from "../../../shared/player";
+import type { MpvSource, MpvState } from "#shared/player";
 import { createJsonFileStore } from "../support/json-file-store";
 import { detectInstallOptions } from "./install-catalog";
 import { collectMpvCandidates, createMpvLocatorDeps, type MpvLocatorDeps } from "./mpv-locator";

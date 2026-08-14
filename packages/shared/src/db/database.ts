@@ -5,6 +5,7 @@ import type { SyncRecord, SyncState, UserCredentials } from "./types.js";
 import { createCollection } from "@tanstack/react-db";
 import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api";
 import type { PlaylistRecord } from "../playlists/types.js";
+import type { PlayerQueueRecord } from "../player-queue.js";
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;
@@ -27,6 +28,7 @@ export interface MuswagDb {
   artists: Collection<Artist, string>;
   songs: Collection<Child, string>;
   playlists: Collection<PlaylistRecord, string>;
+  playerQueue: Collection<PlayerQueueRecord, number>;
   userCredentials: Collection<UserCredentials, number>;
   syncs: Collection<SyncRecord, string>;
   syncState: Collection<SyncState, number>;
@@ -92,6 +94,15 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
+  const playerQueue = createCollection(
+    persistedCollectionOptions<PlayerQueueRecord, number>({
+      id: "playerQueue",
+      getKey: (record) => record.id,
+      persistence,
+      schemaVersion: 1,
+    }),
+  );
+
   const syncs = createCollection(
     persistedCollectionOptions<SyncRecord, string>({
       id: "syncs",
@@ -115,6 +126,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     artists,
     songs,
     playlists,
+    playerQueue,
     userCredentials,
     syncs,
     syncState,

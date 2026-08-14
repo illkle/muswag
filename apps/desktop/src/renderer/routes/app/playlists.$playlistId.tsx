@@ -6,15 +6,14 @@ import { useMemo, useState } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader, DetailHeaderPlaceholder } from "#/components/detail-header";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
-import { usePlayerCurrentIndex, usePlayerQueueContext, usePlayerStatus } from "#/components/player-provider";
+import { queueManager, usePlayerStatus, useQueueManagerState } from "#/components/player-provider";
 import { SongListRoot, SongRenderPlaylist } from "#/components/song-list";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
-import { PlayerIPC } from "#/lib/ipc";
 import { PlaylistActions } from "#/lib/playlist-actions";
-import { buildPlayQueue, currentPlaylistEntryId, totalDuration, usePlaylist } from "#/lib/playlist-queries";
-import type { Song } from "@muswag/shared";
+import { totalDuration, usePlaylist } from "#/lib/playlist-queries";
+import { playlistOccurrenceKey, type Song } from "@muswag/shared";
 import { usePlaylistSongStatsRefresh } from "#/lib/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -41,14 +40,13 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const { record, state, rows, isLoading, isError } = usePlaylist(playlistId);
   usePlaylistSongStatsRefresh(record?.serverId ?? null);
   const playerStatus = usePlayerStatus();
-  const playerQueueContext = usePlayerQueueContext();
-  const playerIndex = usePlayerCurrentIndex();
+  const queueState = useQueueManagerState();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const { queue, queueIndexByEntryId } = useMemo(() => buildPlayQueue(rows), [rows]);
+  const firstPlayableEntryId = useMemo(() => rows.find(({ song }) => song)?.entryId ?? null, [rows]);
 
-  const playingRowKey = currentPlaylistEntryId(playerQueueContext, playlistId, playerIndex);
+  const playingRowKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
   const removeEntryMutation = useMutation({
     mutationFn: (entryId: string) => PlaylistActions.removeEntry(playlistId, entryId),
@@ -58,8 +56,8 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     (): Song[] => rows.map(({ songId, song }) => song ?? { id: songId, title: songId, isDir: false }),
     [rows],
   );
-  const rowKeys = useMemo(() => rows.map(({ entryId }) => entryId), [rows]);
-  const unavailableRowKeys = useMemo(() => new Set(rows.flatMap(({ entryId, song }) => (song ? [] : [entryId]))), [rows]);
+  const rowKeys = useMemo(() => rows.map(({ entryId }) => playlistOccurrenceKey(playlistId, entryId)), [playlistId, rows]);
+  const unavailableRowKeys = useMemo(() => new Set(rows.flatMap(({ entryId, song }) => (song ? [] : [playlistOccurrenceKey(playlistId, entryId)]))), [playlistId, rows]);
 
   if (isLoading) {
     return (
@@ -98,7 +96,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     );
   }
 
-  const missingCount = rows.length - queue.length;
+  const missingCount = unavailableRowKeys.size;
   const canEdit = !state.readonly;
   const playlistMeta = formatMetaLine([
     `${rows.length} song${rows.length === 1 ? "" : "s"}`,
@@ -107,19 +105,11 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     state.readonly ? "read-only" : null,
   ]);
 
-  const playFrom = (startIndex: number) =>
-    void PlayerIPC.playQueue({
-      queue,
-      startIndex,
-      context: { type: "playlist", playlistId, entryIds: [...queueIndexByEntryId.keys()] },
-    });
+  const playFrom = (entryId: string) => void queueManager.playSource({ type: "playlist", playlistId }, playlistOccurrenceKey(playlistId, entryId));
 
   const onPlay = (_song: Song, index: number) => {
-    const entryId = rows[index]?.entryId;
-    const queueIndex = entryId === undefined ? undefined : queueIndexByEntryId.get(entryId);
-    if (queueIndex === undefined) return;
-
-    playFrom(queueIndex);
+    const row = rows[index];
+    if (row?.song) playFrom(row.entryId);
   };
 
   return (
@@ -150,7 +140,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
               {removeEntryMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntryMutation.error, "The song could not be removed.")}</p> : null}
 
               <div className="mt-2 flex items-center gap-1">
-                <Button size="sm" disabled={queue.length === 0} onClick={() => playFrom(0)}>
+                <Button size="sm" disabled={!firstPlayableEntryId} onClick={() => firstPlayableEntryId && playFrom(firstPlayableEntryId)}>
                   <PlayIcon />
                   Play
                 </Button>

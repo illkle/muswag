@@ -5,7 +5,7 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "elect
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
-import type { MuswagRendererIpc } from "../shared/ipc";
+import type { MuswagRendererIpc } from "#shared/ipc";
 import { createPlayer, getDefaultMpvIpcPath, type Player } from "./player";
 import { disposeDB } from "./db";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
@@ -186,8 +186,8 @@ app.whenReady().then(() => {
   mainIpc.handle("player:getState", async () => {
     return getPlayer().getState();
   });
-  mainIpc.handle("player:next", async () => {
-    await getPlayer().next();
+  mainIpc.handle("player:applyQueue", async (_, input) => {
+    await getPlayer().applyQueue(input);
   });
   mainIpc.handle("player:pause", async () => {
     await getPlayer().pause();
@@ -195,11 +195,11 @@ app.whenReady().then(() => {
   mainIpc.handle("player:play", async () => {
     await getPlayer().play();
   });
-  mainIpc.handle("player:playQueue", async (_, input) => {
-    await getPlayer().playQueue(input);
+  mainIpc.handle("player:restartCurrent", async () => {
+    await getPlayer().restartCurrent();
   });
-  mainIpc.handle("player:previous", async () => {
-    await getPlayer().previous();
+  mainIpc.handle("player:stop", async () => {
+    await getPlayer().stop();
   });
   mainIpc.handle("player:seek", async (_, positionSeconds) => {
     await getPlayer().seek(positionSeconds);

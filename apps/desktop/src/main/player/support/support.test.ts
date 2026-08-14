@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { SerialQueue } from "#shared/serial-queue";
 import { runCommand } from "./exec";
 import { createJsonFileStore } from "./json-file-store";
 import { createLineSplitter } from "./line-splitter";
-import { SerialQueue } from "./serial-queue";
 
 describe("SerialQueue", () => {
   it("serializes operations, returns their results, and survives rejection", async () => {

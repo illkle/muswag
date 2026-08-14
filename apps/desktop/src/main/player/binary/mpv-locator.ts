@@ -2,7 +2,7 @@ import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { MpvSource } from "../../../shared/player";
+import type { MpvSource } from "#shared/player";
 import { runCommand } from "../support/exec";
 
 const LOGIN_SHELL_PROBE_TIMEOUT_MS = 3_000;

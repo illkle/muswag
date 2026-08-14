@@ -2,15 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
-import { usePlayerCurrentTrackId, usePlayerStatus } from "#/components/player-provider";
+import { queueManager, usePlayerStatus, useQueueManagerState } from "#/components/player-provider";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
-import { PlayerIPC } from "#/lib/ipc";
-import type { Song } from "@muswag/shared";
+import { albumOccurrenceKey, type Song } from "@muswag/shared";
 import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
@@ -60,7 +59,7 @@ function RouteComponent() {
     [albumId],
   );
 
-  const currentTrackId = usePlayerCurrentTrackId();
+  const queueState = useQueueManagerState();
   const playerStatus = usePlayerStatus();
 
   if (albumQuery.isLoading || songsQuery.isLoading) {
@@ -103,29 +102,25 @@ function RouteComponent() {
   const album = albumQuery.data;
   const { genres } = album;
   const songs = songsQuery.data;
-  const queueIndexBySongId = new Map(songs.map((song, index) => [song.id, index]));
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const onPlay = (song: Song) => {
-    const queueIndex = queueIndexBySongId.get(song.id);
-
-    if (queueIndex === undefined) return;
-
-    void PlayerIPC.playQueue({
-      queue: songs,
-      startIndex: queueIndex,
-      context: { type: "album", albumId },
-    });
+    void queueManager.playSource({ type: "album", albumId }, albumOccurrenceKey(albumId, song.id));
   };
+
+  const rowKeys = songs.map((song) => albumOccurrenceKey(albumId, song.id));
+  const playingRowKey = queueState.source?.ref.type === "album" && queueState.source.ref.albumId === albumId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
   return (
     <>
       <SongListRoot
         songs={songs}
+        rowKeys={rowKeys}
+        playingRowKey={playingRowKey}
         discTitles={album.discTitles}
         onSongPlay={onPlay}
-        currentTrackID={currentTrackId}
+        currentTrackID={null}
         playerStatus={playerStatus}
         scrollId={"album-" + album.id}
         topPadding={DETAIL_TOP_PADDING}

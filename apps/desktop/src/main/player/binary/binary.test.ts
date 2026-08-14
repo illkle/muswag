@@ -56,15 +56,15 @@ describe("mpv discovery and validation", () => {
   });
 
   it("interprets versions and spawn errors", async () => {
-    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv v0.38.0 Copyright" }) }))).resolves.toEqual({ ok: true, version: "0.38.0" });
-    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv 0.38.0-449-g1234567" }) }))).resolves.toEqual({
+    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv v0.41.0 Copyright" }) }))).resolves.toEqual({ ok: true, version: "0.41.0" });
+    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv 0.41.0-449-g1234567" }) }))).resolves.toEqual({
       ok: true,
-      version: "0.38.0-449-g1234567",
+      version: "0.41.0-449-g1234567",
     });
-    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv 0.32.0" }) }))).resolves.toMatchObject({
+    await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "mpv 0.40.0" }) }))).resolves.toMatchObject({
       missing: false,
       ok: false,
-      reason: expect.stringContaining("0.33.0"),
+      reason: expect.stringContaining("0.41.0"),
     });
     await expect(validateMpvBinary("mpv", deps({ runCommand: async () => result({ stdout: "not mpv" }) }))).resolves.toMatchObject({
       missing: false,
@@ -148,7 +148,7 @@ describe("MpvBinaryManager", () => {
           runCommand: async (command) => {
             if (command === "/manual") return result({ code: null, errorCode: "ENOENT" });
             if (command === "/cached") return result({ code: null, errorCode: "EACCES" });
-            if (command === "mpv") return result({ stdout: "mpv 0.40.0" });
+            if (command === "mpv") return result({ stdout: "mpv 0.41.0" });
             return result({ code: 1 });
           },
         }),

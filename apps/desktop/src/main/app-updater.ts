@@ -1,7 +1,7 @@
 import electronUpdater from "electron-updater";
 import { app, dialog } from "electron";
 
-import type { AppUpdateState } from "../shared/ipc";
+import type { AppUpdateState } from "#shared/ipc";
 
 const { autoUpdater } = electronUpdater;
 

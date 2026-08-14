@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { createStore } from "@tanstack/react-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { MpvInstallState, MpvState, PlayQueueInput } from "../../../shared/player";
+import type { PlaybackItem } from "@muswag/shared";
+import type { MpvInstallState, MpvState } from "#shared/player";
 import { MpvBinaryManager } from "../binary/mpv-binary-manager";
 import { MpvInstaller } from "../binary/mpv-installer";
 import { Player } from "../player";
@@ -18,8 +19,8 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
 });
 
-integration("real mpv playlist transitions", () => {
-  it("plays a three-track queue through command-returned entry IDs", async () => {
+integration("real mpv queue mirror", () => {
+  it("gaplessly plays an exact three-occurrence snapshot", async () => {
     const audio = [createWave(440), createWave(550), createWave(660)];
     const server = await listen((request, response) => {
       const index = Number(request.url?.slice(1)) - 1;
@@ -31,52 +32,25 @@ integration("real mpv playlist transitions", () => {
       response.writeHead(200, { "Content-Length": body.length, "Content-Type": "audio/wav" });
       response.end(body);
     });
-    const player = createRealPlayer(server);
-    const append = vi.spyOn(player.client, "appendFile");
-    const load = vi.spyOn(player.client, "loadFile");
+    const { client, player } = createRealPlayer(server);
+    const load = vi.spyOn(client, "loadFile");
+    const insert = vi.spyOn(client, "insertFile");
+    const items = queue(3);
 
-    await player.player.playQueue({ queue: queue(3), startIndex: 0 });
-    await waitFor(() => player.player.getState().nowPlaying.status === "ended");
+    await player.applyQueue({ snapshot: { items }, select: { key: items[0]!.key, play: true } });
+    await waitFor(() => player.getState().runtime.status === "ended");
 
-    expect(player.player.getState().queue.currentTrackId).toBe("3");
+    expect(player.getState().runtime.current?.key).toBe("source:3");
     expect(load).toHaveBeenCalledTimes(1);
-    expect(append).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledTimes(2);
   });
-
-  it("retries a failing prefetched entry once and then reports the media error", async () => {
-    const body = createWave(440);
-    const server = await listen((request, response) => {
-      if (request.url === "/1") {
-        response.writeHead(200, { "Content-Length": body.length, "Content-Type": "audio/wav" });
-        response.end(body);
-        return;
-      }
-      response.writeHead(500).end();
-    });
-    const player = createRealPlayer(server);
-    const load = vi.spyOn(player.client, "loadFile");
-    const stop = vi.spyOn(player.client, "stop");
-
-    await player.player.playQueue({ queue: queue(2), startIndex: 0 });
-    await waitFor(() => player.player.getState().nowPlaying.status === "error");
-
-    expect(player.player.getState().queue.currentTrackId).toBe("2");
-    expect(load).toHaveBeenCalledTimes(2);
-    expect(player.player.getState().nowPlaying.error).toBeTruthy();
-    await waitFor(() => stop.mock.calls.length === 1);
-    await stop.mock.results[0]?.value;
-  }, 15_000);
 });
 
 function createRealPlayer(server: Server): { client: MpvClient; player: Player } {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("HTTP test server has no TCP address");
   const root = mkdtempSync(join(tmpdir(), "muswag-mpv-integration-"));
-  const client = new MpvClient({
-    extraArgs: ["--ao=null", "--no-config"],
-    getBinaryPath: () => process.env.MUSWAG_MPV_PATH ?? "mpv",
-    ipcPath: join(root, "mpv.sock"),
-  });
+  const client = new MpvClient({ extraArgs: ["--ao=null"], getBinaryPath: () => process.env.MUSWAG_MPV_PATH ?? "mpv", ipcPath: join(root, "mpv.sock") });
   const ready: MpvState = { binaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv", source: "path", status: "ready", version: "integration" };
   const binaries = {
     binaryPath: ready.binaryPath,
@@ -101,8 +75,8 @@ function createRealPlayer(server: Server): { client: MpvClient; player: Player }
   return { client, player };
 }
 
-function queue(count: number): PlayQueueInput["queue"] {
-  return Array.from({ length: count }, (_, index) => ({ id: String(index + 1), isDir: false, title: `Track ${index + 1}`, duration: 0.25 }));
+function queue(count: number): PlaybackItem[] {
+  return Array.from({ length: count }, (_, index) => ({ key: `source:${index + 1}`, track: { id: String(index + 1), isDir: false, title: `Track ${index + 1}`, duration: 0.25 } }));
 }
 
 function createWave(frequency: number): Buffer {

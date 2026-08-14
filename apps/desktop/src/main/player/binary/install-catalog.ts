@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 
-import type { MpvInstallMethod, MpvInstallOption } from "../../../shared/player";
+import type { MpvInstallMethod, MpvInstallOption } from "#shared/player";
 import type { MpvLocatorDeps } from "./mpv-locator";
 import { joinWindowsPath, probeLoginShell } from "./mpv-locator";
 

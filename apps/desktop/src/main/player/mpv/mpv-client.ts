@@ -62,6 +62,18 @@ export class MpvClient {
     return parsePlaylistEntryId(await this.command(["loadfile", url, "append"]));
   }
 
+  async insertFile(url: string, index: number): Promise<number> {
+    return parsePlaylistEntryId(await this.command(["loadfile", url, "insert-at", index]));
+  }
+
+  async removePlaylistEntry(index: number): Promise<void> {
+    await this.command(["playlist-remove", index]);
+  }
+
+  async playPlaylistIndex(index: number): Promise<void> {
+    await this.command(["playlist-play-index", index]);
+  }
+
   async clearPlaylistExceptCurrent(): Promise<void> {
     await this.command(["playlist-clear"]);
   }
@@ -134,6 +146,7 @@ export class MpvClient {
     if (this.deps.platform !== "win32") this.deps.removeSocketFile(this.options.ipcPath);
 
     const args = [
+      "--no-config",
       "--idle=yes",
       "--no-video",
       "--audio-display=no",

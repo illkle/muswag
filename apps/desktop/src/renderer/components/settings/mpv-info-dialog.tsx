@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { usePlayerError, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
 import { MpvIPC } from "#/lib/ipc";
 import type { MpvInstallOption, MpvSource, MpvState, PlayerStatus } from "#shared/player";
-import { getMpvUnavailableReason } from "#shared/player";
+import { getMpvInstallOptions, getMpvUnavailableReason } from "#shared/player";
 
 const playerStatusLabels: Record<PlayerStatus, string> = {
   idle: "Idle",
@@ -115,7 +115,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
 
   const installing = installState.status === "running";
   const unavailableReason = getMpvUnavailableReason(mpvState);
-  const installOptions = mpvState.status === "missing" || mpvState.status === "invalid" ? mpvState.installOptions : [];
+  const installOptions = getMpvInstallOptions(mpvState);
 
   const runInstall = (option: MpvInstallOption) => {
     setInstallLog([]);

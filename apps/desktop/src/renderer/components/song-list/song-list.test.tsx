@@ -23,6 +23,7 @@ vi.mock("#/lib/playlist-actions", () => ({
 
 vi.mock("#/components/playlist/add-to-playlist-menu", () => ({ AddToPlaylistMenu: () => null }));
 vi.mock("#/components/playlist/playlist-form-dialog", () => ({ PlaylistFormDialog: () => null }));
+vi.mock("#/components/player-provider", () => ({ queueManager: { enqueue: vi.fn() } }));
 
 vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: undefined }),

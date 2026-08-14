@@ -10,12 +10,13 @@ const persistence = createElectronSQLitePersistence({
 
 export const db = createMuswagDb(persistence);
 
-const queryAndSetCredentials = () => {
-  queryOnce((v) => v.from({ user: db.userCredentials }).findOne()).then((v) => {
-    void PlayerIPC.setCredentials(v ?? null);
-  });
+const queryAndSetCredentials = async () => {
+  const credentials = await queryOnce((v) => v.from({ user: db.userCredentials }).findOne());
+  await PlayerIPC.setCredentials(credentials ?? null);
 };
 
-db.userCredentials.subscribeChanges(queryAndSetCredentials, { includeInitialState: true });
+/** Resolves after the initial persisted credentials have reached the main player. */
+export const dbPlayerReady = queryAndSetCredentials();
+db.userCredentials.subscribeChanges(queryAndSetCredentials);
 
 export const FuzeSearch = CreateFuse(db);

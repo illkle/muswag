@@ -8,11 +8,13 @@ import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 
 import {
+  queueManager,
   usePlayerCanGoBack,
   usePlayerCanGoForward,
   usePlayerCanPlay,
   usePlayerCanSeek,
   usePlayerCurrentTrackId,
+  usePlayerCurrentTrack,
   usePlayerDuration,
   usePlayerMuted,
   usePlayerPositionSeconds,
@@ -47,7 +49,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void PlayerIPC.previous();
+          void queueManager.previous();
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
@@ -63,7 +65,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void PlayerIPC.next();
+          void queueManager.next();
         }}
         disabled={!canGoForward}
         aria-label="Next track"
@@ -208,27 +210,25 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
 };
 
 const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
-  const currentTrackId = usePlayerCurrentTrackId();
-  const currentTrackQuery = useLiveQuery(
+  const currentTrack = usePlayerCurrentTrack();
+  const albumQuery = useLiveQuery(
     (q) =>
-      currentTrackId
+      currentTrack?.albumId
         ? q
-            .from({ song: db.songs })
-            .where(({ song }) => eq(song.id, currentTrackId))
+            .from({ album: db.albums })
+            .where(({ album }) => eq(album.id, currentTrack.albumId))
             .findOne()
-            .join({ alb: db.albums }, ({ song, alb }) => eq(song.albumId, alb.id))
         : null,
-    [currentTrackId],
+    [currentTrack?.albumId],
   );
 
-  const currentTrack = currentTrackQuery.data?.song;
-  const alb = currentTrackQuery.data?.alb;
+  const alb = albumQuery.data;
 
   return (
     <div {...props} className={cn("flex h-full w-full items-center gap-2 overflow-hidden", !currentTrack && "opacity-0", props.className)}>
       <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />
 
-      {currentTrackId && currentTrack && (
+      {currentTrack && (
         <div className="flex w-full max-w-[calc(100%-48px)] flex-col">
           <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="line-clamp-1 block truncate text-xs font-semibold">
             {currentTrack.title}

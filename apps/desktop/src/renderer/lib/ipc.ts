@@ -1,11 +1,13 @@
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
 import type { AppUpdateState, MpvInstallOutput, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
-import type { MpvInstallMethod, PlayQueueInput, PlayerEvent } from "#shared/player";
+import type { ApplyMpvQueueInput, MpvInstallMethod, PlayerEvent, PlayerRuntimeState } from "#shared/player";
 import type { UserCredentialsToLogin } from "@muswag/shared";
 
 const mainIpc = new IpcEmitter<MuswagMainIpc>();
 const rendererIpc = new IpcListener<MuswagRendererIpc>();
+
+const subscribePlayer = (listener: (event: PlayerEvent) => void) => rendererIpc.on("player:event", (_event, payload) => listener(payload));
 
 export const AppUpdateIPC = {
   check: () => mainIpc.invoke("appUpdate:check"),
@@ -30,20 +32,19 @@ export const MpvIPC = {
 };
 
 export const PlayerIPC = {
+  applyQueue: (input: ApplyMpvQueueInput) => mainIpc.invoke("player:applyQueue", input),
   getState: () => mainIpc.invoke("player:getState"),
-  next: () => mainIpc.invoke("player:next"),
+  getRuntimeState: async () => (await mainIpc.invoke("player:getState")).runtime,
   pause: () => mainIpc.invoke("player:pause"),
   play: () => mainIpc.invoke("player:play"),
-  playQueue: (input: PlayQueueInput) => mainIpc.invoke("player:playQueue", input),
-  previous: () => mainIpc.invoke("player:previous"),
+  restartCurrent: () => mainIpc.invoke("player:restartCurrent"),
   seek: (positionSeconds: number) => mainIpc.invoke("player:seek", positionSeconds),
   setCredentials: (credentials: UserCredentialsToLogin | null) => mainIpc.invoke("player:setCredentials", credentials),
   setMuted: (muted: boolean) => mainIpc.invoke("player:setMuted", muted),
   setVolume: (volumePercent: number) => mainIpc.invoke("player:setVolume", volumePercent),
-  subscribe: (listener: (event: PlayerEvent) => void) =>
-    rendererIpc.on("player:event", (_event, payload) => {
-      listener(payload);
-    }),
+  subscribe: subscribePlayer,
+  subscribeRuntime: (listener: (state: PlayerRuntimeState) => void) => subscribePlayer((event) => event.type === "runtime" && listener(event.state)),
+  stop: () => mainIpc.invoke("player:stop"),
   toggle: () => mainIpc.invoke("player:toggle"),
 };
 

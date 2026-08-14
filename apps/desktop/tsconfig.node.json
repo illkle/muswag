@@ -6,6 +6,9 @@
     "module": "ESNext",
     "lib": ["ES2022"],
     "types": ["node", "electron-vite/node"],
+    "paths": {
+      "#shared/*": ["./src/shared/*"]
+    },
 
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

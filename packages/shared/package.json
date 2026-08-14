@@ -16,6 +16,11 @@
       "import": "./dist/db/index.js",
       "default": "./dist/db/index.js"
     },
+    "./player-queue": {
+      "types": "./dist/player-queue.d.ts",
+      "import": "./dist/player-queue.js",
+      "default": "./dist/player-queue.js"
+    },
     "./sync-node": {
       "types": "./dist/sync-node.d.ts",
       "import": "./dist/sync-node.js",

@@ -1,16 +1,11 @@
 import { PlayerIPC } from "#/lib/ipc";
-import {
-  createDefaultPlayerMetaState,
-  createDefaultPlayerNowPlayingState,
-  createDefaultPlayerQueueState,
-  createDefaultPlayerVolumeState,
-  getPlayerCanGoBack,
-  getPlayerCanGoForward,
-  getPlayerCanPlay,
-  getPlayerCanSeek,
-} from "#shared/player";
+import { dbPlayerReady } from "#/lib/db-renderer";
+import { DbQueueStorage } from "#/player/db-queue-storage";
+import { getQueueCanGoNext, getQueueCanGoPrevious, QueueManager } from "#/player/queue-manager";
+import { createQueueSourceFactory } from "#/player/source";
+import { createDefaultPlayerMetaState, createDefaultPlayerRuntimeState, getMpvAvailable, type PlayerRuntimeState } from "#shared/player";
 import { createMirroredRendererStore } from "#shared/store-sync";
-import { useStore } from "@tanstack/react-store";
+import { createStore, useStore } from "@tanstack/react-store";
 
 const PlayerMetaStore = createMirroredRendererStore({
   defaultState: createDefaultPlayerMetaState(),
@@ -20,87 +15,74 @@ const PlayerMetaStore = createMirroredRendererStore({
   subscribe: PlayerIPC.subscribe,
 });
 
-const PlayerQueueStore = createMirroredRendererStore({
-  defaultState: createDefaultPlayerQueueState(),
-  getEventState: (event) => (event.type === "queue" ? event.state : undefined),
-  getSnapshot: PlayerIPC.getState,
-  getSnapshotState: (snapshot) => snapshot.queue,
-  subscribe: PlayerIPC.subscribe,
-});
+const PlayerRuntimeStore = createStore({ ...createDefaultPlayerRuntimeState(), sequence: -1 });
 
-const PlayerNowPlayingStore = createMirroredRendererStore({
-  defaultState: createDefaultPlayerNowPlayingState(),
-  getEventState: (event) => (event.type === "nowPlaying" ? event.state : undefined),
-  getSnapshot: PlayerIPC.getState,
-  getSnapshotState: (snapshot) => snapshot.nowPlaying,
-  subscribe: PlayerIPC.subscribe,
-});
-
-const PlayerVolumeStore = createMirroredRendererStore({
-  defaultState: createDefaultPlayerVolumeState(),
-  getEventState: (event) => (event.type === "volume" ? event.state : undefined),
-  getSnapshot: PlayerIPC.getState,
-  getSnapshotState: (snapshot) => snapshot.volume,
-  subscribe: PlayerIPC.subscribe,
-});
-
-export function usePlayerCurrentIndex() {
-  return useStore(PlayerQueueStore, (state) => state.currentIndex);
+function acceptRuntime(state: PlayerRuntimeState): void {
+  if (state.sequence <= PlayerRuntimeStore.state.sequence) return;
+  PlayerRuntimeStore.setState(() => structuredClone(state));
 }
 
-export function usePlayerQueue() {
-  return useStore(PlayerQueueStore, (state) => state.queue);
-}
+PlayerIPC.subscribeRuntime(acceptRuntime);
+void PlayerIPC.getRuntimeState().then(acceptRuntime).catch(console.error);
 
-export function usePlayerQueueContext() {
-  return useStore(PlayerQueueStore, (state) => state.context);
-}
+export const queueManager = new QueueManager({
+  player: {
+    applyQueue: PlayerIPC.applyQueue,
+    getState: PlayerIPC.getRuntimeState,
+    restartCurrent: PlayerIPC.restartCurrent,
+    stop: PlayerIPC.stop,
+    subscribe: PlayerIPC.subscribeRuntime,
+  },
+  sources: createQueueSourceFactory(),
+  storage: new DbQueueStorage(),
+});
+
+void dbPlayerReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
 
 export function usePlayerCurrentTrackId() {
-  return useStore(PlayerQueueStore, (state) => state.currentTrackId);
+  return useStore(PlayerRuntimeStore, (state) => state.current?.track.id ?? null);
+}
+
+export function usePlayerCurrentTrack() {
+  return useStore(PlayerRuntimeStore, (state) => state.current?.track ?? null);
 }
 
 export function usePlayerStatus() {
-  return useStore(PlayerNowPlayingStore, (state) => state.status);
+  return useStore(PlayerRuntimeStore, (state) => state.status);
 }
 
 export function usePlayerError() {
-  return useStore(PlayerNowPlayingStore, (state) => state.error);
+  return useStore(PlayerRuntimeStore, (state) => state.error);
 }
 
 export function usePlayerCanPlay() {
-  const queueState = useStore(PlayerQueueStore, (state) => state);
-  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
-  return getPlayerCanPlay(queueState, nowPlayingState);
+  return useStore(PlayerRuntimeStore, (state) => state.current !== null && state.status !== "loading");
 }
 
 export function usePlayerCanGoForward() {
-  const queueState = useStore(PlayerQueueStore, (state) => state);
-  return getPlayerCanGoForward(queueState);
+  return getQueueCanGoNext(useQueueManagerState());
 }
 
 export function usePlayerCanGoBack() {
-  const queueState = useStore(PlayerQueueStore, (state) => state);
-  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
-  return getPlayerCanGoBack(queueState, nowPlayingState);
+  const queue = useQueueManagerState();
+  const runtime = useStore(PlayerRuntimeStore, (state) => state);
+  return getQueueCanGoPrevious(queue, runtime);
 }
 
 export function usePlayerCanSeek() {
-  const queueState = useStore(PlayerQueueStore, (state) => state);
-  const nowPlayingState = useStore(PlayerNowPlayingStore, (state) => state);
-  return getPlayerCanSeek(queueState, nowPlayingState);
+  return useStore(PlayerRuntimeStore, (state) => state.current !== null && (state.durationSeconds ?? 0) > 0);
 }
 
 export function usePlayerDuration() {
-  return useStore(PlayerNowPlayingStore, (state) => state.durationSeconds);
+  return useStore(PlayerRuntimeStore, (state) => state.durationSeconds);
 }
 
 export function usePlayerPositionSeconds() {
-  return useStore(PlayerNowPlayingStore, (state) => state.positionSeconds);
+  return useStore(PlayerRuntimeStore, (state) => state.positionSeconds);
 }
 
 export function usePlayerMpvAvailable() {
-  return useStore(PlayerMetaStore, (state) => state.mpv.status === "ready");
+  return useStore(PlayerMetaStore, getMpvAvailable);
 }
 
 export function usePlayerMpvState() {
@@ -112,9 +94,13 @@ export function usePlayerMpvInstallState() {
 }
 
 export function usePlayerMuted() {
-  return useStore(PlayerVolumeStore, (state) => state.muted);
+  return useStore(PlayerRuntimeStore, (state) => state.muted);
 }
 
 export function usePlayerVolumePercent() {
-  return useStore(PlayerVolumeStore, (state) => state.volumePercent);
+  return useStore(PlayerRuntimeStore, (state) => state.volumePercent);
+}
+
+export function useQueueManagerState() {
+  return useStore(queueManager.store, (state) => state);
 }
