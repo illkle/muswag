@@ -94,7 +94,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm --filter muswag --filter '@muswag/desktop...' install --frozen-lockfile
 
       - name: Build application
         run: pnpm turbo run build --filter=@muswag/desktop...
