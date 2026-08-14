@@ -16,6 +16,7 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*.node
 win:
   executableName: muswag
+  artifactName: muswag-Setup-${version}.${ext}
   target:
     - nsis
 mac:
