@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "import": "./dist/effect.js",
+      "default": "./dist/effect.js"
     }
   },
   "scripts": {
@@ -17,14 +22,17 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
+    "test": "vitest run --config vitest.config.ts",
     "format": "oxfmt --write src",
     "format:check": "oxfmt --check src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "effect": "4.0.0-rc.109",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@muswag/tsconfig": "workspace:*"
+    "@muswag/tsconfig": "workspace:*",
+    "vitest": "catalog:"
   }
 }
