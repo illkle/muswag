@@ -6,12 +6,13 @@ minimumReleaseAge: 0
 
 catalog:
   "@vitest/coverage-v8": ^4.1.10
-  "@tanstack/db": ^0.6.17
-  "@tanstack/node-db-sqlite-persistence": ^0.2.9
-  "@tanstack/react-db": ^0.1.95
+  "@tanstack/db": ^0.7.2
+  "@tanstack/node-db-sqlite-persistence": ^0.2.12
+  "@tanstack/db-sqlite-persistence-core": ^0.2.12
+  "@tanstack/react-db": ^0.2.1
   "@types/better-sqlite3": ^9.6.0
-  "@types/node": ^26.1.2
-  "@effect/tsgo": "0.36.4"
+  "@types/node": ^26.2.0
+  "@effect/tsgo": "0.36.5"
   effect: "4.0.0-rc.109"
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2

@@ -39,7 +39,7 @@
   "dependencies": {
     "@muswag/subsonic-api": "workspace:*",
     "@tanstack/db": "catalog:",
-    "@tanstack/db-sqlite-persistence-core": "^0.2.9",
+    "@tanstack/db-sqlite-persistence-core": "catalog:",
     "@tanstack/node-db-sqlite-persistence": "catalog:",
     "@tanstack/react-db": "catalog:",
     "effect": "catalog:",
