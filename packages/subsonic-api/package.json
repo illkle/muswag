@@ -15,6 +15,11 @@
       "types": "./dist/effect.d.ts",
       "import": "./dist/effect.js",
       "default": "./dist/effect.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js",
+      "default": "./dist/schema.js"
     }
   },
   "scripts": {
@@ -32,6 +37,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "4.0.0-rc.109",
     "@muswag/tsconfig": "workspace:*",
     "vitest": "catalog:"
   }
