@@ -301,6 +301,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.36.5
+      '@effect/vitest':
+        specifier: 4.0.0-rc.109
+        version: 4.0.0-rc.109(effect@4.0.0-rc.109)(vitest@4.1.11)
       '@muswag/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript

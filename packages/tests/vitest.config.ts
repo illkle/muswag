@@ -13,7 +13,7 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ["packages/tests/test/unit/**/*.test.ts"],
+    include: ["packages/tests/test/unit/**/*.test.ts", "packages/shared/src/**/*.test.ts"],
     environment: "node",
     testTimeout: 30_000,
     coverage: {

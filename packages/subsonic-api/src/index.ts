@@ -1,3 +1,4 @@
+/*
 import { z } from "zod";
 
 const API_VERSION = "1.16.1";
@@ -614,3 +615,5 @@ export default class SubsonicAPI {
     return base64Url(bytes);
   }
 }
+
+*/

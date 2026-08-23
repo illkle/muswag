@@ -60,6 +60,7 @@ const refreshStats = (target: RefreshStatTarget) =>
           if (!db.songs.get(song.id)) continue;
           db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
         }
+        break;
       }
       case "playlist": {
         const { playlist } = yield* api.getPlaylist({ id: target.id });
@@ -67,6 +68,7 @@ const refreshStats = (target: RefreshStatTarget) =>
           if (!db.songs.get(song.id)) continue;
           db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
         }
+        break;
       }
     }
   });
@@ -93,7 +95,7 @@ const syncArtistsFromIndexes = (lastSync: number) =>
 
     const toRemove = [];
 
-    for (const k of insertedSet) {
+    for (const k of db.artists.keys()) {
       if (!insertedSet.has(k)) {
         toRemove.push(k);
       }
@@ -112,7 +114,7 @@ const syncArtistFromIndex = (artist: typeof indexArtistSchema.Type) =>
     if (!existing) {
       db.artists.insert({ ...artist });
     } else {
-      db.artists.update(artist.id, () => artist);
+      db.artists.update(artist.id, (draft) => Object.assign(draft, artist));
     }
 
     return artist.id;
@@ -178,7 +180,7 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
     }
 
     if (existing) {
-      db.albums.update(incoming.id, () => incoming);
+      db.albums.update(incoming.id, (draft) => Object.assign(draft, incoming));
     } else {
       db.albums.insert(incoming);
     }
@@ -189,16 +191,11 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
       return yield* new AlbumWithoutSongs({ id: incoming.id });
     }
 
+    const existingSongs = yield* Effect.promise(async () => queryOnce((q) => q.from({ songs: db.songs }).where((v) => eq(v.songs.albumId, incoming.id))));
+    db.songs.delete(existingSongs.map(({ id }) => id));
+
     for (const song of album.song) {
-      const res = yield* Effect.promise(async () => await queryOnce((q) => q.from({ songs: db.songs }).where((v) => eq(v.songs.albumId, incoming.id))));
-
-      db.songs.delete(res.map((v) => v.id));
-
-      if (existing) {
-        db.songs.update(song.id, () => song);
-      } else {
-        db.songs.insert(song);
-      }
+      db.songs.insert(song);
     }
 
     return yield* Effect.succeed(incoming.id);
