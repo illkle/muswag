@@ -1,5 +1,5 @@
 {
-  "extends": "@muswag/tsconfig/base.json",
+  "extends": "../../tsconfig.base.json",
   "include": ["electron.vite.config.ts", "vite.config.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"],
   "compilerOptions": {
     "target": "ES2022",

@@ -6,7 +6,6 @@ export type SearchResultSong = {
   type: "song";
   id: string;
   song: {
-    coverArtPath: Album["coverArtPath"];
     coverArt: Album["coverArt"];
   } & Pick<Song, "id" | "albumId" | "artist" | "artistId" | "album" | "year" | "title">;
 };
@@ -14,25 +13,24 @@ export type SearchResultSong = {
 export type SearchResultAlbum = {
   type: "album";
   id: string;
-  album: Pick<Album, "id" | "artist" | "artistId" | "coverArt" | "coverArtPath" | "year" | "name">;
+  album: Pick<Album, "id" | "artist" | "artistId" | "coverArt" | "year" | "name">;
 };
 
 export type SearchResultArtist = {
   type: "artist";
   id: string;
-  artist: Pick<Artist, "id" | "name" | "coverArtPath" | "coverArt">;
+  artist: Pick<Artist, "id" | "name" | "coverArt">;
 };
 
 export type SearchResult = SearchResultSong | SearchResultAlbum | SearchResultArtist;
 
-const toAlbum = ({ id, artistId, artist, coverArt, coverArtPath, year, name }: Album): SearchResult => ({
+const toAlbum = ({ id, artistId, artist, coverArt, year, name }: Album): SearchResult => ({
   type: "album",
   id,
   album: {
     id,
     artist,
     artistId,
-    coverArtPath,
     coverArt,
     year,
     name,
@@ -50,18 +48,16 @@ const toSong = ({ id, artistId, artist, year, title, albumId, album }: Song, alb
     title,
     album,
     albumId,
-    coverArtPath: albumData.coverArtPath,
     coverArt: albumData.coverArt,
   },
 });
 
-const toArtist = ({ id, name, coverArtPath, coverArt }: Artist): SearchResult => ({
+const toArtist = ({ id, name, coverArt }: Artist): SearchResult => ({
   type: "artist",
   id,
   artist: {
     id,
     name,
-    coverArtPath,
     coverArt,
   },
 });

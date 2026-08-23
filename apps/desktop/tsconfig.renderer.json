@@ -1,5 +1,5 @@
 {
-  "extends": "@muswag/tsconfig/base.json",
+  "extends": "../../tsconfig.base.json",
   "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"],
   "compilerOptions": {
     "target": "ES2022",

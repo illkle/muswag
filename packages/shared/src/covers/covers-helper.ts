@@ -1,3 +1,5 @@
+/*
+
 import SubsonicAPI from "@muswag/subsonic-api";
 
 export interface CoverArtFileSystem {
@@ -102,3 +104,4 @@ export function getAlbumCoverExtension(contentType: string | null): string {
       return ".jpg";
   }
 }
+*/

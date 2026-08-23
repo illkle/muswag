@@ -4,11 +4,14 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import { createNodeCoverArtFileSystem } from "@muswag/shared/sync-node";
 import type { MuswagRendererIpc } from "#shared/ipc";
 import { createPlayer, getDefaultMpvIpcPath, type Player } from "./player";
 import { disposeDB } from "./db";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
+
+import { Effect } from "effect";
+import { FileSystem } from "effect/FileSystem";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
@@ -84,32 +87,20 @@ function registerMpvIpc(): void {
   });
 }
 
-function registerCoverArtIpc(): void {
-  if (disposeCoverArtIpc) {
-    return;
-  }
+const regIpcFs = Effect.gen(function* () {
+  const fs = yield* FileSystem;
 
-  const coverArtFileSystem = createNodeCoverArtFileSystem(join(app.getPath("userData"), "cover-art"));
-
-  ipcMain.handle("coverArt:listFiles", async () => coverArtFileSystem.listCoverFiles?.() ?? []);
-  ipcMain.handle("coverArt:removeFile", async (_, path: string) => {
-    await coverArtFileSystem.removeCoverFile?.(path);
-  });
-  ipcMain.handle("coverArt:removeFiles", async (_, key: string) => {
-    await coverArtFileSystem.removeCoverFiles(key);
-  });
-  ipcMain.handle("coverArt:writeFile", async (_, key: string, extension: string, bytes: Uint8Array) => {
-    return coverArtFileSystem.writeCoverFile(key, extension, bytes);
+  mainIpc.handle("fs:write", async (_, path: string, data: any) => {
+    return Effect.runPromise(fs.writeFile(path, data));
   });
 
-  disposeCoverArtIpc = () => {
-    ipcMain.removeHandler("coverArt:listFiles");
-    ipcMain.removeHandler("coverArt:removeFile");
-    ipcMain.removeHandler("coverArt:removeFiles");
-    ipcMain.removeHandler("coverArt:writeFile");
-    disposeCoverArtIpc = undefined;
-  };
-}
+  mainIpc.handle("fs:delete", async (_, path: string, data: Uint8Array) => {
+    // todo: pass errors
+    await Effect.runPromiseExit(fs.writeFile(path, data));
+  });
+
+  // todo: dispose
+});
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -168,7 +159,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  registerCoverArtIpc();
+  Effect.runSync(regIpcFs.pipe(Effect.provide(NodeFileSystem.layer)));
 
   mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
   mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());

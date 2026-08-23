@@ -6,7 +6,13 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "verbatimModuleSyntax": true,
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json"
+    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json",
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {}
+      }
+    ]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

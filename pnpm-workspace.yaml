@@ -5,20 +5,22 @@ packages:
 minimumReleaseAge: 0
 
 catalog:
-  "@vitest/coverage-v8": ^4.1.10
-  "@tanstack/db": ^0.7.2
-  "@tanstack/node-db-sqlite-persistence": ^0.2.12
-  "@tanstack/db-sqlite-persistence-core": ^0.2.12
-  "@tanstack/react-db": ^0.2.1
+  "@vitest/coverage-v8": ^4.1.11
+  "@tanstack/db": ^0.8.2
+  "@tanstack/node-db-sqlite-persistence": ^0.2.15
+  "@tanstack/db-sqlite-persistence-core": ^0.2.15
+  "@tanstack/react-db": ^0.3.2
   "@types/better-sqlite3": ^9.6.0
   "@types/node": ^26.2.0
   "@effect/tsgo": "0.36.5"
+  "@effect/platform-node": "^4.0.0-rc.111"
   effect: "4.0.0-rc.109"
+
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2
   fuse.js: ^7.5.0
   typescript: ^7.0.2
-  vitest: ^4.1.10
+  vitest: ^4.1.11
   zod: ^4.4.3
 
 onlyBuiltDependencies:
@@ -32,7 +34,7 @@ onlyBuiltDependencies:
   - ssh2
 
 allowBuilds:
-  '@swc/core': true
+  "@swc/core": true
   better-sqlite3: true
   core-js: true
   core-js-pure: true

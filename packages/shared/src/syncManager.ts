@@ -1,3 +1,10 @@
+import type { MuswagDb } from "./db/database.js";
+
+export type UserCredentialsToLogin = { url: string; username: string; password: string };
+
+export type UserInfo = { url: string; username: string; password: string } | null;
+/*
+
 import SubsonicAPI from "@muswag/subsonic-api";
 
 import type { MuswagDb } from "./db/database.js";
@@ -7,11 +14,7 @@ import { syncArtists } from "./sync/sync-artists.js";
 import { createInitialSyncProgress, updateSyncProgress } from "./sync/progress.js";
 import type { CoverManager } from "./covers/cover-manager.js";
 
-const USER_CREDENTIALS_ROW_ID = 1;
-const SUBSONIC_API_VERSION = "1.16.1";
-const HEX = "0123456789abcdef";
 
-export type UserInfo = { url: string; username: string; password: string } | null;
 export type UserCredentialsToLogin = { url: string; username: string; password: string };
 export type SyncInfo = SyncRecord | null;
 
@@ -25,25 +28,6 @@ export function createSubsonicApi(credentials: UserCredentialsToLogin) {
   });
 }
 
-function randomHex(byteCount: number): string {
-  const bytes = new Uint8Array(byteCount);
-  const cryptoApi = (globalThis as { crypto?: { getRandomValues?: (array: Uint8Array) => Uint8Array } }).crypto;
-
-  if (cryptoApi?.getRandomValues) {
-    cryptoApi.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-
-  let output = "";
-  for (const byte of bytes) {
-    output += HEX[byte >>> 4] ?? "0";
-    output += HEX[byte & 0x0f] ?? "0";
-  }
-  return output;
-}
 
 async function verifyConnection(api: SubsonicAPI) {
   let lastCause: unknown;
@@ -62,15 +46,7 @@ async function verifyConnection(api: SubsonicAPI) {
 
 // --- Read API ---
 
-export function getUserInfo(db: MuswagDb): UserInfo {
-  const row = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
-  if (!row) return null;
-  return {
-    url: row.url,
-    username: row.username,
-    password: row.password,
-  };
-}
+
 
 export function getSyncInfo(db: MuswagDb): SyncInfo {
   let latest: SyncRecord | null = null;
@@ -260,6 +236,13 @@ export { createCoverArtStore } from "./covers/covers-helper.js";
 export type { CoverArtFileSystem } from "./covers/covers-helper.js";
 export { createInitialSyncProgress } from "./sync/progress.js";
 
+
+*/
+
+const USER_CREDENTIALS_ROW_ID = 1;
+const SUBSONIC_API_VERSION = "1.16.1";
+const HEX = "0123456789abcdef";
+
 export function buildSubsonicStreamUrl(md5: (v: string) => string, credentials: UserCredentialsToLogin, songId: string): string {
   const salt = randomHex(16);
   const token = md5(`${credentials.password}${salt}`);
@@ -290,4 +273,34 @@ function getSubsonicRestBaseUrl(baseUrl: string): string {
   }
 
   return new URL("rest/", ensuredTrailingSlash).toString();
+}
+
+function randomHex(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  const cryptoApi = (globalThis as { crypto?: { getRandomValues?: (array: Uint8Array) => Uint8Array } }).crypto;
+
+  if (cryptoApi?.getRandomValues) {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  let output = "";
+  for (const byte of bytes) {
+    output += HEX[byte >>> 4] ?? "0";
+    output += HEX[byte & 0x0f] ?? "0";
+  }
+  return output;
+}
+
+export function getUserInfo(db: MuswagDb): UserInfo {
+  const row = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
+  if (!row) return null;
+  return {
+    url: row.url,
+    username: row.username,
+    password: row.password,
+  };
 }

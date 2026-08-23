@@ -33,7 +33,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.109",
+    "effect": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

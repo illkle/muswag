@@ -1,3 +1,4 @@
+/*
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -48,3 +49,5 @@ export function createNodeCoverArtFileSystem(coverArtDir: string): CoverArtFileS
     removeCoverFile: (path) => rm(path, { force: true }),
   };
 }
+
+*/

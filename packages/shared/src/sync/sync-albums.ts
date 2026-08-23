@@ -1,3 +1,5 @@
+/*
+
 import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "@muswag/subsonic-api";
 
 import type { Album, MuswagDb, Song } from "../db/database.js";
@@ -251,3 +253,4 @@ export async function syncAlbums(params: SyncAlbumsParams) {
     finishedAt: new Date().toISOString(),
   };
 }
+*/

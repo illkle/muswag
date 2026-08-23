@@ -47,6 +47,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@muswag/tsconfig": "workspace:*",
     "@types/better-sqlite3": "catalog:"
   }

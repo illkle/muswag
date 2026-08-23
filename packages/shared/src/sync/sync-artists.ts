@@ -1,3 +1,4 @@
+/*
 import SubsonicAPI, { SubsonicApiError, type IndexArtist } from "@muswag/subsonic-api";
 
 import type { Artist, MuswagDb } from "../db/database.js";
@@ -98,3 +99,4 @@ export async function syncArtists(params: { api: SubsonicAPI; db: MuswagDb; sync
     deletedArtistIds,
   };
 }
+*/

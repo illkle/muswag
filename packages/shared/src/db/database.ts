@@ -3,25 +3,24 @@ import { persistedCollectionOptions, type PersistedCollectionPersistence } from 
 
 import type { SyncRecord, SyncState, UserCredentials } from "./types.js";
 import { createCollection } from "@tanstack/react-db";
-import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api";
+import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api/schema";
 import type { PlaylistRecord } from "../playlists/types.js";
 import type { PlayerQueueRecord } from "../player-queue.js";
+import { Context } from "effect";
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;
   close(): void;
 };
 
-export type Album = AlbumID3 & {
-  coverArtPath: string | undefined;
-  coverArtSourceId?: string | undefined;
-  statsRefreshedAt?: string | undefined;
-};
-export type Artist = IndexArtist & {
-  coverArtPath?: string | undefined;
-  coverArtSourceId?: string | undefined;
-};
+export type Album = AlbumID3;
+export type Artist = IndexArtist;
 export type Song = Child;
+
+export type CoverOnDisk = {
+  key: string;
+  fileName: string;
+};
 
 export interface MuswagDb {
   albums: Collection<Album, string>;
@@ -32,7 +31,10 @@ export interface MuswagDb {
   userCredentials: Collection<UserCredentials, number>;
   syncs: Collection<SyncRecord, string>;
   syncState: Collection<SyncState, number>;
+  covers: Collection<CoverOnDisk, string>;
 }
+
+export class MuswagDatabase extends Context.Service<MuswagDatabase, MuswagDb>()("@muswag/subsonic-api/SubsonicCrypto") {}
 
 export function createMuswagDb(persistence: PersistedCollectionPersistence): MuswagDb {
   const albums = createCollection(
@@ -121,6 +123,15 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
+  const covers = createCollection(
+    persistedCollectionOptions<CoverOnDisk, string>({
+      id: "syncState",
+      getKey: (state) => state.key,
+      persistence,
+      schemaVersion: 1,
+    }),
+  );
+
   return {
     albums,
     artists,
@@ -130,5 +141,6 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     userCredentials,
     syncs,
     syncState,
+    covers,
   };
 }

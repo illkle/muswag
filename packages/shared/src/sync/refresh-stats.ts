@@ -1,3 +1,4 @@
+/*
 import SubsonicAPI, { type AlbumID3, type Child } from "@muswag/subsonic-api";
 
 import type { MuswagDb } from "../db/database.js";
@@ -80,3 +81,4 @@ export async function refreshPlaylistSongStats(db: MuswagDb, api: SubsonicAPI, p
   byId.set(playlistId, promise);
   return promise;
 }
+*/

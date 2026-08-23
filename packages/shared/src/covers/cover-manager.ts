@@ -1,3 +1,4 @@
+/*
 import type { MuswagDb } from "../db/database.js";
 import type { CoverArtStore } from "./covers-helper.js";
 
@@ -185,3 +186,4 @@ export function createCoverManager(params: { db: MuswagDb; store: CoverArtStore 
 
   return manager;
 }
+*/

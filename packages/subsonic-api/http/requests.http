@@ -1,0 +1,111 @@
+# Create a .env file next to this file containing:
+# SUBSONIC_BASE_URL=http://localhost:4533
+# SUBSONIC_USERNAME=your-username
+# SUBSONIC_PASSWORD=your-password
+@baseUrl = {{$dotenv SUBSONIC_BASE_URL}}
+@username = {{$dotenv SUBSONIC_USERNAME}}
+@password = {{$dotenv SUBSONIC_PASSWORD}}
+@apiVersion = 1.16.1
+@clientName = muswag
+
+@albumId = album-id
+@coverArtId = cover-art-id
+@playlistId = playlist-id
+@songId = song-id
+
+
+### Log in to Navidrome
+# Run this request once before running the Subsonic requests below. They reuse
+# the username, token, and salt returned by this response.
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+> {%
+  client.global.set("subsonicUsername", response.body.username);
+  client.global.set("subsonicToken", response.body.subsonicToken);
+  client.global.set("subsonicSalt", response.body.subsonicSalt);
+%}
+
+### Ping
+# @name ping
+POST {{baseUrl}}/rest/ping.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}
+
+### Get album
+# @name getAlbum
+POST {{baseUrl}}/rest/getAlbum.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&id={{albumId}}
+
+### Get album list
+# @name getAlbumList2
+POST {{baseUrl}}/rest/getAlbumList2.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&type=newest&size=20&offset=0
+
+### Get indexes
+# @name getIndexes
+
+# Milliseconds since January 1, 1970. Use 0 to return all indexes.
+@ifModifiedSince = 1787503367345
+POST {{baseUrl}}/rest/getIndexes.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&ifModifiedSince={{ifModifiedSince}}
+
+### Get cover art
+# @name getCoverArt
+POST {{baseUrl}}/rest/getCoverArt.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&id={{coverArtId}}&size=600
+
+### Get playlists
+# @name getPlaylists
+POST {{baseUrl}}/rest/getPlaylists.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}
+
+### Get playlist
+# @name getPlaylist
+POST {{baseUrl}}/rest/getPlaylist.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&id={{playlistId}}
+
+### Create playlist
+# This creates a playlist on the server.
+# @name createPlaylist
+POST {{baseUrl}}/rest/createPlaylist.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&name=Example%20playlist&songId={{songId}}
+
+### Update playlist
+# This changes a playlist on the server. Repeat songIdToAdd or
+# songIndexToRemove to submit multiple values.
+# @name updatePlaylist
+POST {{baseUrl}}/rest/updatePlaylist.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&playlistId={{playlistId}}&name=Updated%20example%20playlist&comment=Updated%20from%20requests.http&public=false&songIdToAdd={{songId}}&songIndexToRemove=0
+
+### Delete playlist
+# This permanently deletes a playlist from the server.
+# @name deletePlaylist
+POST {{baseUrl}}/rest/deletePlaylist.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&id={{playlistId}}
