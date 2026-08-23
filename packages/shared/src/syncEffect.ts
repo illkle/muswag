@@ -1,17 +1,75 @@
-import { Context, Data, Effect } from "effect";
+import { Context, Data, Effect, Layer } from "effect";
 import { MuswagDatabase } from "./db/database.js";
 import SubsonicAPI from "@muswag/subsonic-api/effect";
-import type { albumID3Schema, indexArtistSchema } from "@muswag/subsonic-api/schema";
-import CoverManager from "./covers/cov-effect.js";
+import type { AlbumID3, albumID3Schema, Child, indexArtistSchema } from "@muswag/subsonic-api/schema";
+import { eq, queryOnce } from "@tanstack/db";
 
-export interface SyncManagerService {}
+export type RefreshStatTarget = { type: "album" | "playlist"; id: string };
+
+export interface SyncManagerService {
+  //  sync: (context: SyncManagerContextService) => Effect.Effect<null, AlbumWithoutSongs | SubsonicClientError>;
+  // refreshStats: (target: RefreshStatTarget) => Effect.Effect<void, SubsonicClientError>;
+}
 export interface SyncManagerContextService {
   mode: "no_shortcuts" | "default";
 }
 
-export class SyncManagerContext extends Context.Service<SyncManagerContext, SyncManagerContextService>()("@muswag/shared/SyncManagerContext") {}
+export class SyncManagerContext extends Context.Service<SyncManagerContext, SyncManagerContextService>()("@muswag/shared/SyncManagerContext", {}) {}
 
-export default class SyncManager extends Context.Service<SyncManager, SyncManagerService>()("@muswag/shared/SyncManager") {}
+export default class SyncManager extends Context.Service<SyncManager>()("@muswag/shared/SyncManager", {
+  make: Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    const api = yield* SubsonicAPI;
+    const deps = Effect.provide(Layer.mergeAll(Layer.succeed(MuswagDatabase, db), Layer.succeed(SubsonicAPI, api)));
+
+    return {
+      sync: (ctx: SyncManagerContextService) => sync.pipe(deps, Effect.provide(Layer.succeed(SyncManagerContext, ctx))),
+      refreshStats: (target: RefreshStatTarget) => refreshStats(target).pipe(deps),
+    } as const;
+  }),
+}) {
+  static readonly layerWithoutDependencies = Layer.effect(this, this.make);
+}
+
+const sync = Effect.gen(function* () {
+  const db = yield* MuswagDatabase;
+  const last = db.syncState.get(1);
+
+  yield* syncArtistsFromIndexes(last?.indexesLastModified ?? 0);
+  yield* syncAlbumList();
+
+  return yield* Effect.succeed(null);
+});
+
+const ALBUM_STAT_FIELDS = ["playCount", "played", "starred", "userRating"] as const;
+const SONG_STAT_FIELDS = ["playCount", "played", "starred", "userRating", "averageRating", "bookmarkPosition"] as const;
+
+const refreshStats = (target: RefreshStatTarget) =>
+  Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    const api = yield* SubsonicAPI;
+
+    switch (target.type) {
+      case "album": {
+        const { album } = yield* api.getAlbum({ id: target.id });
+        db.albums.update(target.id, (draft) => {
+          assignFields(draft, album as AlbumID3, ALBUM_STAT_FIELDS);
+        });
+
+        for (const song of album.song ?? []) {
+          if (!db.songs.get(song.id)) continue;
+          db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
+        }
+      }
+      case "playlist": {
+        const { playlist } = yield* api.getPlaylist({ id: target.id });
+        for (const song of playlist.entry ?? []) {
+          if (!db.songs.get(song.id)) continue;
+          db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
+        }
+      }
+    }
+  });
 
 const syncArtistsFromIndexes = (lastSync: number) =>
   Effect.gen(function* () {
@@ -22,12 +80,12 @@ const syncArtistsFromIndexes = (lastSync: number) =>
     const { indexes } = yield* api.getIndexes({ ifModifiedSince: smc.mode === "default" ? lastSync : 0 });
 
     if (!indexes.index) {
-      return yield* Effect.succeedNone;
+      return;
     }
 
     const toInsert = indexes.index.flatMap((i1) => (i1.artist ?? []).map((i2) => syncArtistFromIndex(i2)));
     if (!toInsert.length) {
-      return yield* Effect.succeedNone;
+      return;
     }
 
     const inserted = yield* Effect.all(toInsert, { concurrency: 10 });
@@ -42,8 +100,6 @@ const syncArtistsFromIndexes = (lastSync: number) =>
     }
 
     if (toRemove.length) db.artists.delete(toRemove);
-
-    return yield* Effect.succeedNone;
   });
 
 const syncArtistFromIndex = (artist: typeof indexArtistSchema.Type) =>
@@ -68,7 +124,8 @@ const syncAlbumList = () =>
   Effect.gen(function* () {
     const api = yield* SubsonicAPI;
     const db = yield* MuswagDatabase;
-    const covers = yield* CoverManager;
+
+    const albumSet = new Set<string>();
 
     for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
       const { albumList2 } = yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: ALBUM_PAGE_SIZE, offset });
@@ -81,7 +138,17 @@ const syncAlbumList = () =>
 
       const res = yield* Effect.all(tasks, { concurrency: 10 });
 
+      for (const item of res) {
+        albumSet.add(item);
+      }
+
       if (albumList2.album.length < ALBUM_PAGE_SIZE) break;
+    }
+
+    for (const alb of db.albums.keys()) {
+      if (!albumSet.has(alb)) {
+        db.albums.delete(alb);
+      }
     }
   });
 
@@ -106,7 +173,7 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
         existing.artist === incoming.artist;
 
       if (same) {
-        return Effect.succeed({ id: incoming.id, songs: [] });
+        return yield* Effect.succeed(incoming.id);
       }
     }
 
@@ -122,10 +189,10 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
       return yield* new AlbumWithoutSongs({ id: incoming.id });
     }
 
-    const songIds = [];
-
     for (const song of album.song) {
-      songIds.push(song.id);
+      const res = yield* Effect.promise(async () => await queryOnce((q) => q.from({ songs: db.songs }).where((v) => eq(v.songs.albumId, incoming.id))));
+
+      db.songs.delete(res.map((v) => v.id));
 
       if (existing) {
         db.songs.update(song.id, () => song);
@@ -134,5 +201,12 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
       }
     }
 
-    return Effect.succeed({ id: incoming.id, songs: songIds });
+    return yield* Effect.succeed(incoming.id);
   });
+
+function assignFields<T extends object, K extends keyof T>(draft: T, source: T, fields: readonly K[]): void {
+  for (const field of fields) {
+    if (field in source) draft[field] = source[field];
+    else delete draft[field];
+  }
+}
