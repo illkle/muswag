@@ -1,6 +1,7 @@
 /*
 
-import SubsonicAPI, { type AlbumID3, type AlbumWithSongsID3 } from "@muswag/subsonic-api";
+import SubsonicAPI from "../subsonic-api.js";
+import type { AlbumID3, AlbumWithSongsID3 } from "../subsonic-api-schema.js";
 
 import type { Album, MuswagDb, Song } from "../db/database.js";
 import { updateSyncProgress } from "./progress.js";

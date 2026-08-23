@@ -1,3 +1,4 @@
+/*
 import type { MuswagDb } from "../db/database.js";
 import type { SyncProgress, SyncStep } from "../db/types.js";
 
@@ -49,3 +50,4 @@ export function updateSyncProgress(
     draft.progressUpdatedAt = new Date().toISOString();
   });
 }
+*/

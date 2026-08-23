@@ -5,7 +5,7 @@ export type UserCredentialsToLogin = { url: string; username: string; password: 
 export type UserInfo = { url: string; username: string; password: string } | null;
 /*
 
-import SubsonicAPI from "@muswag/subsonic-api";
+import SubsonicAPI from "./subsonic-api.js";
 
 import type { MuswagDb } from "./db/database.js";
 import type { SyncRecord, UserCredentials } from "./db/types.js";

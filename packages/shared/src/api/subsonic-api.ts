@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect";
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import {
   type AlbumList2,
   type AlbumWithSongsID3,
@@ -28,7 +28,7 @@ import {
   getPlaylistsResponseSchema,
   pingResponseSchema,
   responseEnvelopeSchema,
-} from "./schema.js";
+} from "./subsonic-api-schema.js";
 
 const API_VERSION = "1.16.1";
 const CLIENT_NAME = "muswag";
@@ -56,7 +56,7 @@ export interface SubsonicCryptoService {
 }
 
 /** Cryptography required by Subsonic token authentication. */
-export class SubsonicCrypto extends Context.Service<SubsonicCrypto, SubsonicCryptoService>()("@muswag/subsonic-api/SubsonicCrypto") {}
+export class SubsonicCrypto extends Context.Service<SubsonicCrypto, SubsonicCryptoService>()("@muswag/shared/SubsonicCrypto") {}
 
 export type SubsonicClientError = HttpClientError.HttpClientError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
 
@@ -74,7 +74,23 @@ export interface SubsonicApiService {
   readonly deletePlaylist: (args: DeletePlaylistArgs) => Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
 }
 
-export default class SubsonicAPI extends Context.Service<SubsonicAPI, SubsonicApiService>()("@muswag/subsonic-api/SubsonicAPI") {}
+export interface SubsonicPromiseApi {
+  readonly baseUrl: URL;
+  readonly ping: () => Promise<SubsonicBaseResponse>;
+  readonly getAlbum: (args: GetAlbumArgs) => Promise<SubsonicBaseResponse & { album: AlbumWithSongsID3 }>;
+  readonly getAlbumList2: (args: GetAlbumList2Args) => Promise<SubsonicBaseResponse & { albumList2: AlbumList2 }>;
+  readonly getIndexes: (args?: GetIndexesArgs) => Promise<SubsonicBaseResponse & { indexes: Indexes }>;
+  readonly getCoverArt: (args: GetCoverArtArgs) => Promise<HttpClientResponse.HttpClientResponse>;
+  readonly getPlaylists: () => Promise<SubsonicBaseResponse & { playlists: Playlists }>;
+  readonly getPlaylist: (args: GetPlaylistArgs) => Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }>;
+  readonly createPlaylist: (args: CreatePlaylistArgs) => Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }>;
+  readonly updatePlaylist: (args: UpdatePlaylistArgs) => Promise<SubsonicBaseResponse>;
+  readonly deletePlaylist: (args: DeletePlaylistArgs) => Promise<SubsonicBaseResponse>;
+}
+
+export class SubsonicAPI extends Context.Service<SubsonicAPI, SubsonicApiService>()("@muswag/shared/SubsonicAPI") {}
+
+export default SubsonicAPI;
 
 function normalizeRestUrl(rawUrl: string): URL {
   let value = rawUrl;
@@ -139,7 +155,7 @@ export const SubsonicAPILive = (config: SubsonicConfig) =>
 
             setSearchParams(url, {
               u: config.auth.username,
-              t: yield* crypto.md5(config.auth.password! + crypto.cachedSaltGenerator()),
+              t: yield* crypto.md5(config.auth.password! + s),
               s: s,
             });
           }
@@ -209,4 +225,131 @@ function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
       Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid payload`, cause })),
     )) as SubsonicBaseResponse & T["Type"];
   });
+}
+
+export function createSubsonicApi(config: SubsonicConfig, options: { signal?: AbortSignal } = {}): SubsonicPromiseApi {
+  const baseUrl = validateConfig(config);
+  const layer = SubsonicAPILive(config).pipe(
+    Layer.provide(
+      Layer.merge(
+        FetchHttpClient.layer,
+        Layer.succeed(
+          SubsonicCrypto,
+          SubsonicCrypto.of({
+            md5: (input) => Effect.sync(() => md5(input)),
+            cachedSaltGenerator: () => randomHex(16),
+          }),
+        ),
+      ),
+    ),
+  );
+  const run = <A, E>(use: (api: SubsonicApiService) => Effect.Effect<A, E>) =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        return yield* use(yield* SubsonicAPI);
+      }).pipe(Effect.provide(layer)),
+      options.signal ? { signal: options.signal } : undefined,
+    );
+
+  return {
+    baseUrl,
+    ping: () => run((api) => api.ping),
+    getAlbum: (args) => run((api) => api.getAlbum(args)),
+    getAlbumList2: (args) => run((api) => api.getAlbumList2(args)),
+    getIndexes: (args) => run((api) => api.getIndexes(args)),
+    getCoverArt: (args) => run((api) => api.getCoverArt(args)),
+    getPlaylists: () => run((api) => api.getPlaylists),
+    getPlaylist: (args) => run((api) => api.getPlaylist(args)),
+    createPlaylist: (args) => run((api) => api.createPlaylist(args)),
+    updatePlaylist: (args) => run((api) => api.updatePlaylist(args)),
+    deletePlaylist: (args) => run((api) => api.deletePlaylist(args)),
+  };
+}
+
+function rotateLeft(value: number, shift: number): number {
+  return (value << shift) | (value >>> (32 - shift));
+}
+
+function add32(...values: number[]): number {
+  return values.reduce((sum, value) => (sum + value) >>> 0, 0);
+}
+
+function md5(input: string): string {
+  const message = new TextEncoder().encode(input);
+  const bitLength = message.length * 8;
+  const paddedLength = (((message.length + 8) >>> 6) + 1) << 6;
+  const padded = new Uint8Array(paddedLength);
+  padded.set(message);
+  padded[message.length] = 0x80;
+
+  const view = new DataView(padded.buffer);
+  view.setUint32(paddedLength - 8, bitLength >>> 0, true);
+  view.setUint32(paddedLength - 4, Math.floor(bitLength / 0x100000000), true);
+
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+
+  const shifts = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6,
+    10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+  ];
+  const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0);
+
+  for (let offset = 0; offset < paddedLength; offset += 64) {
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+
+    for (let index = 0; index < 64; index += 1) {
+      let f: number;
+      let g: number;
+
+      if (index < 16) {
+        f = (b & c) | (~b & d);
+        g = index;
+      } else if (index < 32) {
+        f = (d & b) | (~d & c);
+        g = (5 * index + 1) % 16;
+      } else if (index < 48) {
+        f = b ^ c ^ d;
+        g = (3 * index + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        g = (7 * index) % 16;
+      }
+
+      const next = d;
+      d = c;
+      c = b;
+      b = add32(b, rotateLeft(add32(a, f, constants[index] ?? 0, view.getUint32(offset + g * 4, true)), shifts[index] ?? 0));
+      a = next;
+    }
+
+    a0 = add32(a0, a);
+    b0 = add32(b0, b);
+    c0 = add32(c0, c);
+    d0 = add32(d0, d);
+  }
+
+  return [a0, b0, c0, d0]
+    .map((word) => {
+      let output = "";
+      for (let index = 0; index < 4; index += 1) {
+        const byte = (word >>> (index * 8)) & 0xff;
+        output += byte.toString(16).padStart(2, "0");
+      }
+      return output;
+    })
+    .join("");
+}
+
+function randomHex(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi) cryptoApi.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

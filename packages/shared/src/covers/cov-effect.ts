@@ -2,9 +2,9 @@ import { Context, Data, Effect, Layer } from "effect";
 import { MuswagDatabase } from "../db/database.js";
 import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
-import SubsonicAPI from "@muswag/subsonic-api/effect";
+import SubsonicAPI from "../api/subsonic-api.js";
 import type { HttpClientError } from "effect/unstable/http/HttpClientError";
-import type { SubsonicHttpError } from "@muswag/subsonic-api/schema";
+import type { SubsonicHttpError } from "../api/subsonic-api-schema.js";
 
 export interface MiniFsService {
   readonly writeFile: (path: string, data: Uint8Array) => Effect.Effect<void, PlatformError>;

@@ -14,6 +14,6 @@
       }
     ]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/covers/cover-manager.ts.leg"],
   "exclude": ["dist", "node_modules"]
 }

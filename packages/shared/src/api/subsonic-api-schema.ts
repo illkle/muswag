@@ -160,7 +160,6 @@ export const indexArtistSchema = Schema.Struct({
   artistImageUrl: Schema.optional(Schema.String),
 });
 
-
 export const indexSchema = Schema.Struct({
   name: Schema.String,
   artist: Schema.optional(Schema.Array(indexArtistSchema)),

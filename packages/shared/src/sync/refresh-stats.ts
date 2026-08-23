@@ -1,5 +1,6 @@
 /*
-import SubsonicAPI, { type AlbumID3, type Child } from "@muswag/subsonic-api";
+import SubsonicAPI from "../subsonic-api.js";
+import type { AlbumID3, Child } from "../subsonic-api-schema.js";
 
 import type { MuswagDb } from "../db/database.js";
 

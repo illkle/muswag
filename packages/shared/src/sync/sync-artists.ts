@@ -1,5 +1,6 @@
 /*
-import SubsonicAPI, { SubsonicApiError, type IndexArtist } from "@muswag/subsonic-api";
+import SubsonicAPI from "../subsonic-api.js";
+import { SubsonicApiError, type IndexArtist } from "../subsonic-api-schema.js";
 
 import type { Artist, MuswagDb } from "../db/database.js";
 import { updateSyncProgress } from "./progress.js";

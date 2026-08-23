@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer } from "effect";
 import { MuswagDatabase } from "./db/database.js";
-import SubsonicAPI from "@muswag/subsonic-api/effect";
-import type { AlbumID3, albumID3Schema, Child, indexArtistSchema } from "@muswag/subsonic-api/schema";
+import SubsonicAPI from "./api/subsonic-api.js";
+import type { AlbumID3, albumID3Schema, Child, indexArtistSchema } from "./api/subsonic-api-schema.js";
 import { eq, queryOnce } from "@tanstack/db";
 
 export type RefreshStatTarget = { type: "album" | "playlist"; id: string };

@@ -37,7 +37,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@muswag/subsonic-api": "workspace:*",
     "@tanstack/db": "catalog:",
     "@tanstack/db-sqlite-persistence-core": "catalog:",
     "@tanstack/node-db-sqlite-persistence": "catalog:",

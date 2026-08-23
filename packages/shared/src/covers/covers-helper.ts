@@ -1,6 +1,6 @@
 /*
 
-import SubsonicAPI from "@muswag/subsonic-api";
+import SubsonicAPI from "../subsonic-api.js";
 
 export interface CoverArtFileSystem {
   removeCoverFiles(key: string): Promise<void>;

@@ -3,7 +3,7 @@ import { persistedCollectionOptions, type PersistedCollectionPersistence } from 
 
 import type { SyncRecord, SyncState, UserCredentials } from "./types.js";
 import { createCollection } from "@tanstack/react-db";
-import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api/schema";
+import type { AlbumID3, Child, IndexArtist } from "../subsonic-api-schema.js";
 import type { PlaylistRecord } from "../playlists/types.js";
 import type { PlayerQueueRecord } from "../player-queue.js";
 import { Context } from "effect";
@@ -34,7 +34,7 @@ export interface MuswagDb {
   covers: Collection<CoverOnDisk, string>;
 }
 
-export class MuswagDatabase extends Context.Service<MuswagDatabase, MuswagDb>()("@muswag/subsonic-api/SubsonicCrypto") {}
+export class MuswagDatabase extends Context.Service<MuswagDatabase, MuswagDb>()("@muswag/shared/MuswagDatabase") {}
 
 export function createMuswagDb(persistence: PersistedCollectionPersistence): MuswagDb {
   const albums = createCollection(

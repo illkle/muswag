@@ -1,5 +1,5 @@
-import SubsonicAPI from "@muswag/subsonic-api";
-import type { PlaylistWithSongs } from "@muswag/subsonic-api";
+import { createSubsonicApi, type SubsonicPromiseApi } from "../subsonic-api.js";
+import type { PlaylistWithSongs } from "../subsonic-api-schema.js";
 import { queryOnce } from "@tanstack/db";
 
 import type { MuswagDb } from "../db/database.js";
@@ -19,7 +19,7 @@ export interface PlaylistSyncStatus {
   lastSyncedAt: string | null;
 }
 
-type PlaylistApi = Pick<SubsonicAPI, "getPlaylists" | "getPlaylist" | "createPlaylist" | "updatePlaylist" | "deletePlaylist">;
+type PlaylistApi = Pick<SubsonicPromiseApi, "getPlaylists" | "getPlaylist" | "createPlaylist" | "updatePlaylist" | "deletePlaylist">;
 
 export interface PlaylistSyncManagerOptions {
   debounceMs?: number;
@@ -48,12 +48,13 @@ export interface PlaylistSyncManager {
 }
 
 function defaultApiFactory(credentials: { url: string; username: string; password: string }, signal: AbortSignal): PlaylistApi {
-  return new SubsonicAPI({
-    url: credentials.url,
-    auth: { username: credentials.username, password: credentials.password },
-    post: true,
-    fetch: (input, init) => fetch(input, { ...init, signal }),
-  });
+  return createSubsonicApi(
+    {
+      url: credentials.url,
+      auth: { username: credentials.username, password: credentials.password },
+    },
+    { signal },
+  );
 }
 
 /**
@@ -79,7 +80,7 @@ function toRemotePlaylist(playlist: PlaylistWithSongs, currentUsername: string):
     changed: playlist.changed,
     duration: playlist.duration,
     ...(playlist.coverArt !== undefined && { coverArt: playlist.coverArt }),
-    ...(playlist.allowedUser !== undefined && { allowedUser: playlist.allowedUser }),
+    ...(playlist.allowedUser !== undefined && { allowedUser: [...playlist.allowedUser] }),
     ...(playlist.validUntil !== undefined && { validUntil: playlist.validUntil }),
   };
 }

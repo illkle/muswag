@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@muswag/shared": "workspace:*",
-    "@muswag/subsonic-api": "workspace:*",
     "@tanstack/db": "catalog:",
     "@tanstack/node-db-sqlite-persistence": "catalog:",
     "better-sqlite3-test": "npm:better-sqlite3@13.0.3",
