@@ -19,6 +19,7 @@
     "test:sync-benchmark": "vitest run --config vitest.sync-benchmark.config.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "@muswag/shared": "workspace:*",
     "@tanstack/db": "catalog:",
     "@tanstack/node-db-sqlite-persistence": "catalog:",

@@ -1,14 +1,19 @@
 import { Context, Data, Effect, Layer } from "effect";
-import { MuswagDatabase } from "../db/database.js";
+import { MuswagDatabase } from "./db/database.js";
 import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
-import SubsonicAPI from "../api/subsonic-api.js";
+import SubsonicAPI from "./api/subsonic-api.js";
 import type { HttpClientError } from "effect/unstable/http/HttpClientError";
-import type { SubsonicHttpError } from "../api/subsonic-api-schema.js";
+import type { SubsonicHttpError } from "./api/subsonic-api-schema.js";
+
+export class FileSystemError extends Data.TaggedError("FileSystemError")<{
+  readonly cause: string;
+  readonly message: string;
+}> {}
 
 export interface MiniFsService {
-  readonly writeFile: (path: string, data: Uint8Array) => Effect.Effect<void, PlatformError>;
-  readonly remove: (path: string) => Effect.Effect<void, PlatformError>;
+  readonly writeFile: (path: string, data: Uint8Array) => Effect.Effect<void, FileSystemError>;
+  readonly remove: (path: string) => Effect.Effect<void, FileSystemError>;
 }
 
 export class MiniFs extends Context.Service<MiniFs, MiniFsService>()("@muswag/shared/covers/MiniFs") {}
@@ -21,9 +26,9 @@ export type CoverTarget =
     };
 
 export interface CoverManagerService {
-  readonly ensure: (target: CoverTarget) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | PlatformError | HttpClientError | SubsonicHttpError>;
-  readonly repair: (target: CoverTarget, failedPath: string) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | PlatformError | HttpClientError | SubsonicHttpError>;
-  readonly remove: (t: CoverTarget) => Effect.Effect<void, PlatformError>;
+  readonly ensure: (target: CoverTarget) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | PlatformError | FileSystemError | HttpClientError | SubsonicHttpError>;
+  readonly repair: (target: CoverTarget, failedPath: string) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | FileSystemError | PlatformError | HttpClientError | SubsonicHttpError>;
+  readonly remove: (t: CoverTarget) => Effect.Effect<void, FileSystemError>;
 }
 
 export default class CoverManager extends Context.Service<CoverManager, CoverManagerService>()("@muswag/shared/covers/CoverManager") {}

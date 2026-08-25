@@ -23,10 +23,10 @@ export type MuswagMainIpc = {
   "appUpdate:getState": () => AppUpdateState;
   /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
   "appUpdate:install": () => void;
-  "coverArt:listFiles": () => string[];
-  "coverArt:removeFile": (path: string) => void;
-  "coverArt:removeFiles": (key: string) => void;
-  "coverArt:writeFile": (key: string, extension: string, bytes: Uint8Array) => string;
+
+  "fs:write": (path: string, data: Uint8Array) => void;
+  "fs:delete": (path: string) => void;
+
   "mpv:cancelInstall": () => void;
   "mpv:clearManualPath": () => MpvState;
   "mpv:install": (method: MpvInstallMethod) => MpvState;

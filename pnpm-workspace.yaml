@@ -13,8 +13,9 @@ catalog:
   "@types/better-sqlite3": ^9.6.0
   "@types/node": ^26.2.0
   "@effect/tsgo": "0.36.5"
-  "@effect/platform-node": "^4.0.0-rc.111"
-  effect: "4.0.0-rc.109"
+  "@effect/platform-node": "4.0.0-rc.112"
+  "@effect/platform-browser": "4.0.0-rc.112"
+  effect: "4.0.0-rc.112"
 
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2

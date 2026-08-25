@@ -48,9 +48,7 @@ export const PlayerIPC = {
   toggle: () => mainIpc.invoke("player:toggle"),
 };
 
-export const CoverArtIPC = {
-  listFiles: () => mainIpc.invoke("coverArt:listFiles"),
-  removeFile: (path: string) => mainIpc.invoke("coverArt:removeFile", path),
-  removeFiles: (key: string) => mainIpc.invoke("coverArt:removeFiles", key),
-  writeFile: (key: string, extension: string, bytes: Uint8Array) => mainIpc.invoke("coverArt:writeFile", key, extension, bytes),
+export const FilesystemIpc = {
+  writeFile: (path: string, data: Uint8Array) => mainIpc.invoke("fs:write", path, data),
+  remove: (path: string) => mainIpc.invoke("fs:delete", path),
 };

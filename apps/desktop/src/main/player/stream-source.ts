@@ -2,7 +2,7 @@ import { buildSubsonicStreamUrl } from "@muswag/shared";
 import type { UserCredentialsToLogin } from "@muswag/shared";
 import { createHash } from "node:crypto";
 
-const md5 = (input: string) => createHash("md5").update(input).digest("hex");
+const md5 = (input: string) => createHash('md5').update(input).digest("hex");
 
 export function resolveStreamUrl(credentials: UserCredentialsToLogin | null, songId: string): string {
   if (!credentials) {

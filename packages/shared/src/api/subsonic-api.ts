@@ -1,4 +1,6 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { md5 } from "@noble/hashes/legacy.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { Context, Crypto, Effect, Layer, PlatformError, Schema } from "effect";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import {
   type AlbumList2,
@@ -36,15 +38,7 @@ const CLIENT_NAME = "muswag";
 
 type RequestParams = Record<string, string | number | boolean | Array<string | number | boolean> | null | undefined>;
 
-export interface SubsonicCryptoService {
-  readonly md5: (input: string) => Effect.Effect<string>;
-  readonly cachedSaltGenerator: () => string;
-}
-
-/** Cryptography required by Subsonic token authentication. */
-export class SubsonicCrypto extends Context.Service<SubsonicCrypto, SubsonicCryptoService>()("@muswag/shared/SubsonicCrypto") {}
-
-export type SubsonicClientError = HttpClientError.HttpClientError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
+export type SubsonicClientError = HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
 
 export interface SubsonicApiService {
   readonly baseUrl: URL;
@@ -52,7 +46,7 @@ export interface SubsonicApiService {
   readonly getAlbum: (args: GetAlbumArgs) => Effect.Effect<SubsonicBaseResponse & { album: AlbumWithSongsID3 }, SubsonicClientError>;
   readonly getAlbumList2: (args: GetAlbumList2Args) => Effect.Effect<SubsonicBaseResponse & { albumList2: AlbumList2 }, SubsonicClientError>;
   readonly getIndexes: (args?: GetIndexesArgs) => Effect.Effect<SubsonicBaseResponse & { indexes: Indexes }, SubsonicClientError>;
-  readonly getCoverArt: (args: GetCoverArtArgs) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError | SubsonicHttpError>;
+  readonly getCoverArt: (args: GetCoverArtArgs) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError>;
   readonly getPlaylists: Effect.Effect<SubsonicBaseResponse & { playlists: Playlists }, SubsonicClientError>;
   readonly getPlaylist: (args: GetPlaylistArgs) => Effect.Effect<SubsonicBaseResponse & { playlist: PlaylistWithSongs }, SubsonicClientError>;
   readonly createPlaylist: (args: CreatePlaylistArgs) => Effect.Effect<SubsonicBaseResponse & { playlist: PlaylistWithSongs }, SubsonicClientError>;
@@ -107,9 +101,9 @@ export const SubsonicAPILive = (config: AuthCredentials) =>
         catch: (cause) => new SubsonicConfigError({ message: cause instanceof Error ? cause.message : "invalid Subsonic configuration", cause }),
       });
       const httpClient = yield* HttpClient.HttpClient;
-      const crypto = yield* SubsonicCrypto;
+      const crypto = yield* Crypto.Crypto;
 
-      const requestUrl = (method: string, params: RequestParams): Effect.Effect<URL> =>
+      const requestUrl = (method: string, params: RequestParams): Effect.Effect<URL, PlatformError.PlatformError> =>
         Effect.gen(function* () {
           const url = new URL(`${method}.view`, baseUrl);
           setSearchParams(url, {
@@ -120,11 +114,11 @@ export const SubsonicAPILive = (config: AuthCredentials) =>
           });
 
           //  maybe later   url.searchParams.set("apiKey", config.auth.apiKey);
-          const s = crypto.cachedSaltGenerator();
+          const s = bytesToHex(yield* crypto.randomBytes(16));
           setSearchParams(url, {
             u: config.auth.username,
-            t: yield* crypto.md5(config.auth.password! + s),
-            s: s,
+            t: bytesToHex(md5(utf8ToBytes(config.auth.password! + s))),
+            s,
           });
 
           return url;

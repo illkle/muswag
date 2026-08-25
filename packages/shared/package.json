@@ -39,6 +39,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noble/hashes": "^2.3.0",
     "@tanstack/db": "catalog:",
     "@tanstack/db-sqlite-persistence-core": "catalog:",
     "@tanstack/node-db-sqlite-persistence": "catalog:",

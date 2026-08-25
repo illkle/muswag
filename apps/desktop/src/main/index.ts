@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import type { MuswagRendererIpc } from "#shared/ipc";
+import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 import { createPlayer, getDefaultMpvIpcPath, type Player } from "./player";
 import { disposeDB } from "./db";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
@@ -12,6 +12,9 @@ import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAp
 import { Effect } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Path } from "effect/Path";
+
+import * as NodePath from "@effect/platform-node/NodePath";
 
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
@@ -29,9 +32,8 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const mainIpc = new IpcListener();
+const mainIpc = new IpcListener<MuswagMainIpc>();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
-let disposeCoverArtIpc: (() => void) | undefined;
 
 function broadcastPlayerEvent(event: MuswagRendererIpc["player:event"][0]): void {
   console.log("broadcast:renderer", event);
@@ -89,14 +91,21 @@ function registerMpvIpc(): void {
 
 const regIpcFs = Effect.gen(function* () {
   const fs = yield* FileSystem;
+  const pathModule = yield* Path;
 
-  mainIpc.handle("fs:write", async (_, path: string, data: any) => {
-    return Effect.runPromise(fs.writeFile(path, data));
+  const basePath = app.getPath("userData");
+
+  const makePathInUserSpace = (path: string) => {
+    return pathModule.join(basePath, path);
+  };
+
+  mainIpc.handle("fs:write", async (_, path: string, data: Uint8Array) => {
+    return Effect.runPromise(fs.writeFile(makePathInUserSpace(path), data));
   });
 
-  mainIpc.handle("fs:delete", async (_, path: string, data: Uint8Array) => {
+  mainIpc.handle("fs:delete", async (_, path: string) => {
     // todo: pass errors
-    await Effect.runPromiseExit(fs.writeFile(path, data));
+    await Effect.runPromiseExit(fs.remove(makePathInUserSpace(path)));
   });
 
   // todo: dispose
@@ -159,7 +168,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(requestedPath).toString());
   });
 
-  Effect.runSync(regIpcFs.pipe(Effect.provide(NodeFileSystem.layer)));
+  Effect.runSync(regIpcFs.pipe(Effect.provide([NodeFileSystem.layer, NodePath.layer])));
 
   mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
   mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());
@@ -227,7 +236,6 @@ app.on("before-quit", () => {
   mainIpc.dispose();
   unsubscribeAppUpdateState?.();
   unsubscribeAppUpdateState = undefined;
-  disposeCoverArtIpc?.();
   unsubscribePlayerEvents?.();
   unsubscribePlayerEvents = undefined;
   player?.dispose();

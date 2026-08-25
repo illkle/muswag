@@ -8,3 +8,5 @@ export * from "./player-queue.js";
 export * from "./api/subsonic-api.js";
 export * from "./api/subsonic-api-schema.js";
 export * from "./syncEffect.js";
+export * from "./credentialsManager.js";
+export * from "./coverManager.js";

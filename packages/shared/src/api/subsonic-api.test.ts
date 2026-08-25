@@ -1,12 +1,17 @@
-import { Effect, Layer } from "effect";
+import { Crypto, Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { describe, expect } from "vitest";
 import { it } from "@effect/vitest";
 
-import SubsonicAPI, { SubsonicAPILive, SubsonicCrypto } from "./subsonic-api.js";
+import SubsonicAPI, { SubsonicAPILive } from "./subsonic-api.js";
 import { HttpClientError, TransportError } from "effect/unstable/http/HttpClientError";
 
 describe("Effect SubsonicAPI", () => {
+  const testCrypto = Crypto.make({
+    randomBytes: (size) => new Uint8Array(size).fill(0xab),
+    digest: (_algorithm, data) => Effect.succeed(data),
+  });
+
   it.effect("correctly makes request to getAlbumList2 and parses result", () =>
     Effect.gen(function* () {
       const fakeHttpClient = HttpClient.make((request, url) => {
@@ -23,7 +28,7 @@ describe("Effect SubsonicAPI", () => {
 
         if (url.pathname === "/rest/ping.view") {
           expect(url.toString()).toMatchInlineSnapshot(`"https://music.k.com/rest/ping.view"`);
-          expect(bodyString).toMatchInlineSnapshot(`"v=1.16.1&c=muswag&f=json&u=kkkkk&t=md5%3A123456secretfixed-salt&s=secretfixed-salt"`);
+          expect(bodyString).toMatchInlineSnapshot(`"v=1.16.1&c=muswag&f=json&u=kkkkk&t=31973b88ed20dce56f7bd58e05c149d7&s=abababababababababababababababab"`);
 
           return Effect.succeed(
             HttpClientResponse.fromWeb(
@@ -43,7 +48,7 @@ describe("Effect SubsonicAPI", () => {
         expect(url.pathname).toBe("/rest/getAlbumList2.view");
         expect(url.toString()).toMatchInlineSnapshot(`"https://music.k.com/rest/getAlbumList2.view"`);
 
-        expect(bodyString).toMatchInlineSnapshot(`"v=1.16.1&c=muswag&f=json&type=alphabeticalByArtist&size=50&u=kkkkk&t=md5%3A123456secretfixed-salt&s=secretfixed-salt"`);
+        expect(bodyString).toMatchInlineSnapshot(`"v=1.16.1&c=muswag&f=json&type=alphabeticalByArtist&size=50&u=kkkkk&t=31973b88ed20dce56f7bd58e05c149d7&s=abababababababababababababababab"`);
 
         return Effect.succeed(
           HttpClientResponse.fromWeb(
@@ -69,20 +74,7 @@ describe("Effect SubsonicAPI", () => {
           username: "kkkkk",
           password: "123456",
         },
-      }).pipe(
-        Layer.provide(
-          Layer.merge(
-            Layer.succeed(HttpClient.HttpClient, fakeHttpClient),
-            Layer.succeed(
-              SubsonicCrypto,
-              SubsonicCrypto.of({
-                md5: (v) => Effect.succeed("md5:" + v),
-                cachedSaltGenerator: () => "secretfixed-salt",
-              }),
-            ),
-          ),
-        ),
-      );
+      }).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, fakeHttpClient), Layer.succeed(Crypto.Crypto, testCrypto))));
 
       const result = yield* Effect.gen(function* () {
         const api = yield* SubsonicAPI;
@@ -158,20 +150,7 @@ describe("Effect SubsonicAPI", () => {
           username: "kkkkk",
           password: "123456",
         },
-      }).pipe(
-        Layer.provide(
-          Layer.merge(
-            Layer.succeed(HttpClient.HttpClient, fakeHttpClient),
-            Layer.succeed(
-              SubsonicCrypto,
-              SubsonicCrypto.of({
-                md5: (v) => Effect.succeed("md5:" + v),
-                cachedSaltGenerator: () => "secretfixed-salt",
-              }),
-            ),
-          ),
-        ),
-      );
+      }).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, fakeHttpClient), Layer.succeed(Crypto.Crypto, testCrypto))));
 
       const result = yield* Effect.gen(function* () {
         const api = yield* SubsonicAPI;
