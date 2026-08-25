@@ -48,7 +48,6 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@fluentui/react-context-selector": "^9.2.19",
     "@muswag/shared": "workspace:*",
-    "@muswag/tsconfig": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",

@@ -111,9 +111,6 @@ importers:
       '@muswag/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@muswag/tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/typescript
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -301,12 +298,12 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-rc.109
         version: 4.0.0-rc.109(effect@4.0.0-rc.109)(vitest@4.1.11)
-      '@muswag/tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/typescript
       '@types/better-sqlite3':
         specifier: 'catalog:'
         version: 9.6.0
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.11)(jsdom@30.0.1(@noble/hashes@2.3.0))(msw@2.12.10(@types/node@26.2.0)(typescript@7.0.2))(vite@8.2.2(@types/node@26.2.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/tests:
     dependencies:
@@ -329,9 +326,6 @@ importers:
         specifier: 'catalog:'
         version: 4.4.3
     devDependencies:
-      '@muswag/tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/typescript
       '@types/better-sqlite3':
         specifier: 'catalog:'
         version: 9.6.0

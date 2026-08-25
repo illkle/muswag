@@ -18,7 +18,7 @@
 # Run this request once before running the Subsonic requests below. They reuse
 # the username, token, and salt returned by this response.
 # @name login
-POST {{baseUrl}}/auth/login
+POST {{baseUrl}}/§3x3 
 Content-Type: application/json
 Accept: application/json
 

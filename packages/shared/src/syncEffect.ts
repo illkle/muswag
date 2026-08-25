@@ -6,10 +6,6 @@ import { eq, queryOnce } from "@tanstack/db";
 
 export type RefreshStatTarget = { type: "album" | "playlist"; id: string };
 
-export interface SyncManagerService {
-  //  sync: (context: SyncManagerContextService) => Effect.Effect<null, AlbumWithoutSongs | SubsonicClientError>;
-  // refreshStats: (target: RefreshStatTarget) => Effect.Effect<void, SubsonicClientError>;
-}
 export interface SyncManagerContextService {
   mode: "no_shortcuts" | "default";
 }

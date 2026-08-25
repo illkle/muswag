@@ -27,7 +27,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@muswag/tsconfig": "workspace:*",
     "@types/better-sqlite3": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "testcontainers": "^12.1.0",

@@ -48,7 +48,7 @@
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@effect/vitest": "4.0.0-rc.109",
-    "@muswag/tsconfig": "workspace:*",
-    "@types/better-sqlite3": "catalog:"
+    "@types/better-sqlite3": "catalog:",
+    "vitest": "catalog:"
   }
 }

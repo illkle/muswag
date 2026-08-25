@@ -1,5 +1,5 @@
 {
-  "extends": "@muswag/tsconfig/internal-package.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
