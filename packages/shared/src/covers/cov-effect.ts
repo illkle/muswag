@@ -52,7 +52,7 @@ const make = (coverSaveLocation: string) =>
         const id = target.type === "artist" ? target.id : target.coverArtId;
         const cov = yield* api.getCoverArt({ id });
         if (cov.status != 200) {
-          return yield* Effect.fail(new ErrorOnCoverFetch({ id, code: cov.status, body: cov.toString() }));
+          return yield* new ErrorOnCoverFetch({ id, code: cov.status, body: cov.toString() });
         }
 
         const bytes = new Uint8Array(yield* cov.arrayBuffer);

@@ -7,7 +7,6 @@ export default defineConfig({
     alias: [
       { find: "better-sqlite3", replacement: "better-sqlite3-test" },
       { find: "@muswag/shared", replacement: resolve(import.meta.dirname, "../shared/src/index.ts") },
-      { find: "@muswag/subsonic-api", replacement: resolve(import.meta.dirname, "../subsonic-api/src/index.ts") },
     ],
   },
   test: {

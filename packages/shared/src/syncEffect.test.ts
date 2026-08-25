@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
 import { Effect, Layer } from "effect";
 
-import SubsonicAPI, { type SubsonicApiService } from "@muswag/subsonic-api/effect";
-import type { AlbumID3, AlbumWithSongsID3, Child, IndexArtist, PlaylistWithSongs } from "@muswag/subsonic-api/schema";
+import SubsonicAPI, { type SubsonicApiService } from "./api/subsonic-api.js";
+import type { AlbumID3, AlbumWithSongsID3, Child, IndexArtist, PlaylistWithSongs } from "./api/subsonic-api-schema.js";
 import { MuswagDatabase, type MuswagDb } from "./db/database.js";
 import type { SyncState } from "./db/types.js";
 import SyncManager from "./syncEffect.js";

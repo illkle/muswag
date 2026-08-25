@@ -30,10 +30,12 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
-    "format": "oxfmt --write src test vitest.config.ts vitest.integration.config.ts",
-    "format:check": "oxfmt --check src test vitest.config.ts vitest.integration.config.ts",
+    "format": "oxfmt --write src vitest.config.ts",
+    "format:check": "oxfmt --check src vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -49,6 +51,8 @@
     "@effect/tsgo": "catalog:",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/better-sqlite3": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "better-sqlite3-test": "npm:better-sqlite3@13.0.3",
     "vitest": "catalog:"
   }
 }

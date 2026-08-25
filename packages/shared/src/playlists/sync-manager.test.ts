@@ -1,20 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { it as effectIt } from "@effect/vitest";
+import { Clock, Effect, Layer, ManagedRuntime } from "effect";
+import { TestClock } from "effect/testing";
 
 import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
 
-import type { CreatePlaylistArgs, DeletePlaylistArgs, GetPlaylistArgs, PlaylistWithSongs, UpdatePlaylistArgs } from "@muswag/subsonic-api";
-import {
-  addPlaylistEntry,
-  createMuswagDb,
-  createPlaylist,
-  createPlaylistSyncManager,
-  deletePlaylist,
-  logout,
-  removePlaylistEntry,
-  renamePlaylist,
-} from "@muswag/shared";
-import { createInMemoryDb } from "../navidrome-testkit.js";
+import type { CreatePlaylistArgs, DeletePlaylistArgs, GetPlaylistArgs, PlaylistWithSongs, UpdatePlaylistArgs } from "../api/subsonic-api-schema.js";
+import { addPlaylistEntry, createPlaylist, deletePlaylist, PlaylistSyncManager, PlaylistSyncManagerLive, type PlaylistSyncManagerOptions, removePlaylistEntry, renamePlaylist } from "./index.js";
+import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
+import { createMuswagDb, MuswagDatabase, type MuswagDb } from "../db/database.js";
+import { createInMemoryDb } from "../test/database.js";
 
 type FakePlaylist = {
   id: string;
@@ -42,6 +38,8 @@ class FakePlaylistApi {
   readonly playlists = new Map<string, FakePlaylist>();
   readonly getPlaylistCalls: string[] = [];
   readonly updatePlaylistCalls: UpdatePlaylistArgs[] = [];
+  getPlaylistsCalls = 0;
+  readonly getPlaylistsCallTimes: number[] = [];
   createError: Error | undefined;
   createPlaylistStarted: (() => void) | undefined;
   createPlaylistGate: Promise<void> | undefined;
@@ -51,60 +49,70 @@ class FakePlaylistApi {
   getPlaylistHook: ((id: string, callNumber: number) => void) | undefined;
   nextId = 1;
 
-  async getPlaylists() {
-    if (this.listError) throw this.listError;
-    return {
-      status: "ok",
-      version: "1.16.1",
-      playlists: {
-        playlist: [...this.playlists.values()].map((playlist) => apiPlaylist(playlist)),
-      },
-    };
+  getPlaylists = Clock.currentTimeMillis.pipe(
+    Effect.flatMap((now) => {
+      this.getPlaylistsCalls += 1;
+      this.getPlaylistsCallTimes.push(now);
+      if (this.listError) return Effect.fail(this.listError);
+      return Effect.succeed({
+        status: "ok" as const,
+        version: "1.16.1",
+        playlists: { playlist: [...this.playlists.values()].map((playlist) => apiPlaylist(playlist)) },
+      });
+    }),
+  );
+
+  getPlaylist({ id }: GetPlaylistArgs) {
+    return Effect.promise(async () => {
+      this.getPlaylistCalls.push(id);
+      this.getPlaylistStarted?.();
+      await this.getPlaylistGate;
+      this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
+      const playlist = this.playlists.get(id);
+      if (!playlist) throw new Error(`Missing playlist: ${id}`);
+      return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(playlist) };
+    });
   }
 
-  async getPlaylist({ id }: GetPlaylistArgs) {
-    this.getPlaylistCalls.push(id);
-    this.getPlaylistStarted?.();
-    await this.getPlaylistGate;
-    this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
-    const playlist = this.playlists.get(id);
-    if (!playlist) throw new Error(`Missing playlist: ${id}`);
-    return { status: "ok", version: "1.16.1", playlist: apiPlaylist(playlist) };
+  createPlaylist(args: CreatePlaylistArgs) {
+    return Effect.promise(async () => {
+      if (this.createError) throw this.createError;
+      this.createPlaylistStarted?.();
+      await this.createPlaylistGate;
+      const id = `server-${this.nextId++}`;
+      const playlist = {
+        id,
+        name: args.name ?? "Untitled",
+        comment: "",
+        public: false,
+        songIds: args.songId ?? [],
+      };
+      this.playlists.set(id, playlist);
+      return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(playlist) };
+    });
   }
 
-  async createPlaylist(args: CreatePlaylistArgs) {
-    if (this.createError) throw this.createError;
-    this.createPlaylistStarted?.();
-    await this.createPlaylistGate;
-    const id = `server-${this.nextId++}`;
-    const playlist = {
-      id,
-      name: args.name ?? "Untitled",
-      comment: "",
-      public: false,
-      songIds: args.songId ?? [],
-    };
-    this.playlists.set(id, playlist);
-    return { status: "ok", version: "1.16.1", playlist: apiPlaylist(playlist) };
+  updatePlaylist(args: UpdatePlaylistArgs) {
+    return Effect.sync(() => {
+      this.updatePlaylistCalls.push(args);
+      const playlist = this.playlists.get(args.playlistId);
+      if (!playlist) throw new Error(`Missing playlist: ${args.playlistId}`);
+      for (const index of args.songIndexToRemove ?? []) {
+        playlist.songIds.splice(index, 1);
+      }
+      playlist.songIds.push(...(args.songIdToAdd ?? []));
+      if (args.name !== undefined) playlist.name = args.name;
+      if (args.comment !== undefined) playlist.comment = args.comment;
+      if (args.public !== undefined) playlist.public = args.public;
+      return { status: "ok" as const, version: "1.16.1" };
+    });
   }
 
-  async updatePlaylist(args: UpdatePlaylistArgs) {
-    this.updatePlaylistCalls.push(args);
-    const playlist = this.playlists.get(args.playlistId);
-    if (!playlist) throw new Error(`Missing playlist: ${args.playlistId}`);
-    for (const index of args.songIndexToRemove ?? []) {
-      playlist.songIds.splice(index, 1);
-    }
-    playlist.songIds.push(...(args.songIdToAdd ?? []));
-    if (args.name !== undefined) playlist.name = args.name;
-    if (args.comment !== undefined) playlist.comment = args.comment;
-    if (args.public !== undefined) playlist.public = args.public;
-    return { status: "ok", version: "1.16.1" };
-  }
-
-  async deletePlaylist({ id }: DeletePlaylistArgs) {
-    this.playlists.delete(id);
-    return { status: "ok", version: "1.16.1" };
+  deletePlaylist({ id }: DeletePlaylistArgs) {
+    return Effect.sync(() => {
+      this.playlists.delete(id);
+      return { status: "ok" as const, version: "1.16.1" };
+    });
   }
 }
 
@@ -112,16 +120,32 @@ function insertCredentials(db: ReturnType<typeof createInMemoryDb>) {
   db.userCredentials.insert({ id: 1, url: "https://music.example", username: "alice", password: "secret" });
 }
 
-function createManager(db: ReturnType<typeof createInMemoryDb>, api: FakePlaylistApi) {
-  return createPlaylistSyncManager(db, {
+function managerLayer(db: MuswagDb, api: FakePlaylistApi, options: PlaylistSyncManagerOptions = {}) {
+  return PlaylistSyncManagerLive({
     intervalMs: 0,
     debounceMs: 10_000,
     retryMs: 10_000,
-    apiFactory: () => api as never,
-  });
+    ...options,
+  }).pipe(Layer.provide(Layer.mergeAll(Layer.succeed(MuswagDatabase, db), Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService))));
 }
 
-async function waitForCompletedSync(manager: ReturnType<typeof createPlaylistSyncManager>): Promise<void> {
+function createManager(db: MuswagDb, api: FakePlaylistApi, options: PlaylistSyncManagerOptions = {}) {
+  const layer = managerLayer(db, api, options);
+  const runtime = ManagedRuntime.make(layer);
+  const service = runtime.runSync(PlaylistSyncManager);
+
+  return {
+    getStatus: () => runtime.runSync(service.getStatus),
+    subscribe: (listener: Parameters<typeof service.subscribe>[0]) => runtime.runSync(service.subscribe(listener)),
+    sync: () => runtime.runPromise(service.sync),
+    pause: () => runtime.runPromise(service.pause),
+    resume: () => runtime.runPromise(service.resume),
+    cancel: () => runtime.runPromise(service.cancel),
+    destroy: () => runtime.dispose(),
+  };
+}
+
+async function waitForCompletedSync(manager: ReturnType<typeof createManager>): Promise<void> {
   if (manager.getStatus().lastSyncedAt) return;
 
   await new Promise<void>((resolve, reject) => {
@@ -144,7 +168,7 @@ function settle(): Promise<void> {
 }
 
 /** Resolves once a pass that started after this call has finished, successfully or not. */
-function waitForSyncCycle(manager: ReturnType<typeof createPlaylistSyncManager>, timeoutMs = 1_000): Promise<void> {
+function waitForSyncCycle(manager: ReturnType<typeof createManager>, timeoutMs = 1_000): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let sawSyncing = false;
     const timeout = setTimeout(() => {
@@ -343,11 +367,8 @@ describe("playlist sync manager", () => {
     api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
     api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
     insertCredentials(db);
-    const manager = createPlaylistSyncManager(db, {
-      intervalMs: 0,
+    const manager = createManager(db, api, {
       debounceMs: 5,
-      retryMs: 10_000,
-      apiFactory: () => api as never,
     });
 
     await waitForCompletedSync(manager);
@@ -370,11 +391,8 @@ describe("playlist sync manager", () => {
     api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
     api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
     insertCredentials(db);
-    const manager = createPlaylistSyncManager(db, {
-      intervalMs: 0,
+    const manager = createManager(db, api, {
       debounceMs: 5,
-      retryMs: 10_000,
-      apiFactory: () => api as never,
     });
 
     await waitForCompletedSync(manager);
@@ -408,6 +426,33 @@ describe("playlist sync manager", () => {
     await manager.sync();
 
     expect(api.getPlaylistCalls).toEqual(["server-1", "server-2"]);
+    manager.destroy();
+  });
+
+  it("serializes concurrent manual syncs", async () => {
+    const db = createInMemoryDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: [] });
+    insertCredentials(db);
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+
+    let release!: () => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    api.getPlaylistStarted = started;
+    api.getPlaylistGate = new Promise<void>((resolve) => (release = resolve));
+    const previousCalls = api.getPlaylistCalls.length;
+
+    const first = manager.sync();
+    await startedPromise;
+    const second = manager.sync();
+    await settle();
+    expect(api.getPlaylistCalls).toHaveLength(previousCalls + 1);
+
+    release();
+    await Promise.all([first, second]);
+    expect(api.getPlaylistCalls).toHaveLength(previousCalls + 2);
     manager.destroy();
   });
 
@@ -445,40 +490,23 @@ describe("playlist sync manager", () => {
     manager.destroy();
   });
 
-  it("backs off between consecutive failures", async () => {
+  effectIt.effect("backs off between consecutive failures", () => {
     const db = createInMemoryDb();
     const api = new FakePlaylistApi();
     api.listError = new Error("offline");
     insertCredentials(db);
 
-    // Retry delays sit above every other timer in play, so the filter below can only see retries.
-    const delays: number[] = [];
-    const realSetTimeout = globalThis.setTimeout;
-    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((handler: never, ms?: number, ...rest: never[]) => {
-      if (typeof ms === "number" && ms >= 20_000) delays.push(ms);
-      return realSetTimeout(handler, ms, ...rest);
-    }) as never);
+    return Effect.gen(function* () {
+      const manager = yield* PlaylistSyncManager;
+      yield* manager.sync;
+      yield* TestClock.adjust(20_000);
+      yield* TestClock.adjust(40_000);
+      yield* TestClock.adjust(60_000);
+      yield* Effect.yieldNow;
 
-    const manager = createPlaylistSyncManager(db, {
-      intervalMs: 0,
-      debounceMs: 10_000,
-      retryMs: 20_000,
-      maxRetryMs: 60_000,
-      apiFactory: () => api as never,
-    });
-
-    await waitForSyncCycle(manager);
-    await settle();
-    await manager.sync();
-    await manager.sync();
-    await manager.sync();
-
-    manager.destroy();
-    spy.mockRestore();
-
-    const progression = delays.filter((ms, index) => index === 0 || ms !== delays[index - 1]);
-    expect(progression).toEqual([20_000, 40_000, 60_000]);
-    expect(Math.max(...delays)).toBe(60_000);
+      const callTimes = [...new Set(api.getPlaylistsCallTimes)];
+      expect(callTimes.slice(-4)).toEqual([0, 20_000, 60_000, 120_000]);
+    }).pipe(Effect.provide(managerLayer(db, api, { retryMs: 20_000, maxRetryMs: 60_000 })));
   });
 
   it("does not drop unsynced playlists when the collection loads lazily", async () => {
@@ -495,12 +523,7 @@ describe("playlist sync manager", () => {
     // A fresh process starts syncing against a collection that has not read from disk yet.
     const cold = createMuswagDb(persistence);
     const api = new FakePlaylistApi();
-    const manager = createPlaylistSyncManager(cold, {
-      intervalMs: 0,
-      debounceMs: 10_000,
-      retryMs: 10_000,
-      apiFactory: () => api as never,
-    });
+    const manager = createManager(cold, api);
 
     await waitForCompletedSync(manager);
 
@@ -616,7 +639,8 @@ describe("playlist sync manager", () => {
 
     const syncing = manager.sync();
     await startedPromise;
-    await logout(db);
+    db.playlists.delete([...db.playlists.keys()]);
+    db.userCredentials.delete(1);
     release();
     await syncing;
 

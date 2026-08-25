@@ -60,20 +60,6 @@ export interface SubsonicApiService {
   readonly deletePlaylist: (args: DeletePlaylistArgs) => Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
 }
 
-export interface SubsonicPromiseApi {
-  readonly baseUrl: URL;
-  readonly ping: () => Promise<SubsonicBaseResponse>;
-  readonly getAlbum: (args: GetAlbumArgs) => Promise<SubsonicBaseResponse & { album: AlbumWithSongsID3 }>;
-  readonly getAlbumList2: (args: GetAlbumList2Args) => Promise<SubsonicBaseResponse & { albumList2: AlbumList2 }>;
-  readonly getIndexes: (args?: GetIndexesArgs) => Promise<SubsonicBaseResponse & { indexes: Indexes }>;
-  readonly getCoverArt: (args: GetCoverArtArgs) => Promise<HttpClientResponse.HttpClientResponse>;
-  readonly getPlaylists: () => Promise<SubsonicBaseResponse & { playlists: Playlists }>;
-  readonly getPlaylist: (args: GetPlaylistArgs) => Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }>;
-  readonly createPlaylist: (args: CreatePlaylistArgs) => Promise<SubsonicBaseResponse & { playlist: PlaylistWithSongs }>;
-  readonly updatePlaylist: (args: UpdatePlaylistArgs) => Promise<SubsonicBaseResponse>;
-  readonly deletePlaylist: (args: DeletePlaylistArgs) => Promise<SubsonicBaseResponse>;
-}
-
 export class SubsonicAPI extends Context.Service<SubsonicAPI, SubsonicApiService>()("@muswag/shared/SubsonicAPI") {}
 
 export default SubsonicAPI;
@@ -105,6 +91,7 @@ const setSearchParams = (url: URL, map: Record<string, unknown>) => {
       for (const item of v) {
         url.searchParams.append(k, String(item));
       }
+      continue;
     }
 
     url.searchParams.set(k, String(v));
@@ -208,12 +195,4 @@ function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
       Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid payload`, cause })),
     )) as SubsonicBaseResponse & T["Type"];
   });
-}
-
-function rotateLeft(value: number, shift: number): number {
-  return (value << shift) | (value >>> (32 - shift));
-}
-
-function add32(...values: number[]): number {
-  return values.reduce((sum, value) => (sum + value) >>> 0, 0);
 }

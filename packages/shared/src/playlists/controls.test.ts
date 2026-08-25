@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  addPlaylistEntries,
-  addPlaylistEntry,
-  createPlaylist,
-  deletePlaylist,
-  movePlaylistEntry,
-  removePlaylistEntry,
-  renamePlaylist,
-  setPlaylistComment,
-  setPlaylistVisibility,
-} from "@muswag/shared";
-import { createInMemoryDb } from "../navidrome-testkit.js";
+import { addPlaylistEntries, addPlaylistEntry, createPlaylist, deletePlaylist, movePlaylistEntry, removePlaylistEntry, renamePlaylist, setPlaylistComment, setPlaylistVisibility } from "./controls.js";
+import { createInMemoryDb } from "../test/database.js";
 
 describe("playlist controls", () => {
   it("applies ordered offline edits to the persisted playlist row", () => {

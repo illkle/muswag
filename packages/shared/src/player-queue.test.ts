@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { logout, parseQueueManagerSnapshot, type QueueManagerSnapshot } from "@muswag/shared";
-import { createInMemoryDb } from "../navidrome-testkit.js";
+import { parseQueueManagerSnapshot, type QueueManagerSnapshot } from "./player-queue.js";
+import { createInMemoryDb } from "./test/database.js";
 
 const valid: QueueManagerSnapshot = {
   version: 1,
@@ -31,11 +31,11 @@ describe("player queue persistence DTO", () => {
     expect(parseQueueManagerSnapshot({ ...valid, source: { ref: { type: "songs", queryId: "opaque" }, cursor: { type: "gap", offset: 0 } } })).toBeNull();
   });
 
-  it("stores the singleton locally and removes it on logout", async () => {
+  it("stores and removes the singleton locally", async () => {
     const db = createInMemoryDb();
     await db.playerQueue.insert({ id: 1, snapshot: valid }).isPersisted.promise;
     expect(db.playerQueue.get(1)?.snapshot.nowPlaying?.track.title).toBe("Preserved");
-    await logout(db);
+    db.playerQueue.delete(1);
     expect(db.playerQueue.get(1)).toBeUndefined();
   });
 });

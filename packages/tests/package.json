@@ -13,7 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:sync-benchmark": "vitest run --config vitest.sync-benchmark.config.ts"

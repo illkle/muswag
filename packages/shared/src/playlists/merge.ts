@@ -18,10 +18,7 @@ function sameEntries(left: readonly PlaylistEntry[], right: readonly PlaylistEnt
 }
 
 function sameRemoteEntries(left: readonly PlaylistEntry[], right: readonly PlaylistEntry[]): boolean {
-  return sameArray(
-    left.map(({ songId }) => songId),
-    right.map(({ songId }) => songId),
-  );
+  return left.length === right.length && left.every((entry, index) => entry.songId === right[index]?.songId);
 }
 
 function sameEditableState(left: PlaylistState, right: PlaylistState): boolean {
@@ -103,14 +100,17 @@ function mergeEntries(base: readonly PlaylistEntry[], local: readonly PlaylistEn
   if (sameEntries(local, base)) return [...remote];
   if (sameEntries(remote, base)) return [...local];
 
-  const baseIds = new Set(entryIds(base));
-  const localIds = new Set(entryIds(local));
-  const remoteIds = new Set(entryIds(remote));
-  const survivingIds = new Set([...baseIds].filter((id) => localIds.has(id) && remoteIds.has(id)));
+  const baseEntryIds = entryIds(base);
+  const localEntryIds = entryIds(local);
+  const remoteEntryIds = entryIds(remote);
+  const baseIds = new Set(baseEntryIds);
+  const localIds = new Set(localEntryIds);
+  const remoteIds = new Set(remoteEntryIds);
+  const survivingIds = new Set(baseEntryIds.filter((id) => localIds.has(id) && remoteIds.has(id)));
 
-  const baseOrder = entryIds(base).filter((id) => survivingIds.has(id));
-  const localOrder = entryIds(local).filter((id) => survivingIds.has(id));
-  const remoteOrder = entryIds(remote).filter((id) => survivingIds.has(id));
+  const baseOrder = baseEntryIds.filter((id) => survivingIds.has(id));
+  const localOrder = localEntryIds.filter((id) => survivingIds.has(id));
+  const remoteOrder = remoteEntryIds.filter((id) => survivingIds.has(id));
   const coreOrder = sameArray(localOrder, baseOrder) ? remoteOrder : localOrder;
 
   const localById = new Map(local.map((entry) => [entry.id, entry]));

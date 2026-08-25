@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { mergePlaylists } from "@muswag/shared";
-import type { PlaylistEntry, PlaylistRecord, PlaylistState, RemotePlaylist } from "@muswag/shared";
+import { mergePlaylists } from "./merge.js";
+import type { PlaylistEntry, PlaylistRecord, PlaylistState, RemotePlaylist } from "./types.js";
 
 function entries(...songIds: string[]): PlaylistEntry[] {
   return songIds.map((songId, index) => ({ id: `entry-${index}`, songId }));
@@ -114,10 +114,7 @@ describe("mergePlaylists", () => {
 
   it("uses at-least-once create semantics after a lost response", () => {
     const draft = state();
-    const result = mergePlaylists(
-      [{ id: "draft", serverId: null, base: null, local: draft, revision: 0 }],
-      [remote({ id: "possibly-created", songIds: ["song-a", "song-b"] })],
-    );
+    const result = mergePlaylists([{ id: "draft", serverId: null, base: null, local: draft, revision: 0 }], [remote({ id: "possibly-created", songIds: ["song-a", "song-b"] })]);
 
     expect(result.local.map(({ id }) => id)).toEqual(["draft", "possibly-created"]);
     expect(result.remote).toEqual([{ type: "create", localId: "draft", state: draft }]);

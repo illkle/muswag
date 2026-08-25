@@ -12,7 +12,7 @@ export interface SyncManagerContextService {
 
 export class SyncManagerContext extends Context.Service<SyncManagerContext, SyncManagerContextService>()("@muswag/shared/SyncManagerContext", {}) {}
 
-export default class SyncManager extends Context.Service<SyncManager>()("@muswag/shared/SyncManager", {
+export class SyncManager extends Context.Service<SyncManager>()("@muswag/shared/SyncManager", {
   make: Effect.gen(function* () {
     const db = yield* MuswagDatabase;
     const api = yield* SubsonicAPI;
@@ -26,6 +26,8 @@ export default class SyncManager extends Context.Service<SyncManager>()("@muswag
 }) {
   static readonly layerWithoutDependencies = Layer.effect(this, this.make);
 }
+
+export default SyncManager;
 
 const sync = Effect.gen(function* () {
   const db = yield* MuswagDatabase;

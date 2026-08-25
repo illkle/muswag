@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSubsonicStreamUrl } from "@muswag/shared";
+import { buildSubsonicStreamUrl } from "./helpers.js";
 
 describe("buildSubsonicStreamUrl", () => {
   it("requests the original bounded stream so mpv can prefetch the next track", () => {
-    const url = new URL(buildSubsonicStreamUrl((v) => "somehash", { password: "secret", url: "https://music.example", username: "alice" }, "track-1"));
+    const url = new URL(buildSubsonicStreamUrl((_v) => "somehash", { password: "secret", url: "https://music.example", username: "alice" }, "track-1"));
 
     expect(url.pathname).toBe("/rest/stream.view");
     expect(url.searchParams.get("id")).toBe("track-1");
