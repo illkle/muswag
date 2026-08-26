@@ -13,8 +13,13 @@ export type BetterSqlite3Database = {
   close(): void;
 };
 
-export type Album = AlbumID3;
-export type Artist = IndexArtist;
+export type CoverFields = {
+  coverArtPath?: string | undefined;
+  coverArtSourceId?: string | undefined;
+};
+
+export type Album = AlbumID3 & CoverFields;
+export type Artist = IndexArtist & CoverFields;
 export type Song = Child;
 
 export type CoverOnDisk = {
@@ -47,6 +52,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
+
   albums.createIndex(({ id }) => id);
 
   const artists = createCollection(
@@ -65,6 +71,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     persistedCollectionOptions<Child, string>({
       id: "songs",
       getKey: (song) => song.id,
+
       persistence,
       schemaVersion: 1,
       defaultIndexType: BasicIndex,
@@ -125,7 +132,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
 
   const covers = createCollection(
     persistedCollectionOptions<CoverOnDisk, string>({
-      id: "syncState",
+      id: "covers",
       getKey: (state) => state.key,
       persistence,
       schemaVersion: 1,

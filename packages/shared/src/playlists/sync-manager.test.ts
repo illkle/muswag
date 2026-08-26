@@ -35,6 +35,7 @@ function apiPlaylist(playlist: FakePlaylist): PlaylistWithSongs {
 }
 
 class FakePlaylistApi {
+  readonly username = "alice";
   readonly playlists = new Map<string, FakePlaylist>();
   readonly getPlaylistCalls: string[] = [];
   readonly updatePlaylistCalls: UpdatePlaylistArgs[] = [];
@@ -614,7 +615,7 @@ describe("playlist sync manager", () => {
     manager.destroy();
   });
 
-  it("aborts an in-flight pass and clears local state when credentials are removed", async () => {
+  it("aborts an in-flight pass when its session scope closes", async () => {
     const db = createInMemoryDb();
     const api = new FakePlaylistApi();
     api.playlists.set("server-1", {
@@ -640,14 +641,11 @@ describe("playlist sync manager", () => {
     const syncing = manager.sync();
     await startedPromise;
     db.playlists.delete([...db.playlists.keys()]);
-    db.userCredentials.delete(1);
+    const destroying = manager.destroy();
     release();
-    await syncing;
+    await syncing.catch(() => undefined);
+    await destroying;
 
     expect([...db.playlists.entries()]).toEqual([]);
-    expect(db.userCredentials.get(1)).toBeUndefined();
-    expect(manager.getStatus().state).toBe("idle");
-    expect(manager.getStatus().lastSyncedAt).toBeNull();
-    manager.destroy();
   });
 });

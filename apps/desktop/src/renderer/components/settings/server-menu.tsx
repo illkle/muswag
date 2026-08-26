@@ -1,35 +1,19 @@
-import { ArrowsClockwiseIcon, BooksIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, SignOutIcon, SpinnerGapIcon, WarningIcon, WaveformIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, SignOutIcon, SpinnerGapIcon, WarningIcon, WaveformIcon } from "@phosphor-icons/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { usePlayerError, usePlayerMpvState } from "#/components/player-provider";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
-import { SyncDialog } from "#/components/settings/sync-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "#/components/ui/menu";
 import { SidebarMenuButton } from "#/components/ui/sidebar";
 import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/hooks/use-app-update";
-import { useSyncControls } from "#/hooks/use-sync-controls";
 import { useUser } from "#/lib/queries";
-import { SyncManager } from "#/lib/sync-manager";
-import { getSyncProgressPercent, getSyncSummaryLine } from "#/lib/sync-status";
+import { AppClient } from "#/core/client";
 import { cn } from "#/lib/utils";
 
-type SettingsDialog = "sync" | "mpv" | "update";
-
-/** Progress along the bottom edge of the button; indeterminate until a step reports countable work. */
-function SyncLine({ percent }: { percent: number | null }) {
-  return (
-    <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-sidebar-border" data-slot="sync-progress">
-      {percent === null ? (
-        <span className="block h-full w-1/3 animate-[sync-line_1.4s_ease-in-out_infinite] rounded-full bg-primary motion-reduce:w-full motion-reduce:animate-none" />
-      ) : (
-        <span className="block h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${percent}%` }} />
-      )}
-    </span>
-  );
-}
+type SettingsDialog = "mpv" | "update";
 
 function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" | "destructive" }) {
   return (
@@ -41,7 +25,6 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" |
 
 export function ServerMenu() {
   const userStateQuery = useUser();
-  const syncControls = useSyncControls();
   const mpvState = usePlayerMpvState();
   const playerError = usePlayerError();
   const appUpdate = useAppUpdate();
@@ -49,7 +32,10 @@ export function ServerMenu() {
   const [dialog, setDialog] = useState<SettingsDialog | null>(null);
 
   const logoutMutation = useMutation({
-    mutationFn: () => SyncManager.logout(),
+    mutationFn: () => AppClient.logout(),
+  });
+  const syncMutation = useMutation({
+    mutationFn: () => AppClient.sync("quick"),
   });
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -63,10 +49,7 @@ export function ServerMenu() {
     return new URL(userStateQuery.data.url).hostname;
   }, [userStateQuery.data]);
 
-  const { latestSync, running: syncRunning } = syncControls;
-  const syncPercent = syncRunning ? getSyncProgressPercent(latestSync?.progress) : null;
-  const syncSummary = getSyncSummaryLine(latestSync);
-  const syncFailed = latestSync?.lastStatus === "failed";
+  const syncRunning = syncMutation.isPending;
 
   // `checking` is the startup state, so it must not paint the button red before mpv is actually missing.
   const playbackBroken = mpvState.status === "missing" || mpvState.status === "invalid" || Boolean(playerError);
@@ -100,7 +83,6 @@ export function ServerMenu() {
               <span className="flex-1 truncate text-left font-medium">{hostName}</span>
               {playbackBroken && syncRunning ? <WarningIcon /> : null}
               <CaretUpDownIcon className={playbackBroken ? "opacity-70" : "text-muted-foreground"} />
-              {syncRunning ? <SyncLine percent={syncPercent} /> : null}
             </SidebarMenuButton>
           }
         />
@@ -113,27 +95,10 @@ export function ServerMenu() {
 
           <MenuSeparator />
 
-          <div className="flex items-center gap-1">
-            <MenuItem className="min-w-0 flex-1" onClick={() => setDialog("sync")}>
-              {syncRunning ? (
-                <SpinnerGapIcon className="size-4 shrink-0 animate-spin" />
-              ) : syncFailed ? (
-                <WarningIcon className="size-4 shrink-0 text-destructive" />
-              ) : (
-                <BooksIcon className="size-4 shrink-0 text-muted-foreground" />
-              )}
-              <span className="min-w-0 flex-1 truncate">{syncSummary}</span>
-            </MenuItem>
-            <MenuItem
-              aria-label={syncRunning ? "Cancel sync" : "Sync now"}
-              className="shrink-0 px-2 text-muted-foreground"
-              closeOnClick={false}
-              disabled={syncRunning && syncControls.cancelling}
-              onClick={() => (syncRunning ? syncControls.cancelSync() : syncControls.startSync("quick"))}
-            >
-              {syncRunning ? <XIcon className="size-4" /> : <ArrowsClockwiseIcon className="size-4" />}
-            </MenuItem>
-          </div>
+          <MenuItem disabled={syncRunning} onClick={() => syncMutation.mutate()}>
+            {syncRunning ? <SpinnerGapIcon className="size-4 animate-spin" /> : <ArrowsClockwiseIcon className="size-4 text-muted-foreground" />}
+            {syncRunning ? "Syncing library…" : "Sync library"}
+          </MenuItem>
 
           <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={() => setDialog("mpv")}>
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
@@ -169,7 +134,6 @@ export function ServerMenu() {
         </MenuContent>
       </Menu>
 
-      <SyncDialog controls={syncControls} onOpenChange={closeDialog} open={dialog === "sync"} serverName={hostName} />
       <MpvInfoDialog onOpenChange={setMpvDialogOpen} open={dialog === "mpv"} />
       <AppUpdateDialog onOpenChange={closeDialog} open={dialog === "update"} state={appUpdate} />
     </>

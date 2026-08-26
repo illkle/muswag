@@ -4,7 +4,6 @@ import type { PlaylistWithSongs } from "../api/subsonic-api-schema.js";
 import { queryOnce } from "@tanstack/db";
 
 import { MuswagDatabase, type MuswagDb } from "../db/database.js";
-import { getUserInfo } from "../helpers.js";
 import { hasPendingLocalChanges, mergePlaylists } from "./merge.js";
 import type { PlaylistRecord, PlaylistState, RemotePlaylist, RemotePlaylistMutation } from "./types.js";
 
@@ -272,14 +271,6 @@ function executeRemoteMutation(db: MuswagDb, api: PlaylistApi, mutation: RemoteP
   });
 }
 
-function sameCredentials(left: { url: string; username: string; password: string } | null, right: { url: string; username: string; password: string } | null): boolean {
-  return left?.url === right?.url && left?.username === right?.username && left?.password === right?.password;
-}
-
-function assertCredentials(db: MuswagDb, expected: { url: string; username: string; password: string }) {
-  return sameCredentials(expected, getUserInfo(db)) ? Effect.void : Effect.interrupt;
-}
-
 const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
   Effect.gen(function* () {
     const db = yield* MuswagDatabase;
@@ -292,15 +283,16 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
     const maxRetryMs = options.maxRetryMs ?? DEFAULT_MAX_RETRY_MS;
     const fetchConcurrency = options.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY;
     const requests = yield* Queue.unbounded<SyncRequest>();
+    const waiters = new Set<Deferred.Deferred<PlaylistSyncStatus>>();
     const listeners = new Set<(status: PlaylistSyncStatus) => void>();
     let status: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
     let scheduled: Fiber.Fiber<void> | undefined;
     let currentPass: Fiber.Fiber<boolean, unknown> | undefined;
+    let currentRequest: SyncRequest | undefined;
     let interval: Fiber.Fiber<never> | undefined;
     let retryDelay = retryMs;
     let paused = false;
     let applyingLocalState = false;
-    let observedCredentials = getUserInfo(db);
 
     const setStatus = (next: PlaylistSyncStatus) => {
       status = next;
@@ -318,13 +310,20 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
     const requestSync = (full: boolean) =>
       Effect.gen(function* () {
         const result = yield* Deferred.make<PlaylistSyncStatus>();
+        waiters.add(result);
         yield* enqueue({ full, result });
-        return yield* Deferred.await(result);
+        return yield* Deferred.await(result).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              waiters.delete(result);
+            }),
+          ),
+        );
       });
 
     const schedule = (delay: number, full = false): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (paused || !getUserInfo(db)) return;
+        if (paused) return;
 
         yield* clearScheduled;
         if (!currentPass) setStatus({ ...status, state: "scheduled" });
@@ -346,8 +345,6 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
 
     const runPass = (full: boolean) =>
       Effect.gen(function* () {
-        const credentials = getUserInfo(db);
-        if (!credentials) return false;
         let needsRerun = false;
 
         const fetchPlaylists = (forceIds: ReadonlySet<string> = new Set()) =>
@@ -355,7 +352,7 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
             // Records with pending local work are never reused, so a mutated playlist is always verified.
             const reusable = full ? new Map<string, PlaylistState>() : reusableBases(yield* readLocalPlaylists(db));
             for (const serverId of forceIds) reusable.delete(serverId);
-            return yield* fetchRemotePlaylists(api, credentials.username, fetchConcurrency, reusable);
+            return yield* fetchRemotePlaylists(api, api.username, fetchConcurrency, reusable);
           });
 
         // Sync's own writes must not re-trigger the debounce, or every pass schedules another one.
@@ -371,15 +368,12 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         const applyMerged = (local: readonly PlaylistRecord[]) => suppressed(() => applyLocalState(db, local));
 
         let remote = yield* fetchPlaylists();
-        yield* assertCredentials(db, credentials);
-
         let merged = mergePlaylists(yield* readLocalPlaylists(db), remote);
         applyMerged(merged.local);
 
         const mutatedServerIds = new Set<string>();
         for (const mutation of merged.remote) {
-          yield* assertCredentials(db, credentials);
-          const result = yield* executeRemoteMutation(db, api, mutation, credentials.username, suppressed);
+          const result = yield* executeRemoteMutation(db, api, mutation, api.username, suppressed);
           if (result === "stale") needsRerun = true;
           if (mutation.type === "create") {
             const serverId = db.playlists.get(mutation.localId)?.serverId;
@@ -393,7 +387,6 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
           // Never verify a write from `base`: servers may normalize or reject parts of an update while
           // still returning success, and a stale mutation needs the actual latest remote state.
           remote = yield* fetchPlaylists(mutatedServerIds);
-          yield* assertCredentials(db, credentials);
           merged = mergePlaylists(yield* readLocalPlaylists(db), remote);
           applyMerged(merged.local);
           if (merged.remote.length > 0) needsRerun = true;
@@ -404,8 +397,10 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
 
     const processRequest = (request: SyncRequest) =>
       Effect.gen(function* () {
-        if (paused || !getUserInfo(db)) {
+        currentRequest = request;
+        if (paused) {
           if (request.result) yield* Deferred.succeed(request.result, status);
+          currentRequest = undefined;
           return;
         }
 
@@ -435,6 +430,7 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         if (retryAfter !== undefined) yield* schedule(retryAfter, true);
         else if (needsRerun) yield* enqueue({ full: false });
         if (request.result) yield* Deferred.succeed(request.result, passStatus);
+        currentRequest = undefined;
       });
 
     yield* Effect.forkIn(Effect.forever(Queue.take(requests).pipe(Effect.flatMap(processRequest))), scope);
@@ -450,27 +446,6 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
       { includeInitialState: false },
     );
 
-    const credentialsSubscription = db.userCredentials.subscribeChanges(
-      () => {
-        const credentials = getUserInfo(db);
-        if (sameCredentials(observedCredentials, credentials)) return;
-        observedCredentials = credentials;
-
-        if (!credentials) {
-          launch(
-            Effect.gen(function* () {
-              yield* clearScheduled;
-              if (currentPass) yield* Fiber.interrupt(currentPass);
-              setStatus({ ...status, state: "idle", error: null });
-            }),
-          );
-          return;
-        }
-        launch(schedule(0, true));
-      },
-      { includeInitialState: false },
-    );
-
     if (intervalMs > 0) {
       interval = yield* Effect.forkIn(Effect.forever(Effect.sleep(intervalMs).pipe(Effect.andThen(schedule(0, true)))), scope);
     }
@@ -480,15 +455,21 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         yield* clearScheduled;
         if (currentPass) yield* Fiber.interrupt(currentPass);
         if (interval) yield* Fiber.interrupt(interval);
+        const finalStatus: PlaylistSyncStatus = { ...status, state: "idle" };
+        if (currentRequest?.result) yield* Deferred.succeed(currentRequest.result, finalStatus);
+        currentRequest = undefined;
+        for (const waiter of waiters) {
+          yield* Deferred.succeed(waiter, finalStatus);
+        }
+        waiters.clear();
         playlistSubscription.unsubscribe();
-        credentialsSubscription.unsubscribe();
         listeners.clear();
       }),
     );
 
     yield* Effect.forkIn(
-      Effect.promise(() => queryOnce((query) => query.from({ credentials: db.userCredentials }))).pipe(
-        Effect.andThen(Effect.suspend(() => (scheduled || currentPass || Queue.sizeUnsafe(requests) > 0 || status.lastSyncedAt ? Effect.void : schedule(0, true)))),
+      Effect.promise(() => queryOnce((query) => query.from({ playlists: db.playlists }))).pipe(
+        Effect.andThen(Effect.suspend(() => (currentPass || Queue.sizeUnsafe(requests) > 0 || status.lastSyncedAt ? Effect.void : schedule(0, true)))),
       ),
       scope,
     );

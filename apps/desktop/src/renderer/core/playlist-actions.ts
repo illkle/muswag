@@ -1,5 +1,5 @@
 import { db } from "#/lib/db-renderer";
-import { PlaylistSync } from "#/lib/playlist-sync";
+import { AppClient } from "#/core/client";
 import {
   addPlaylistEntries,
   createPlaylist,
@@ -52,6 +52,6 @@ export const PlaylistActions = {
   },
 
   syncNow() {
-    return PlaylistSync.sync();
+    return AppClient.syncPlaylists();
   },
 };

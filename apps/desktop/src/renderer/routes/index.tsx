@@ -5,7 +5,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { getErrorMessage } from "#/lib/err";
 import { useUser } from "#/lib/queries";
-import { SyncManager } from "#/lib/sync-manager";
+import { AppClient } from "#/core/client";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
@@ -30,7 +30,7 @@ const defaultCredentials = {
 function LoginScreen() {
   const loginMutation = useMutation({
     mutationFn: async (values: CredentialsForm) => {
-      await SyncManager.login(values);
+      await AppClient.login(values);
     },
   });
 

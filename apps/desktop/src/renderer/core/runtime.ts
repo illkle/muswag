@@ -1,15 +1,14 @@
 import { db } from "#/lib/db-renderer.ts";
-import { CoverManagerLive, FileSystemError, MiniFs, MuswagDatabase, PlaylistSyncManagerLive, SessionManager, SubsonicAPILive } from "@muswag/shared";
-import { SyncManager } from "@muswag/shared";
+import { CredentialsStore, CredentialsStoreError, FileSystemError, MiniFs, MuswagDatabase, SessionManagerLive, type SessionCredentials } from "@muswag/shared";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BrowserCrypto } from "@effect/platform-browser";
 import { FetchHttpClient } from "effect/unstable/http";
-import { FilesystemIpc } from "#/lib/ipc.ts";
+import { FilesystemIpc, PlayerIPC } from "#/lib/ipc.ts";
 import { layer as PathLayer } from "effect/Path";
+import { queryOnce } from "@tanstack/react-db";
 
 const baseLayer = Layer.mergeAll(FetchHttpClient.layer, BrowserCrypto.layer);
 const dbLayer = Layer.succeed(MuswagDatabase, db);
-const credentialManager = Layer.effect(SessionManager, SessionManager.make);
 const miniFs = Layer.succeed(MiniFs, {
   writeFile: (path, data) =>
     Effect.tryPromise({
@@ -31,10 +30,43 @@ const miniFs = Layer.succeed(MiniFs, {
     }),
 });
 
-const merged = Layer.mergeAll(baseLayer, dbLayer, credentialManager, miniFs, PathLayer);
+const credentialsStore = Layer.succeed(CredentialsStore, {
+  load: Effect.tryPromise({
+    try: async (): Promise<SessionCredentials | null> => {
+      const record = await queryOnce((query) => query.from({ credentials: db.userCredentials }).findOne());
+      const credentials = record ? { url: record.url, username: record.username, password: record.password } : null;
+      await PlayerIPC.setCredentials(credentials);
+      return credentials;
+    },
+    catch: (cause) => new CredentialsStoreError({ operation: "load", message: "Failed to load stored credentials", cause }),
+  }),
+  save: (credentials) =>
+    Effect.tryPromise({
+      try: async () => {
+        const existing = db.userCredentials.get(1);
+        const transaction = existing
+          ? db.userCredentials.update(1, (draft) => {
+              draft.url = credentials.url;
+              draft.username = credentials.username;
+              draft.password = credentials.password;
+            })
+          : db.userCredentials.insert({ id: 1, ...credentials });
+        await transaction.isPersisted.promise;
+        await PlayerIPC.setCredentials(credentials);
+      },
+      catch: (cause) => new CredentialsStoreError({ operation: "save", message: "Failed to save credentials", cause }),
+    }),
+  clear: Effect.tryPromise({
+    try: async () => {
+      const existing = db.userCredentials.get(1);
+      if (existing) await db.userCredentials.delete(1).isPersisted.promise;
+      await PlayerIPC.setCredentials(null);
+    },
+    catch: (cause) => new CredentialsStoreError({ operation: "clear", message: "Failed to clear credentials", cause }),
+  }),
+});
 
-const coverManager = CoverManagerLive("/covers");
-const playlistManager = PlaylistSyncManagerLive();
-const syncManager = SyncManager.layerWithoutDependencies;
+const infrastructure = Layer.mergeAll(baseLayer, dbLayer, miniFs, credentialsStore, PathLayer);
+const appLayer = SessionManagerLive({ coverSaveLocation: "covers" }).pipe(Layer.provideMerge(infrastructure));
 
-const runtime = ManagedRuntime.make(merged);
+export const runtime = ManagedRuntime.make(appLayer);

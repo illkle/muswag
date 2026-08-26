@@ -1,5 +1,5 @@
 import type { ApplyMpvQueueInput, MpvInstallMethod, MpvState, PlayerEvent, PlayerState } from "./player";
-import type { UserCredentialsToLogin } from "@muswag/shared";
+import type { SessionCredentials } from "@muswag/shared";
 
 export type MpvInstallOutput = {
   line: string;
@@ -40,7 +40,7 @@ export type MuswagMainIpc = {
   "player:restartCurrent": () => void;
   "player:stop": () => void;
   "player:seek": (positionSeconds: number) => void;
-  "player:setCredentials": (credentials: UserCredentialsToLogin | null) => Promise<void>;
+  "player:setCredentials": (credentials: SessionCredentials | null) => Promise<void>;
   "player:setMuted": (muted: boolean) => void;
   "player:setVolume": (volumePercent: number) => void;
   "player:toggle": () => void;

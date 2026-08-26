@@ -2,9 +2,10 @@ import { Context, Data, Effect, Layer } from "effect";
 import { MuswagDatabase } from "./db/database.js";
 import SubsonicAPI from "./api/subsonic-api.js";
 import type { AlbumID3, albumID3Schema, Child, indexArtistSchema } from "./api/subsonic-api-schema.js";
-import { eq, queryOnce } from "@tanstack/db";
+import { createTransaction, eq, inArray, queryOnce } from "@tanstack/db";
 
 export type RefreshStatTarget = { type: "album" | "playlist"; id: string };
+export type SyncMode = "full" | "quick";
 
 export interface SyncManagerContextService {
   mode: "no_shortcuts" | "default";
@@ -47,28 +48,45 @@ const refreshStats = (target: RefreshStatTarget) =>
     const db = yield* MuswagDatabase;
     const api = yield* SubsonicAPI;
 
+    const tx = createTransaction({
+      mutationFn: async ({ transaction }) => {
+        db.albums.utils.acceptMutations(transaction);
+        db.songs.utils.acceptMutations(transaction);
+      },
+    });
+
     switch (target.type) {
       case "album": {
         const { album } = yield* api.getAlbum({ id: target.id });
-        db.albums.update(target.id, (draft) => {
-          assignFields(draft, album as AlbumID3, ALBUM_STAT_FIELDS);
+
+        tx.mutate(() => {
+          db.albums.update(target.id, (draft) => {
+            assignFields(draft, album as AlbumID3, ALBUM_STAT_FIELDS);
+          });
+
+          for (const song of album.song ?? []) {
+            if (!db.songs.get(song.id)) continue;
+            db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
+          }
         });
 
-        for (const song of album.song ?? []) {
-          if (!db.songs.get(song.id)) continue;
-          db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
-        }
         break;
       }
       case "playlist": {
         const { playlist } = yield* api.getPlaylist({ id: target.id });
-        for (const song of playlist.entry ?? []) {
-          if (!db.songs.get(song.id)) continue;
-          db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
-        }
+
+        tx.mutate(() => {
+          for (const song of playlist.entry ?? []) {
+            if (!db.songs.get(song.id)) continue;
+            db.songs.update(song.id, (draft) => assignFields(draft, song as Child, SONG_STAT_FIELDS));
+          }
+        });
+
         break;
       }
     }
+
+    yield* Effect.promise(() => tx.isPersisted.promise);
   });
 
 const syncArtistsFromIndexes = (lastSync: number) =>
@@ -79,14 +97,10 @@ const syncArtistsFromIndexes = (lastSync: number) =>
 
     const { indexes } = yield* api.getIndexes({ ifModifiedSince: smc.mode === "default" ? lastSync : 0 });
 
-    if (!indexes.index) {
-      return;
-    }
+    if (!indexes.index) return;
 
     const toInsert = indexes.index.flatMap((i1) => (i1.artist ?? []).map((i2) => syncArtistFromIndex(i2)));
-    if (!toInsert.length) {
-      return;
-    }
+    if (!toInsert.length) return;
 
     const inserted = yield* Effect.all(toInsert, { concurrency: 10 });
     const insertedSet = new Set(inserted);
@@ -99,7 +113,10 @@ const syncArtistsFromIndexes = (lastSync: number) =>
       }
     }
 
-    if (toRemove.length) db.artists.delete(toRemove);
+    if (toRemove.length) {
+      const tx = db.artists.delete(toRemove);
+      yield* Effect.promise(() => tx.isPersisted.promise);
+    }
   });
 
 const syncArtistFromIndex = (artist: typeof indexArtistSchema.Type) =>
@@ -109,11 +126,9 @@ const syncArtistFromIndex = (artist: typeof indexArtistSchema.Type) =>
 
     const existing = db.artists.get(artist.id);
 
-    if (!existing) {
-      db.artists.insert({ ...artist });
-    } else {
-      db.artists.update(artist.id, (draft) => Object.assign(draft, artist));
-    }
+    const tx = existing ? db.artists.update(artist.id, (draft) => Object.assign(draft, artist)) : db.artists.insert({ ...artist });
+
+    yield* Effect.promise(() => tx.isPersisted.promise);
 
     return artist.id;
   });
@@ -125,44 +140,67 @@ const syncAlbumList = () =>
     const api = yield* SubsonicAPI;
     const db = yield* MuswagDatabase;
 
-    const albumSet = new Set<string>();
+    const albumSet = new Set<string>(db.albums.keys());
 
     for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
       const { albumList2 } = yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: ALBUM_PAGE_SIZE, offset });
+      const albums = albumList2.album ?? [];
 
-      if (!albumList2.album) {
+      if (albums.length === 0) {
         break;
       }
 
-      const tasks = albumList2.album.map((v) => syncAlbums(v));
-
+      const tasks = albums.map((album) => syncAlbum(album));
       const res = yield* Effect.all(tasks, { concurrency: 10 });
 
-      for (const item of res) {
-        albumSet.add(item);
-      }
+      for (const id of res) albumSet.delete(id);
 
-      if (albumList2.album.length < ALBUM_PAGE_SIZE) break;
+      if (albums.length < ALBUM_PAGE_SIZE) break;
     }
 
-    for (const alb of db.albums.keys()) {
-      if (!albumSet.has(alb)) {
-        db.albums.delete(alb);
-      }
-    }
+    const albumsToRemove = [...albumSet.keys()];
+    const songsToRemove = yield* Effect.promise(() => queryOnce((q) => q.from({ s: db.songs }).where((v) => inArray(v.s.albumId, albumsToRemove))).then((v) => v.map((vv) => vv.id)));
+
+    const tx = createTransaction({
+      mutationFn: async ({ transaction }) => {
+        db.albums.utils.acceptMutations(transaction);
+        db.songs.utils.acceptMutations(transaction);
+      },
+    });
+
+    tx.mutate(() => {
+      if (albumsToRemove.length) db.albums.delete(albumsToRemove);
+      if (songsToRemove.length) db.songs.delete(songsToRemove);
+    });
+
+    yield* Effect.promise(() => tx.isPersisted.promise);
   });
 
 class AlbumWithoutSongs extends Data.TaggedError("AlbumWithoutSongs")<{
   readonly id: string;
+  readonly expectedSongCount: number;
 }> {}
 
-const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
+const syncAlbum = (incoming: typeof albumID3Schema.Type) =>
   Effect.gen(function* () {
     const api = yield* SubsonicAPI;
     const db = yield* MuswagDatabase;
     const smc = yield* SyncManagerContext;
 
     const existing = db.albums.get(incoming.id);
+    const existingSongs = existing?.id
+      ? yield* Effect.promise(() =>
+          queryOnce((q) =>
+            q
+              .from({ songs: db.songs })
+              .where((v) => eq(v.songs.albumId, existing.id))
+              .select((v) => ({
+                id: v.songs.id,
+              })),
+          ).then((v) => v.map((s) => s.id)),
+        )
+      : [];
+
     if (smc.mode === "default") {
       const same =
         existing &&
@@ -170,33 +208,45 @@ const syncAlbums = (incoming: typeof albumID3Schema.Type) =>
         existing.duration === incoming.duration &&
         existing.created === incoming.created &&
         existing.name === incoming.name &&
-        existing.artist === incoming.artist;
+        existing.artist === incoming.artist &&
+        existingSongs.length === incoming.songCount;
 
       if (same) {
-        return yield* Effect.succeed(incoming.id);
+        return incoming.id;
       }
-    }
-
-    if (existing) {
-      db.albums.update(incoming.id, (draft) => Object.assign(draft, incoming));
-    } else {
-      db.albums.insert(incoming);
     }
 
     const { album } = yield* api.getAlbum({ id: incoming.id });
 
-    if (!album.song) {
-      return yield* new AlbumWithoutSongs({ id: incoming.id });
+    if (!album.song && incoming.songCount > 0) {
+      return yield* new AlbumWithoutSongs({ id: incoming.id, expectedSongCount: incoming.songCount });
     }
 
-    const existingSongs = yield* Effect.promise(async () => queryOnce((q) => q.from({ songs: db.songs }).where((v) => eq(v.songs.albumId, incoming.id))));
-    db.songs.delete(existingSongs.map(({ id }) => id));
-
-    for (const song of album.song) {
-      db.songs.insert(song);
+    if (existingSongs.length > 0) {
+      const tx = db.songs.delete([...existingSongs]);
+      yield* Effect.promise(() => tx.isPersisted.promise);
     }
 
-    return yield* Effect.succeed(incoming.id);
+    const tx = createTransaction({
+      mutationFn: async ({ transaction }) => {
+        db.albums.utils.acceptMutations(transaction);
+        db.songs.utils.acceptMutations(transaction);
+      },
+    });
+
+    tx.mutate(() => {
+      if (existing) {
+        db.albums.update(incoming.id, (draft) => Object.assign(draft, incoming));
+      } else {
+        db.albums.insert(incoming);
+      }
+
+      db.songs.insert([...(album.song ?? [])]);
+    });
+
+    yield* Effect.promise(() => tx.isPersisted.promise);
+
+    return incoming.id;
   });
 
 function assignFields<T extends object, K extends keyof T>(draft: T, source: T, fields: readonly K[]): void {

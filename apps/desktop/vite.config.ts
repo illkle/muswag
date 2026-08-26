@@ -1,9 +1,11 @@
 import { defineConfig } from "vitest/config";
 import { devtools } from "@tanstack/devtools-vite";
 
-import viteReact from "@vitejs/plugin-react";
+import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tanstackRouter from "@tanstack/router-plugin/vite";
+
+import babel from "@rolldown/plugin-babel";
 
 export const rendererConfig = defineConfig({
   clearScreen: false,
@@ -37,6 +39,9 @@ export const rendererConfig = defineConfig({
       autoCodeSplitting: true,
     }),
     viteReact(),
+    babel({
+      presets: [reactCompilerPreset()],
+    }),
   ],
 });
 

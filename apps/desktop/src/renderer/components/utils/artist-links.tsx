@@ -2,7 +2,7 @@ import { Fragment } from "react";
 
 import { Link } from "@tanstack/react-router";
 
-export function ArtistLink({ artistId, children, className }: { artistId: string | null | undefined; children: React.ReactNode; className?: string }) {
+export function ArtistLink({ artistId, children, className }: { artistId: string | null | undefined; children: React.ReactNode; className?: string | undefined }) {
   if (!artistId) {
     return <span className={className}>{children}</span>;
   }
@@ -30,10 +30,10 @@ type Artist = {
 };
 
 type ArtistFields = {
-  displayArtist?: string;
-  artistId?: string;
-  artists?: Artist[];
-  artist?: string;
+  displayArtist?: string | undefined;
+  artistId?: string | undefined;
+  artists?: readonly Artist[] | undefined;
+  artist?: string | undefined;
 };
 
 export type ArtistCredit = {
@@ -96,8 +96,8 @@ export function ArtistLinks({
   className,
   linkClassName,
 }: ArtistFields & {
-  className?: string;
-  linkClassName?: string;
+  className?: string | undefined;
+  linkClassName?: string | undefined;
 }) {
   const credits = getArtistCredits({
     artist,

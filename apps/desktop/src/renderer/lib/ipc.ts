@@ -2,7 +2,7 @@ import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
 import type { AppUpdateState, MpvInstallOutput, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 import type { ApplyMpvQueueInput, MpvInstallMethod, PlayerEvent, PlayerRuntimeState } from "#shared/player";
-import type { UserCredentialsToLogin } from "@muswag/shared";
+import type { SessionCredentials } from "@muswag/shared";
 
 const mainIpc = new IpcEmitter<MuswagMainIpc>();
 const rendererIpc = new IpcListener<MuswagRendererIpc>();
@@ -39,7 +39,7 @@ export const PlayerIPC = {
   play: () => mainIpc.invoke("player:play"),
   restartCurrent: () => mainIpc.invoke("player:restartCurrent"),
   seek: (positionSeconds: number) => mainIpc.invoke("player:seek", positionSeconds),
-  setCredentials: (credentials: UserCredentialsToLogin | null) => mainIpc.invoke("player:setCredentials", credentials),
+  setCredentials: (credentials: SessionCredentials | null) => mainIpc.invoke("player:setCredentials", credentials),
   setMuted: (muted: boolean) => mainIpc.invoke("player:setMuted", muted),
   setVolume: (volumePercent: number) => mainIpc.invoke("player:setVolume", volumePercent),
   subscribe: subscribePlayer,

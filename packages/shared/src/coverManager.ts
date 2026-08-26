@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer } from "effect";
+import { Context, Data, Deferred, Effect, Layer } from "effect";
 import { MuswagDatabase } from "./db/database.js";
 import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
@@ -18,20 +18,20 @@ export interface MiniFsService {
 
 export class MiniFs extends Context.Service<MiniFs, MiniFsService>()("@muswag/shared/covers/MiniFs") {}
 
-export type CoverTarget =
-  | { type: "album"; id: string; coverArtId: string }
-  | {
-      type: "artist";
-      id: string;
-    };
+export type CoverTarget = { type: "album"; id: string; coverArtId: string | null } | { type: "artist"; id: string; coverArtId: string | null };
 
 export interface CoverManagerService {
-  readonly ensure: (target: CoverTarget) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | PlatformError | FileSystemError | HttpClientError | SubsonicHttpError>;
-  readonly repair: (target: CoverTarget, failedPath: string) => Effect.Effect<string, ErrorOnCoverFetch | UnsupportedExtension | FileSystemError | PlatformError | HttpClientError | SubsonicHttpError>;
+  readonly ensure: (target: CoverTarget) => Effect.Effect<string | null, ErrorOnCoverFetch | UnsupportedExtension | PlatformError | FileSystemError | HttpClientError | SubsonicHttpError>;
+  readonly repair: (
+    target: CoverTarget,
+    failedPath: string,
+  ) => Effect.Effect<string | null, ErrorOnCoverFetch | UnsupportedExtension | FileSystemError | PlatformError | HttpClientError | SubsonicHttpError>;
   readonly remove: (t: CoverTarget) => Effect.Effect<void, FileSystemError>;
 }
 
-export default class CoverManager extends Context.Service<CoverManager, CoverManagerService>()("@muswag/shared/covers/CoverManager") {}
+export class CoverManager extends Context.Service<CoverManager, CoverManagerService>()("@muswag/shared/covers/CoverManager") {}
+
+export default CoverManager;
 
 export const CoverManagerLive = (coverSaveLocation: string) => Layer.effect(CoverManager, make(coverSaveLocation));
 
@@ -45,16 +45,32 @@ class UnsupportedExtension extends Data.TaggedError("UnsupportedExtension")<{
   readonly id: string;
 }> {}
 
+type CoverManagerError = ErrorOnCoverFetch | UnsupportedExtension | PlatformError | FileSystemError | HttpClientError | SubsonicHttpError;
+
 const make = (coverSaveLocation: string) =>
   Effect.gen(function* () {
     const db = yield* MuswagDatabase;
     const fs = yield* MiniFs;
     const path = yield* Path;
     const api = yield* SubsonicAPI;
+    const inFlight = new Map<string, Deferred.Deferred<string | null, CoverManagerError>>();
 
-    const ensure = (target: CoverTarget) =>
+    const setTargetPath = (target: CoverTarget, sourceId: string, coverPath: string) => {
+      if (target.type === "album" && db.albums.get(target.id)) {
+        db.albums.update(target.id, (draft) => {
+          draft.coverArtPath = coverPath;
+          draft.coverArtSourceId = sourceId;
+        });
+      } else if (target.type === "artist" && db.artists.get(target.id)) {
+        db.artists.update(target.id, (draft) => {
+          draft.coverArtPath = coverPath;
+          draft.coverArtSourceId = sourceId;
+        });
+      }
+    };
+
+    const fetchCover = (target: CoverTarget, id: string, key: string) =>
       Effect.gen(function* () {
-        const id = target.type === "artist" ? target.id : target.coverArtId;
         const cov = yield* api.getCoverArt({ id });
         if (cov.status != 200) {
           return yield* new ErrorOnCoverFetch({ id, code: cov.status, body: cov.toString() });
@@ -67,22 +83,76 @@ const make = (coverSaveLocation: string) =>
           return yield* new UnsupportedExtension({ id });
         }
 
-        const key = getFileName(target);
         const fileName = key + extension;
         const writePath = path.join(coverSaveLocation, fileName);
 
         yield* fs.writeFile(writePath, bytes);
 
-        db.covers.insert({ key, fileName });
+        const existing = db.covers.get(key);
+        if (existing) {
+          if (existing.fileName !== fileName) {
+            db.covers.update(key, (draft) => {
+              draft.fileName = fileName;
+            });
+          }
+        } else {
+          db.covers.insert({ key, fileName });
+        }
 
-        return yield* Effect.succeed(fileName);
+        setTargetPath(target, id, writePath);
+        return writePath;
+      });
+
+    const ensure = (target: CoverTarget): Effect.Effect<string | null, CoverManagerError> =>
+      Effect.suspend(() => {
+        const id = target.coverArtId;
+        if (!id) return Effect.succeed(null);
+
+        const key = getFileName(target);
+        const cached = db.covers.get(key);
+        if (cached) {
+          const cachedPath = path.join(coverSaveLocation, cached.fileName);
+          setTargetPath(target, id, cachedPath);
+          return Effect.succeed(cachedPath);
+        }
+
+        const current = inFlight.get(key);
+        if (current) return Deferred.await(current);
+
+        const deferred = Deferred.makeUnsafe<string | null, CoverManagerError>();
+        inFlight.set(key, deferred);
+        return Deferred.complete(
+          deferred,
+          fetchCover(target, id, key).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                inFlight.delete(key);
+              }),
+            ),
+          ),
+        ).pipe(Effect.andThen(Deferred.await(deferred)));
       });
 
     return {
       ensure,
-      repair: (target) => {
-        const id = getId(target);
-        db.covers.delete(id);
+      repair: (target, failedPath) => {
+        const key = getFileName(target);
+        if (db.covers.get(key)) db.covers.delete(key);
+        if (target.type === "album" && db.albums.get(target.id)) {
+          db.albums.update(target.id, (draft) => {
+            if (draft.coverArtPath === failedPath) {
+              delete draft.coverArtPath;
+              delete draft.coverArtSourceId;
+            }
+          });
+        } else if (target.type === "artist" && db.artists.get(target.id)) {
+          db.artists.update(target.id, (draft) => {
+            if (draft.coverArtPath === failedPath) {
+              delete draft.coverArtPath;
+              delete draft.coverArtSourceId;
+            }
+          });
+        }
         return ensure(target);
       },
       remove: (target: CoverTarget) => {
@@ -99,8 +169,6 @@ const make = (coverSaveLocation: string) =>
   });
 
 const getFileName = (t: CoverTarget) => (t.type === "album" ? `album:${t.id}:${t.coverArtId}` : `artist:${t.id}`);
-
-const getId = (t: CoverTarget) => (t.type === "album" ? t.coverArtId : t.id);
 
 function detectCoverExtension(bytes: Uint8Array): string | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return ".jpg";

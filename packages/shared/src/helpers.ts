@@ -1,14 +1,9 @@
-import type { MuswagDb } from "./db/database.js";
+import type { SessionCredentials } from "./credentialsManager.js";
 
-export type UserCredentialsToLogin = { url: string; username: string; password: string };
-
-export type UserInfo = { url: string; username: string; password: string } | null;
-
-const USER_CREDENTIALS_ROW_ID = 1;
 const SUBSONIC_API_VERSION = "1.16.1";
 const HEX = "0123456789abcdef";
 
-export function buildSubsonicStreamUrl(md5: (v: string) => string, credentials: UserCredentialsToLogin, songId: string): string {
+export function buildSubsonicStreamUrl(md5: (v: string) => string, credentials: SessionCredentials, songId: string): string {
   const salt = randomHex(16);
   const token = md5(`${credentials.password}${salt}`);
   const url = new URL("stream.view", getSubsonicRestBaseUrl(credentials.url));
@@ -58,14 +53,4 @@ function randomHex(byteCount: number): string {
     output += HEX[byte & 0x0f] ?? "0";
   }
   return output;
-}
-
-export function getUserInfo(db: MuswagDb): UserInfo {
-  const row = db.userCredentials.get(USER_CREDENTIALS_ROW_ID);
-  if (!row) return null;
-  return {
-    url: row.url,
-    username: row.username,
-    password: row.password,
-  };
 }

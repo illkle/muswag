@@ -10,8 +10,8 @@ import { MpvClient } from "./mpv-client";
 class FakeSocket extends Duplex {
   readonly commands: Array<Record<string, unknown>> = [];
   private nextEntryId = 1;
-  _read(): void {}
-  _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+  override _read(): void {}
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     const payload = JSON.parse(chunk.toString()) as Record<string, unknown>;
     this.commands.push(payload);
     const requestId = payload.request_id;

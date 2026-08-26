@@ -73,7 +73,7 @@ export class QueueManager {
       try {
         await this.player.applyQueue({
           snapshot: composeMpvQueue(restoredState),
-          select: nowPlaying ? { key: nowPlaying.key, play: !snapshot.playback.paused, positionSeconds: snapshot.playback.positionSeconds } : undefined,
+          ...(nowPlaying ? { select: { key: nowPlaying.key, play: !snapshot.playback.paused, positionSeconds: snapshot.playback.positionSeconds } } : {}),
         });
       } catch (cause) {
         active?.window.dispose();
@@ -193,7 +193,7 @@ export class QueueManager {
     const window = await VirtualSourceWindow.create({
       source,
       start,
-      signal,
+      ...(signal ? { signal } : {}),
       onChange: () => {
         if (active && this.activeSource === active) void this.serial.run(() => this.sourceWindowChanged(active!));
       },

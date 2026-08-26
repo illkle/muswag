@@ -1,9 +1,19 @@
 import { cn } from "#/lib/utils";
-import { CoverArt } from "#/lib/sync-manager";
+import { AppClient } from "#/core/client";
 import type { CoverTarget } from "@muswag/shared";
 import { startTransition, useEffect, useRef, useState } from "react";
 
-export function AlbumCover({ coverArtPath, instantLoad = false, target, className }: { coverArtPath: string | undefined; instantLoad?: boolean; target?: CoverTarget; className?: string }) {
+export function AlbumCover({
+  coverArtPath,
+  instantLoad = false,
+  target,
+  className,
+}: {
+  coverArtPath: string | undefined;
+  instantLoad?: boolean | undefined;
+  target?: CoverTarget | undefined;
+  className?: string | undefined;
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const [repairedPath, setRepairedPath] = useState<string | null>(null);
   const [retryRevision, setRetryRevision] = useState(0);
@@ -31,7 +41,7 @@ export function AlbumCover({ coverArtPath, instantLoad = false, target, classNam
   useEffect(() => {
     if (!loadImage || effectiveCoverArtPath || !target?.coverArtId) return;
     const requestedTargetKey = targetKey;
-    void CoverArt.ensure(target)
+    void AppClient.ensureCover(target)
       .then((path) => {
         if (path && currentTargetKey.current === requestedTargetKey) setRepairedPath(path);
       })
@@ -68,7 +78,7 @@ export function AlbumCover({ coverArtPath, instantLoad = false, target, classNam
 
             repairAttempts.current += 1;
             const requestedTargetKey = targetKey;
-            void CoverArt.repair(target, effectiveCoverArtPath)
+            void AppClient.repairCover(target, effectiveCoverArtPath)
               .then((path) => {
                 if (!path || currentTargetKey.current !== requestedTargetKey) return;
                 setRepairedPath(path);

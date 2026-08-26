@@ -11,10 +11,10 @@ import { SongListRoot, SongRenderPlaylist } from "#/components/song-list";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
-import { PlaylistActions } from "#/lib/playlist-actions";
+import { PlaylistActions } from "#/core/playlist-actions";
 import { totalDuration, usePlaylist } from "#/lib/playlist-queries";
 import { playlistOccurrenceKey, type Song } from "@muswag/shared";
-import { usePlaylistSongStatsRefresh } from "#/lib/stats-refresh";
+import { usePlaylistSongStatsRefresh } from "#/core/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
   component: RouteComponent,

@@ -31,8 +31,6 @@ import {
   pingResponseSchema,
   responseEnvelopeSchema,
 } from "./subsonic-api-schema.js";
-import type { AuthCredentials } from "../credentialsManager.js";
-
 const API_VERSION = "1.16.1";
 const CLIENT_NAME = "muswag";
 
@@ -40,8 +38,17 @@ type RequestParams = Record<string, string | number | boolean | Array<string | n
 
 export type SubsonicClientError = HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
 
+export interface SubsonicApiConfig {
+  readonly url: string;
+  readonly auth: {
+    readonly username: string;
+    readonly password: string;
+  };
+}
+
 export interface SubsonicApiService {
   readonly baseUrl: URL;
+  readonly username: string;
   readonly ping: Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
   readonly getAlbum: (args: GetAlbumArgs) => Effect.Effect<SubsonicBaseResponse & { album: AlbumWithSongsID3 }, SubsonicClientError>;
   readonly getAlbumList2: (args: GetAlbumList2Args) => Effect.Effect<SubsonicBaseResponse & { albumList2: AlbumList2 }, SubsonicClientError>;
@@ -66,7 +73,7 @@ function normalizeRestUrl(rawUrl: string): URL {
   return new URL(value);
 }
 
-function validateConfig(config: AuthCredentials): URL {
+function validateConfig(config: SubsonicApiConfig): URL {
   if (!config) throw new Error("no config provided");
   if (!config.url) throw new Error("no url provided");
   if (!config.auth) throw new Error("no auth provided");
@@ -92,75 +99,75 @@ const setSearchParams = (url: URL, map: Record<string, unknown>) => {
   }
 };
 
-export const SubsonicAPILive = (config: AuthCredentials) =>
-  Layer.effect(
-    SubsonicAPI,
-    Effect.gen(function* () {
-      const baseUrl = yield* Effect.try({
-        try: () => validateConfig(config),
-        catch: (cause) => new SubsonicConfigError({ message: cause instanceof Error ? cause.message : "invalid Subsonic configuration", cause }),
+export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
+  Effect.gen(function* () {
+    const baseUrl = yield* Effect.try({
+      try: () => validateConfig(config),
+      catch: (cause) => new SubsonicConfigError({ message: cause instanceof Error ? cause.message : "invalid Subsonic configuration", cause }),
+    });
+    const httpClient = yield* HttpClient.HttpClient;
+    const crypto = yield* Crypto.Crypto;
+
+    const requestUrl = (method: string, params: RequestParams): Effect.Effect<URL, PlatformError.PlatformError> =>
+      Effect.gen(function* () {
+        const url = new URL(`${method}.view`, baseUrl);
+        setSearchParams(url, {
+          v: API_VERSION,
+          c: CLIENT_NAME,
+          f: "json",
+          ...params,
+        });
+
+        //  maybe later   url.searchParams.set("apiKey", config.auth.apiKey);
+        const s = bytesToHex(yield* crypto.randomBytes(16));
+        setSearchParams(url, {
+          u: config.auth.username,
+          t: bytesToHex(md5(utf8ToBytes(config.auth.password + s))),
+          s,
+        });
+
+        return url;
       });
-      const httpClient = yield* HttpClient.HttpClient;
-      const crypto = yield* Crypto.Crypto;
 
-      const requestUrl = (method: string, params: RequestParams): Effect.Effect<URL, PlatformError.PlatformError> =>
-        Effect.gen(function* () {
-          const url = new URL(`${method}.view`, baseUrl);
-          setSearchParams(url, {
-            v: API_VERSION,
-            c: CLIENT_NAME,
-            f: "json",
-            ...params,
-          });
+    const request = (method: string, params: RequestParams) =>
+      Effect.gen(function* () {
+        const url = yield* requestUrl(method, params);
+        const outgoing = HttpClientRequest.post(new URL(url.pathname, url.origin)).pipe(HttpClientRequest.bodyUrlParams(url.searchParams));
 
-          //  maybe later   url.searchParams.set("apiKey", config.auth.apiKey);
-          const s = bytesToHex(yield* crypto.randomBytes(16));
-          setSearchParams(url, {
-            u: config.auth.username,
-            t: bytesToHex(md5(utf8ToBytes(config.auth.password! + s))),
-            s,
-          });
+        const response = yield* Effect.retry(httpClient.execute(outgoing), { times: 2 });
+        if (response.status < 200 || response.status >= 300) {
+          return yield* new SubsonicHttpError({ method, status: response.status, message: `${method} failed: HTTP ${response.status}` });
+        }
+        return response;
+      });
 
-          return url;
-        });
+    const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) =>
+      Effect.gen(function* () {
+        const response = yield* request(method, params);
+        const payload = yield* response.json;
+        return yield* parseResponse(method, schema, payload);
+      }).pipe(Effect.withSpan(`SubsonicAPI.${method}`));
 
-      const request = (method: string, params: RequestParams) =>
-        Effect.gen(function* () {
-          const url = yield* requestUrl(method, params);
-          const outgoing = HttpClientRequest.post(new URL(url.pathname, url.origin)).pipe(HttpClientRequest.bodyUrlParams(url.searchParams));
+    const ping = json("ping", {}, pingResponseSchema);
+    // yield* ping;
 
-          const response = yield* Effect.retry(httpClient.execute(outgoing), { times: 2 });
-          if (response.status < 200 || response.status >= 300) {
-            return yield* new SubsonicHttpError({ method, status: response.status, message: `${method} failed: HTTP ${response.status}` });
-          }
-          return response;
-        });
+    return {
+      baseUrl,
+      username: config.auth.username,
+      ping,
+      getAlbum: (args) => json("getAlbum", args, getAlbumResponseSchema),
+      getAlbumList2: (args) => json("getAlbumList2", args, getAlbumList2ResponseSchema),
+      getIndexes: (args = {}) => json("getIndexes", args, getIndexesResponseSchema),
+      getCoverArt: (args) => request("getCoverArt", args).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
+      getPlaylists: json("getPlaylists", {}, getPlaylistsResponseSchema),
+      getPlaylist: (args) => json("getPlaylist", args, getPlaylistResponseSchema),
+      createPlaylist: (args) => json("createPlaylist", args, createPlaylistResponseSchema),
+      updatePlaylist: (args) => json("updatePlaylist", args, pingResponseSchema),
+      deletePlaylist: (args) => json("deletePlaylist", args, pingResponseSchema),
+    } satisfies SubsonicApiService;
+  });
 
-      const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) =>
-        Effect.gen(function* () {
-          const response = yield* request(method, params);
-          const payload = yield* response.json;
-          return yield* parseResponse(method, schema, payload);
-        }).pipe(Effect.withSpan(`SubsonicAPI.${method}`));
-
-      const ping = json("ping", {}, pingResponseSchema);
-      // yield* ping;
-
-      return {
-        baseUrl,
-        ping,
-        getAlbum: (args) => json("getAlbum", args, getAlbumResponseSchema),
-        getAlbumList2: (args) => json("getAlbumList2", args, getAlbumList2ResponseSchema),
-        getIndexes: (args = {}) => json("getIndexes", args, getIndexesResponseSchema),
-        getCoverArt: (args) => request("getCoverArt", args).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
-        getPlaylists: json("getPlaylists", {}, getPlaylistsResponseSchema),
-        getPlaylist: (args) => json("getPlaylist", args, getPlaylistResponseSchema),
-        createPlaylist: (args) => json("createPlaylist", args, createPlaylistResponseSchema),
-        updatePlaylist: (args) => json("updatePlaylist", args, pingResponseSchema),
-        deletePlaylist: (args) => json("deletePlaylist", args, pingResponseSchema),
-      };
-    }),
-  );
+export const SubsonicAPILive = (config: SubsonicApiConfig) => Layer.effect(SubsonicAPI, makeSubsonicAPI(config));
 
 function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
   method: string,

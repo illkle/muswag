@@ -1,7 +1,5 @@
 import { createElectronSQLitePersistence } from "@tanstack/electron-db-sqlite-persistence";
 import { createMuswagDb } from "@muswag/shared/db";
-import { queryOnce } from "@tanstack/react-db";
-import { PlayerIPC } from "#/lib/ipc";
 import { CreateFuse } from "@muswag/shared";
 
 const persistence = createElectronSQLitePersistence({
@@ -9,14 +7,5 @@ const persistence = createElectronSQLitePersistence({
 });
 
 export const db = createMuswagDb(persistence);
-
-const queryAndSetCredentials = async () => {
-  const credentials = await queryOnce((v) => v.from({ user: db.userCredentials }).findOne());
-  await PlayerIPC.setCredentials(credentials ?? null);
-};
-
-/** Resolves after the initial persisted credentials have reached the main player. */
-export const dbPlayerReady = queryAndSetCredentials();
-db.userCredentials.subscribeChanges(queryAndSetCredentials);
 
 export const FuzeSearch = CreateFuse(db);

@@ -1,5 +1,5 @@
 import { createStore } from "@tanstack/react-store";
-import { clonePlaybackItem, type UserCredentialsToLogin } from "@muswag/shared";
+import { clonePlaybackItem, type SessionCredentials } from "@muswag/shared";
 
 import type { ApplyMpvQueueInput, MpvInstallMethod, MpvState, PlayerEvent, PlayerMetaState, PlayerRuntimeState, PlayerState } from "#shared/player";
 import { createDefaultPlayerMetaState, createDefaultPlayerRuntimeState, getMpvUnavailableReason, isSamePlayerMetaState } from "#shared/player";
@@ -55,7 +55,7 @@ export class Player {
   private readonly runtimeStore;
   private readonly disposeCallbacks: Array<() => void> = [];
   private readonly volumeFile;
-  private credentials: UserCredentialsToLogin | null = null;
+  private credentials: SessionCredentials | null = null;
   private desiredPaused = false;
   private pendingRestore: { key: string; positionSeconds: number } | null = null;
   private pendingMirrorCommands = 0;
@@ -130,7 +130,7 @@ export class Player {
     return this.operationQueue.run(async () => this.stopAndReset());
   }
 
-  setCredentials(credentials: UserCredentialsToLogin | null): Promise<void> {
+  setCredentials(credentials: SessionCredentials | null): Promise<void> {
     const next = credentials ? { ...credentials } : null;
     return this.operationQueue.run(async () => {
       if (areCredentialsEqual(this.credentials, next)) return;
@@ -481,7 +481,7 @@ function cloneRuntime(state: PlayerRuntimeState): PlayerRuntimeState {
   return structuredClone(state);
 }
 
-function areCredentialsEqual(left: UserCredentialsToLogin | null, right: UserCredentialsToLogin | null): boolean {
+function areCredentialsEqual(left: SessionCredentials | null, right: SessionCredentials | null): boolean {
   if (left === right) return true;
   if (!left || !right) return false;
   return left.url === right.url && left.username === right.username && left.password === right.password;

@@ -1,5 +1,5 @@
 import { PlayerIPC } from "#/lib/ipc";
-import { dbPlayerReady } from "#/lib/db-renderer";
+import { appReady } from "#/core/client";
 import { DbQueueStorage } from "#/player/db-queue-storage";
 import { getQueueCanGoNext, getQueueCanGoPrevious, QueueManager } from "#/player/queue-manager";
 import { createQueueSourceFactory } from "#/player/source";
@@ -37,7 +37,7 @@ export const queueManager = new QueueManager({
   storage: new DbQueueStorage(),
 });
 
-void dbPlayerReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
+void appReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
 
 export function usePlayerCurrentTrackId() {
   return useStore(PlayerRuntimeStore, (state) => state.current?.track.id ?? null);

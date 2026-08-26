@@ -18,44 +18,36 @@ function formatMetaLine(parts: Array<string | null | undefined>): string {
 function RouteComponent() {
   const { artistId } = Route.useParams();
 
-  const artistQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ artist: db.artists })
-        .where(({ artist }) => eq(artist.id, artistId))
-        .findOne(),
-    [artistId],
+  const artistQuery = useLiveQuery((q) =>
+    q
+      .from({ artist: db.artists })
+      .where(({ artist }) => eq(artist.id, artistId))
+      .findOne(),
   );
 
-  const albumsQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ album: db.albums })
-        .where((v) => eq(v.album.artistId, artistId))
-        .orderBy((v) => v.album.year, { direction: "desc" }),
-    [artistId],
+  const albumsQuery = useLiveQuery((q) =>
+    q
+      .from({ album: db.albums })
+      .where((v) => eq(v.album.artistId, artistId))
+      .orderBy((v) => v.album.year, { direction: "desc" }),
   );
 
-  const appearsOnQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ album: db.albums })
-        .where((v) => not(eq(v.album.artistId, artistId)))
-        .innerJoin({ song: db.songs }, ({ album, song }) => eq(album.id, song.albumId))
-        .fn.where(({ song }) => song.artists?.some((artist) => artist.id === artistId))
-        .select(({ album }) => album)
-        .orderBy((v) => v.album.year, { direction: "desc" })
-        .distinct(),
-    [artistId],
+  const appearsOnQuery = useLiveQuery((q) =>
+    q
+      .from({ album: db.albums })
+      .where((v) => not(eq(v.album.artistId, artistId)))
+      .innerJoin({ song: db.songs }, ({ album, song }) => eq(album.id, song.albumId))
+      .fn.where(({ song }) => song.artists?.some((artist) => artist.id === artistId))
+      .select(({ album }) => album)
+      .orderBy((v) => v.album.year, { direction: "desc" })
+      .distinct(),
   );
 
-  const matchingSongQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ song: db.songs })
-        .fn.where(({ song }) => getArtistCredits(song).some((artist) => artist.id === artistId))
-        .findOne(),
-    [artistId],
+  const matchingSongQuery = useLiveQuery((q) =>
+    q
+      .from({ song: db.songs })
+      .fn.where(({ song }) => getArtistCredits(song).some((artist) => artist.id === artistId))
+      .findOne(),
   );
 
   const embeddedCredit = [...(albumsQuery.data ?? []), ...(appearsOnQuery.data ?? [])].flatMap((album) => getArtistCredits(album)).find((credit) => credit.id === artistId);

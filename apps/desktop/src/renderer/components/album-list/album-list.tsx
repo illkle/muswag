@@ -38,8 +38,21 @@ const AlbumItem = ({
   album: Album;
   instantCovers: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+  const navigate = useNavigate();
+
   return (
-    <button key={album.id} className="box-border flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10" tabIndex={0} {...props}>
+    <button
+      key={album.id}
+      className="box-border flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10"
+      tabIndex={0}
+      onClick={() => {
+        void navigate({
+          to: "/app/albums/$albumId",
+          params: { albumId: album.id },
+        });
+      }}
+      {...props}
+    >
       <AlbumCover
         coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
@@ -119,7 +132,6 @@ type AlbumListProps = {
 
 export function AlbumList({ albums, sections, scrollId, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const navigate = useNavigate();
 
   const scrollRestorationId = "album-list-" + scrollId;
   const scrollEntry = useElementScrollRestoration({
@@ -128,6 +140,13 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
 
   const contentSize = useContentSize();
   const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
+  const sizesStyle = useMemo(
+    () => ({
+      width: `${sizes.fullWidth}px`,
+      height: `${sizes.fullHeight}px`,
+    }),
+    [sizes],
+  );
   const rows = useMemo(
     () =>
       sections
@@ -153,9 +172,10 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
     estimateSize: (index) => (rows[index]?.type === "section" ? SECTION_HEIGHT : sizes.fullHeight),
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 4,
-    initialOffset: scrollEntry?.scrollY,
+    ...(scrollEntry?.scrollY === undefined ? {} : { initialOffset: scrollEntry.scrollY }),
     paddingStart: topPadding,
     paddingEnd: bottomPadding,
+    directDomUpdates: true,
   });
 
   return (
@@ -200,23 +220,7 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
               }}
               className="absolute top-0 left-0 flex w-full"
             >
-              {row.albums.map((album) => (
-                <AlbumItem
-                  key={album.id}
-                  instantCovers={instantCovers}
-                  album={album}
-                  style={{
-                    width: `${sizes.fullWidth}px`,
-                    height: `${sizes.fullHeight}px`,
-                  }}
-                  onClick={() => {
-                    void navigate({
-                      to: "/app/albums/$albumId",
-                      params: { albumId: album.id },
-                    });
-                  }}
-                />
-              ))}
+              <AlbumItemRow albums={row.albums} instantCovers={instantCovers} sizesStyle={sizesStyle} />
             </div>
           );
         })}
@@ -224,3 +228,13 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
     </div>
   );
 }
+
+const AlbumItemRow = ({ albums, instantCovers, sizesStyle }: { albums: Album[]; instantCovers: boolean; sizesStyle: Record<string, string> }) => {
+  return (
+    <>
+      {albums.map((album) => (
+        <AlbumItem key={album.id} instantCovers={instantCovers} album={album} style={sizesStyle} />
+      ))}
+    </>
+  );
+};

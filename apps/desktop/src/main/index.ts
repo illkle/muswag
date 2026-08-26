@@ -1,5 +1,5 @@
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, dialog, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
@@ -19,6 +19,7 @@ import * as NodePath from "@effect/platform-node/NodePath";
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
 let player: Player | undefined;
+const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -92,20 +93,27 @@ function registerMpvIpc(): void {
 const regIpcFs = Effect.gen(function* () {
   const fs = yield* FileSystem;
   const pathModule = yield* Path;
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 
   const basePath = app.getPath("userData");
 
-  const makePathInUserSpace = (path: string) => {
-    return pathModule.join(basePath, path);
+  const makePathInUserSpace = (requestedPath: string) => {
+    const absoluteBase = resolve(basePath);
+    const target = resolve(absoluteBase, requestedPath);
+    if (!target.startsWith(`${absoluteBase}${sep}`) && target !== absoluteBase) {
+      throw new Error("Filesystem path escapes the application data directory");
+    }
+    return target;
   };
 
   mainIpc.handle("fs:write", async (_, path: string, data: Uint8Array) => {
-    return Effect.runPromise(fs.writeFile(makePathInUserSpace(path), data));
+    const target = makePathInUserSpace(path);
+    return runPromise(fs.makeDirectory(pathModule.dirname(target), { recursive: true }).pipe(Effect.andThen(fs.writeFile(target, data))));
   });
 
   mainIpc.handle("fs:delete", async (_, path: string) => {
     // todo: pass errors
-    await Effect.runPromiseExit(fs.remove(makePathInUserSpace(path)));
+    await runPromise(Effect.exit(fs.remove(makePathInUserSpace(path))));
   });
 
   // todo: dispose
@@ -126,7 +134,7 @@ function createWindow(): void {
         }
       : {}),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(moduleDirectory, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -149,7 +157,7 @@ function createWindow(): void {
     return;
   }
 
-  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  mainWindow.loadFile(join(moduleDirectory, "../renderer/index.html"));
 }
 
 app.whenReady().then(() => {
@@ -165,7 +173,13 @@ app.whenReady().then(() => {
       return new Response("Missing path", { status: 400 });
     }
 
-    return net.fetch(pathToFileURL(requestedPath).toString());
+    const userDataPath = resolve(app.getPath("userData"));
+    const absolutePath = resolve(userDataPath, requestedPath);
+    if (!absolutePath.startsWith(`${userDataPath}${sep}`) && absolutePath !== userDataPath) {
+      return new Response("Invalid path", { status: 400 });
+    }
+
+    return net.fetch(pathToFileURL(absolutePath).toString());
   });
 
   Effect.runSync(regIpcFs.pipe(Effect.provide([NodeFileSystem.layer, NodePath.layer])));
