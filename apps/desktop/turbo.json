@@ -4,7 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".output/**", "dist/**", ".nitro/**", "out/**"]
+      "outputs": ["out/**"]
     },
     "dev": {
       "persistent": true,

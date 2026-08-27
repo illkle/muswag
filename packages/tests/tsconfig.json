@@ -1,9 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "dist",
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json"
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": ["test"],
   "exclude": ["node_modules"]

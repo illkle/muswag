@@ -20,40 +20,32 @@
       "types": "./dist/player-queue.d.ts",
       "import": "./dist/player-queue.js",
       "default": "./dist/player-queue.js"
-    },
-    "./sync-node": {
-      "types": "./dist/sync-node.d.ts",
-      "import": "./dist/sync-node.js",
-      "default": "./dist/sync-node.js"
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.config.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
-    "format": "oxfmt --write src vitest.config.ts",
-    "format:check": "oxfmt --check src vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@noble/hashes": "^2.3.0",
     "@tanstack/db": "catalog:",
     "@tanstack/db-sqlite-persistence-core": "catalog:",
-    "@tanstack/node-db-sqlite-persistence": "catalog:",
     "@tanstack/react-db": "catalog:",
     "effect": "catalog:",
     "fuse.js": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@effect/tsgo": "catalog:",
-    "@effect/vitest": "4.0.0-rc.109",
+    "@effect/vitest": "catalog:",
+    "@tanstack/node-db-sqlite-persistence": "catalog:",
     "@types/better-sqlite3": "catalog:",
     "@vitest/coverage-v8": "catalog:",
-    "better-sqlite3-test": "npm:better-sqlite3@13.0.3",
+    "better-sqlite3-test": "catalog:",
     "vitest": "catalog:"
   }
 }

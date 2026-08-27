@@ -5,15 +5,8 @@
     "outDir": "dist",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "verbatimModuleSyntax": true,
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json",
-    "plugins": [
-      {
-        "name": "@effect/language-service",
-        "diagnosticSeverity": {}
-      }
-    ]
+    "types": []
   },
-  "include": ["src/**/*.ts", "src/covers/cover-manager.ts.leg"],
+  "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

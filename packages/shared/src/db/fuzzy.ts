@@ -82,13 +82,16 @@ export function CreateFuse(db: MuswagDb) {
         switch (c.type) {
           case "delete": {
             f.remove((v) => v.type === "album" && v.id === c.value.id);
+            break;
           }
           case "update": {
             f.remove((v) => v.type === "album" && v.id === c.value.id);
             f.add(toAlbum(c.value));
+            break;
           }
           case "insert": {
             f.add(toAlbum(c.value));
+            break;
           }
         }
       }
@@ -102,6 +105,7 @@ export function CreateFuse(db: MuswagDb) {
         switch (c.type) {
           case "delete": {
             f.remove((v) => v.type === "song" && v.id === c.value.id);
+            break;
           }
           case "update": {
             const alb = await queryOnce((v) =>
@@ -115,6 +119,7 @@ export function CreateFuse(db: MuswagDb) {
 
             f.remove((v) => v.type === "song" && v.id === c.value.id);
             f.add(toSong(c.value, alb));
+            break;
           }
           case "insert": {
             const alb = await queryOnce((v) =>
@@ -127,6 +132,7 @@ export function CreateFuse(db: MuswagDb) {
             if (!alb) continue;
 
             f.add(toSong(c.value, alb));
+            break;
           }
         }
       }
@@ -140,13 +146,16 @@ export function CreateFuse(db: MuswagDb) {
         switch (c.type) {
           case "delete": {
             f.remove((v) => v.type === "artist" && v.id === c.value.id);
+            break;
           }
           case "update": {
             f.remove((v) => v.type === "artist" && v.id === c.value.id);
             f.add(toArtist(c.value));
+            break;
           }
           case "insert": {
             f.add(toArtist(c.value));
+            break;
           }
         }
       }
