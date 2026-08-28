@@ -15,13 +15,13 @@
     "#shared/*": "./src/shared/*"
   },
   "scripts": {
-    "dev": "pnpm with-env node scripts/dev.mjs",
+    "dev": "node scripts/dev.ts",
     "build": "pnpm typecheck && pnpm clean:out && pnpm build:main && pnpm build:preload && pnpm build:renderer",
     "build:main": "vite build --config vite.main.config.ts",
     "build:preload": "vite build --config vite.preload.config.ts",
     "build:renderer": "vite build --config vite.config.ts",
-    "clean:out": "node scripts/clean-out.mjs",
-    "start": "pnpm with-env node scripts/start.mjs",
+    "clean:out": "node scripts/clean-out.ts",
+    "start": "node scripts/start.ts",
     "dist": "pnpm build && electron-builder",
     "dist:dir": "pnpm build && electron-builder --dir",
     "dist:mac": "pnpm build && electron-builder --mac",
@@ -32,8 +32,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.config.ts",
-    "postinstall": "electron-builder install-app-deps",
-    "with-env": "dotenv -e ../../.env --"
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "better-sqlite3": "catalog:",
@@ -77,7 +76,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "catalog:",
-    "dotenv-cli": "^11.0.0",
     "electron": "catalog:",
     "electron-builder": "catalog:",
     "electron-to-chromium": "catalog:",
