@@ -44,7 +44,6 @@ catalog:
   electron-builder: ^26.15.3
   electron-to-chromium: ^1.5.414
   electron-updater: ^6.8.9
-  electron-vite: ^5.0.0
   effect: 4.0.0-rc.112
   fuse.js: ^7.5.0
   oxfmt: ^0.63.0
@@ -53,7 +52,6 @@ catalog:
   react: ^19.2.8
   react-dom: ^19.2.8
   tailwindcss: ^4.3.3
-  turbo: ^2.10.11
   typescript: ^7.0.2
   vite: ^8.2.2
   vitest: ^4.1.11

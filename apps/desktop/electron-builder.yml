@@ -21,6 +21,7 @@ win:
     - nsis
 mac:
   category: public.app-category.music
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg

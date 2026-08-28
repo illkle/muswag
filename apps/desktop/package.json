@@ -2,22 +2,26 @@
   "name": "@muswag/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Muswag desktop application built with Electron and electron-vite.",
+  "description": "Muswag desktop application built with Electron and Vite.",
   "homepage": "https://github.com/illkle/muswag",
   "author": {
     "name": "illkle",
     "email": "k.kelolov@gmail.com"
   },
   "type": "module",
-  "main": "./out/main/index.js",
+  "main": "./out/main/index.cjs",
   "imports": {
     "#/*": "./src/renderer/*",
     "#shared/*": "./src/shared/*"
   },
   "scripts": {
-    "dev": "pnpm with-env electron-vite dev",
-    "build": "pnpm typecheck && electron-vite build",
-    "start": "electron-vite preview",
+    "dev": "pnpm with-env node scripts/dev.mjs",
+    "build": "pnpm typecheck && pnpm clean:out && pnpm build:main && pnpm build:preload && pnpm build:renderer",
+    "build:main": "vite build --config vite.main.config.ts",
+    "build:preload": "vite build --config vite.preload.config.ts",
+    "build:renderer": "vite build --config vite.config.ts",
+    "clean:out": "node scripts/clean-out.mjs",
+    "start": "pnpm with-env node scripts/start.mjs",
     "dist": "pnpm build && electron-builder",
     "dist:dir": "pnpm build && electron-builder --dir",
     "dist:mac": "pnpm build && electron-builder --mac",
@@ -34,7 +38,7 @@
   "dependencies": {
     "better-sqlite3": "catalog:",
     "effect": "catalog:",
-    "electron-updater": "catalog:"
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@base-ui/react": "catalog:",
@@ -77,7 +81,6 @@
     "electron": "catalog:",
     "electron-builder": "catalog:",
     "electron-to-chromium": "catalog:",
-    "electron-vite": "catalog:",
     "fuse.js": "catalog:",
     "jsdom": "^30.0.1",
     "lodash-es": "^4.18.1",

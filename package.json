@@ -2,18 +2,18 @@
   "name": "muswag",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "build:local:mac": "pnpm turbo run build --filter=@muswag/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @muswag/desktop exec electron-builder --mac --dir --config.mac.identity=- --publish never",
-    "lint": "turbo run lint",
-    "lint:fix": "turbo run lint:fix",
+    "dev": "pnpm --filter @muswag/desktop dev",
+    "build": "pnpm -r --if-present run build",
+    "build:local:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @muswag/desktop exec electron-builder --mac --dir --config.mac.identity=- --publish never",
+    "lint": "pnpm -r --if-present run lint",
+    "lint:fix": "pnpm -r --if-present run lint:fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "test:coverage": "turbo run test:coverage",
-    "test:integration": "turbo run test:integration",
-    "test:sync-benchmark": "turbo run test:sync-benchmark",
+    "typecheck": "pnpm --filter @muswag/shared build && pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "test:coverage": "pnpm -r --if-present run test:coverage",
+    "test:integration": "pnpm --filter @muswag/shared build && pnpm --filter @muswag/tests test:integration",
+    "test:sync-benchmark": "pnpm --filter @muswag/tests test:sync-benchmark",
     "prepare": "effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
@@ -22,7 +22,6 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
-    "turbo": "catalog:",
     "typescript": "catalog:"
   },
   "engines": {

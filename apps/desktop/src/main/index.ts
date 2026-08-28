@@ -1,5 +1,5 @@
-import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, dialog, net, protocol, shell } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
@@ -19,7 +19,7 @@ import * as NodePath from "@effect/platform-node/NodePath";
 let unsubscribePlayerEvents: (() => void) | undefined;
 let unsubscribeAppUpdateState: (() => void) | undefined;
 let player: Player | undefined;
-const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const moduleDirectory = __dirname;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -134,7 +134,7 @@ function createWindow(): void {
         }
       : {}),
     webPreferences: {
-      preload: join(moduleDirectory, "../preload/index.mjs"),
+      preload: join(moduleDirectory, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 
 import { devtools } from "@tanstack/devtools-vite";
 import { electronToChromium } from "electron-to-chromium";
@@ -20,14 +21,21 @@ if (!chromiumVersion) {
 
 export const rendererConfig = defineConfig({
   clearScreen: false,
+  root: resolve(import.meta.dirname, "src/renderer"),
   server: {
+    host: "127.0.0.1",
     port: 5173,
     strictPort: true,
   },
   resolve: {
+    conditions: ["source", "module", "browser", "development|production"],
+    dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
   },
   build: {
+    emptyOutDir: false,
+    outDir: resolve(import.meta.dirname, "out/renderer"),
+    sourcemap: true,
     target: `chrome${chromiumVersion}`,
   },
   plugins: [

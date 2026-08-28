@@ -1,15 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["electron.vite.config.ts", "vite.config.ts", "vitest.config.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"],
+  "include": ["vite.config.ts", "vite.main.config.ts", "vite.preload.config.ts", "vitest.config.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"],
   "compilerOptions": {
     "module": "ESNext",
     "lib": ["ES2022"],
-    "types": ["node", "electron-vite/node"],
+    "types": ["node"],
     "paths": {
       "#shared/*": ["./src/shared/*"]
     },
 
     "moduleResolution": "bundler",
+    "customConditions": ["source"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "declaration": false,

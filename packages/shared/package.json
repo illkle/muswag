@@ -7,16 +7,28 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./db": {
+      "source": {
+        "types": "./src/db/index.ts",
+        "default": "./src/db/index.ts"
+      },
       "types": "./dist/db/index.d.ts",
       "import": "./dist/db/index.js",
       "default": "./dist/db/index.js"
     },
     "./player-queue": {
+      "source": {
+        "types": "./src/player-queue.ts",
+        "default": "./src/player-queue.ts"
+      },
       "types": "./dist/player-queue.d.ts",
       "import": "./dist/player-queue.js",
       "default": "./dist/player-queue.js"
