@@ -5,7 +5,8 @@
     "correctness": "error"
   },
   "rules": {
-    "vitest/no-standalone-expect": "off"
+    "vitest/no-standalone-expect": "off",
+    "require-mock-type-parameters": "off"
   },
   "env": {
     "builtin": true

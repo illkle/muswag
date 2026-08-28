@@ -12,6 +12,7 @@ import { MpvInstaller } from "../binary/mpv-installer";
 import { Player } from "../player";
 import { MpvClient } from "./mpv-client";
 
+// oxlint-disable-next-line vitest/valid-describe-callback
 const integration = describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1");
 const cleanup: Array<() => void | Promise<void>> = [];
 
