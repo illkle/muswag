@@ -125,7 +125,7 @@ export const PlayerLive = Layer.effect(
     });
     const ensureSession = Effect.gen(function* () {
       if (session) return session;
-      if (state.binary._tag !== "Ready") return yield* Effect.fail(playerError("BinaryUnavailable", "playback", "Install or configure mpv before playing."));
+      if (state.binary._tag !== "Ready") return yield* playerError("BinaryUnavailable", "playback", "Install or configure mpv before playing.");
       sessionScope = yield* Scope.fork(owner, "sequential");
       session = yield* sessions
         .open(
@@ -170,8 +170,8 @@ export const PlayerLive = Layer.effect(
           yield* stop;
           return;
         }
-        if (!selection && !correlation) return yield* Effect.fail(playerError("InvalidCommand", "queue", "Select a track to start playback."));
-        if (!credentials) return yield* Effect.fail(playerError("NotAuthenticated", "playback", "Log in before starting playback."));
+        if (!selection && !correlation) return yield* playerError("InvalidCommand", "queue", "Select a track to start playback.");
+        if (!credentials) return yield* playerError("NotAuthenticated", "playback", "Log in before starting playback.");
         const anchor = correlation?.entries.find((entry) => entry.entryId === correlation?.currentId);
         if (!selection && (!anchor || !next.some((item) => item.key === anchor.key && item.track.id === anchor.track.id)))
           return yield* playerError("InvalidCommand", "queue", "Select a track when replacing the current occurrence.");
@@ -202,7 +202,7 @@ export const PlayerLive = Layer.effect(
     });
     const pause = (paused: boolean) =>
       Effect.gen(function* () {
-        if (!session || !currentMedia(state)) return yield* Effect.fail(playerError("InvalidCommand", "pause", "Select a playable track first."));
+        if (!session || !currentMedia(state)) return yield* playerError("InvalidCommand", "pause", "Select a playable track first.");
         yield* session.execute(command("set_property", "pause", paused));
         const confirmed = yield* session.execute(booleanProperty("pause"));
         propertyFence = session.sequence();
@@ -238,7 +238,7 @@ export const PlayerLive = Layer.effect(
             if (input._tag === "Pause") yield* pause(true);
             else if (state.playback._tag === "Ended" || state.playback._tag === "Failed") {
               const media = currentMedia(state);
-              if (!media) return yield* Effect.fail(playerError("InvalidCommand", "play", "Select a track first."));
+              if (!media) return yield* playerError("InvalidCommand", "play", "Select a track first.");
               retried = false;
               yield* closeSession;
               yield* apply(items, { key: media.item.key, positionSeconds: 0, play: true });
@@ -247,14 +247,14 @@ export const PlayerLive = Layer.effect(
           }
           case "Restart": {
             const media = currentMedia(state);
-            if (!media) return yield* Effect.fail(playerError("InvalidCommand", "restart", "Select a track first."));
+            if (!media) return yield* playerError("InvalidCommand", "restart", "Select a track first.");
             retried = false;
             yield* apply(items, { key: media.item.key, positionSeconds: 0, play: state.playback._tag !== "Paused" });
             break;
           }
           case "Seek": {
             const media = currentMedia(state);
-            if (!session || !media || !["Playing", "Paused"].includes(state.playback._tag)) return yield* Effect.fail(playerError("InvalidCommand", "seek", "Wait until the track has loaded."));
+            if (!session || !media || !["Playing", "Paused"].includes(state.playback._tag)) return yield* playerError("InvalidCommand", "seek", "Wait until the track has loaded.");
             yield* session.execute(command("seek", Math.min(input.seconds, media.durationSeconds ?? Infinity), "absolute+exact"));
             const position = yield* session.execute(numberProperty("time-pos"));
             propertyFence = session.sequence();
@@ -512,8 +512,8 @@ export const PlayerLive = Layer.effect(
     ).pipe(Effect.forkScoped);
     const submit = (id: string, input: Operation) =>
       Effect.gen(function* () {
-        if (closing) return yield* Effect.fail(playerError("ShuttingDown", input._tag, "The player is shutting down."));
-        if (replies.size >= (input._tag === "Stop" || input._tag === "Credentials" ? 34 : 32)) return yield* Effect.fail(playerError("Busy", input._tag, "The player is busy. Try again shortly."));
+        if (closing) return yield* playerError("ShuttingDown", input._tag, "The player is shutting down.");
+        if (replies.size >= (input._tag === "Stop" || input._tag === "Credentials" ? 34 : 32)) return yield* playerError("Busy", input._tag, "The player is busy. Try again shortly.");
         if (input._tag === "Stop" || input._tag === "Credentials") {
           epoch++;
           if (cancelActive) yield* Deferred.fail(cancelActive, playerError("CommandRejected", "cancel", "Playback operation cancelled."));

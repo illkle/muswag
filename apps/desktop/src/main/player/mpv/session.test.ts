@@ -16,6 +16,18 @@ describe("mpv protocol", () => {
       expect(yield* load("secret", "replace").decode({ playlist_entry_id: 1 })).toEqual({ playlist_entry_id: 1 });
     }),
   );
+  it.effect("accepts unavailable properties and does not mistake event errors for responses", () =>
+    Effect.gen(function* () {
+      expect(yield* parseMessage('{"event":"property-change","id":2,"name":"time-pos"}')).toEqual({ kind: "event", event: { type: "property", name: "time-pos", data: undefined } });
+      expect(yield* parseMessage('{"event":"end-file","playlist_entry_id":1,"reason":"error","file_error":"loading failed"}')).toEqual({
+        kind: "event",
+        event: { type: "end-file", entryId: 1, reason: "error" },
+      });
+      expect(yield* parseMessage('{"event":"get-property-reply","error":"property unavailable"}')).toEqual({ kind: "ignored" });
+      const malformed = yield* parseMessage('{"event":"property-change","name":42,"data":"https://secret"}').pipe(Effect.result);
+      expect(malformed).toMatchObject({ _tag: "Failure", failure: { operation: "decode:property-change" } });
+    }),
+  );
   it.effect("correlates reversed replies, expires requests, ignores late replies and cleans up", () =>
     Effect.gen(function* () {
       const lines = yield* Queue.unbounded<string, EngineError>();
@@ -34,8 +46,10 @@ describe("mpv protocol", () => {
               write: (line: string) =>
                 Effect.gen(function* () {
                   const value = JSON.parse(line) as { request_id: number; command: unknown[] };
-                  if (value.command[0] === "observe_property") yield* Queue.offer(lines, JSON.stringify({ request_id: value.request_id, error: "success" }));
-                  else yield* Queue.offer(writes, value);
+                  if (value.command[0] === "observe_property") {
+                    yield* Queue.offer(lines, JSON.stringify({ event: "property-change", name: value.command[2] }));
+                    yield* Queue.offer(lines, JSON.stringify({ request_id: value.request_id, error: "success" }));
+                  } else yield* Queue.offer(writes, value);
                 }),
             };
           }),

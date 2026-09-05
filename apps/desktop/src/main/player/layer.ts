@@ -1,6 +1,5 @@
 import { Layer } from "effect";
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import * as NodePath from "@effect/platform-node/NodePath";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { BinariesLive } from "./binary/binaries";
 import { InstallerLive } from "./binary/installer";
 import { MpvConnectionLive } from "./mpv/connection";
@@ -15,8 +14,9 @@ export const makePlayerLayer = (options: { ipcPath: string; settingsPath: string
         binaries,
         InstallerLive.pipe(Layer.provide(binaries)),
         MpvSessionLive(options.ipcPath).pipe(Layer.provide(MpvConnectionLive(options.extraMpvArgs))),
-        SettingsLive(options.settingsPath).pipe(Layer.provide([NodeFileSystem.layer, NodePath.layer])),
+        SettingsLive(options.settingsPath),
       ),
     ),
+    Layer.provide(NodeServices.layer),
   );
 };

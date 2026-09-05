@@ -62,7 +62,7 @@ export const MpvSessionLive = (ipcPath: string) =>
                   if (event.type === "start-file") entryId = event.entryId;
                   const identity = event.type === "end-file" ? event.entryId : entryId;
                   if (!deliver({ generation: currentGeneration, sequence, entryId: identity, event }))
-                    return yield* Effect.fail(new EngineError({ reason: "protocol", operation: "event-overflow", uncertain: true }));
+                    return yield* new EngineError({ reason: "protocol", operation: "event-overflow", uncertain: true });
                   if (event.type === "end-file" && entryId === event.entryId) entryId = null;
                 }
               }),
@@ -70,7 +70,7 @@ export const MpvSessionLive = (ipcPath: string) =>
             yield* Effect.forkScoped(read);
             const execute = <A>(input: MpvCommand<A>): Effect.Effect<A, EngineError> =>
               Effect.gen(function* () {
-                if (terminal) return yield* Effect.fail(terminal);
+                if (terminal) return yield* terminal;
                 const requestId = ++nextRequest;
                 const reply = yield* Deferred.make<unknown, EngineError>();
                 pending.set(requestId, reply);

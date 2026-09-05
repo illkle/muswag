@@ -21,10 +21,10 @@ export const validateQueue = (items: readonly PlaybackItem[], select: Selection 
         typeof item.track.title !== "string" ||
         typeof item.track.isDir !== "boolean"
       )
-        return yield* Effect.fail(playerError("InvalidCommand", "queue", "Queue entries must have unique keys and valid track metadata."));
+        return yield* playerError("InvalidCommand", "queue", "Queue entries must have unique keys and valid track metadata.");
       keys.add(item.key);
     }
-    if (select && !keys.has(select.key)) return yield* Effect.fail(playerError("InvalidCommand", "queue", "Selected occurrence is not in the queue."));
+    if (select && !keys.has(select.key)) return yield* playerError("InvalidCommand", "queue", "Selected occurrence is not in the queue.");
   });
 export const applyQueue = (
   session: SessionHandle,
@@ -42,7 +42,7 @@ export const applyQueue = (
     }
     const oldCurrent = current?.entries.find((entry) => entry.entryId === current.currentId);
     const anchor = select?.key ?? oldCurrent?.key;
-    if (!anchor || !items.some((item) => item.key === anchor)) return yield* Effect.fail(playerError("InvalidCommand", "queue", "An explicit selection is required to replace the current track."));
+    if (!anchor || !items.some((item) => item.key === anchor)) return yield* playerError("InvalidCommand", "queue", "An explicit selection is required to replace the current track.");
     const same =
       current?.generation === session.generation &&
       current.entries.length === items.length &&
@@ -70,10 +70,9 @@ export const applyQueue = (
     }
     const actual = yield* session.execute(playlist);
     if (actual.length !== entries.length || actual.some((entry, index) => entry.id !== entries[index]?.entryId) || new Set(entries.map((entry) => entry.entryId)).size !== entries.length)
-      return yield* Effect.fail(playerError("QueueOutOfSync", "queue", "The engine playlist changed while applying the queue."));
+      return yield* playerError("QueueOutOfSync", "queue", "The engine playlist changed while applying the queue.");
     const currentId = actual.find((entry) => entry.current)?.id ?? null;
     const expectedId = entries.find((entry) => entry.key === anchor)?.entryId;
-    if (currentId !== expectedId && (currentId !== null || !select))
-      return yield* Effect.fail(playerError("QueueOutOfSync", "queue", "Playback advanced while applying the queue. Select the track again."));
+    if (currentId !== expectedId && (currentId !== null || !select)) return yield* playerError("QueueOutOfSync", "queue", "Playback advanced while applying the queue. Select the track again.");
     return { generation: session.generation, entries, currentId };
   });

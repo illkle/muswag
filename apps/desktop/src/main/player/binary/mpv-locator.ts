@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { access, constants } from "node:fs/promises";
+import { FileSystem } from "effect/FileSystem";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -13,25 +14,23 @@ export type MpvLocatorDeps = {
   fileExists: (filePath: string) => Effect.Effect<boolean>;
   homeDirectory: string;
   platform: NodeJS.Platform;
-  runCommand: typeof runCommand;
+  runCommand: (...args: Parameters<typeof runCommand>) => Effect.Effect<import("../support/exec").CommandResult>;
 };
 
 export type MpvCandidate = { binaryPath: string; source: MpvSource; explicit: boolean };
 
-export function createMpvLocatorDeps(overrides: Partial<MpvLocatorDeps> = {}): MpvLocatorDeps {
+export const createMpvLocatorDeps = Effect.gen(function* () {
+  const fs = yield* FileSystem;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return {
     env: process.env,
-    fileExists: (filePath) =>
-      Effect.tryPromise(() => access(filePath, constants.X_OK)).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      ),
+    // Discovery checks existence; the version probe verifies executability.
+    fileExists: (filePath: string) => fs.exists(filePath).pipe(Effect.orElseSucceed(() => false)),
     homeDirectory: homedir(),
     platform: process.platform,
-    runCommand,
-    ...overrides,
-  };
-}
+    runCommand: (...args: Parameters<typeof runCommand>) => runCommand(...args).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
+  } satisfies MpvLocatorDeps;
+});
 
 export function collectMpvCandidates(options: { manualPath?: string | null; cachedPath?: string | null }, deps: MpvLocatorDeps): Effect.Effect<MpvCandidate[]> {
   return Effect.gen(function* () {

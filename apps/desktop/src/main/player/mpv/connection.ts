@@ -1,162 +1,101 @@
-import { spawn } from "node:child_process";
-import { createConnection, type Socket } from "node:net";
-import { rm } from "node:fs/promises";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { Cause, Context, Deferred, Effect, Layer, Queue, Schedule, Scope, Stream } from "effect";
+import { FileSystem } from "effect/FileSystem";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { EngineError } from "../errors";
 
 export interface Connection {
   readonly lines: Stream.Stream<string, EngineError>;
   readonly write: (line: string) => Effect.Effect<void, EngineError>;
 }
-export class MpvConnection extends Context.Service<
-  MpvConnection,
-  {
-    readonly open: (binaryPath: string, ipcPath: string) => Effect.Effect<Connection, EngineError, Scope.Scope>;
-  }
->()("@muswag/player/MpvConnection") {}
+export class MpvConnection extends Context.Service<MpvConnection, { readonly open: (binaryPath: string, ipcPath: string) => Effect.Effect<Connection, EngineError, Scope.Scope> }>()(
+  "@muswag/player/MpvConnection",
+) {}
 const failure = (reason: EngineError["reason"]) => new EngineError({ reason, operation: "connection", uncertain: true });
 
-export const MpvConnectionLive = (extraArgs: readonly string[] = [], spawnProcess: typeof spawn = spawn) =>
-  Layer.succeed(MpvConnection, {
-    open: (binaryPath, ipcPath) =>
-      Effect.gen(function* () {
-        const lines = yield* Queue.bounded<string, EngineError>(256);
-        const closed = yield* Deferred.make<void>();
-        const startupFailure = yield* Deferred.make<never, EngineError>();
-        let closing = false;
-        const fail = (reason: EngineError["reason"]) => Queue.failCauseUnsafe(lines, Cause.fail(failure(reason)));
-        const child = yield* Effect.acquireRelease(
-          Effect.try({
-            try: () =>
-              spawnProcess(
-                binaryPath,
-                [
-                  "--no-config",
-                  "--idle=yes",
-                  "--no-video",
-                  "--audio-display=no",
-                  "--force-window=no",
-                  "--terminal=no",
-                  "--gapless-audio=weak",
-                  "--prefetch-playlist=yes",
-                  ...extraArgs,
-                  `--input-ipc-server=${ipcPath}`,
-                ],
-                { stdio: ["ignore", "ignore", "pipe"] },
-              ),
-            catch: () => failure("spawn"),
+export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
+  Layer.effect(
+    MpvConnection,
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const fs = yield* FileSystem;
+      return {
+        open: (binaryPath, ipcPath) =>
+          Effect.gen(function* () {
+            const lines = yield* Queue.bounded<string, EngineError>(256);
+            yield* Effect.addFinalizer(() => Queue.shutdown(lines));
+            if (process.platform !== "win32") yield* Effect.addFinalizer(() => fs.remove(ipcPath, { force: true }).pipe(Effect.ignore));
+            const child = yield* spawner
+              .spawn(
+                ChildProcess.make(
+                  binaryPath,
+                  [
+                    "--no-config",
+                    "--idle=yes",
+                    "--no-video",
+                    "--audio-display=no",
+                    "--force-window=no",
+                    "--terminal=no",
+                    "--gapless-audio=weak",
+                    "--prefetch-playlist=yes",
+                    ...extraArgs,
+                    `--input-ipc-server=${ipcPath}`,
+                  ],
+                  { stdin: "ignore", stdout: "ignore", stderr: "ignore", forceKillAfter: "1 second" },
+                ),
+              )
+              .pipe(Effect.mapError(() => failure("spawn")));
+            const opened = yield* Deferred.make<void, EngineError>();
+            const failed = yield* Deferred.make<never, EngineError>();
+            const fail = (error: EngineError) =>
+              Effect.gen(function* () {
+                yield* Deferred.fail(opened, error);
+                yield* Deferred.fail(failed, error);
+                yield* Queue.failCause(lines, Cause.fail(error));
+              });
+            yield* child.exitCode.pipe(Effect.matchEffect({ onSuccess: () => fail(failure("closed")), onFailure: () => fail(failure("closed")) }), Effect.forkScoped);
+            const socket = yield* NodeSocket.makeNet({ path: ipcPath, openTimeout: "1 second" });
+            let connected = false;
+            let buffer = "";
+            const decoder = new TextDecoder();
+            // The handler is synchronous to preserve wire order. Protocol-specific bounds
+            // remain here; NodeSocket owns listeners, writes, connection and disposal.
+            const read = socket
+              .runRaw(
+                (chunk) => {
+                  buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+                  if (Buffer.byteLength(buffer) > 1024 * 1024) return Effect.fail(failure("protocol"));
+                  let end: number;
+                  while ((end = buffer.indexOf("\n")) >= 0) {
+                    const line = buffer.slice(0, end).replace(/\r$/, "");
+                    buffer = buffer.slice(end + 1);
+                    if (!Queue.offerUnsafe(lines, line)) return Effect.fail(failure("protocol"));
+                  }
+                },
+                {
+                  onOpen: Effect.gen(function* () {
+                    connected = true;
+                    yield* Deferred.succeed(opened, undefined);
+                  }),
+                },
+              )
+              .pipe(
+                Effect.retry({ schedule: Schedule.spaced("100 millis"), while: (error) => !connected && error._tag === "SocketError" && error.reason._tag === "SocketOpenError" }),
+                Effect.mapError((error) => (error instanceof EngineError ? error : failure(connected ? "closed" : "connect"))),
+                Effect.andThen(Effect.fail(failure(buffer.trim() ? "protocol" : "closed"))),
+                Effect.catch(fail),
+              );
+            yield* read.pipe(Effect.forkScoped);
+            yield* Deferred.await(opened).pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.fail(failure("connect")) }));
+            const writer = yield* socket.writer;
+            const write = (line: string) =>
+              writer(line).pipe(
+                Effect.mapError(() => failure("closed")),
+                Effect.raceFirst(Deferred.await(failed)),
+              );
+            yield* Effect.addFinalizer(() => write('{"command":["quit"]}\n').pipe(Effect.timeoutOrElse({ duration: "100 millis", orElse: () => Effect.void }), Effect.ignore));
+            return { lines: Stream.fromQueue(lines), write };
           }),
-          (process) =>
-            Effect.gen(function* () {
-              closing = true;
-              yield* Deferred.await(closed).pipe(
-                Effect.timeoutOrElse({
-                  duration: "250 millis",
-                  orElse: () =>
-                    Effect.sync(() => {
-                      if (process.exitCode === null && process.signalCode === null) process.kill("SIGTERM");
-                    }),
-                }),
-              );
-              yield* Deferred.await(closed).pipe(
-                Effect.timeoutOrElse({
-                  duration: "1 second",
-                  orElse: () =>
-                    Effect.sync(() => {
-                      process.kill("SIGKILL");
-                    }),
-                }),
-              );
-              yield* Deferred.await(closed).pipe(Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.logWarning("mpv did not report process closure") }));
-              process.removeAllListeners();
-              process.stderr?.removeAllListeners();
-              if (globalThis.process.platform !== "win32") yield* Effect.tryPromise(() => rm(ipcPath, { force: true })).pipe(Effect.ignore);
-            }),
-        );
-        child.stderr?.resume(); // Drain, but never log credential-bearing engine output.
-        child.on("error", () => {
-          fail("spawn");
-          Deferred.doneUnsafe(startupFailure, Effect.fail(failure("spawn")));
-          Deferred.doneUnsafe(closed, Effect.void);
-        });
-        child.on("close", () => {
-          Deferred.doneUnsafe(closed, Effect.void);
-          if (!closing) {
-            fail("closed");
-            Deferred.doneUnsafe(startupFailure, Effect.fail(failure("closed")));
-          }
-        });
-        const connect = Effect.callback<Socket, EngineError>((resume) => {
-          const socket = createConnection(ipcPath);
-          const error = () => {
-            socket.destroy();
-            resume(Effect.fail(failure("connect")));
-          };
-          socket.once("error", error);
-          socket.once("connect", () => {
-            socket.off("error", error);
-            resume(Effect.succeed(socket));
-          });
-          return Effect.sync(() => {
-            socket.removeAllListeners("connect");
-            socket.off("error", error);
-            if (socket.connecting) socket.destroy();
-          });
-        });
-        const socket = yield* Effect.acquireRelease(
-          connect.pipe(
-            Effect.retry(Schedule.spaced("100 millis")),
-            Effect.raceFirst(Deferred.await(startupFailure)),
-            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.fail(failure("connect")) }),
-          ),
-          (socket) =>
-            Effect.gen(function* () {
-              closing = true;
-              if (!socket.destroyed)
-                yield* Effect.callback<void>((resume) => {
-                  socket.end(`${JSON.stringify({ command: ["quit"] })}\n`, () => resume(Effect.void));
-                }).pipe(Effect.timeoutOrElse({ duration: "100 millis", orElse: () => Effect.void }));
-              socket.destroy();
-              socket.removeAllListeners();
-            }),
-        );
-        let buffer = "";
-        socket.setEncoding("utf8");
-        socket.on("data", (chunk: string) => {
-          buffer += chunk;
-          if (Buffer.byteLength(buffer) > 1024 * 1024) {
-            fail("protocol");
-            socket.destroy();
-            return;
-          }
-          let end: number;
-          while ((end = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, end).replace(/\r$/, "");
-            buffer = buffer.slice(end + 1);
-            if (!Queue.offerUnsafe(lines, line)) {
-              fail("protocol");
-              socket.destroy();
-              return;
-            }
-          }
-        });
-        socket.on("error", () => {
-          if (!closing) fail("closed");
-        });
-        socket.on("close", () => {
-          if (!closing) fail(buffer.trim() ? "protocol" : "closed");
-        });
-        yield* Effect.addFinalizer(() => Queue.shutdown(lines));
-        return {
-          lines: Stream.fromQueue(lines),
-          write: (line: string) =>
-            Effect.callback<void, EngineError>((resume) => {
-              if (socket.destroyed) {
-                resume(Effect.fail(failure("closed")));
-                return;
-              }
-              socket.write(line, (error) => resume(error ? Effect.fail(failure("closed")) : Effect.void));
-            }),
-        };
-      }),
-  });
+      };
+    }),
+  );

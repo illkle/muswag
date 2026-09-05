@@ -28,7 +28,7 @@ export const SettingsLive = (file: string) =>
       return {
         load: fs.readFileString(file).pipe(
           Effect.catch((error) => (error.reason._tag === "NotFound" ? Effect.succeed(JSON.stringify(defaultSettings)) : Effect.fail(new SettingsError({ operation: "load" })))),
-          Effect.flatMap((value) => Schema.decodeUnknownEffect(Schema.fromJsonString(SettingsSchema))(value)),
+          Effect.flatMap((value) => Schema.decodeEffect(Schema.fromJsonString(SettingsSchema))(value)),
           Effect.mapError(() => new SettingsError({ operation: "load" })),
         ),
         save: (settings) =>

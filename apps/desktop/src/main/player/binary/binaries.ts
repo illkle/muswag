@@ -45,4 +45,4 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
     ),
   candidate: (method) => detectInstallCandidates(environment).pipe(Effect.map((candidates) => candidates.find((candidate) => candidate.option.method === method) ?? null)),
 });
-export const BinariesLive = Layer.sync(Binaries, () => makeBinaries(createMpvLocatorDeps()));
+export const BinariesLive = Layer.effect(Binaries, createMpvLocatorDeps.pipe(Effect.map(makeBinaries)));

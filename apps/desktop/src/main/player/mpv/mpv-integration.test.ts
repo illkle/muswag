@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { EngineError } from "../errors";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
     try {
       const file = join(root, "audio.wav");
       await writeFile(file, createWave(440));
-      const live = MpvSessionLive(join(root, "ipc")).pipe(Layer.provide(MpvConnectionLive(["--ao=null"])));
+      const live = MpvSessionLive(join(root, "ipc")).pipe(Layer.provide(MpvConnectionLive(["--ao=null"])), Layer.provide(NodeServices.layer));
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {

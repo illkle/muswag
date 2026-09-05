@@ -1,10 +1,12 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SerialQueue } from "#shared/serial-queue";
-import { runCommand } from "./exec";
+import { runCommand as run } from "./exec";
+const runCommand = (...args: Parameters<typeof run>) => run(...args).pipe(Effect.provide(NodeServices.layer));
 
 describe("SerialQueue", () => {
   it("serializes operations, returns their results, and survives rejection", async () => {

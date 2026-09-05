@@ -8,19 +8,18 @@ const method = Schema.Literals(["brew", "winget", "scoop", "choco", "apt", "dnf"
 // Only playback's required metadata is trusted. Preserve the shared Song payload.
 const item = Schema.Struct({ key, track: Schema.Unknown });
 export const PlayerCommandSchema = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("ApplyQueue"),
+  Schema.TaggedStruct("ApplyQueue", {
     items: Schema.Array(item).check(Schema.isMaxLength(1000)),
     select: Schema.NullOr(Schema.Struct({ key, play: Schema.Boolean, positionSeconds: seconds })),
   }),
-  Schema.Struct({ _tag: Schema.Literals(["Play", "Pause", "Toggle", "Restart", "Stop", "RefreshBinary"]) }),
-  Schema.Struct({ _tag: Schema.Literal("Seek"), seconds }),
-  Schema.Struct({ _tag: Schema.Literal("SetVolume"), percent: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 })) }),
-  Schema.Struct({ _tag: Schema.Literal("SetMuted"), muted: Schema.Boolean }),
-  Schema.Struct({ _tag: Schema.Literal("SetBinaryPath"), path: Schema.NullOr(key) }),
-  Schema.Struct({ _tag: Schema.Literal("StartInstall"), method }),
-  Schema.Struct({ _tag: Schema.Literal("CancelInstall"), jobId: key }),
-  Schema.Struct({ _tag: Schema.Literal("DismissIssue"), issueId: key }),
+  ...(["Play", "Pause", "Toggle", "Restart", "Stop", "RefreshBinary"] as const).map((tag) => Schema.TaggedStruct(tag, {})),
+  Schema.TaggedStruct("Seek", { seconds }),
+  Schema.TaggedStruct("SetVolume", { percent: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 })) }),
+  Schema.TaggedStruct("SetMuted", { muted: Schema.Boolean }),
+  Schema.TaggedStruct("SetBinaryPath", { path: Schema.NullOr(key) }),
+  Schema.TaggedStruct("StartInstall", { method }),
+  Schema.TaggedStruct("CancelInstall", { jobId: key }),
+  Schema.TaggedStruct("DismissIssue", { issueId: key }),
 ]);
 export type Selection = { readonly key: string; readonly play: boolean; readonly positionSeconds: number };
 export type PlayerCommand =
