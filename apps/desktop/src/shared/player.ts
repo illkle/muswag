@@ -18,14 +18,15 @@ export interface MpvInstallOption {
 export type MpvState =
   | { status: "checking" }
   | { status: "ready"; binaryPath: string; source: MpvSource; version: string }
-  | { status: "missing"; checkedPaths: string[]; installOptions: MpvInstallOption[] }
+  | { status: "missing"; checkedPaths: string[]; installOptions: MpvInstallOption[]; reason?: string }
   | { status: "invalid"; binaryPath: string; source: MpvSource; reason: string; installOptions: MpvInstallOption[] };
 
 export type MpvInstallState =
   | { status: "idle" }
   | { status: "running"; command: string; method: MpvInstallMethod }
   | { status: "failed"; command: string; error: string; method: MpvInstallMethod }
-  | { status: "succeeded"; command: string; method: MpvInstallMethod };
+  | { status: "succeeded"; command: string; method: MpvInstallMethod }
+  | { status: "cancelled"; command: string; method: MpvInstallMethod };
 
 export interface PlayerMetaState {
   mpv: MpvState;
@@ -46,6 +47,7 @@ export type ApplyMpvQueueInput = {
 };
 
 export type PlayerRuntimeState = {
+  epoch?: string;
   sequence: number;
   current: PlaybackItem | null;
   status: PlayerStatus;
@@ -105,7 +107,7 @@ export function getMpvUnavailableReason(mpvState: MpvState): string | null {
     case "checking":
       return "Looking for the mpv binary…";
     case "missing":
-      return "mpv is not installed, or it is installed somewhere Muswag could not find.";
+      return mpvState.reason ?? "mpv is not installed, or it is installed somewhere Muswag could not find.";
     case "invalid":
       return `mpv was found at ${mpvState.binaryPath} but it could not be run: ${mpvState.reason}`;
   }

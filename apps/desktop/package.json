@@ -43,6 +43,7 @@
     "@base-ui/react": "catalog:",
     "@effect/platform-browser": "catalog:",
     "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
     "@electron-toolkit/preload": "catalog:",
     "@electron-toolkit/typed-ipc": "catalog:",
     "@electron-toolkit/utils": "catalog:",

@@ -222,12 +222,13 @@ export class QueueManager {
   }
 
   private acceptRuntime(runtime: PlayerRuntimeState): void {
-    if (this.disposed || (this.runtime && runtime.sequence <= this.runtime.sequence)) return;
+    if (this.disposed || (this.runtime && runtime.epoch === this.runtime.epoch && runtime.sequence <= this.runtime.sequence)) return;
     this.runtime = structuredClone(runtime);
-    void this.serial.run(() => this.commitRuntime(runtime));
+    void this.serial.run(() => this.commitRuntime(runtime)).catch((cause) => console.error("[queue] playback transition failed", cause));
   }
 
   private async commitRuntime(runtime: PlayerRuntimeState): Promise<void> {
+    if (runtime.status === "loading" || runtime.status === "error" || runtime.status === "idle") return;
     const key = runtime.current?.key;
     let logicalChanged = false;
     if (key && key !== this.store.state.nowPlaying?.key) {

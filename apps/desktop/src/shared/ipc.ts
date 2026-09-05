@@ -1,5 +1,4 @@
-import type { ApplyMpvQueueInput, MpvInstallMethod, MpvState, PlayerEvent, PlayerState } from "./player";
-import type { SessionCredentials } from "@muswag/shared";
+import type { CommandResult, PlayerSnapshot } from "./player-contract";
 
 export type MpvInstallOutput = {
   line: string;
@@ -27,27 +26,16 @@ export type MuswagMainIpc = {
   "fs:write": (path: string, data: Uint8Array) => void;
   "fs:delete": (path: string) => void;
 
-  "mpv:cancelInstall": () => void;
-  "mpv:clearManualPath": () => MpvState;
-  "mpv:install": (method: MpvInstallMethod) => MpvState;
-  /** Opens a file picker so the user can point at an mpv binary. Returns the unchanged state when cancelled. */
-  "mpv:locate": () => MpvState;
-  "mpv:recheck": () => MpvState;
-  "player:getState": () => PlayerState;
-  "player:applyQueue": (input: ApplyMpvQueueInput) => void;
-  "player:pause": () => void;
-  "player:play": () => void;
-  "player:restartCurrent": () => void;
-  "player:stop": () => void;
-  "player:seek": (positionSeconds: number) => void;
-  "player:setCredentials": (credentials: SessionCredentials | null) => Promise<void>;
-  "player:setMuted": (muted: boolean) => void;
-  "player:setVolume": (volumePercent: number) => void;
-  "player:toggle": () => void;
+  "player:command": (commandId: string, command: unknown) => CommandResult;
+  "player:subscribe": (subscriptionId: string) => PlayerSnapshot;
+  "player:unsubscribe": (subscriptionId: string) => void;
+  "player:ackSnapshot": (subscriptionId: string) => void;
+  "player:getSnapshot": () => PlayerSnapshot;
+  "player:setCredentials": (credentials: unknown) => CommandResult;
+  "player:locate": () => CommandResult | null;
 };
 
 export type MuswagRendererIpc = {
   "appUpdate:state": [state: AppUpdateState];
-  "mpv:installOutput": [output: MpvInstallOutput];
-  "player:event": [event: PlayerEvent];
+  "player:snapshot": [event: { subscriptionId: string; snapshot: PlayerSnapshot }];
 };

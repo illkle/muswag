@@ -3,27 +3,11 @@ import { appReady } from "#/core/client";
 import { DbQueueStorage } from "#/player/db-queue-storage";
 import { getQueueCanGoNext, getQueueCanGoPrevious, QueueManager } from "#/player/queue-manager";
 import { createQueueSourceFactory } from "#/player/source";
-import { createDefaultPlayerMetaState, createDefaultPlayerRuntimeState, getMpvAvailable, type PlayerRuntimeState } from "#shared/player";
-import { createMirroredRendererStore } from "#shared/store-sync";
-import { createStore, useStore } from "@tanstack/react-store";
+import { useStore } from "@tanstack/react-store";
+import { initializePlayerConnection, PlayerConnectionStore } from "#/lib/ipc";
+import { binaryView, installView, runtimeView } from "#/player/snapshot";
 
-const PlayerMetaStore = createMirroredRendererStore({
-  defaultState: createDefaultPlayerMetaState(),
-  getEventState: (event) => (event.type === "meta" ? event.state : undefined),
-  getSnapshot: PlayerIPC.getState,
-  getSnapshotState: (snapshot) => snapshot.meta,
-  subscribe: PlayerIPC.subscribe,
-});
-
-const PlayerRuntimeStore = createStore({ ...createDefaultPlayerRuntimeState(), sequence: -1 });
-
-function acceptRuntime(state: PlayerRuntimeState): void {
-  if (state.sequence <= PlayerRuntimeStore.state.sequence) return;
-  PlayerRuntimeStore.setState(() => structuredClone(state));
-}
-
-PlayerIPC.subscribeRuntime(acceptRuntime);
-void PlayerIPC.getRuntimeState().then(acceptRuntime).catch(console.error);
+initializePlayerConnection();
 
 export const queueManager = new QueueManager({
   player: {
@@ -40,67 +24,110 @@ export const queueManager = new QueueManager({
 void appReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
 
 export function usePlayerCurrentTrackId() {
-  return useStore(PlayerRuntimeStore, (state) => state.current?.track.id ?? null);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.current?.track.id ?? null;
+  });
 }
 
 export function usePlayerCurrentTrack() {
-  return useStore(PlayerRuntimeStore, (state) => state.current?.track ?? null);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.current?.track ?? null;
+  });
 }
 
 export function usePlayerStatus() {
-  return useStore(PlayerRuntimeStore, (state) => state.status);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.status;
+  });
 }
 
 export function usePlayerError() {
-  return useStore(PlayerRuntimeStore, (state) => state.error);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return !view.connected ? "Playback disconnected. Reconnecting…" : (view.issue?.message ?? state.error);
+  });
 }
 
 export function usePlayerCanPlay() {
-  return useStore(PlayerRuntimeStore, (state) => state.current !== null && state.status !== "loading");
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return view.connected && !view.snapshot.pending && state.current !== null && state.status !== "loading";
+  });
 }
 
 export function usePlayerCanGoForward() {
-  return getQueueCanGoNext(useQueueManagerState());
+  const connected = usePlayerConnected();
+  const queue = useQueueManagerState();
+  return connected && getQueueCanGoNext(queue);
 }
 
 export function usePlayerCanGoBack() {
   const queue = useQueueManagerState();
-  const runtime = useStore(PlayerRuntimeStore, (state) => state);
-  return getQueueCanGoPrevious(queue, runtime);
+  const runtime = useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state;
+  });
+  const connected = usePlayerConnected();
+  return connected && getQueueCanGoPrevious(queue, runtime);
 }
 
 export function usePlayerCanSeek() {
-  return useStore(PlayerRuntimeStore, (state) => state.current !== null && (state.durationSeconds ?? 0) > 0);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return view.connected && !view.snapshot.pending && ["playing", "paused"].includes(state.status) && (state.durationSeconds ?? 0) > 0;
+  });
 }
 
 export function usePlayerDuration() {
-  return useStore(PlayerRuntimeStore, (state) => state.durationSeconds);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.durationSeconds;
+  });
 }
 
 export function usePlayerPositionSeconds() {
-  return useStore(PlayerRuntimeStore, (state) => state.positionSeconds);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.positionSeconds;
+  });
 }
 
 export function usePlayerMpvAvailable() {
-  return useStore(PlayerMetaStore, getMpvAvailable);
+  return useStore(PlayerConnectionStore, (view) => view.connected && view.snapshot.binary._tag === "Ready");
 }
 
 export function usePlayerMpvState() {
-  return useStore(PlayerMetaStore, (state) => state.mpv);
+  return useStore(PlayerConnectionStore, (view) => binaryView(view.snapshot));
 }
 
 export function usePlayerMpvInstallState() {
-  return useStore(PlayerMetaStore, (state) => state.mpvInstall);
+  return useStore(PlayerConnectionStore, (view) => installView(view.snapshot));
 }
 
 export function usePlayerMuted() {
-  return useStore(PlayerRuntimeStore, (state) => state.muted);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.muted;
+  });
 }
 
 export function usePlayerVolumePercent() {
-  return useStore(PlayerRuntimeStore, (state) => state.volumePercent);
+  return useStore(PlayerConnectionStore, (view) => {
+    const state = runtimeView(view.snapshot);
+    return state.volumePercent;
+  });
 }
 
 export function useQueueManagerState() {
   return useStore(queueManager.store, (state) => state);
+}
+
+export function usePlayerIssue() {
+  return useStore(PlayerConnectionStore, (view) => view.issue ?? view.snapshot.issues.at(-1) ?? null);
+}
+export function usePlayerConnected() {
+  return useStore(PlayerConnectionStore, (view) => view.connected);
 }

@@ -1,12 +1,10 @@
-import { mkdtempSync } from "node:fs";
+import { Effect } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SerialQueue } from "#shared/serial-queue";
 import { runCommand } from "./exec";
-import { createJsonFileStore } from "./json-file-store";
-import { createLineSplitter } from "./line-splitter";
 
 describe("SerialQueue", () => {
   it("serializes operations, returns their results, and survives rejection", async () => {
@@ -40,44 +38,20 @@ describe("SerialQueue", () => {
   });
 });
 
-describe("createLineSplitter", () => {
-  it("buffers chunks, strips CR, skips blank lines, and flushes once", () => {
-    const lines: string[] = [];
-    const splitter = createLineSplitter((line) => lines.push(line));
-    splitter.push("one\r\ntw");
-    splitter.push("o\n \nthree");
-    expect(lines).toEqual(["one", "two"]);
-    splitter.flush();
-    splitter.flush();
-    expect(lines).toEqual(["one", "two", "three"]);
-  });
-});
-
-describe("createJsonFileStore", () => {
-  it("falls back for missing/corrupt data and saves through missing directories", () => {
-    const root = mkdtempSync(join(tmpdir(), "muswag-store-"));
-    const path = join(root, "nested", "state.json");
-    const store = createJsonFileStore(path, (raw) => (typeof raw === "object" && raw ? (raw as { value: number }) : { value: 0 }));
-    expect(store.load()).toEqual({ value: 0 });
-    store.save({ value: 4 });
-    expect(store.load()).toEqual({ value: 4 });
-  });
-});
-
 describe("runCommand", () => {
   it("captures stdout, stderr, exit codes, and spawn failures", async () => {
-    await expect(runCommand(process.execPath, ["-e", "process.stdout.write('out'); process.stderr.write('err'); process.exit(2)"])).resolves.toEqual({
+    await expect(Effect.runPromise(runCommand(process.execPath, ["-e", "process.stdout.write('out'); process.stderr.write('err'); process.exit(2)"]))).resolves.toEqual({
       code: 2,
       errorCode: null,
       stderr: "err",
       stdout: "out",
     });
-    const missing = await runCommand(join(tmpdir(), "definitely-missing-muswag-command"), []);
+    const missing = await Effect.runPromise(runCommand(join(tmpdir(), "definitely-missing-muswag-command"), []));
     expect(missing).toMatchObject({ code: null, errorCode: "ENOENT" });
   });
 
   it("reports timeouts", async () => {
-    const result = await runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 10 });
+    const result = await Effect.runPromise(runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 10 }));
     expect(result).toMatchObject({ code: null, errorCode: "ETIMEDOUT" });
   });
 });

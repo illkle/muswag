@@ -207,6 +207,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.109(effect@4.0.0-rc.112)(vitest@4.1.11)
       '@electron-toolkit/preload':
         specifier: 'catalog:'
         version: 3.0.2(electron@43.4.1(supports-color@7.2.0))

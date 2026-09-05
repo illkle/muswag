@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
 import { Button } from "#/components/ui/button";
-import { PlayerIPC } from "#/lib/ipc";
+import { MpvIPC, PlayerIPC } from "#/lib/ipc";
 import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 
@@ -12,6 +12,8 @@ import {
   usePlayerCanGoBack,
   usePlayerCanGoForward,
   usePlayerCanPlay,
+  usePlayerIssue,
+  usePlayerError,
   usePlayerCanSeek,
   usePlayerCurrentTrackId,
   usePlayerCurrentTrack,
@@ -33,12 +35,13 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const status = usePlayerStatus();
 
   const togglePlay = () => {
+    if (!canPlay) return;
     if (status === "playing") {
-      void PlayerIPC.pause();
+      void PlayerIPC.pause().catch(() => {});
       return;
     }
 
-    void PlayerIPC.play();
+    void PlayerIPC.play().catch(() => {});
   };
 
   useHotkey("Space", () => togglePlay());
@@ -49,7 +52,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.previous();
+          void queueManager.previous().catch(() => {});
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
@@ -65,7 +68,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.next();
+          void queueManager.next().catch(() => {});
         }}
         disabled={!canGoForward}
         aria-label="Next track"
@@ -262,9 +265,9 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
     setDraftVolumePercent(boundedVolumePercent);
     if (muted && boundedVolumePercent > 0) {
-      void PlayerIPC.setMuted(false);
+      void PlayerIPC.setMuted(false).catch(() => {});
     }
-    void PlayerIPC.setVolume(boundedVolumePercent);
+    void PlayerIPC.setVolume(boundedVolumePercent).catch(() => {});
   };
 
   return (
@@ -273,7 +276,7 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void PlayerIPC.setMuted(!muted);
+          void PlayerIPC.setMuted(!muted).catch(() => {});
         }}
         aria-label={muted ? "Unmute playback" : "Mute playback"}
         title={muted ? "Unmute" : "Mute"}
@@ -300,8 +303,60 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 //
 
 export function PlayerPanel() {
+  const issue = usePlayerIssue();
+  const error = usePlayerError();
   return (
     <div className="absolute bottom-0 left-1/2 z-100 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
+      {error ? (
+        <div role="alert" className="absolute bottom-full mb-2 flex max-w-full items-center gap-2 rounded border bg-background p-2 text-sm">
+          <span>{error}</span>
+          {issue?.actions.includes("retry") ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void PlayerIPC.retryIssue(issue.id).catch(() => {});
+              }}
+            >
+              Retry
+            </Button>
+          ) : null}
+          {issue?.actions.includes("configureMpv") ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void MpvIPC.locate().catch(() => {});
+              }}
+            >
+              Locate mpv
+            </Button>
+          ) : null}
+          {issue?.actions.includes("refreshMpv") ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void MpvIPC.recheck().catch(() => {});
+              }}
+            >
+              Recheck
+            </Button>
+          ) : null}
+          {issue?.actions.includes("login") ? <Link to="/">Log in</Link> : null}
+          {issue?.actions.includes("dismiss") ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void PlayerIPC.dismissIssue(issue.id).catch(() => {});
+              }}
+            >
+              Dismiss
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <section className="grid h-full grid-cols-9 flex-col justify-between gap-1 overflow-hidden rounded-lg border border-muted/20 bg-background/90 p-2 px-2 backdrop-blur-sm">
         <CurrentTrack className="col-span-3 row-start-1" />
         <PlayerButtonControls className="col-span-3 row-start-1" />
