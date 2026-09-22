@@ -3,10 +3,10 @@ import type { EngineError } from "../errors";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Deferred, Effect, Layer } from "effect";
+import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { MpvConnectionLive } from "./connection";
-import { MpvSession, MpvSessionLive } from "./session";
+import { MpvSession, MpvSessionLive, type SessionEvent } from "./session";
 import { booleanProperty, command, numberProperty } from "./protocol";
 import { applyQueue } from "../queue";
 
@@ -25,22 +25,26 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
             const loaded = yield* Deferred.make<void, EngineError>();
             const ended = yield* Deferred.make<void, EngineError>();
             const starts: number[] = [];
-            const session = yield* service.open(
-              process.env.MUSWAG_MPV_PATH ?? "mpv",
-              (message) => {
-                if (message.event.type === "start-file") starts.push(message.event.entryId);
-                if (message.event.type === "file-loaded") Deferred.doneUnsafe(loaded, Effect.void);
-                if (message.event.type === "end-file" && starts.length === 3 && message.event.reason === "eof") Deferred.doneUnsafe(ended, Effect.void);
-                return true;
-              },
-              (error) => {
-                Deferred.doneUnsafe(loaded, Effect.fail(error));
-                Deferred.doneUnsafe(ended, Effect.fail(error));
-              },
+            const events = yield* Queue.unbounded<SessionEvent>();
+            const positions = yield* Queue.sliding<SessionEvent>(1);
+            const session = yield* service.open(process.env.MUSWAG_MPV_PATH ?? "mpv", { events, positions });
+            yield* Stream.fromQueue(events).pipe(
+              Stream.runForEach(({ event }) =>
+                Effect.gen(function* () {
+                  if (event.type === "start-file") starts.push(event.entryId);
+                  if (event.type === "file-loaded") yield* Deferred.succeed(loaded, undefined);
+                  if (event.type === "end-file" && starts.length === 3 && event.reason === "eof") yield* Deferred.succeed(ended, undefined);
+                }),
+              ),
+              Effect.forkScoped,
+            );
+            yield* session.failure.pipe(
+              Effect.catch((error) => Effect.all([Deferred.fail(loaded, error), Deferred.fail(ended, error)])),
+              Effect.forkScoped,
             );
             yield* session.execute(command("set_property", "pause", true));
             const items = ["a", "b", "c"].map((key) => ({ key, track: { id: "same", title: key, isDir: false } }));
-            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, new Map(items.map((item) => [item.key, file])));
+            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, new Map(items.map((item) => [item.key, Redacted.make(file)])));
             expect(mirrored.entries.map((entry) => entry.key)).toEqual(["a", "b", "c"]);
             yield* Deferred.await(loaded);
             expect(yield* session.execute(booleanProperty("pause"))).toBe(true);

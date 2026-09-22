@@ -26,11 +26,10 @@ export function binaryView(snapshot: PlayerSnapshot): MpvState {
 export function installView(snapshot: PlayerSnapshot): MpvInstallState {
   const install = snapshot.install;
   if (install._tag === "Idle") return { status: "idle" };
-  const command = `${install.method} install mpv`;
-  if (install._tag === "Failed") return { status: "failed", command, method: install.method, error: install.issue.message };
-  if (install._tag === "Cancelled") return { status: "cancelled", command, method: install.method };
-  if (install._tag === "Succeeded") return { status: "succeeded", command, method: install.method };
-  return { status: "running", command, method: install.method };
+  if (install._tag === "Failed") return { status: "failed", method: install.method, error: install.issue.message };
+  if (install._tag === "Cancelled") return { status: "cancelled", method: install.method };
+  if (install._tag === "Succeeded") return { status: "succeeded", method: install.method };
+  return { status: "running", method: install.method };
 }
 
 /** A subscription establishes the epoch. Delayed replies cannot replace newer state. */

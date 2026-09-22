@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { MpvSource } from "#shared/player";
-import { runCommand } from "../support/exec";
+import { runCommand, type CommandResult } from "../support/exec";
 
 const LOGIN_SHELL_PROBE_TIMEOUT_MS = 3_000;
 
@@ -14,7 +14,7 @@ export type MpvLocatorDeps = {
   fileExists: (filePath: string) => Effect.Effect<boolean>;
   homeDirectory: string;
   platform: NodeJS.Platform;
-  runCommand: (...args: Parameters<typeof runCommand>) => Effect.Effect<import("../support/exec").CommandResult>;
+  runCommand: (...args: Parameters<typeof runCommand>) => Effect.Effect<CommandResult>;
 };
 
 export type MpvCandidate = { binaryPath: string; source: MpvSource; explicit: boolean };
@@ -32,25 +32,26 @@ export const createMpvLocatorDeps = Effect.gen(function* () {
   } satisfies MpvLocatorDeps;
 });
 
-export function collectMpvCandidates(options: { manualPath?: string | null; cachedPath?: string | null }, deps: MpvLocatorDeps): Effect.Effect<MpvCandidate[]> {
-  return Effect.gen(function* () {
-    const candidates: MpvCandidate[] = [];
-    addPath(candidates, deps.env.MUSWAG_MPV_PATH, "env", true);
-    addPath(candidates, options.manualPath, "manual", true);
-    addPath(candidates, options.cachedPath, "cache", false);
-    candidates.push({ binaryPath: deps.platform === "win32" ? "mpv.exe" : "mpv", explicit: false, source: "path" });
+export const collectMpvCandidates = Effect.fn("collectMpvCandidates")(function* (
+  options: { manualPath?: string | null; cachedPath?: string | null },
+  deps: MpvLocatorDeps,
+): Effect.fn.Return<MpvCandidate[]> {
+  const candidates: MpvCandidate[] = [];
+  addPath(candidates, deps.env.MUSWAG_MPV_PATH, "env", true);
+  addPath(candidates, options.manualPath, "manual", true);
+  addPath(candidates, options.cachedPath, "cache", false);
+  candidates.push({ binaryPath: deps.platform === "win32" ? "mpv.exe" : "mpv", explicit: false, source: "path" });
 
-    for (const binaryPath of getWellKnownMpvPaths(deps)) {
-      if (yield* deps.fileExists(binaryPath)) {
-        candidates.push({ binaryPath, explicit: false, source: "well-known" });
-      }
+  for (const binaryPath of getWellKnownMpvPaths(deps)) {
+    if (yield* deps.fileExists(binaryPath)) {
+      candidates.push({ binaryPath, explicit: false, source: "well-known" });
     }
+  }
 
-    const shellPath = yield* probeLoginShell("mpv", deps);
-    if (shellPath) candidates.push({ binaryPath: shellPath, explicit: false, source: "login-shell" });
-    return candidates;
-  });
-}
+  const shellPath = yield* probeLoginShell("mpv", deps);
+  if (shellPath) candidates.push({ binaryPath: shellPath, explicit: false, source: "login-shell" });
+  return candidates;
+});
 
 export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
   if (deps.platform === "darwin") {
@@ -77,21 +78,19 @@ export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
   ];
 }
 
-export function probeLoginShell(command: string, deps: MpvLocatorDeps): Effect.Effect<string | null> {
-  return Effect.gen(function* () {
-    if (deps.platform === "win32") return null;
-    const result = yield* deps.runCommand(deps.env.SHELL ?? "/bin/sh", ["-ilc", `command -v ${command}`], {
-      env: deps.env,
-      timeoutMs: LOGIN_SHELL_PROBE_TIMEOUT_MS,
-    });
-    if (result.errorCode || result.code !== 0) return null;
-    const paths = result.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("/"));
-    return paths[paths.length - 1] ?? null;
+export const probeLoginShell = Effect.fn("probeLoginShell")(function* (command: string, deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
+  if (deps.platform === "win32") return null;
+  const result = yield* deps.runCommand(deps.env.SHELL ?? "/bin/sh", ["-ilc", `command -v ${command}`], {
+    env: deps.env,
+    timeoutMs: LOGIN_SHELL_PROBE_TIMEOUT_MS,
   });
-}
+  if (result.errorCode || result.code !== 0) return null;
+  const paths = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("/"));
+  return paths[paths.length - 1] ?? null;
+});
 
 function addPath(candidates: MpvCandidate[], value: string | null | undefined, source: MpvSource, explicit: boolean): void {
   const binaryPath = value?.trim();

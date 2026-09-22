@@ -9,7 +9,7 @@ const valid: QueueManagerSnapshot = {
   nowPlaying: { key: "user:playing", origin: "user", track: { id: "deleted-song", isDir: false, title: "Preserved" } },
   userQueue: [{ key: "user:next", track: { id: "next", isDir: false, title: "Next" } }],
   source: { ref: { type: "playlist", playlistId: "playlist" }, cursor: { type: "gap", offset: 4 } },
-  playback: { paused: true, positionSeconds: 12.5 },
+  playback: { positionSeconds: 12.5 },
 };
 
 describe("player queue persistence DTO", () => {
@@ -26,8 +26,12 @@ describe("player queue persistence DTO", () => {
     expect(parsed?.nowPlaying?.track).toEqual(track);
   });
 
+  it("accepts records from builds that persisted play state, dropping it", () => {
+    expect(parseQueueManagerSnapshot({ ...valid, playback: { paused: false, positionSeconds: 12.5 } })).toEqual(valid);
+  });
+
   it("rejects malformed top-level records", () => {
-    expect(parseQueueManagerSnapshot({ ...valid, playback: { paused: true, positionSeconds: -1 } })).toBeNull();
+    expect(parseQueueManagerSnapshot({ ...valid, playback: { positionSeconds: -1 } })).toBeNull();
     expect(parseQueueManagerSnapshot({ ...valid, source: { ref: { type: "songs", queryId: "opaque" }, cursor: { type: "gap", offset: 0 } } })).toBeNull();
   });
 

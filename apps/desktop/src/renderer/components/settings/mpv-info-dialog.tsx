@@ -5,7 +5,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "#/components/ui/dialog";
 import { usePlayerError, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
-import { MpvIPC } from "#/lib/ipc";
+import { MpvIPC } from "#/player/connection";
 import type { MpvInstallOption, MpvSource, MpvState, PlayerStatus } from "#shared/player";
 import { getMpvInstallOptions, getMpvUnavailableReason } from "#shared/player";
 

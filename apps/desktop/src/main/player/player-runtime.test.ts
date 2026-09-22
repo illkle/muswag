@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import { EngineError } from "./errors";
 import { Player } from "./player";
@@ -22,14 +23,12 @@ describe("Effect player", () => {
       expect(test.closes).toBe(1);
     }).pipe(Effect.provide(test.layer));
   });
-  it.effect("idle volume preferences do not acquire mpv; invalid queue is rejected before IO", () => {
+  it.effect("idle volume preferences do not acquire mpv", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
       yield* player.execute("volume", { _tag: "SetVolume", percent: 37 });
       expect((yield* player.snapshot).audio).toEqual({ volumePercent: 37, muted: false, applied: false });
-      const result = yield* player.execute("invalid", { _tag: "ApplyQueue", items: [tracks[0], tracks[0]], select: null }).pipe(Effect.result);
-      expect(result._tag).toBe("Failure");
       expect(test.generation).toBe(0);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
@@ -111,6 +110,34 @@ describe("Effect player", () => {
       expect((yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } }).pipe(Effect.result))._tag).toBe("Failure");
       expect((yield* player.snapshot).binary._tag).toBe("Unavailable");
       expect(test.probes).toBe(2);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("fails playback when the selected track never finishes loading", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      yield* TestClock.adjust("20 seconds");
+      const failed = yield* until(player, (state) => state.playback._tag === "Failed");
+      expect(failed.issues.at(-1)).toMatchObject({ code: "PlaybackFailed", operation: "load" });
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("a queue mutation that never completes times out and fails closed", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      const started = yield* Deferred.make<void>();
+      test.override((command) => (command.name === "loadfile" ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)) : undefined));
+      const selection = yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } }).pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("15 seconds");
+      expect((yield* Fiber.join(selection)).issue.code).toBe("EngineUnavailable");
+      expect((yield* player.snapshot).playback._tag).toBe("Failed");
+      expect(test.closes).toBe(1);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });

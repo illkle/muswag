@@ -1,16 +1,19 @@
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Queue, Redacted, Stream } from "effect";
 import type { PlaybackItem } from "@muswag/shared";
 import type { PlayerSnapshot } from "#shared/player-contract";
 import { Binaries } from "../binary/binaries";
 import { Installer } from "../binary/installer";
 import { EngineError, issue } from "../errors";
-import { MpvSession, type SessionEvent } from "../mpv/session";
-import type { MpvCommand } from "../mpv/protocol";
+import { isPositionEvent, MpvSession, type SessionEvent, type SessionSinks } from "../mpv/session";
+import type { MpvCommand, MpvEvent } from "../mpv/protocol";
 import { PlayerLive, type PlayerService } from "../player";
 import { SettingsStore, defaultSettings } from "../settings";
+
 export const tracks: PlaybackItem[] = ["a", "b", "c"].map((key) => ({ key, track: { id: "same-track", title: key, isDir: false } }));
+
+/** A PlayerLive wired to an in-memory mpv that records commands and lets tests inject events. */
 export function fixture() {
-  let deliver: (event: SessionEvent) => boolean = () => false;
+  let sinks: SessionSinks | null = null;
   let generation = 0;
   let sequence = 0;
   let nextId = 0;
@@ -20,15 +23,19 @@ export function fixture() {
   let closes = 0;
   let probes = 0;
   let openFailure: EngineError | null = null;
-  const commands: readonly unknown[][] = [];
-  const recorded = commands as unknown as unknown[][];
+  const commands: unknown[][] = [];
   let override: ((command: MpvCommand<unknown>) => Effect.Effect<unknown, EngineError> | undefined) | undefined;
+  const deliver = (event: MpvEvent, entryId: number | null, gen = generation) => {
+    const stamped: SessionEvent = { _tag: "SessionEvent", generation: gen, sequence: ++sequence, entryId, event };
+    if (sinks) Queue.offerUnsafe(isPositionEvent(stamped) ? sinks.positions : sinks.events, stamped);
+  };
+
   const session = Layer.succeed(MpvSession, {
-    open: (_binary, onEvent) =>
+    open: (_binary, next) =>
       Effect.gen(function* () {
         if (openFailure) return yield* openFailure;
         generation++;
-        deliver = onEvent;
+        sinks = next;
         playlist = [];
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -38,9 +45,10 @@ export function fixture() {
         return {
           generation,
           sequence: () => sequence,
+          failure: Effect.never,
           execute: <A>(input: MpvCommand<A>) =>
             Effect.gen(function* () {
-              recorded.push([...input.args]);
+              commands.push([...input.args]);
               sequence++;
               const custom = override?.(input);
               if (custom) return (yield* custom) as A;
@@ -50,7 +58,7 @@ export function fixture() {
                 const entry = { id: ++nextId, current: mode === "replace" };
                 if (mode === "replace") {
                   playlist = [entry];
-                  deliver({ generation, sequence: ++sequence, entryId: entry.id, event: { type: "start-file", entryId: entry.id } });
+                  deliver({ type: "start-file", entryId: entry.id }, entry.id);
                 } else playlist.splice(index as number, 0, entry);
                 result = { playlist_entry_id: entry.id };
               } else if (name === "get_property" && arg === "playlist") result = playlist;
@@ -85,9 +93,10 @@ export function fixture() {
       ),
     ),
   );
+  const currentId = () => playlist.find((entry) => entry.current)?.id ?? null;
   return {
     layer,
-    commands,
+    commands: commands as readonly (readonly unknown[])[],
     failOpen: (error: EngineError) => {
       openFailure = error;
     },
@@ -101,9 +110,9 @@ export function fixture() {
       return generation;
     },
     get currentId() {
-      return playlist.find((entry) => entry.current)?.id ?? 0;
+      return currentId() ?? 0;
     },
-    emit: (event: SessionEvent["event"], id = playlist.find((entry) => entry.current)?.id ?? null, gen = generation) => deliver({ generation: gen, sequence: ++sequence, entryId: id, event }),
+    emit: (event: MpvEvent, id = currentId(), gen = generation) => deliver(event, id, gen),
     override: (fn: typeof override) => {
       override = fn;
     },
@@ -116,4 +125,4 @@ export const until = (player: PlayerService, predicate: (state: PlayerSnapshot) 
     Stream.runCollect,
     Effect.map((states) => states[0]!),
   );
-export const login = (player: PlayerService) => player.setCredentials({ url: "https://music.test", username: "me", password: "secret" });
+export const login = (player: PlayerService) => player.setCredentials({ url: "https://music.test", username: "me", password: Redacted.make("secret") });

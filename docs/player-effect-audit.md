@@ -45,8 +45,10 @@ foreign API adapters elsewhere.
 - The socket's synchronous handler preserves byte ordering and performs bounded
   newline framing. `Queue.offerUnsafe` is intentional at that foreign callback
   boundary so overflow fails the connection instead of spawning waiting producers.
-- Session callbacks bridge into the player's bounded mailbox. Deferred completion
-  and queue offers there are synchronous and bounded. Scoped effects own all work.
+- Sessions offer events straight into the player's bounded mailbox (and time-pos
+  observations into a sliding queue), so ordering is fixed at read time and a full
+  mailbox ends the session. Session failure is exposed as an awaitable effect that
+  the player watches from inside the engine scope, so deliberate closes never report.
 - Installer framing uses `Stream.mapAccum` instead of unbounded `splitLines`.
   It retains at most 8192 characters per unfinished line, redacts complete URLs
   across chunk boundaries, and flushes the final line before terminal status.
@@ -74,3 +76,20 @@ queue correlation, restore failure, and bounded playback retry.
 
 The opt-in real-mpv smoke test still requires an installed mpv binary. Native
 Windows behavior requires Windows CI/manual verification.
+
+## Follow-up (Effect conventions)
+
+- Effectful functions use `Effect.fn` (spans and call-site traces); per-message hot
+  paths use `Effect.fnUntraced` or plain effects.
+- Single background fibers (load deadline, delayed settings write, install job) are
+  owned by `FiberHandle`, which also handles fibers that finish before registration.
+- Failures are tagged errors (`InvalidCommand`, `QueueOutOfSync`, …) converted to a
+  `PlayerIssue` once, in `toIssue`; the public API fails only with `CommandFailed`.
+- The password is `Redacted` from the moment main decodes credentials, and stream
+  URLs stay `Redacted` until the session serializes a command onto the socket.
+- Every wire type is derived from a schema in `player-contract.ts`. Player IPC
+  payloads are typed `unknown`, so main decodes commands and the renderer decodes
+  snapshots and results.
+- The renderer connection is an Effect service (`PlayerConnection`) with its own
+  `ManagedRuntime`, a `Schedule`-driven health check and scoped IPC listeners.
+  Promise facades remain for React components and the queue manager.

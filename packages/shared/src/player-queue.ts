@@ -22,9 +22,9 @@ export type QueueManagerSnapshot = {
   nowPlaying: NowPlaying | null;
   userQueue: PlaybackItem[];
   source: { ref: QueueSourceRef; cursor: SourceCursor } | null;
+  /** Where to resume. Restores always start paused, so play state is not persisted. */
   playback: {
     positionSeconds: number;
-    paused: boolean;
   };
 };
 
@@ -75,7 +75,8 @@ const snapshotSchema = z.object({
       cursor: z.discriminatedUnion("type", [z.object({ type: z.literal("item"), key: occurrenceKey, offset }), z.object({ type: z.literal("gap"), offset })]),
     })
     .nullable(),
-  playback: z.object({ paused: z.boolean(), positionSeconds: z.number().nonnegative() }),
+  // Records from older builds also carry `paused`; zod strips it.
+  playback: z.object({ positionSeconds: z.number().nonnegative() }),
 });
 
 /** Defensive validation for the single persisted queue record. */

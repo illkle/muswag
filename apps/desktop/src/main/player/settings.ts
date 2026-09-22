@@ -1,7 +1,10 @@
-import { Context, Effect, Layer, Schema, Semaphore } from "effect";
+import { Context, Effect, FiberHandle, Layer, Schema, Semaphore } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { SettingsError } from "./errors";
+
+const SAVE_DELAY = "250 millis";
+const FLUSH_TIMEOUT = "2 seconds";
 
 const SettingsSchema = Schema.Struct({
   volumePercent: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
@@ -44,3 +47,43 @@ export const SettingsLive = (file: string) =>
       };
     }),
   );
+
+/**
+ * Coalesces frequent preference changes (volume drags) into one delayed write.
+ * `save` writes immediately; `flush` writes whatever is still pending, bounded for shutdown.
+ * Background write failures are reported through `onFailure`.
+ */
+export const makeSettingsWriter = Effect.fn("makeSettingsWriter")(function* (store: typeof SettingsStore.Service, onFailure: Effect.Effect<void>) {
+  const timer = yield* FiberHandle.make<void>();
+  let pending: Settings | null = null;
+  const write = (settings: Settings) =>
+    store.save(settings).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          if (pending === settings) pending = null;
+        }),
+      ),
+    );
+  return {
+    schedule: (settings: Settings) =>
+      Effect.suspend(() => {
+        pending = settings;
+        return FiberHandle.run(
+          timer,
+          Effect.sleep(SAVE_DELAY).pipe(
+            Effect.andThen(write(settings)),
+            Effect.catch(() => onFailure),
+          ),
+        );
+      }).pipe(Effect.asVoid),
+    save: (settings: Settings) => FiberHandle.clear(timer).pipe(Effect.andThen(write(settings))),
+    flush: Effect.gen(function* () {
+      yield* FiberHandle.clear(timer);
+      if (!pending) return;
+      yield* write(pending).pipe(
+        Effect.timeoutOrElse({ duration: FLUSH_TIMEOUT, orElse: () => Effect.logWarning("Settings flush timed out") }),
+        Effect.catch(() => Effect.logWarning("Settings flush failed")),
+      );
+    }),
+  };
+});

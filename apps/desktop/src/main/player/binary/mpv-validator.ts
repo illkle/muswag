@@ -2,31 +2,29 @@ import { Effect } from "effect";
 import type { MpvLocatorDeps } from "./mpv-locator";
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
-import { MINIMUM_MPV_VERSION } from "../errors";
+export const MINIMUM_MPV_VERSION = [0, 41, 0] as const;
 
 export type MpvValidation = { ok: true; version: string } | { ok: false; missing: boolean; reason: string };
 
-export function validateMpvBinary(binaryPath: string, deps: MpvLocatorDeps): Effect.Effect<MpvValidation> {
-  return Effect.gen(function* () {
-    const result = yield* deps.runCommand(binaryPath, ["--version"], { env: deps.env, timeoutMs: VERSION_PROBE_TIMEOUT_MS });
-    if (result.errorCode === "ENOENT") return { missing: true, ok: false, reason: "The file does not exist." };
-    if (result.errorCode) return { missing: false, ok: false, reason: describeSpawnErrorCode(result.errorCode) };
-    if (result.code !== 0) {
-      const detail = firstNonEmptyLine(result.stderr) ?? firstNonEmptyLine(result.stdout);
-      return {
-        missing: false,
-        ok: false,
-        reason: detail ? `\`--version\` exited with code ${result.code}: ${detail}` : `\`--version\` exited with code ${result.code}.`,
-      };
-    }
-    const version = parseMpvVersion(result.stdout);
-    if (!version) return { missing: false, ok: false, reason: "The mpv version could not be parsed from `--version` output." };
-    if (isBelowMinimum(version.parts)) {
-      return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv ${MINIMUM_MPV_VERSION.join(".")} or newer.` };
-    }
-    return { ok: true, version: version.text };
-  });
-}
+export const validateMpvBinary = Effect.fn("validateMpvBinary")(function* (binaryPath: string, deps: MpvLocatorDeps): Effect.fn.Return<MpvValidation> {
+  const result = yield* deps.runCommand(binaryPath, ["--version"], { env: deps.env, timeoutMs: VERSION_PROBE_TIMEOUT_MS });
+  if (result.errorCode === "ENOENT") return { missing: true, ok: false, reason: "The file does not exist." };
+  if (result.errorCode) return { missing: false, ok: false, reason: describeSpawnErrorCode(result.errorCode) };
+  if (result.code !== 0) {
+    const detail = firstNonEmptyLine(result.stderr) ?? firstNonEmptyLine(result.stdout);
+    return {
+      missing: false,
+      ok: false,
+      reason: detail ? `\`--version\` exited with code ${result.code}: ${detail}` : `\`--version\` exited with code ${result.code}.`,
+    };
+  }
+  const version = parseMpvVersion(result.stdout);
+  if (!version) return { missing: false, ok: false, reason: "The mpv version could not be parsed from `--version` output." };
+  if (isBelowMinimum(version.parts)) {
+    return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv ${MINIMUM_MPV_VERSION.join(".")} or newer.` };
+  }
+  return { ok: true, version: version.text };
+});
 
 type VersionParts = readonly [number, number, number];
 

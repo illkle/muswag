@@ -73,7 +73,8 @@ export class QueueManager {
       try {
         await this.player.applyQueue({
           snapshot: composeMpvQueue(restoredState),
-          ...(nowPlaying ? { select: { key: nowPlaying.key, play: !snapshot.playback.paused, positionSeconds: snapshot.playback.positionSeconds } } : {}),
+          // Always restore paused: launching the app should never start audio by itself.
+          ...(nowPlaying ? { select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } } : {}),
         });
       } catch (cause) {
         active?.window.dispose();
@@ -313,7 +314,7 @@ export class QueueManager {
       nowPlaying: state.nowPlaying ? cloneNowPlaying(state.nowPlaying) : null,
       userQueue: state.userQueue.map(clonePlaybackItem),
       source: state.source ? { ref: { ...state.source.ref }, cursor: { ...state.source.window.cursor } } : null,
-      playback: { paused: matchingRuntime?.paused ?? false, positionSeconds: matchingRuntime?.positionSeconds ?? 0 },
+      playback: { positionSeconds: matchingRuntime?.positionSeconds ?? 0 },
     };
     void this.persist(() => this.storage.save(snapshot));
   }

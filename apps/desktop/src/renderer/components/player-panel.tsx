@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
 import { Button } from "#/components/ui/button";
-import { MpvIPC, PlayerIPC } from "#/lib/ipc";
+import { MpvIPC, PlayerIPC } from "#/player/connection";
 import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 

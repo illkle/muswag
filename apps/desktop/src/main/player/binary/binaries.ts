@@ -4,7 +4,7 @@ import type { MpvInstallMethod } from "#shared/player";
 import { issue } from "../errors";
 import { detectInstallCandidates, type MpvInstallCandidate } from "./install-catalog";
 import { collectMpvCandidates, createMpvLocatorDeps, type MpvLocatorDeps } from "./mpv-locator";
-import { validateMpvBinary } from "./mpv-validator";
+import { MINIMUM_MPV_VERSION, validateMpvBinary } from "./mpv-validator";
 
 export class Binaries extends Context.Service<
   Binaries,
@@ -14,8 +14,8 @@ export class Binaries extends Context.Service<
   }
 >()("@muswag/player/Binaries") {}
 export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Service => ({
-  resolve: (manualPath, cachedPath) =>
-    Effect.gen(function* () {
+  resolve: Effect.fn("Binaries.resolve")(
+    function* (manualPath: string | null, cachedPath: string | null) {
       const candidates = yield* collectMpvCandidates({ manualPath, cachedPath }, environment);
       let invalid = false;
       const seen = new Set<string>();
@@ -33,16 +33,15 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
       return {
         _tag: "Unavailable" as const,
         reason: invalid ? ("invalid" as const) : ("missing" as const),
-        issue: issue("BinaryUnavailable", "discovery", invalid ? "The configured mpv cannot run or is older than 0.41.0." : "Install mpv or select its executable."),
+        issue: issue("BinaryUnavailable", "discovery", invalid ? `The configured mpv cannot run or is older than ${MINIMUM_MPV_VERSION.join(".")}.` : "Install mpv or select its executable."),
         options: (yield* detectInstallCandidates(environment)).map((candidate) => candidate.option),
       };
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: "30 seconds",
-        orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", reason: "probeFailed", issue: issue("BinaryUnavailable", "discovery", "Checking mpv timed out."), options: [] }),
-      }),
-      Effect.withLogSpan("mpv.discovery"),
-    ),
+    },
+    Effect.timeoutOrElse({
+      duration: "30 seconds",
+      orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", reason: "probeFailed", issue: issue("BinaryUnavailable", "discovery", "Checking mpv timed out."), options: [] }),
+    }),
+  ),
   candidate: (method) => detectInstallCandidates(environment).pipe(Effect.map((candidates) => candidates.find((candidate) => candidate.option.method === method) ?? null)),
 });
 export const BinariesLive = Layer.effect(Binaries, createMpvLocatorDeps.pipe(Effect.map(makeBinaries)));

@@ -12,6 +12,9 @@ export class MpvConnection extends Context.Service<MpvConnection, { readonly ope
   "@muswag/player/MpvConnection",
 ) {}
 const failure = (reason: EngineError["reason"]) => new EngineError({ reason, operation: "connection", uncertain: true });
+/** Headless, config-free audio playback controlled only through the IPC socket. */
+const MPV_ARGS = ["--no-config", "--idle=yes", "--no-video", "--audio-display=no", "--force-window=no", "--terminal=no", "--gapless-audio=weak", "--prefetch-playlist=yes"];
+const MAX_BUFFERED_BYTES = 1024 * 1024;
 
 export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
   Layer.effect(
@@ -27,22 +30,12 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
             if (process.platform !== "win32") yield* Effect.addFinalizer(() => fs.remove(ipcPath, { force: true }).pipe(Effect.ignore));
             const child = yield* spawner
               .spawn(
-                ChildProcess.make(
-                  binaryPath,
-                  [
-                    "--no-config",
-                    "--idle=yes",
-                    "--no-video",
-                    "--audio-display=no",
-                    "--force-window=no",
-                    "--terminal=no",
-                    "--gapless-audio=weak",
-                    "--prefetch-playlist=yes",
-                    ...extraArgs,
-                    `--input-ipc-server=${ipcPath}`,
-                  ],
-                  { stdin: "ignore", stdout: "ignore", stderr: "ignore", forceKillAfter: "1 second" },
-                ),
+                ChildProcess.make(binaryPath, [...MPV_ARGS, ...extraArgs, `--input-ipc-server=${ipcPath}`], {
+                  stdin: "ignore",
+                  stdout: "ignore",
+                  stderr: "ignore",
+                  forceKillAfter: "1 second",
+                }),
               )
               .pipe(Effect.mapError(() => failure("spawn")));
             const opened = yield* Deferred.make<void, EngineError>();
@@ -64,7 +57,7 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
               .runRaw(
                 (chunk) => {
                   buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
-                  if (Buffer.byteLength(buffer) > 1024 * 1024) return Effect.fail(failure("protocol"));
+                  if (Buffer.byteLength(buffer) > MAX_BUFFERED_BYTES) return Effect.fail(failure("protocol"));
                   let end: number;
                   while ((end = buffer.indexOf("\n")) >= 0) {
                     const line = buffer.slice(0, end).replace(/\r$/, "");

@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   subscribeInstallOutput: vi.fn((_listener: (output: { line: string; stream: "stdout" | "stderr" }) => void) => () => undefined),
 }));
 
-vi.mock("#/lib/ipc", () => ({
+vi.mock("#/player/connection", () => ({
   MpvIPC: {
     cancelInstall: mocks.cancelInstall,
     clearManualPath: mocks.clearManualPath,
@@ -143,7 +143,7 @@ describe("MpvInfoDialog", () => {
 
   it("streams install output and can cancel a running install", async () => {
     mocks.playerState.mpvState = missingState;
-    mocks.playerState.installState = { command: "brew install mpv", method: "brew", status: "running" };
+    mocks.playerState.installState = { method: "brew", status: "running" };
 
     render(<MpvInfoDialogHarness />);
     await screen.findByText("Unavailable");

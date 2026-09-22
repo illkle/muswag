@@ -1,10 +1,3 @@
-import type { CommandResult, PlayerSnapshot } from "./player-contract";
-
-export type MpvInstallOutput = {
-  line: string;
-  stream: "stdout" | "stderr";
-};
-
 export type AppUpdateStatus = "disabled" | "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error";
 
 export type AppUpdateState = {
@@ -26,16 +19,18 @@ export type MuswagMainIpc = {
   "fs:write": (path: string, data: Uint8Array) => void;
   "fs:delete": (path: string) => void;
 
-  "player:command": (commandId: string, command: unknown) => CommandResult;
-  "player:subscribe": (subscriptionId: string) => PlayerSnapshot;
+  // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
+  // snapshots/results against the schemas in player-contract.ts.
+  "player:command": (commandId: string, command: unknown) => unknown;
+  "player:subscribe": (subscriptionId: string) => unknown;
   "player:unsubscribe": (subscriptionId: string) => void;
   "player:ackSnapshot": (subscriptionId: string) => void;
-  "player:getSnapshot": () => PlayerSnapshot;
-  "player:setCredentials": (credentials: unknown) => CommandResult;
-  "player:locate": () => CommandResult | null;
+  "player:getSnapshot": () => unknown;
+  "player:setCredentials": (credentials: unknown) => unknown;
+  "player:locate": () => unknown;
 };
 
 export type MuswagRendererIpc = {
   "appUpdate:state": [state: AppUpdateState];
-  "player:snapshot": [event: { subscriptionId: string; snapshot: PlayerSnapshot }];
+  "player:snapshot": [event: { subscriptionId: string; snapshot: unknown }];
 };

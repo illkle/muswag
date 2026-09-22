@@ -3,7 +3,8 @@ import { CredentialsStore, CredentialsStoreError, FileSystemError, MiniFs, Muswa
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BrowserCrypto } from "@effect/platform-browser";
 import { FetchHttpClient } from "effect/unstable/http";
-import { FilesystemIpc, PlayerIPC } from "#/lib/ipc.ts";
+import { FilesystemIpc } from "#/lib/ipc.ts";
+import { PlayerIPC } from "#/player/connection";
 import { layer as PathLayer } from "effect/Path";
 import { queryOnce } from "@tanstack/react-db";
 

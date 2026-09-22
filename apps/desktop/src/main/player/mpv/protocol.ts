@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, type Redacted, Schema } from "effect";
 import { EngineError } from "../errors";
 
 export type MpvEvent =
@@ -15,38 +15,38 @@ const end = Schema.Struct({ event: Schema.Literal("end-file"), playlist_entry_id
 const property = Schema.Struct({ event: Schema.Literal("property-change"), name: Schema.String, data: Schema.optional(Schema.Unknown) });
 const protocolError = (operation: string) => new EngineError({ reason: "protocol", operation, uncertain: true });
 const decodeMessage = <A, I>(schema: Schema.Codec<A, I>, value: unknown, operation: string) => Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(() => protocolError(operation)));
-export const parseMessage = (line: string): Effect.Effect<Message, EngineError> =>
-  Effect.gen(function* () {
-    const record = yield* decodeMessage(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)), line, "decode:json-object");
-    // Events can also carry an error field; only replies have request_id.
-    if ("event" in record) {
-      switch (record.event) {
-        case "start-file": {
-          const parsed = yield* decodeMessage(start, record, "decode:start-file");
-          return { kind: "event", event: { type: "start-file", entryId: parsed.playlist_entry_id } };
-        }
-        case "end-file": {
-          const parsed = yield* decodeMessage(end, record, "decode:end-file");
-          return { kind: "event", event: { type: "end-file", entryId: parsed.playlist_entry_id, reason: parsed.reason } };
-        }
-        case "file-loaded":
-          return { kind: "event", event: { type: "file-loaded" } };
-        case "property-change": {
-          const parsed = yield* decodeMessage(property, record, "decode:property-change");
-          return { kind: "event", event: { type: "property", name: parsed.name, data: parsed.data } };
-        }
-        default:
-          return { kind: "ignored" };
+export const parseMessage = Effect.fnUntraced(function* (line: string): Effect.fn.Return<Message, EngineError> {
+  const record = yield* decodeMessage(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)), line, "decode:json-object");
+  // Events can also carry an error field; only replies have request_id.
+  if ("event" in record) {
+    switch (record.event) {
+      case "start-file": {
+        const parsed = yield* decodeMessage(start, record, "decode:start-file");
+        return { kind: "event", event: { type: "start-file", entryId: parsed.playlist_entry_id } };
       }
+      case "end-file": {
+        const parsed = yield* decodeMessage(end, record, "decode:end-file");
+        return { kind: "event", event: { type: "end-file", entryId: parsed.playlist_entry_id, reason: parsed.reason } };
+      }
+      case "file-loaded":
+        return { kind: "event", event: { type: "file-loaded" } };
+      case "property-change": {
+        const parsed = yield* decodeMessage(property, record, "decode:property-change");
+        return { kind: "event", event: { type: "property", name: parsed.name, data: parsed.data } };
+      }
+      default:
+        return { kind: "ignored" };
     }
-    if ("request_id" in record || "error" in record) {
-      const parsed = yield* decodeMessage(response, record, "decode:response");
-      return { kind: "response", requestId: parsed.request_id, error: parsed.error, data: parsed.data };
-    }
-    return { kind: "ignored" };
-  });
+  }
+  if ("request_id" in record || "error" in record) {
+    const parsed = yield* decodeMessage(response, record, "decode:response");
+    return { kind: "response", requestId: parsed.request_id, error: parsed.error, data: parsed.data };
+  }
+  return { kind: "ignored" };
+});
 export interface MpvCommand<A> {
   readonly name: string;
+  /** Wire arguments. Redacted values are revealed only when the command is serialized onto the socket. */
   readonly args: readonly unknown[];
   readonly decode: (value: unknown) => Effect.Effect<A, EngineError>;
 }
@@ -55,7 +55,7 @@ const decode =
   (value: unknown) =>
     Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(() => protocolError(`decode:${operation}`)));
 export const command = (name: string, ...args: readonly unknown[]): MpvCommand<void> => ({ name, args: [name, ...args], decode: () => Effect.void });
-export const load = (url: string, mode: "replace" | "insert-at", index = -1): MpvCommand<{ readonly playlist_entry_id: number }> => ({
+export const load = (url: Redacted.Redacted<string>, mode: "replace" | "insert-at", index = -1): MpvCommand<{ readonly playlist_entry_id: number }> => ({
   name: "loadfile",
   args: ["loadfile", url, mode, index],
   decode: decode(Schema.Struct({ playlist_entry_id: id }), "loadfile"),

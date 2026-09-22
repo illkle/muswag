@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it as effectIt } from "@effect/vitest";
 import { Effect } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,20 +41,23 @@ describe("SerialQueue", () => {
   });
 });
 
+// Real processes and timeouts need the live clock.
 describe("runCommand", () => {
-  it("captures stdout, stderr, exit codes, and spawn failures", async () => {
-    await expect(Effect.runPromise(runCommand(process.execPath, ["-e", "process.stdout.write('out'); process.stderr.write('err'); process.exit(2)"]))).resolves.toEqual({
-      code: 2,
-      errorCode: null,
-      stderr: "err",
-      stdout: "out",
-    });
-    const missing = await Effect.runPromise(runCommand(join(tmpdir(), "definitely-missing-muswag-command"), []));
-    expect(missing).toMatchObject({ code: null, errorCode: "ENOENT" });
-  });
+  effectIt.live("captures stdout, stderr, exit codes, and spawn failures", () =>
+    Effect.gen(function* () {
+      expect(yield* runCommand(process.execPath, ["-e", "process.stdout.write('out'); process.stderr.write('err'); process.exit(2)"])).toEqual({
+        code: 2,
+        errorCode: null,
+        stderr: "err",
+        stdout: "out",
+      });
+      expect(yield* runCommand(join(tmpdir(), "definitely-missing-muswag-command"), [])).toMatchObject({ code: null, errorCode: "ENOENT" });
+    }),
+  );
 
-  it("reports timeouts", async () => {
-    const result = await Effect.runPromise(runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 10 }));
-    expect(result).toMatchObject({ code: null, errorCode: "ETIMEDOUT" });
-  });
+  effectIt.live("reports timeouts", () =>
+    Effect.gen(function* () {
+      expect(yield* runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 10 })).toMatchObject({ code: null, errorCode: "ETIMEDOUT" });
+    }),
+  );
 });

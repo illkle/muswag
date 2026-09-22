@@ -24,7 +24,7 @@ describe("sync storage benchmark", () => {
     await Promise.all([db.albums.insert(albums).isPersisted.promise, db.songs.insert(songs).isPersisted.promise]);
     await db.playerQueue.insert({
       id: 1,
-      snapshot: { version: 1, savedAt: new Date().toISOString(), nowPlaying: null, userQueue: [], source: null, playback: { paused: false, positionSeconds: 0 } },
+      snapshot: { version: 1, savedAt: new Date().toISOString(), nowPlaying: null, userQueue: [], source: null, playback: { positionSeconds: 0 } },
     }).isPersisted.promise;
     const [storedAlbums, storedSongs] = await Promise.all([queryOnce((q) => q.from({ album: db.albums })), queryOnce((q) => q.from({ song: db.songs }))]);
     const elapsedMs = performance.now() - startedAt;

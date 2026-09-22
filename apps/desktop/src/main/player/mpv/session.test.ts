@@ -1,19 +1,21 @@
 import { TestClock } from "effect/testing";
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
 import { describe, expect } from "vitest";
 import { EngineError } from "../errors";
 import { MpvConnection } from "./connection";
 import { command, load, parseMessage } from "./protocol";
-import { MpvSession, MpvSessionLive } from "./session";
+import { MpvSession, MpvSessionLive, type SessionEvent } from "./session";
+
+const url = (value: string) => Redacted.make(value);
 
 describe("mpv protocol", () => {
   it.effect("distinguishes malformed responses from unknown events and decodes entry ids", () =>
     Effect.gen(function* () {
       expect(yield* parseMessage('{"event":"uninteresting"}')).toEqual({ kind: "ignored" });
       expect((yield* parseMessage('{"request_id":1}').pipe(Effect.result))._tag).toBe("Failure");
-      expect((yield* load("secret", "replace").decode({ playlist_entry_id: "1" }).pipe(Effect.result))._tag).toBe("Failure");
-      expect(yield* load("secret", "replace").decode({ playlist_entry_id: 1 })).toEqual({ playlist_entry_id: 1 });
+      expect((yield* load(url("secret"), "replace").decode({ playlist_entry_id: "1" }).pipe(Effect.result))._tag).toBe("Failure");
+      expect(yield* load(url("secret"), "replace").decode({ playlist_entry_id: 1 })).toEqual({ playlist_entry_id: 1 });
     }),
   );
   it.effect("accepts unavailable properties and does not mistake event errors for responses", () =>
@@ -57,14 +59,12 @@ describe("mpv protocol", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const service = yield* MpvSession;
-          const session = yield* service.open(
-            "mpv",
-            () => true,
-            () => {},
-          );
-          const first = yield* session.execute(load("one", "replace")).pipe(Effect.forkChild);
+          const events = yield* Queue.unbounded<SessionEvent>();
+          const session = yield* service.open("mpv", { events, positions: events });
+          const first = yield* session.execute(load(url("one"), "replace")).pipe(Effect.forkChild);
           const a = yield* Queue.take(writes);
-          const second = yield* session.execute(load("two", "insert-at", 1)).pipe(Effect.forkChild);
+          expect(a.command[1]).toBe("one");
+          const second = yield* session.execute(load(url("two"), "insert-at", 1)).pipe(Effect.forkChild);
           const b = yield* Queue.take(writes);
           yield* Queue.offer(lines, JSON.stringify({ request_id: b.request_id, error: "success", data: { playlist_entry_id: 22 } }));
           yield* Queue.offer(lines, JSON.stringify({ request_id: a.request_id, error: "success", data: { playlist_entry_id: 11 } }));
@@ -74,6 +74,7 @@ describe("mpv protocol", () => {
           const missing = yield* Queue.take(writes);
           yield* TestClock.adjust("5 seconds");
           expect((yield* Fiber.join(timeout))._tag).toBe("Failure");
+          expect(yield* session.failure.pipe(Effect.flip)).toMatchObject({ reason: "timeout", operation: "stop" });
           yield* Queue.offer(lines, JSON.stringify({ request_id: missing.request_id, error: "success" }));
           expect((yield* session.execute(command("stop")).pipe(Effect.result))._tag).toBe("Failure");
         }).pipe(Effect.provide(MpvSessionLive("ipc").pipe(Layer.provide(connection)))),
