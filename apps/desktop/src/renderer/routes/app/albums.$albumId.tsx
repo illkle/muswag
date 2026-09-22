@@ -10,7 +10,7 @@ import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
 import { albumOccurrenceKey, type Song } from "@muswag/shared";
-import { useAlbumStatsRefresh } from "#/lib/stats-refresh";
+import { useAlbumStatsRefresh } from "#/core/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
@@ -41,22 +41,18 @@ function RouteComponent() {
   const { albumId } = Route.useParams();
   useAlbumStatsRefresh(albumId);
 
-  const albumQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ album: db.albums })
-        .where(({ album }) => eq(album.id, albumId))
-        .findOne(),
-    [albumId],
+  const albumQuery = useLiveQuery((q) =>
+    q
+      .from({ album: db.albums })
+      .where(({ album }) => eq(album.id, albumId))
+      .findOne(),
   );
 
-  const songsQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ song: db.songs })
-        .where(({ song }) => eq(song.albumId, albumId))
-        .orderBy((q) => [q.song.discNumber, q.song.track]),
-    [albumId],
+  const songsQuery = useLiveQuery((q) =>
+    q
+      .from({ song: db.songs })
+      .where(({ song }) => eq(song.albumId, albumId))
+      .orderBy((q) => [q.song.discNumber, q.song.track]),
   );
 
   const queueState = useQueueManagerState();

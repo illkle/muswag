@@ -12,7 +12,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("#/lib/db-renderer", () => ({ db: {} }));
 
-vi.mock("#/lib/playlist-actions", () => ({
+vi.mock("#/core/playlist-actions", () => ({
   PlaylistActions: {
     addSongs: vi.fn(),
     createWithSongs: vi.fn(),

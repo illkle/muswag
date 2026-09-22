@@ -1,4 +1,4 @@
-import { PlaylistActions } from "#/lib/playlist-actions";
+import { PlaylistActions } from "#/core/playlist-actions";
 import { usePlaylists } from "#/lib/playlist-queries";
 import { useMutation } from "@tanstack/react-query";
 import { PlusIcon } from "@phosphor-icons/react";

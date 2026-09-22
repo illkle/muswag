@@ -1,11 +1,3 @@
-import type { ApplyMpvQueueInput, MpvInstallMethod, MpvState, PlayerEvent, PlayerState } from "./player";
-import type { UserCredentialsToLogin } from "@muswag/shared";
-
-export type MpvInstallOutput = {
-  line: string;
-  stream: "stdout" | "stderr";
-};
-
 export type AppUpdateStatus = "disabled" | "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error";
 
 export type AppUpdateState = {
@@ -23,31 +15,22 @@ export type MuswagMainIpc = {
   "appUpdate:getState": () => AppUpdateState;
   /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
   "appUpdate:install": () => void;
-  "coverArt:listFiles": () => string[];
-  "coverArt:removeFile": (path: string) => void;
-  "coverArt:removeFiles": (key: string) => void;
-  "coverArt:writeFile": (key: string, extension: string, bytes: Uint8Array) => string;
-  "mpv:cancelInstall": () => void;
-  "mpv:clearManualPath": () => MpvState;
-  "mpv:install": (method: MpvInstallMethod) => MpvState;
-  /** Opens a file picker so the user can point at an mpv binary. Returns the unchanged state when cancelled. */
-  "mpv:locate": () => MpvState;
-  "mpv:recheck": () => MpvState;
-  "player:getState": () => PlayerState;
-  "player:applyQueue": (input: ApplyMpvQueueInput) => void;
-  "player:pause": () => void;
-  "player:play": () => void;
-  "player:restartCurrent": () => void;
-  "player:stop": () => void;
-  "player:seek": (positionSeconds: number) => void;
-  "player:setCredentials": (credentials: UserCredentialsToLogin | null) => Promise<void>;
-  "player:setMuted": (muted: boolean) => void;
-  "player:setVolume": (volumePercent: number) => void;
-  "player:toggle": () => void;
+
+  "fs:write": (path: string, data: Uint8Array) => void;
+  "fs:delete": (path: string) => void;
+
+  // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
+  // snapshots/results against the schemas in player-contract.ts.
+  "player:command": (commandId: string, command: unknown) => unknown;
+  "player:subscribe": (subscriptionId: string) => unknown;
+  "player:unsubscribe": (subscriptionId: string) => void;
+  "player:ackSnapshot": (subscriptionId: string) => void;
+  "player:getSnapshot": () => unknown;
+  "player:setCredentials": (credentials: unknown) => unknown;
+  "player:locate": () => unknown;
 };
 
 export type MuswagRendererIpc = {
   "appUpdate:state": [state: AppUpdateState];
-  "mpv:installOutput": [output: MpvInstallOutput];
-  "player:event": [event: PlayerEvent];
+  "player:snapshot": [event: { subscriptionId: string; snapshot: unknown }];
 };

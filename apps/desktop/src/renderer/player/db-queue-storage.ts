@@ -23,7 +23,7 @@ export class DbQueueStorage implements QueueStorage {
     const existing = this.db.playerQueue.get(1);
     const transaction = existing
       ? this.db.playerQueue.update(1, (draft) => {
-          draft.snapshot = copy;
+          draft.snapshot = copy as never;
         })
       : this.db.playerQueue.insert({ id: 1, snapshot: copy });
     await transaction.isPersisted.promise;

@@ -7,46 +7,57 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./db": {
+      "source": {
+        "types": "./src/db/index.ts",
+        "default": "./src/db/index.ts"
+      },
       "types": "./dist/db/index.d.ts",
       "import": "./dist/db/index.js",
       "default": "./dist/db/index.js"
     },
     "./player-queue": {
+      "source": {
+        "types": "./src/player-queue.ts",
+        "default": "./src/player-queue.ts"
+      },
       "types": "./dist/player-queue.d.ts",
       "import": "./dist/player-queue.js",
       "default": "./dist/player-queue.js"
-    },
-    "./sync-node": {
-      "types": "./dist/sync-node.d.ts",
-      "import": "./dist/sync-node.js",
-      "default": "./dist/sync-node.js"
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
-    "format": "oxfmt --write src test vitest.config.ts vitest.integration.config.ts",
-    "format:check": "oxfmt --check src test vitest.config.ts vitest.integration.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@muswag/subsonic-api": "workspace:*",
+    "@noble/hashes": "^2.3.0",
     "@tanstack/db": "catalog:",
-    "@tanstack/db-sqlite-persistence-core": "^0.2.9",
-    "@tanstack/node-db-sqlite-persistence": "catalog:",
+    "@tanstack/db-sqlite-persistence-core": "catalog:",
     "@tanstack/react-db": "catalog:",
+    "effect": "catalog:",
     "fuse.js": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@muswag/tsconfig": "workspace:*",
-    "@types/better-sqlite3": "catalog:"
+    "@effect/vitest": "catalog:",
+    "@tanstack/node-db-sqlite-persistence": "catalog:",
+    "@types/better-sqlite3": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "better-sqlite3-test": "catalog:",
+    "vitest": "catalog:"
   }
 }

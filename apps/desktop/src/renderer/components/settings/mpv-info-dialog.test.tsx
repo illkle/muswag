@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MpvInstallState, MpvState } from "#shared/player";
 
 const mocks = vi.hoisted(() => ({
-  cancelInstall: vi.fn(),
+  cancelInstall: vi.fn(async () => {}),
   clearManualPath: vi.fn(),
   install: vi.fn(),
   locate: vi.fn(),
@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   subscribeInstallOutput: vi.fn((_listener: (output: { line: string; stream: "stdout" | "stderr" }) => void) => () => undefined),
 }));
 
-vi.mock("#/lib/ipc", () => ({
+vi.mock("#/player/connection", () => ({
   MpvIPC: {
     cancelInstall: mocks.cancelInstall,
     clearManualPath: mocks.clearManualPath,
@@ -96,7 +96,7 @@ describe("MpvInfoDialog", () => {
 
     render(<MpvInfoDialogHarness />);
 
-    expect(await screen.findByText("Not installed")).toBeTruthy();
+    expect(await screen.findByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("brew install mpv")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Install" }));
@@ -143,10 +143,10 @@ describe("MpvInfoDialog", () => {
 
   it("streams install output and can cancel a running install", async () => {
     mocks.playerState.mpvState = missingState;
-    mocks.playerState.installState = { command: "brew install mpv", method: "brew", status: "running" };
+    mocks.playerState.installState = { method: "brew", status: "running" };
 
     render(<MpvInfoDialogHarness />);
-    await screen.findByText("Not installed");
+    await screen.findByText("Unavailable");
 
     const emit = mocks.subscribeInstallOutput.mock.calls[0]?.[0];
     emit?.({ line: "==> Fetching mpv", stream: "stdout" });

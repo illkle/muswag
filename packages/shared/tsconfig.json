@@ -5,8 +5,7 @@
     "outDir": "dist",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "verbatimModuleSyntax": true,
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo.json"
+    "types": []
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

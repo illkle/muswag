@@ -16,10 +16,12 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*.node
 win:
   executableName: muswag
+  artifactName: muswag-Setup-${version}.${ext}
   target:
     - nsis
 mac:
   category: public.app-category.music
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg

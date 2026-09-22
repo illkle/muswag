@@ -1,13 +1,11 @@
 {
-  "extends": "@muswag/tsconfig/base.json",
+  "extends": "../../tsconfig.base.json",
   "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"],
   "compilerOptions": {
-    "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
     "paths": {
       "#/*": ["./src/renderer/*"],
-      "@/*": ["./src/renderer/*"],
       "#shared/*": ["./src/shared/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -15,16 +13,10 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "customConditions": ["source"],
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
     "noEmit": true,
-
-    /* Linting */
-    "skipLibCheck": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "declaration": false,
+    "declarationMap": false
   }
 }

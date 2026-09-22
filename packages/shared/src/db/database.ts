@@ -3,25 +3,29 @@ import { persistedCollectionOptions, type PersistedCollectionPersistence } from 
 
 import type { SyncRecord, SyncState, UserCredentials } from "./types.js";
 import { createCollection } from "@tanstack/react-db";
-import type { AlbumID3, Child, IndexArtist } from "@muswag/subsonic-api";
+import type { AlbumID3, Child, IndexArtist } from "../api/subsonic-api-schema.js";
 import type { PlaylistRecord } from "../playlists/types.js";
 import type { PlayerQueueRecord } from "../player-queue.js";
+import { Context } from "effect";
 
 export type BetterSqlite3Database = {
   pragma(source: string): unknown;
   close(): void;
 };
 
-export type Album = AlbumID3 & {
-  coverArtPath: string | undefined;
-  coverArtSourceId?: string | undefined;
-  statsRefreshedAt?: string | undefined;
-};
-export type Artist = IndexArtist & {
+export type CoverFields = {
   coverArtPath?: string | undefined;
   coverArtSourceId?: string | undefined;
 };
+
+export type Album = AlbumID3 & CoverFields;
+export type Artist = IndexArtist & CoverFields;
 export type Song = Child;
+
+export type CoverOnDisk = {
+  key: string;
+  fileName: string;
+};
 
 export interface MuswagDb {
   albums: Collection<Album, string>;
@@ -32,7 +36,10 @@ export interface MuswagDb {
   userCredentials: Collection<UserCredentials, number>;
   syncs: Collection<SyncRecord, string>;
   syncState: Collection<SyncState, number>;
+  covers: Collection<CoverOnDisk, string>;
 }
+
+export class MuswagDatabase extends Context.Service<MuswagDatabase, MuswagDb>()("@muswag/shared/MuswagDatabase") {}
 
 export function createMuswagDb(persistence: PersistedCollectionPersistence): MuswagDb {
   const albums = createCollection(
@@ -44,6 +51,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
       defaultIndexType: BasicIndex,
     }),
   );
+
 
   albums.createIndex(({ id }) => id);
 
@@ -63,6 +71,7 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     persistedCollectionOptions<Child, string>({
       id: "songs",
       getKey: (song) => song.id,
+
       persistence,
       schemaVersion: 1,
       defaultIndexType: BasicIndex,
@@ -121,6 +130,15 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
+  const covers = createCollection(
+    persistedCollectionOptions<CoverOnDisk, string>({
+      id: "covers",
+      getKey: (state) => state.key,
+      persistence,
+      schemaVersion: 1,
+    }),
+  );
+
   return {
     albums,
     artists,
@@ -130,5 +148,6 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     userCredentials,
     syncs,
     syncState,
+    covers,
   };
 }

@@ -11,7 +11,7 @@ export class VirtualSourceWindow {
   private readonly source: QueueSource;
   private readonly behind: number;
   private readonly ahead: number;
-  private readonly onChange?: (window: SourceWindow) => void;
+  private readonly onChange: ((window: SourceWindow) => void) | undefined;
   private generation = 0;
   private controller: AbortController;
   private unsubscribe: () => void = () => undefined;
@@ -40,7 +40,13 @@ export class VirtualSourceWindow {
     options.signal?.addEventListener("abort", abort, { once: true });
     try {
       const start = options.start;
-      const shared = { source: options.source, behind: options.behind ?? SOURCE_BEHIND, ahead: options.ahead ?? SOURCE_AHEAD, controller, onChange: options.onChange };
+      const shared = {
+        source: options.source,
+        behind: options.behind ?? SOURCE_BEHIND,
+        ahead: options.ahead ?? SOURCE_AHEAD,
+        controller,
+        ...(options.onChange ? { onChange: options.onChange } : {}),
+      };
       let window: VirtualSourceWindow;
       if ("key" in start) {
         const location = await options.source.locate({ key: start.key, signal: controller.signal });

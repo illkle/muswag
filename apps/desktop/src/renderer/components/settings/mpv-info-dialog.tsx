@@ -5,7 +5,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "#/components/ui/dialog";
 import { usePlayerError, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
-import { MpvIPC } from "#/lib/ipc";
+import { MpvIPC } from "#/player/connection";
 import type { MpvInstallOption, MpvSource, MpvState, PlayerStatus } from "#shared/player";
 import { getMpvInstallOptions, getMpvUnavailableReason } from "#shared/player";
 
@@ -30,7 +30,7 @@ const mpvSourceLabels: Record<MpvSource, string> = {
 export const mpvStatusLabels: Record<MpvState["status"], string> = {
   checking: "Checking",
   ready: "Available",
-  missing: "Not installed",
+  missing: "Unavailable",
   invalid: "Not usable",
 };
 
@@ -95,7 +95,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
 
   useEffect(() => {
     return MpvIPC.subscribeInstallOutput((output) => {
-      setInstallLog((lines) => [...lines, output.line]);
+      setInstallLog((lines) => [...lines, output.line].slice(-100));
     });
   }, []);
 
@@ -120,17 +120,23 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
   const runInstall = (option: MpvInstallOption) => {
     setInstallLog([]);
     setBusy(true);
-    void MpvIPC.install(option.method).finally(() => setBusy(false));
+    void MpvIPC.install(option.method)
+      .catch(() => {})
+      .finally(() => setBusy(false));
   };
 
   const recheck = () => {
     setBusy(true);
-    void MpvIPC.recheck().finally(() => setBusy(false));
+    void MpvIPC.recheck()
+      .catch(() => {})
+      .finally(() => setBusy(false));
   };
 
   const locate = () => {
     setBusy(true);
-    void MpvIPC.locate().finally(() => setBusy(false));
+    void MpvIPC.locate()
+      .catch(() => {})
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -180,6 +186,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
             </div>
           ) : null}
 
+          {installState.status === "cancelled" ? <p className="text-sm text-muted-foreground">Installation cancelled.</p> : null}
           {installState.status === "failed" ? <p className="text-sm break-words text-destructive">{installState.error}</p> : null}
 
           {installLog.length > 0 ? (
@@ -203,7 +210,9 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
                 disabled={busy || installing}
                 onClick={() => {
                   setBusy(true);
-                  void MpvIPC.clearManualPath().finally(() => setBusy(false));
+                  void MpvIPC.clearManualPath()
+                    .catch(() => {})
+                    .finally(() => setBusy(false));
                 }}
                 size="sm"
                 variant="ghost"
@@ -214,7 +223,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
             {installing ? (
               <Button
                 onClick={() => {
-                  void MpvIPC.cancelInstall();
+                  void MpvIPC.cancelInstall().catch(() => {});
                 }}
                 size="sm"
                 variant="ghost"

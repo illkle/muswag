@@ -9,10 +9,7 @@ export interface CreatePlaylistInput {
 }
 
 function createId(): string {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function getWritablePlaylist(db: MuswagDb, playlistId: string): PlaylistRecord & { local: PlaylistState } {
@@ -26,13 +23,13 @@ function getWritablePlaylist(db: MuswagDb, playlistId: string): PlaylistRecord &
   return playlist as PlaylistRecord & { local: PlaylistState };
 }
 
-function updatePlaylist(db: MuswagDb, playlistId: string, update: (state: PlaylistState, revision: number) => void): PlaylistRecord {
+function updatePlaylist(db: MuswagDb, playlistId: string, update: (state: PlaylistState) => void): PlaylistRecord {
   const playlist = getWritablePlaylist(db, playlistId);
   const revision = playlist.revision + 1;
 
   db.playlists.update(playlistId, (draft) => {
     if (!draft.local) return;
-    update(draft.local, revision);
+    update(draft.local);
     draft.revision = revision;
   });
 

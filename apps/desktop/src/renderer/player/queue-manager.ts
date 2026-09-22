@@ -73,7 +73,8 @@ export class QueueManager {
       try {
         await this.player.applyQueue({
           snapshot: composeMpvQueue(restoredState),
-          select: nowPlaying ? { key: nowPlaying.key, play: !snapshot.playback.paused, positionSeconds: snapshot.playback.positionSeconds } : undefined,
+          // Always restore paused: launching the app should never start audio by itself.
+          ...(nowPlaying ? { select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } } : {}),
         });
       } catch (cause) {
         active?.window.dispose();
@@ -193,7 +194,7 @@ export class QueueManager {
     const window = await VirtualSourceWindow.create({
       source,
       start,
-      signal,
+      ...(signal ? { signal } : {}),
       onChange: () => {
         if (active && this.activeSource === active) void this.serial.run(() => this.sourceWindowChanged(active!));
       },
@@ -222,12 +223,13 @@ export class QueueManager {
   }
 
   private acceptRuntime(runtime: PlayerRuntimeState): void {
-    if (this.disposed || (this.runtime && runtime.sequence <= this.runtime.sequence)) return;
+    if (this.disposed || (this.runtime && runtime.epoch === this.runtime.epoch && runtime.sequence <= this.runtime.sequence)) return;
     this.runtime = structuredClone(runtime);
-    void this.serial.run(() => this.commitRuntime(runtime));
+    void this.serial.run(() => this.commitRuntime(runtime)).catch((cause) => console.error("[queue] playback transition failed", cause));
   }
 
   private async commitRuntime(runtime: PlayerRuntimeState): Promise<void> {
+    if (runtime.status === "loading" || runtime.status === "error" || runtime.status === "idle") return;
     const key = runtime.current?.key;
     let logicalChanged = false;
     if (key && key !== this.store.state.nowPlaying?.key) {
@@ -312,7 +314,7 @@ export class QueueManager {
       nowPlaying: state.nowPlaying ? cloneNowPlaying(state.nowPlaying) : null,
       userQueue: state.userQueue.map(clonePlaybackItem),
       source: state.source ? { ref: { ...state.source.ref }, cursor: { ...state.source.window.cursor } } : null,
-      playback: { paused: matchingRuntime?.paused ?? false, positionSeconds: matchingRuntime?.positionSeconds ?? 0 },
+      playback: { positionSeconds: matchingRuntime?.positionSeconds ?? 0 },
     };
     void this.persist(() => this.storage.save(snapshot));
   }

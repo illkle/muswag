@@ -1,29 +1,13 @@
-import { PlayerIPC } from "#/lib/ipc";
-import { dbPlayerReady } from "#/lib/db-renderer";
+import { appReady } from "#/core/client";
+import { initializePlayerConnection, PlayerConnectionStore, PlayerIPC } from "#/player/connection";
 import { DbQueueStorage } from "#/player/db-queue-storage";
 import { getQueueCanGoNext, getQueueCanGoPrevious, QueueManager } from "#/player/queue-manager";
+import { binaryView, installView, runtimeView } from "#/player/snapshot";
 import { createQueueSourceFactory } from "#/player/source";
-import { createDefaultPlayerMetaState, createDefaultPlayerRuntimeState, getMpvAvailable, type PlayerRuntimeState } from "#shared/player";
-import { createMirroredRendererStore } from "#shared/store-sync";
-import { createStore, useStore } from "@tanstack/react-store";
+import type { PlayerRuntimeState } from "#shared/player";
+import { useStore } from "@tanstack/react-store";
 
-const PlayerMetaStore = createMirroredRendererStore({
-  defaultState: createDefaultPlayerMetaState(),
-  getEventState: (event) => (event.type === "meta" ? event.state : undefined),
-  getSnapshot: PlayerIPC.getState,
-  getSnapshotState: (snapshot) => snapshot.meta,
-  subscribe: PlayerIPC.subscribe,
-});
-
-const PlayerRuntimeStore = createStore({ ...createDefaultPlayerRuntimeState(), sequence: -1 });
-
-function acceptRuntime(state: PlayerRuntimeState): void {
-  if (state.sequence <= PlayerRuntimeStore.state.sequence) return;
-  PlayerRuntimeStore.setState(() => structuredClone(state));
-}
-
-PlayerIPC.subscribeRuntime(acceptRuntime);
-void PlayerIPC.getRuntimeState().then(acceptRuntime).catch(console.error);
+initializePlayerConnection();
 
 export const queueManager = new QueueManager({
   player: {
@@ -37,70 +21,41 @@ export const queueManager = new QueueManager({
   storage: new DbQueueStorage(),
 });
 
-void dbPlayerReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
+void appReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
 
-export function usePlayerCurrentTrackId() {
-  return useStore(PlayerRuntimeStore, (state) => state.current?.track.id ?? null);
-}
+type ConnectionView = typeof PlayerConnectionStore.state;
+const usePlayerRuntime = <A,>(select: (runtime: PlayerRuntimeState, view: ConnectionView) => A) => useStore(PlayerConnectionStore, (view) => select(runtimeView(view.snapshot), view));
 
-export function usePlayerCurrentTrack() {
-  return useStore(PlayerRuntimeStore, (state) => state.current?.track ?? null);
-}
+export const usePlayerConnected = () => useStore(PlayerConnectionStore, (view) => view.connected);
+export const usePlayerCurrentTrackId = () => usePlayerRuntime((runtime) => runtime.current?.track.id ?? null);
+export const usePlayerCurrentTrack = () => usePlayerRuntime((runtime) => runtime.current?.track ?? null);
+export const usePlayerStatus = () => usePlayerRuntime((runtime) => runtime.status);
+export const usePlayerDuration = () => usePlayerRuntime((runtime) => runtime.durationSeconds);
+export const usePlayerPositionSeconds = () => usePlayerRuntime((runtime) => runtime.positionSeconds);
+export const usePlayerMuted = () => usePlayerRuntime((runtime) => runtime.muted);
+export const usePlayerVolumePercent = () => usePlayerRuntime((runtime) => runtime.volumePercent);
+export const usePlayerError = () => usePlayerRuntime((runtime, view) => (!view.connected ? "Playback disconnected. Reconnecting…" : (view.issue?.message ?? runtime.error)));
+export const usePlayerIssue = () => useStore(PlayerConnectionStore, (view) => view.issue ?? view.snapshot.issues.at(-1) ?? null);
 
-export function usePlayerStatus() {
-  return useStore(PlayerRuntimeStore, (state) => state.status);
-}
-
-export function usePlayerError() {
-  return useStore(PlayerRuntimeStore, (state) => state.error);
-}
-
-export function usePlayerCanPlay() {
-  return useStore(PlayerRuntimeStore, (state) => state.current !== null && state.status !== "loading");
-}
+/** Controls are disabled while disconnected or while main is still processing a command. */
+const isIdleConnection = (view: ConnectionView) => view.connected && !view.snapshot.pending;
+export const usePlayerCanPlay = () => usePlayerRuntime((runtime, view) => isIdleConnection(view) && runtime.current !== null && runtime.status !== "loading");
+export const usePlayerCanSeek = () =>
+  usePlayerRuntime((runtime, view) => isIdleConnection(view) && (runtime.status === "playing" || runtime.status === "paused") && (runtime.durationSeconds ?? 0) > 0);
 
 export function usePlayerCanGoForward() {
-  return getQueueCanGoNext(useQueueManagerState());
+  const connected = usePlayerConnected();
+  const queue = useQueueManagerState();
+  return connected && getQueueCanGoNext(queue);
 }
-
 export function usePlayerCanGoBack() {
   const queue = useQueueManagerState();
-  const runtime = useStore(PlayerRuntimeStore, (state) => state);
-  return getQueueCanGoPrevious(queue, runtime);
+  const runtime = usePlayerRuntime((runtime) => runtime);
+  const connected = usePlayerConnected();
+  return connected && getQueueCanGoPrevious(queue, runtime);
 }
 
-export function usePlayerCanSeek() {
-  return useStore(PlayerRuntimeStore, (state) => state.current !== null && (state.durationSeconds ?? 0) > 0);
-}
-
-export function usePlayerDuration() {
-  return useStore(PlayerRuntimeStore, (state) => state.durationSeconds);
-}
-
-export function usePlayerPositionSeconds() {
-  return useStore(PlayerRuntimeStore, (state) => state.positionSeconds);
-}
-
-export function usePlayerMpvAvailable() {
-  return useStore(PlayerMetaStore, getMpvAvailable);
-}
-
-export function usePlayerMpvState() {
-  return useStore(PlayerMetaStore, (state) => state.mpv);
-}
-
-export function usePlayerMpvInstallState() {
-  return useStore(PlayerMetaStore, (state) => state.mpvInstall);
-}
-
-export function usePlayerMuted() {
-  return useStore(PlayerRuntimeStore, (state) => state.muted);
-}
-
-export function usePlayerVolumePercent() {
-  return useStore(PlayerRuntimeStore, (state) => state.volumePercent);
-}
-
-export function useQueueManagerState() {
-  return useStore(queueManager.store, (state) => state);
-}
+export const usePlayerMpvAvailable = () => useStore(PlayerConnectionStore, (view) => view.connected && view.snapshot.binary._tag === "Ready");
+export const usePlayerMpvState = () => useStore(PlayerConnectionStore, (view) => binaryView(view.snapshot));
+export const usePlayerMpvInstallState = () => useStore(PlayerConnectionStore, (view) => installView(view.snapshot));
+export const useQueueManagerState = () => useStore(queueManager.store, (state) => state);

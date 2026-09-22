@@ -75,7 +75,7 @@ async function flush(): Promise<void> {
 describe("QueueManager", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("restores embedded snapshots, source cursor, pause intent, and position before publishing", async () => {
+  it("restores embedded snapshots, source cursor and position, always paused, before publishing", async () => {
     const player = new FakePlayer();
     const storage = new MemoryStorage();
     storage.snapshot = {
@@ -84,7 +84,7 @@ describe("QueueManager", () => {
       nowPlaying: { key: "a", origin: "source", track: song("embedded-deleted-library-row") },
       userQueue: [{ key: "user:saved", track: song("queued") }],
       source: { ref: { type: "album", albumId: "album" }, cursor: { type: "item", key: "a", offset: 0 } },
-      playback: { paused: true, positionSeconds: 42 },
+      playback: { positionSeconds: 42 },
     };
     const manager = new QueueManager({ player, sources: factory, storage });
 

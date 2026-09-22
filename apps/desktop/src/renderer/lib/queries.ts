@@ -1,20 +1,15 @@
-import { db } from "#/lib/db-renderer";
-import { PlaylistSync } from "#/lib/playlist-sync";
+import { AppClient } from "#/core/client";
 import type { PlaylistSyncStatus } from "@muswag/shared";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useSyncExternalStore } from "react";
 
 export const useUser = () => {
-  return useLiveQuery((q) => q.from({ users: db.userCredentials }).findOne());
-};
-
-export const useSyncs = () => {
-  return useLiveQuery((q) => q.from({ syncs: db.syncs }));
+  const snapshot = useSyncExternalStore(AppClient.subscribeAuth, AppClient.getAuthSnapshot);
+  return {
+    data: snapshot._tag === "LoggedIn" ? { url: snapshot.url, username: snapshot.username } : undefined,
+    isLoading: snapshot._tag === "Initializing",
+  };
 };
 
 export const usePlaylistSyncStatus = (): PlaylistSyncStatus => {
-  return useSyncExternalStore(
-    (onChange) => PlaylistSync.subscribe(onChange),
-    () => PlaylistSync.getStatus(),
-  );
+  return useSyncExternalStore(AppClient.subscribePlaylistSync, AppClient.getPlaylistSyncStatus);
 };

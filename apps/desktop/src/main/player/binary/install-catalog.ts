@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { Effect } from "effect";
 
 import type { MpvInstallMethod, MpvInstallOption } from "#shared/player";
 import type { MpvLocatorDeps } from "./mpv-locator";
@@ -8,23 +8,15 @@ const LOOKUP_TIMEOUT_MS = 3_000;
 
 export type MpvInstallCandidate = { args: string[]; managerPath: string | null; option: MpvInstallOption };
 
-export async function detectInstallCandidates(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
-  if (deps.platform === "darwin") return detectMac(deps);
-  if (deps.platform === "win32") return detectWindows(deps);
-  return detectLinux(deps);
-}
+export const detectInstallCandidates = Effect.fn("detectInstallCandidates")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
+  if (deps.platform === "darwin") return yield* detectMac(deps);
+  if (deps.platform === "win32") return yield* detectWindows(deps);
+  return yield* detectLinux(deps);
+});
 
-export async function detectInstallOptions(deps: MpvLocatorDeps): Promise<MpvInstallOption[]> {
-  return (await detectInstallCandidates(deps)).map(({ option }) => option);
-}
-
-export function getManagerBinDirectory(managerPath: string): string {
-  return dirname(managerPath);
-}
-
-async function findManager(name: string, known: string[], deps: MpvLocatorDeps): Promise<string | null> {
-  for (const path of known) if (await deps.fileExists(path)) return path;
-  const result = await deps.runCommand(deps.platform === "win32" ? "where" : "which", [name], {
+const findManager = Effect.fn("findManager")(function* (name: string, known: string[], deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
+  for (const path of known) if (yield* deps.fileExists(path)) return path;
+  const result = yield* deps.runCommand(deps.platform === "win32" ? "where" : "which", [name], {
     env: deps.env,
     timeoutMs: LOOKUP_TIMEOUT_MS,
   });
@@ -35,11 +27,11 @@ async function findManager(name: string, known: string[], deps: MpvLocatorDeps):
       .find(Boolean);
     if (path) return path;
   }
-  return probeLoginShell(name, deps);
-}
+  return yield* probeLoginShell(name, deps);
+});
 
-async function detectMac(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
-  const managerPath = await findManager("brew", ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"], deps);
+const detectMac = Effect.fn("detectMac")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
+  const managerPath = yield* findManager("brew", ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"], deps);
   return [
     {
       args: ["install", "mpv"],
@@ -53,13 +45,13 @@ async function detectMac(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
       },
     },
   ];
-}
+});
 
-async function detectWindows(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
+const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
   const candidates: MpvInstallCandidate[] = [];
   const profile = deps.env.USERPROFILE ?? deps.homeDirectory;
   const localAppData = deps.env.LOCALAPPDATA;
-  const winget = await findManager("winget", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps);
+  const winget = yield* findManager("winget", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps);
   if (winget)
     candidates.push({
       args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
@@ -72,14 +64,14 @@ async function detectWindows(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[
         url: null,
       },
     });
-  const scoop = await findManager("scoop", [joinWindowsPath(profile, "scoop\\shims\\scoop.cmd")], deps);
+  const scoop = yield* findManager("scoop", [joinWindowsPath(profile, "scoop\\shims\\scoop.cmd")], deps);
   if (scoop)
     candidates.push({
       args: ["install", "extras/mpv"],
       managerPath: scoop,
-      option: { automatic: true, command: "scoop install extras/mpv", method: "scoop", note: null, url: null },
+      option: { automatic: false, command: "scoop install extras/mpv", method: "scoop", note: "Run this in a terminal, then re-check.", url: null },
     });
-  const choco = await findManager("choco", ["C:\\ProgramData\\chocolatey\\bin\\choco.exe"], deps);
+  const choco = yield* findManager("choco", ["C:\\ProgramData\\chocolatey\\bin\\choco.exe"], deps);
   if (choco)
     candidates.push({
       args: ["install", "mpv", "-y"],
@@ -99,9 +91,9 @@ async function detectWindows(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[
       },
     });
   return candidates;
-}
+});
 
-async function detectLinux(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]> {
+const detectLinux = Effect.fn("detectLinux")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
   const managers: Array<{ args: string[]; command: string; method: MpvInstallMethod; name: string; paths: string[] }> = [
     { args: ["install", "mpv"], command: "sudo apt install mpv", method: "apt", name: "apt", paths: ["/usr/bin/apt"] },
     { args: ["install", "mpv"], command: "sudo dnf install mpv", method: "dnf", name: "dnf", paths: ["/usr/bin/dnf"] },
@@ -111,7 +103,7 @@ async function detectLinux(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]>
   ];
   const candidates: MpvInstallCandidate[] = [];
   for (const manager of managers) {
-    const managerPath = await findManager(manager.name, manager.paths, deps);
+    const managerPath = yield* findManager(manager.name, manager.paths, deps);
     if (managerPath)
       candidates.push({
         args: manager.args,
@@ -120,4 +112,4 @@ async function detectLinux(deps: MpvLocatorDeps): Promise<MpvInstallCandidate[]>
       });
   }
   return candidates;
-}
+});

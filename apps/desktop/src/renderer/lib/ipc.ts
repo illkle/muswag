@@ -1,13 +1,9 @@
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/renderer";
 
-import type { AppUpdateState, MpvInstallOutput, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
-import type { ApplyMpvQueueInput, MpvInstallMethod, PlayerEvent, PlayerRuntimeState } from "#shared/player";
-import type { UserCredentialsToLogin } from "@muswag/shared";
+import type { AppUpdateState, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 
-const mainIpc = new IpcEmitter<MuswagMainIpc>();
-const rendererIpc = new IpcListener<MuswagRendererIpc>();
-
-const subscribePlayer = (listener: (event: PlayerEvent) => void) => rendererIpc.on("player:event", (_event, payload) => listener(payload));
+export const mainIpc = new IpcEmitter<MuswagMainIpc>();
+export const rendererIpc = new IpcListener<MuswagRendererIpc>();
 
 export const AppUpdateIPC = {
   check: () => mainIpc.invoke("appUpdate:check"),
@@ -19,38 +15,7 @@ export const AppUpdateIPC = {
     }),
 };
 
-export const MpvIPC = {
-  cancelInstall: () => mainIpc.invoke("mpv:cancelInstall"),
-  clearManualPath: () => mainIpc.invoke("mpv:clearManualPath"),
-  install: (method: MpvInstallMethod) => mainIpc.invoke("mpv:install", method),
-  locate: () => mainIpc.invoke("mpv:locate"),
-  recheck: () => mainIpc.invoke("mpv:recheck"),
-  subscribeInstallOutput: (listener: (output: MpvInstallOutput) => void) =>
-    rendererIpc.on("mpv:installOutput", (_event, output) => {
-      listener(output);
-    }),
-};
-
-export const PlayerIPC = {
-  applyQueue: (input: ApplyMpvQueueInput) => mainIpc.invoke("player:applyQueue", input),
-  getState: () => mainIpc.invoke("player:getState"),
-  getRuntimeState: async () => (await mainIpc.invoke("player:getState")).runtime,
-  pause: () => mainIpc.invoke("player:pause"),
-  play: () => mainIpc.invoke("player:play"),
-  restartCurrent: () => mainIpc.invoke("player:restartCurrent"),
-  seek: (positionSeconds: number) => mainIpc.invoke("player:seek", positionSeconds),
-  setCredentials: (credentials: UserCredentialsToLogin | null) => mainIpc.invoke("player:setCredentials", credentials),
-  setMuted: (muted: boolean) => mainIpc.invoke("player:setMuted", muted),
-  setVolume: (volumePercent: number) => mainIpc.invoke("player:setVolume", volumePercent),
-  subscribe: subscribePlayer,
-  subscribeRuntime: (listener: (state: PlayerRuntimeState) => void) => subscribePlayer((event) => event.type === "runtime" && listener(event.state)),
-  stop: () => mainIpc.invoke("player:stop"),
-  toggle: () => mainIpc.invoke("player:toggle"),
-};
-
-export const CoverArtIPC = {
-  listFiles: () => mainIpc.invoke("coverArt:listFiles"),
-  removeFile: (path: string) => mainIpc.invoke("coverArt:removeFile", path),
-  removeFiles: (key: string) => mainIpc.invoke("coverArt:removeFiles", key),
-  writeFile: (key: string, extension: string, bytes: Uint8Array) => mainIpc.invoke("coverArt:writeFile", key, extension, bytes),
+export const FilesystemIpc = {
+  writeFile: (path: string, data: Uint8Array) => mainIpc.invoke("fs:write", path, data),
+  remove: (path: string) => mainIpc.invoke("fs:delete", path),
 };

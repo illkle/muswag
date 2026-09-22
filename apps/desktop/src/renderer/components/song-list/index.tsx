@@ -12,7 +12,7 @@ import { useMemo, useRef, useState, type JSX, type ReactNode } from "react";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger } from "#/components/ui/context-menu";
 import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
-import { PlaylistActions } from "#/lib/playlist-actions";
+import { PlaylistActions } from "#/core/playlist-actions";
 import { queueManager } from "#/components/player-provider";
 
 function makeGridSvg(size: number) {
@@ -85,9 +85,9 @@ export const SongListRoot = ({
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => (shouldRenderTitle(i) ? SIZE * 2 : SIZE),
     overscan: 10,
-    initialOffset: scrollEntry?.scrollY,
-    paddingStart: topPadding,
-    paddingEnd: bottomPadding,
+    ...(scrollEntry?.scrollY === undefined ? {} : { initialOffset: scrollEntry.scrollY }),
+    ...(topPadding === undefined ? {} : { paddingStart: topPadding }),
+    ...(bottomPadding === undefined ? {} : { paddingEnd: bottomPadding }),
   });
 
   const renderDiscTitles = discTitles && discTitles?.length > 1;
@@ -189,10 +189,10 @@ export const SongListRoot = ({
                       toggleSelection({ rowKey, append: true, onlyAdd: true });
                     }
                   }}
-                  isSelected={selectionState[rowKey]}
+                  isSelected={selectionState[rowKey] ?? false}
                   isPlaying={isPlaying}
                   status={isPlaying ? playerStatus : null}
-                  isUnavailable={unavailableRowKeys?.has(rowKey)}
+                  isUnavailable={unavailableRowKeys?.has(rowKey) ?? false}
                 />
               </div>
             );

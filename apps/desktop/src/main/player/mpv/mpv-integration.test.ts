@@ -1,87 +1,70 @@
-import { mkdtempSync } from "node:fs";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { EngineError } from "../errors";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createStore } from "@tanstack/react-store";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
+import { describe, expect, it } from "vitest";
+import { MpvConnectionLive } from "./connection";
+import { MpvSession, MpvSessionLive, type SessionEvent } from "./session";
+import { booleanProperty, command, numberProperty } from "./protocol";
+import { applyQueue } from "../queue";
 
-import type { PlaybackItem } from "@muswag/shared";
-import type { MpvInstallState, MpvState } from "#shared/player";
-import { MpvBinaryManager } from "../binary/mpv-binary-manager";
-import { MpvInstaller } from "../binary/mpv-installer";
-import { Player } from "../player";
-import { MpvClient } from "./mpv-client";
-
-const integration = describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1");
-const cleanup: Array<() => void | Promise<void>> = [];
-
-afterEach(async () => {
-  for (const dispose of cleanup.splice(0).reverse()) await dispose();
+// Explicitly opt in; CI's mpv job should set this and provide mpv >= 0.41.
+describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", () => {
+  it("loads exact duplicate-media occurrences, pauses/seeks, advances and closes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "muswag-effect-mpv-"));
+    try {
+      const file = join(root, "audio.wav");
+      await writeFile(file, createWave(440));
+      const live = MpvSessionLive(join(root, "ipc")).pipe(Layer.provide(MpvConnectionLive(["--ao=null"])), Layer.provide(NodeServices.layer));
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const service = yield* MpvSession;
+            const loaded = yield* Deferred.make<void, EngineError>();
+            const ended = yield* Deferred.make<void, EngineError>();
+            const starts: number[] = [];
+            const events = yield* Queue.unbounded<SessionEvent>();
+            const positions = yield* Queue.sliding<SessionEvent>(1);
+            const session = yield* service.open(process.env.MUSWAG_MPV_PATH ?? "mpv", { events, positions });
+            yield* Stream.fromQueue(events).pipe(
+              Stream.runForEach(({ event }) =>
+                Effect.gen(function* () {
+                  if (event.type === "start-file") starts.push(event.entryId);
+                  if (event.type === "file-loaded") yield* Deferred.succeed(loaded, undefined);
+                  if (event.type === "end-file" && starts.length === 3 && event.reason === "eof") yield* Deferred.succeed(ended, undefined);
+                }),
+              ),
+              Effect.forkScoped,
+            );
+            yield* session.failure.pipe(
+              Effect.catch((error) => Effect.all([Deferred.fail(loaded, error), Deferred.fail(ended, error)])),
+              Effect.forkScoped,
+            );
+            yield* session.execute(command("set_property", "pause", true));
+            const items = ["a", "b", "c"].map((key) => ({ key, track: { id: "same", title: key, isDir: false } }));
+            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, new Map(items.map((item) => [item.key, Redacted.make(file)])));
+            expect(mirrored.entries.map((entry) => entry.key)).toEqual(["a", "b", "c"]);
+            yield* Deferred.await(loaded);
+            expect(yield* session.execute(booleanProperty("pause"))).toBe(true);
+            yield* session.execute(command("seek", 0.2, "absolute+exact"));
+            expect(yield* session.execute(numberProperty("time-pos"))).toBeGreaterThanOrEqual(0);
+            yield* session.execute(command("set_property", "pause", false));
+            yield* Deferred.await(ended);
+            expect(new Set(starts).size).toBe(3);
+          }).pipe(Effect.provide(live)),
+        ),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 15000);
 });
-
-integration("real mpv queue mirror", () => {
-  it("gaplessly plays an exact three-occurrence snapshot", async () => {
-    const audio = [createWave(440), createWave(550), createWave(660)];
-    const server = await listen((request, response) => {
-      const index = Number(request.url?.slice(1)) - 1;
-      const body = audio[index];
-      if (!body) {
-        response.writeHead(404).end();
-        return;
-      }
-      response.writeHead(200, { "Content-Length": body.length, "Content-Type": "audio/wav" });
-      response.end(body);
-    });
-    const { client, player } = createRealPlayer(server);
-    const load = vi.spyOn(client, "loadFile");
-    const insert = vi.spyOn(client, "insertFile");
-    const items = queue(3);
-
-    await player.applyQueue({ snapshot: { items }, select: { key: items[0]!.key, play: true } });
-    await waitFor(() => player.getState().runtime.status === "ended");
-
-    expect(player.getState().runtime.current?.key).toBe("source:3");
-    expect(load).toHaveBeenCalledTimes(1);
-    expect(insert).toHaveBeenCalledTimes(2);
-  });
-});
-
-function createRealPlayer(server: Server): { client: MpvClient; player: Player } {
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("HTTP test server has no TCP address");
-  const root = mkdtempSync(join(tmpdir(), "muswag-mpv-integration-"));
-  const client = new MpvClient({ extraArgs: ["--ao=null"], getBinaryPath: () => process.env.MUSWAG_MPV_PATH ?? "mpv", ipcPath: join(root, "mpv.sock") });
-  const ready: MpvState = { binaryPath: process.env.MUSWAG_MPV_PATH ?? "mpv", source: "path", status: "ready", version: "integration" };
-  const binaries = {
-    binaryPath: ready.binaryPath,
-    clearManualPath: vi.fn(async () => ready),
-    invalidate: vi.fn(async () => ready),
-    refresh: vi.fn(async () => ready),
-    setManualPath: vi.fn(async () => ready),
-    store: createStore<MpvState>(ready),
-  };
-  const installer = { cancel: vi.fn(), fail: vi.fn(), install: vi.fn(), store: createStore<MpvInstallState>({ status: "idle" }) };
-  const player = new Player(
-    { ipcPath: join(root, "unused.sock"), mpvPathStatePath: join(root, "mpv.json"), volumeStatePath: join(root, "volume.json") },
-    {
-      binaries: binaries as unknown as MpvBinaryManager,
-      client,
-      detectInstallCandidates: async () => [],
-      installer: installer as unknown as MpvInstaller,
-      resolveStreamUrl: (_credentials, id) => `http://127.0.0.1:${address.port}/${id}`,
-    },
-  );
-  cleanup.push(() => player.dispose());
-  return { client, player };
-}
-
-function queue(count: number): PlaybackItem[] {
-  return Array.from({ length: count }, (_, index) => ({ key: `source:${index + 1}`, track: { id: String(index + 1), isDir: false, title: `Track ${index + 1}`, duration: 0.25 } }));
-}
 
 function createWave(frequency: number): Buffer {
   const sampleRate = 44_100;
-  const sampleCount = Math.floor(sampleRate / 4);
+  const sampleCount = sampleRate;
   const dataSize = sampleCount * 2;
   const buffer = Buffer.alloc(44 + dataSize);
   buffer.write("RIFF", 0);
@@ -100,22 +83,4 @@ function createWave(frequency: number): Buffer {
     buffer.writeInt16LE(Math.round(Math.sin((index * frequency * Math.PI * 2) / sampleRate) * 8_000), 44 + index * 2);
   }
   return buffer;
-}
-
-async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void): Promise<Server> {
-  const server = createServer(handler);
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  cleanup.push(() => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))));
-  return server;
-}
-
-async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for real mpv playback state");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
 }

@@ -67,9 +67,8 @@ export function usePlaylist(playlistId: string) {
     const unique = [...new Set(entries.map(({ songId }) => songId))];
     return unique.length > 0 ? unique : [" "];
   }, [entries]);
-  const songIdKey = JSON.stringify(songIds);
 
-  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds)), [songIdKey]);
+  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds)));
 
   const rows = useMemo((): PlaylistRow[] => {
     const byId = new Map((songsQuery.data ?? []).map((song) => [song.id, song]));

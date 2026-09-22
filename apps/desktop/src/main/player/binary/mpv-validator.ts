@@ -1,12 +1,13 @@
+import { Effect } from "effect";
 import type { MpvLocatorDeps } from "./mpv-locator";
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
-const MINIMUM_MPV_VERSION = [0, 41, 0] as const;
+export const MINIMUM_MPV_VERSION = [0, 41, 0] as const;
 
 export type MpvValidation = { ok: true; version: string } | { ok: false; missing: boolean; reason: string };
 
-export async function validateMpvBinary(binaryPath: string, deps: MpvLocatorDeps): Promise<MpvValidation> {
-  const result = await deps.runCommand(binaryPath, ["--version"], { env: deps.env, timeoutMs: VERSION_PROBE_TIMEOUT_MS });
+export const validateMpvBinary = Effect.fn("validateMpvBinary")(function* (binaryPath: string, deps: MpvLocatorDeps): Effect.fn.Return<MpvValidation> {
+  const result = yield* deps.runCommand(binaryPath, ["--version"], { env: deps.env, timeoutMs: VERSION_PROBE_TIMEOUT_MS });
   if (result.errorCode === "ENOENT") return { missing: true, ok: false, reason: "The file does not exist." };
   if (result.errorCode) return { missing: false, ok: false, reason: describeSpawnErrorCode(result.errorCode) };
   if (result.code !== 0) {
@@ -23,7 +24,7 @@ export async function validateMpvBinary(binaryPath: string, deps: MpvLocatorDeps
     return { missing: false, ok: false, reason: `mpv ${version.text} is too old. Muswag requires mpv ${MINIMUM_MPV_VERSION.join(".")} or newer.` };
   }
   return { ok: true, version: version.text };
-}
+});
 
 type VersionParts = readonly [number, number, number];
 

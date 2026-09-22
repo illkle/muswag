@@ -7,7 +7,7 @@ import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { Button } from "#/components/ui/button";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "#/components/ui/sidebar";
 import { getErrorMessage } from "#/lib/err";
-import { PlaylistActions } from "#/lib/playlist-actions";
+import { PlaylistActions } from "#/core/playlist-actions";
 import { usePlaylists } from "#/lib/playlist-queries";
 import { usePlaylistSyncStatus } from "#/lib/queries";
 

@@ -17,9 +17,9 @@ const InnerResult = ({
   ...props
 }: React.ComponentProps<"div"> & {
   title?: string;
-  subtitle?: string;
-  coverPath?: string;
-  target?: CoverTarget;
+  subtitle?: string | undefined;
+  coverPath?: string | undefined;
+  target?: CoverTarget | undefined;
 }) => {
   return (
     <div className={cn("flex h-12 items-center gap-2 rounded-lg px-2 data-highlighted:bg-primary/10", className)} {...props}>

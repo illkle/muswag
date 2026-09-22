@@ -1,53 +1,33 @@
-import { spawn } from "node:child_process";
+import { Effect, Ref, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-export type CommandResult = {
-  code: number | null;
-  errorCode: string | null;
-  stdout: string;
-  stderr: string;
-};
-
-export function runCommand(command: string, args: string[], options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}): Promise<CommandResult> {
-  return new Promise((resolve) => {
-    let settled = false;
-    let stdout = "";
-    let stderr = "";
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const finish = (result: CommandResult) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      resolve(result);
-    };
-
-    let child;
-    try {
-      child = spawn(command, args, { env: options.env, stdio: ["ignore", "pipe", "pipe"] });
-    } catch (cause) {
-      const error = cause as NodeJS.ErrnoException;
-      finish({ code: null, errorCode: error.code ?? "UNKNOWN", stderr, stdout });
-      return;
-    }
-
-    timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish({ code: null, errorCode: "ETIMEDOUT", stderr, stdout });
-    }, options.timeoutMs ?? 5_000);
-
-    child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk;
+export type CommandResult = { code: number | null; errorCode: string | null; stdout: string; stderr: string };
+/** Runs a short-lived command to completion, keeping a bounded tail of its output. Never fails: problems become `errorCode`. */
+export const runCommand = Effect.fn("runCommand")(function* (
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+): Effect.fn.Return<CommandResult, never, ChildProcessSpawner.ChildProcessSpawner> {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const stdout = yield* Ref.make("");
+  const stderr = yield* Ref.make("");
+  const result = (code: number | null, errorCode: string | null) =>
+    Effect.gen(function* () {
+      return { code, errorCode, stdout: yield* Ref.get(stdout), stderr: yield* Ref.get(stderr) };
     });
-    child.stderr?.setEncoding("utf8");
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on("error", (cause: NodeJS.ErrnoException) => {
-      finish({ code: null, errorCode: cause.code ?? "UNKNOWN", stderr, stdout });
-    });
-    child.on("close", (code) => {
-      finish({ code, errorCode: null, stderr, stdout });
-    });
-  });
-}
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* spawner.spawn(ChildProcess.make(command, args, { env: options.env, stdin: "ignore", forceKillAfter: "1 second" }));
+      const capture = (stream: typeof child.stdout, target: Ref.Ref<string>) =>
+        stream.pipe(
+          Stream.decodeText(),
+          Stream.runForEach((chunk) => Ref.update(target, (tail) => (tail + chunk).slice(-65536))),
+        );
+      const [code] = yield* Effect.all([child.exitCode, capture(child.stdout, stdout), capture(child.stderr, stderr)], { concurrency: "unbounded" });
+      return yield* result(code, null);
+    }).pipe(
+      Effect.timeoutOrElse({ duration: options.timeoutMs ?? 5000, orElse: () => result(null, "ETIMEDOUT") }),
+      Effect.catch((error) => result(null, error.reason._tag === "NotFound" ? "ENOENT" : error.reason._tag === "PermissionDenied" ? "EACCES" : "UNKNOWN")),
+    ),
+  );
+});

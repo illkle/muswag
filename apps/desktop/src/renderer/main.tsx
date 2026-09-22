@@ -7,8 +7,7 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { ThemeProvider } from "#/components/utils/theme-provider";
-// Imported for its side effect: starts the single playlist sync manager for this renderer.
-import "#/lib/playlist-sync";
+import { AppClient } from "#/core/client";
 if (import.meta.env.DEV) {
   void import("react-scan").then(({ scan }) => scan({ enabled: true }));
 }
@@ -33,13 +32,15 @@ setupRouterSsrQueryIntegration({
 const rootElement = document.getElementById("root")!;
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
-  root.render(
-    <StrictMode>
-      <ThemeProvider>
-        <RouterProvider router={router} />
-      </ThemeProvider>
-    </StrictMode>,
-  );
+  void AppClient.start().then(() => {
+    root.render(
+      <StrictMode>
+        <ThemeProvider>
+          <RouterProvider router={router} />
+        </ThemeProvider>
+      </StrictMode>,
+    );
+  });
 }
 
 declare module "@tanstack/react-router" {
