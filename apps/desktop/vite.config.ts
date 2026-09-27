@@ -22,6 +22,8 @@ if (!chromiumVersion) {
 export const rendererConfig = defineConfig({
   clearScreen: false,
   root: resolve(import.meta.dirname, "src/renderer"),
+  // Production renderer is loaded via file://, so asset URLs must be relative.
+  base: "./",
   server: {
     host: "127.0.0.1",
     port: 5173,
