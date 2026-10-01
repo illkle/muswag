@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { FileSystem } from "effect/FileSystem";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 

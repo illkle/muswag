@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import { Crypto, Effect, Layer } from "effect";
 import { layer as PathLayer } from "effect/Path";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect } from "vitest";
 
 import { CredentialsStore, MiniFs, MuswagDatabase, SessionManager, SessionManagerLive, type SessionCredentials } from "./index.js";

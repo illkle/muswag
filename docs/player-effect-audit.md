@@ -7,7 +7,7 @@ mpv protocol/transport, and the Electron IPC runtime boundary. This project pins
 Effect and `@effect/platform-node` to `4.0.0-rc.112`.
 
 The v3 examples using `@effect/platform/Command` and `NodeContext` correspond to
-`effect/unstable/process/ChildProcess`, `ChildProcessSpawner`, and
+`effect/process/ChildProcess`, `ChildProcessSpawner`, and
 `@effect/platform-node/NodeServices` in this version. The installed platform source
 was checked for process-group cleanup, Windows taskkill, termination escalation,
 socket resource ownership, and environment inheritance.

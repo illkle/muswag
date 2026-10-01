@@ -3,7 +3,7 @@ import { MuswagDatabase } from "./db/database.js";
 import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import SubsonicAPI from "./api/subsonic-api.js";
-import type { HttpClientError } from "effect/unstable/http/HttpClientError";
+import type { HttpClientError } from "effect/http/HttpClientError";
 import type { SubsonicHttpError } from "./api/subsonic-api-schema.js";
 
 export class FileSystemError extends Data.TaggedError("FileSystemError")<{

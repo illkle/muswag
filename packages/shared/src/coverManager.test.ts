@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { layer as PathLayer } from "effect/Path";
-import type { HttpClientResponse } from "effect/unstable/http";
+import type { HttpClientResponse } from "effect/http";
 import { describe, expect } from "vitest";
 
 import SubsonicAPI, { type SubsonicApiService } from "./api/subsonic-api.js";

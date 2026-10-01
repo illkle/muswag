@@ -52,7 +52,6 @@ export function createMuswagDb(persistence: PersistedCollectionPersistence): Mus
     }),
   );
 
-
   albums.createIndex(({ id }) => id);
 
   const artists = createCollection(

@@ -57,8 +57,7 @@ The signatures below specify proposed domain contracts; related declarations are
 type Stamp = Readonly<{ epoch: string; revision: number }>;
 type Selection = Readonly<{ key: string; play: boolean; positionSeconds: number }>;
 type PlayerCommand =
-  | { readonly _tag: "ApplyQueue"; readonly items: readonly PlaybackItem[];
-      readonly select: Selection | null }
+  | { readonly _tag: "ApplyQueue"; readonly items: readonly PlaybackItem[]; readonly select: Selection | null }
   | { readonly _tag: "Play" | "Pause" | "Toggle" | "Restart" | "Stop" }
   | { readonly _tag: "Seek"; readonly seconds: number }
   | { readonly _tag: "SetVolume"; readonly percent: number }
@@ -71,10 +70,19 @@ type PlayerCommand =
 
 type PlayerIssue = Readonly<{
   id: string;
-  code: "InvalidCommand" | "NotAuthenticated" | "BinaryUnavailable"
-    | "EngineUnavailable" | "CommandRejected" | "PlaybackFailed"
-    | "QueueOutOfSync" | "InstallFailed" | "SettingsFailed"
-    | "Busy" | "ShuttingDown" | "InternalError";
+  code:
+    | "InvalidCommand"
+    | "NotAuthenticated"
+    | "BinaryUnavailable"
+    | "EngineUnavailable"
+    | "CommandRejected"
+    | "PlaybackFailed"
+    | "QueueOutOfSync"
+    | "InstallFailed"
+    | "SettingsFailed"
+    | "Busy"
+    | "ShuttingDown"
+    | "InternalError";
   message: string;
   operation: string;
   occurrenceKey: string | null;
@@ -95,25 +103,19 @@ type Playback =
 
 type BinaryState =
   | { readonly _tag: "Checking" }
-  | { readonly _tag: "Ready"; readonly path: string; readonly version: string;
-      readonly source: MpvSource }
-  | { readonly _tag: "Unavailable"; readonly reason: "missing" | "invalid" | "probeFailed";
-      readonly issue: PlayerIssue; readonly options: readonly MpvInstallOption[] };
+  | { readonly _tag: "Ready"; readonly path: string; readonly version: string; readonly source: MpvSource }
+  | { readonly _tag: "Unavailable"; readonly reason: "missing" | "invalid" | "probeFailed"; readonly issue: PlayerIssue; readonly options: readonly MpvInstallOption[] };
 type InstallState =
   | { readonly _tag: "Idle" }
-  | { readonly _tag: "Running" | "Cancelling" | "Succeeded" | "Cancelled";
-      readonly jobId: string; readonly method: MpvInstallMethod }
-  | { readonly _tag: "Failed"; readonly jobId: string;
-      readonly method: MpvInstallMethod; readonly issue: PlayerIssue };
+  | { readonly _tag: "Running" | "Cancelling" | "Succeeded" | "Cancelled"; readonly jobId: string; readonly method: MpvInstallMethod }
+  | { readonly _tag: "Failed"; readonly jobId: string; readonly method: MpvInstallMethod; readonly issue: PlayerIssue };
 type PlayerSnapshot = Readonly<{
   stamp: Stamp;
   lifecycle: "running" | "closing" | "closed";
   playback: Playback;
-  queue: { readonly revision: number; readonly keys: readonly string[];
-    readonly sync: "empty" | "applying" | "synced" | "unknown" };
+  queue: { readonly revision: number; readonly keys: readonly string[]; readonly sync: "empty" | "applying" | "synced" | "unknown" };
   pending: { readonly commandId: string; readonly kind: PlayerCommand["_tag"] } | null;
-  audio: { readonly volumePercent: number; readonly muted: boolean;
-    readonly applied: boolean };
+  audio: { readonly volumePercent: number; readonly muted: boolean; readonly applied: boolean };
   binary: BinaryState;
   install: InstallState;
   issues: readonly PlayerIssue[];
@@ -121,8 +123,7 @@ type PlayerSnapshot = Readonly<{
 type CommandAck = Readonly<{ commandId: string; stamp: Stamp; jobId: string | null }>;
 type CommandResult =
   | { readonly ok: true; readonly ack: CommandAck; readonly snapshot: PlayerSnapshot }
-  | { readonly ok: false; readonly commandId: string;
-      readonly issue: PlayerIssue; readonly snapshot: PlayerSnapshot };
+  | { readonly ok: false; readonly commandId: string; readonly issue: PlayerIssue; readonly snapshot: PlayerSnapshot };
 ```
 
 Commands carry a caller-generated ID in the IPC envelope; IDs correlate results, pending state, and issues. They do not promise durable exactly-once delivery. Never automatically resend an unacknowledged mutation after IPC loss; reconnect and inspect state first. Validate `ApplyQueue` completely before any engine side effect, including selection membership and a bounded window size. Reject nonfinite or out-of-range volume/seek input; clamp a valid seek to known duration. Reject play/seek without a playable selection with `InvalidCommand`; `Stop` is idempotent. Evaluate `Toggle` inside the command consumer.
@@ -174,12 +175,9 @@ interface Connection {
   readonly exited: Effect.Effect<{ code: number | null; signal: string | null }, EngineError>;
 }
 interface MpvConnectionService {
-  readonly open: (input: { binaryPath: string; ipcPath: string; generation: number }) =>
-    Effect.Effect<Connection, EngineError, Scope.Scope>;
+  readonly open: (input: { binaryPath: string; ipcPath: string; generation: number }) => Effect.Effect<Connection, EngineError, Scope.Scope>;
 }
-class MpvConnection extends Context.Service<MpvConnection, MpvConnectionService>()(
-  "@muswag/desktop/MpvConnection"
-) {}
+class MpvConnection extends Context.Service<MpvConnection, MpvConnectionService>()("@muswag/desktop/MpvConnection") {}
 
 type MpvCommand<A> = Readonly<{
   name: string;
@@ -187,8 +185,7 @@ type MpvCommand<A> = Readonly<{
   decode: (data: unknown) => Effect.Effect<A, EngineError>;
 }>;
 // protocol.ts: constructors hide wire details and select the response decoder.
-declare const load: (url: string, mode: "replace" | "insert-at", index?: number) =>
-  MpvCommand<{ readonly playlistEntryId: number }>;
+declare const load: (url: string, mode: "replace" | "insert-at", index?: number) => MpvCommand<{ readonly playlistEntryId: number }>;
 declare const setPause: (paused: boolean) => MpvCommand<void>;
 declare const getPlaylist: MpvCommand<readonly { id: number; current: boolean }[]>;
 ```
@@ -228,19 +225,16 @@ Terminal process/socket failure is reported once per generation. An exit is expe
 type Correlation =
   | { readonly _tag: "Empty" }
   | { readonly _tag: "Unknown" }
-  | { readonly _tag: "Known"; readonly generation: number;
-      readonly entries: readonly (PlaybackItem & { readonly entryId: number })[];
-      readonly currentId: number | null };
-type QueuePlan =
-  | { readonly _tag: "Clear" }
-  | { readonly _tag: "Keep"; readonly selectKey: string | null }
-  | { readonly _tag: "Rebuild"; readonly anchorKey: string;
-      readonly replaceAnchor: boolean };
-declare const planQueue: (current: Correlation, items: readonly PlaybackItem[],
-  select: Selection | null) => Effect.Effect<QueuePlan, QueueError>;
-declare const executePlan: (session: SessionHandle, plan: QueuePlan,
-  items: readonly PlaybackItem[], urls: ReadonlyMap<string, string>, current: Correlation) =>
-  Effect.Effect<Correlation, EngineError | QueueError>;
+  | { readonly _tag: "Known"; readonly generation: number; readonly entries: readonly (PlaybackItem & { readonly entryId: number })[]; readonly currentId: number | null };
+type QueuePlan = { readonly _tag: "Clear" } | { readonly _tag: "Keep"; readonly selectKey: string | null } | { readonly _tag: "Rebuild"; readonly anchorKey: string; readonly replaceAnchor: boolean };
+declare const planQueue: (current: Correlation, items: readonly PlaybackItem[], select: Selection | null) => Effect.Effect<QueuePlan, QueueError>;
+declare const executePlan: (
+  session: SessionHandle,
+  plan: QueuePlan,
+  items: readonly PlaybackItem[],
+  urls: ReadonlyMap<string, string>,
+  current: Correlation,
+) => Effect.Effect<Correlation, EngineError | QueueError>;
 ```
 
 `planQueue` performs no IO (a synchronous tagged result instead of Effect is also fine). Empty queue means stop and clear. Nonempty queue without a verified anchor requires an explicit selection. Same keys allow metadata rebind and optional selection; other changes clear successors and rebuild around the verified current entry, or replace around an explicit selection. Resolve every required URL before mutation. Do not change the URL for an existing current entry while pretending only its metadata changed.
@@ -251,10 +245,8 @@ Commit after decoded command responses and a playlist/current query confirm entr
 
 ```ts
 interface PlayerService {
-  readonly execute: (commandId: string, command: PlayerCommand) =>
-    Effect.Effect<CommandAck, PlayerError>;
-  readonly setCredentials: (credentials: SessionCredentials | null) =>
-    Effect.Effect<void, PlayerError>;
+  readonly execute: (commandId: string, command: PlayerCommand) => Effect.Effect<CommandAck, PlayerError>;
+  readonly setCredentials: (credentials: SessionCredentials | null) => Effect.Effect<void, PlayerError>;
   readonly snapshot: Effect.Effect<PlayerSnapshot>;
   readonly changes: Stream.Stream<PlayerSnapshot>;
   readonly shutdown: Effect.Effect<void>;
@@ -291,19 +283,23 @@ interface InstallerService {
   readonly cancel: (jobId: string) => Effect.Effect<void>;
   readonly changes: Stream.Stream<InstallState>;
   readonly output: Stream.Stream<{
-    readonly jobId: string; readonly sequence: number;
-    readonly stream: "stdout" | "stderr"; readonly line: string;
+    readonly jobId: string;
+    readonly sequence: number;
+    readonly stream: "stdout" | "stderr";
+    readonly line: string;
   }>;
 }
 type Settings = Readonly<{
-  volumePercent: number; muted: boolean; manualPath: string | null; cachedPath: string | null;
+  volumePercent: number;
+  muted: boolean;
+  manualPath: string | null;
+  cachedPath: string | null;
 }>;
 interface SettingsService {
   readonly load: Effect.Effect<Settings, SettingsError>;
   readonly save: (settings: Settings) => Effect.Effect<void, SettingsError>;
 }
-declare const resolveUrls: (credentials: SessionCredentials | null,
-  items: readonly PlaybackItem[]) => Effect.Effect<ReadonlyMap<string, string>, PlayerError>;
+declare const resolveUrls: (credentials: SessionCredentials | null, items: readonly PlaybackItem[]) => Effect.Effect<ReadonlyMap<string, string>, PlayerError>;
 ```
 
 Declare capability tags using the same `Context.Service` pattern as Player. Stream source remains a small function using shared `buildSubsonicStreamUrl`, not another service with mutable credentials.
@@ -317,13 +313,10 @@ Settings use Effect FileSystem/Path, Schema decoding and temp-file/rename writes
 ## Composition, Electron and frontend
 
 ```ts
-declare const PlayerLive: Layer.Layer<Player, never,
-  MpvSession | Binaries | Installer | SettingsStore>;
+declare const PlayerLive: Layer.Layer<Player, never, MpvSession | Binaries | Installer | SettingsStore>;
 // MpvSession/Binaries/Installer/SettingsStore are Context.Service tags for
 // the interfaces above; lower live layers provide platform dependencies.
-declare const makePlayerLayer: (options: {
-  ipcPath: string; settingsPath: string;
-}) => Layer.Layer<Player>;
+declare const makePlayerLayer: (options: { ipcPath: string; settingsPath: string }) => Layer.Layer<Player>;
 // main owns ManagedRuntime.make(makePlayerLayer(options)).
 // IPC dispatch: decode -> Player.execute -> read snapshot -> encode CommandResult.
 ```
@@ -350,17 +343,17 @@ Annotate component, epoch, generation, command ID/name, occurrence key, installa
 
 Use existing pure test cases where valid. Add desktop `@effect/vitest` from the catalog; follow shared's `it.effect` style and use scoped tests/TestClock for lifetimes and timing. Use fake capability layers, scripted mpv replies/events and Deferred barriers, not real sleeps or mocks of Effect internals. Test meaningful failure boundaries instead of every setter or helper. The following are scenario groups, not a quota of individual tests.
 
-| Suite | Required scenarios |
-| --- | --- |
-| Protocol/framing | Fragmented UTF-8/multiple lines; size limit; invalid known response vs ignored unknown event; typed load ID decode; missing response identity fails connection. Table-driven. |
-| Session | Concurrent demand yields one startup; out-of-order responses; timeout/interruption removes pending request; late response ignored; startup failure/close releases process/socket/listeners; duplicate exit/close emits one terminal result. |
-| Queue | Duplicate track IDs with unique keys; selected middle item order; same-key metadata update; invalid selection before IO; current auto-advances during rebuild; partial mutation/query mismatch invalidates map and closes session. |
-| Player | Selection acknowledgment is Loading; restore seek failure does not report Playing; failed pause/seek leaves honest state; stale generation/load/property input ignored; end-of-queue and automatic advance correlate correctly; one media reload then terminal error. |
-| Concurrency/lifetime | Lifecycle-before-command-response without deadlock; telemetry flood does not starve stop/errors; full lifecycle buffer fails visibly; stop/logout during startup/rebuild cancels work and settles queued callers; no post-disposal updates. |
-| State/IPC/renderer | Event-before-initial-snapshot and old epoch replies; structured command rejection plus matching issue; reconnect while loading/failed/installing; pending acknowledgment never advances logical now-playing; disconnected controls; dismiss/retry clears only matching issue. |
-| Binary/installer/settings | Existing candidate precedence/version table; stale refresh after path change; one install at a time; cancel then immediate new install cannot receive old job results; exit-zero but discovery fails; missing/corrupt/unwritable settings; atomic/debounced final write. |
-| Logging | One representative failure produces structured annotations once; credentials/URL/nested cause output is redacted; expected cancellation is not logged as playback failure. |
-| Real mpv smoke | Local generated audio with null audio output: load/entry IDs, exact 3-occurrence order including duplicate media, auto-advance, pause/seek and awaited shutdown. Gate explicitly on mpv availability; CI should include one job with the supported version. |
+| Suite                     | Required scenarios                                                                                                                                                                                                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Protocol/framing          | Fragmented UTF-8/multiple lines; size limit; invalid known response vs ignored unknown event; typed load ID decode; missing response identity fails connection. Table-driven.                                                                                                 |
+| Session                   | Concurrent demand yields one startup; out-of-order responses; timeout/interruption removes pending request; late response ignored; startup failure/close releases process/socket/listeners; duplicate exit/close emits one terminal result.                                   |
+| Queue                     | Duplicate track IDs with unique keys; selected middle item order; same-key metadata update; invalid selection before IO; current auto-advances during rebuild; partial mutation/query mismatch invalidates map and closes session.                                            |
+| Player                    | Selection acknowledgment is Loading; restore seek failure does not report Playing; failed pause/seek leaves honest state; stale generation/load/property input ignored; end-of-queue and automatic advance correlate correctly; one media reload then terminal error.         |
+| Concurrency/lifetime      | Lifecycle-before-command-response without deadlock; telemetry flood does not starve stop/errors; full lifecycle buffer fails visibly; stop/logout during startup/rebuild cancels work and settles queued callers; no post-disposal updates.                                   |
+| State/IPC/renderer        | Event-before-initial-snapshot and old epoch replies; structured command rejection plus matching issue; reconnect while loading/failed/installing; pending acknowledgment never advances logical now-playing; disconnected controls; dismiss/retry clears only matching issue. |
+| Binary/installer/settings | Existing candidate precedence/version table; stale refresh after path change; one install at a time; cancel then immediate new install cannot receive old job results; exit-zero but discovery fails; missing/corrupt/unwritable settings; atomic/debounced final write.      |
+| Logging                   | One representative failure produces structured annotations once; credentials/URL/nested cause output is redacted; expected cancellation is not logged as playback failure.                                                                                                    |
+| Real mpv smoke            | Local generated audio with null audio output: load/entry IDs, exact 3-occurrence order including duplicate media, auto-advance, pause/seek and awaited shutdown. Gate explicitly on mpv availability; CI should include one job with the supported version.                   |
 
 Keep OS package-manager execution out of tests. Use fake command runners for catalog/install behavior and one lightweight real local socket/process test for the adapter boundary. Verify Unix socket behavior in CI; add Windows named-pipe/termination smoke coverage when a Windows runner is available and record that gap until then. Avoid a broad coverage percentage target, exhaustive permutations, renderer pixel snapshots, and duplicate tests for shared queue parsing or stream signing.
 

@@ -39,18 +39,23 @@ async function withNavidromeLibrary(
 ): Promise<void> {
   const connection = await createNavidromeTestConnection(albums, fastLibraryGeneration);
   const db = createInMemoryDb();
-  const dependencies = Layer.merge(Layer.succeed(MuswagDatabase, db), subsonicLayerFor(connection));
-  const runtime = ManagedRuntime.make(Layer.merge(dependencies, SyncManager.layerWithoutDependencies.pipe(Layer.provide(dependencies))));
-
   try {
-    const manager = runtime.runSync(SyncManager);
     await run({
       db,
       connection,
-      sync: (mode) => runtime.runPromise(manager.sync({ mode })),
+      sync: async (mode) => {
+        // Library replacement starts a new container with a new port.
+        const dependencies = Layer.merge(Layer.succeed(MuswagDatabase, db), subsonicLayerFor(connection));
+        const runtime = ManagedRuntime.make(Layer.merge(dependencies, SyncManager.layerWithoutDependencies.pipe(Layer.provide(dependencies))));
+        try {
+          const manager = runtime.runSync(SyncManager);
+          return await runtime.runPromise(manager.sync({ mode }));
+        } finally {
+          await runtime.dispose();
+        }
+      },
     });
   } finally {
-    await runtime.dispose();
     await connection.cleanup();
   }
 }

@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Layer, Sink, Stream } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vitest";
 import { Binaries } from "./binaries";
 import { Installer, InstallerLive } from "./installer";

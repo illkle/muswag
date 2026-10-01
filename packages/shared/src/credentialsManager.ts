@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer, ScopedRef, Stream, SubscriptionRef } from "effect";
 import { Crypto } from "effect/Crypto";
 import { Path } from "effect/Path";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 import SubsonicAPI, { makeSubsonicAPI, type SubsonicApiConfig } from "./api/subsonic-api.js";
 import CoverManager, { CoverManagerLive, MiniFs } from "./coverManager.js";

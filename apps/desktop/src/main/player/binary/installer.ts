@@ -1,4 +1,4 @@
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { delimiter, dirname } from "node:path";
 import { Context, Deferred, Effect, FiberHandle, Layer, Semaphore, Stream, SubscriptionRef } from "effect";
 import type { InstallOutput, InstallState, MpvInstallMethod } from "#shared/player-contract";
