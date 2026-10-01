@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
-import { ChildProcess } from "effect/unstable/process";
+import { ChildProcess } from "effect/process";
 
 import { loadEnvironmentFile, signalExitCode, stopChildProcess, waitForTerminationSignal } from "./process-lifecycle.ts";
 import { RunnerError } from "./runner-error.ts";

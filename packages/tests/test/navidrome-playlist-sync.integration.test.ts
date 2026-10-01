@@ -54,7 +54,7 @@ describeIfReady("Navidrome playlist sync", () => {
 
       deletePlaylist(db, local.id);
       await runtime.runPromise(manager.sync);
-      expect((await runtime.runPromise(api.getPlaylists)).playlists.playlist?.some(({ id }) => id === created!.id)).toBe(false);
+      expect(((await runtime.runPromise(api.getPlaylists)).playlists.playlist ?? []).some(({ id }) => id === created!.id)).toBe(false);
     } finally {
       await runtime.dispose();
       await connection.cleanup();

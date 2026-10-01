@@ -186,36 +186,10 @@ function logAlbumCompletion(album: AlbumFixture, albumStartedAt: number, logPerA
   });
 }
 
-async function createTaggedTemplateMp3Library(
-  rootDir: string,
-  albums: AlbumFixture[],
-  logPerAlbum: boolean,
-  artworkBuffer: Buffer,
-): Promise<void> {
+async function createTaggedTemplateMp3Library(rootDir: string, albums: AlbumFixture[], logPerAlbum: boolean, artworkBuffer: Buffer): Promise<void> {
   const templatePath = path.join(rootDir, ".template.mp3");
   runFfmpeg(
-    [
-      "-loglevel",
-      "error",
-      "-y",
-      "-f",
-      "lavfi",
-      "-i",
-      "anullsrc=r=44100:cl=stereo",
-      "-t",
-      "1",
-      "-ac",
-      "2",
-      "-ar",
-      "44100",
-      "-codec:a",
-      "libmp3lame",
-      "-q:a",
-      "4",
-      "-map_metadata",
-      "-1",
-      templatePath,
-    ],
+    ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "1", "-ac", "2", "-ar", "44100", "-codec:a", "libmp3lame", "-q:a", "4", "-map_metadata", "-1", templatePath],
     { log: false },
   );
 
@@ -309,11 +283,7 @@ async function countScannedAlbums(connection: NavidromeConnection): Promise<numb
   }
 }
 
-export async function generateFakeMp3Library(
-  rootDir: string,
-  albums: AlbumFixture[],
-  options: GenerateFakeMp3LibraryOptions = {},
-): Promise<void> {
+export async function generateFakeMp3Library(rootDir: string, albums: AlbumFixture[], options: GenerateFakeMp3LibraryOptions = {}): Promise<void> {
   const { mode = "ffmpeg", logPerTrack = true, logPerAlbum = true } = options;
   const generationStartedAt = Date.now();
   const artworkBuffer = await createAlbumArtworkTemplate(rootDir);
@@ -535,10 +505,7 @@ export interface NavidromeTestConnection extends NavidromeConnection {
   cleanup(): Promise<void>;
 }
 
-export async function createNavidromeTestConnection(
-  albums: AlbumFixture[],
-  options: NavidromeLibraryOptions = {},
-): Promise<NavidromeTestConnection> {
+export async function createNavidromeTestConnection(albums: AlbumFixture[], options: NavidromeLibraryOptions = {}): Promise<NavidromeTestConnection> {
   let container: StartedTestContainer | undefined;
   let hostRoot: string | undefined;
 

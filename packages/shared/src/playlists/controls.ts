@@ -26,10 +26,13 @@ function getWritablePlaylist(db: MuswagDb, playlistId: string): PlaylistRecord &
 function updatePlaylist(db: MuswagDb, playlistId: string, update: (state: PlaylistState) => void): PlaylistRecord {
   const playlist = getWritablePlaylist(db, playlistId);
   const revision = playlist.revision + 1;
+  // Synced records can share base and local objects. Edit a separate copy so the
+  // database draft tracker cannot also change the last-synced snapshot.
+  const local = structuredClone(playlist.local);
+  update(local);
 
   db.playlists.update(playlistId, (draft) => {
-    if (!draft.local) return;
-    update(draft.local);
+    draft.local = local;
     draft.revision = revision;
   });
 
@@ -114,10 +117,8 @@ export function addPlaylistEntries(db: MuswagDb, playlistId: string, songIds: re
   const revision = playlist.revision + 1;
   const entries = songIds.map((songId, index): PlaylistEntry => ({ id: `local:${playlistId}:${revision}:${index}`, songId }));
 
-  db.playlists.update(playlistId, (draft) => {
-    if (!draft.local) return;
-    draft.local.entries.splice(insertAt, 0, ...entries);
-    draft.revision = revision;
+  updatePlaylist(db, playlistId, (state) => {
+    state.entries.splice(insertAt, 0, ...entries);
   });
 
   return entries;

@@ -1,10 +1,10 @@
 import { Crypto, Effect, Layer } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect } from "vitest";
 import { it } from "@effect/vitest";
 
 import SubsonicAPI, { SubsonicAPILive } from "./subsonic-api.js";
-import { HttpClientError, TransportError } from "effect/unstable/http/HttpClientError";
+import { HttpClientError, TransportError } from "effect/http/HttpClientError";
 
 describe("Effect SubsonicAPI", () => {
   const testCrypto = Crypto.make({

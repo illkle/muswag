@@ -1,5 +1,5 @@
 import { Effect, Ref, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 export type CommandResult = { code: number | null; errorCode: string | null; stdout: string; stderr: string };
 /** Runs a short-lived command to completion, keeping a bounded tail of its output. Never fails: problems become `errorCode`. */

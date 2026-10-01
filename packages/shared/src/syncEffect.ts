@@ -50,8 +50,7 @@ const refreshStats = (target: RefreshStatTarget) =>
 
     const tx = createTransaction({
       mutationFn: async ({ transaction }) => {
-        db.albums.utils.acceptMutations(transaction);
-        db.songs.utils.acceptMutations(transaction);
+        await Promise.all([db.albums.utils.acceptMutations(transaction), db.songs.utils.acceptMutations(transaction)]);
       },
     });
 
@@ -163,8 +162,7 @@ const syncAlbumList = () =>
 
     const tx = createTransaction({
       mutationFn: async ({ transaction }) => {
-        db.albums.utils.acceptMutations(transaction);
-        db.songs.utils.acceptMutations(transaction);
+        await Promise.all([db.albums.utils.acceptMutations(transaction), db.songs.utils.acceptMutations(transaction)]);
       },
     });
 
@@ -229,8 +227,7 @@ const syncAlbum = (incoming: typeof albumID3Schema.Type) =>
 
     const tx = createTransaction({
       mutationFn: async ({ transaction }) => {
-        db.albums.utils.acceptMutations(transaction);
-        db.songs.utils.acceptMutations(transaction);
+        await Promise.all([db.albums.utils.acceptMutations(transaction), db.songs.utils.acceptMutations(transaction)]);
       },
     });
 

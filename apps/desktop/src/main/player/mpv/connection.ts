@@ -1,7 +1,7 @@
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { Cause, Context, Deferred, Effect, Layer, Queue, Schedule, Scope, Stream } from "effect";
 import { FileSystem } from "effect/FileSystem";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { EngineError } from "../errors";
 
 export interface Connection {
@@ -51,38 +51,35 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
             let connected = false;
             let buffer = "";
             const decoder = new TextDecoder();
-            // The handler is synchronous to preserve wire order. Protocol-specific bounds
-            // remain here; NodeSocket owns listeners, writes, connection and disposal.
-            const read = socket
-              .runRaw(
-                (chunk) => {
+            // Process each batch in wire order; NodeSocket owns backpressure and disposal.
+            const read = Effect.gen(function* () {
+              const reader = yield* socket.reader;
+              connected = true;
+              yield* Deferred.succeed(opened, undefined);
+              while (true) {
+                const chunks = yield* reader.pull;
+                for (const chunk of chunks) {
                   buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
-                  if (Buffer.byteLength(buffer) > MAX_BUFFERED_BYTES) return Effect.fail(failure("protocol"));
+                  if (Buffer.byteLength(buffer) > MAX_BUFFERED_BYTES) return yield* Effect.fail(failure("protocol"));
                   let end: number;
                   while ((end = buffer.indexOf("\n")) >= 0) {
                     const line = buffer.slice(0, end).replace(/\r$/, "");
                     buffer = buffer.slice(end + 1);
-                    if (!Queue.offerUnsafe(lines, line)) return Effect.fail(failure("protocol"));
+                    if (!Queue.offerUnsafe(lines, line)) return yield* Effect.fail(failure("protocol"));
                   }
-                },
-                {
-                  onOpen: Effect.gen(function* () {
-                    connected = true;
-                    yield* Deferred.succeed(opened, undefined);
-                  }),
-                },
-              )
-              .pipe(
-                Effect.retry({ schedule: Schedule.spaced("100 millis"), while: (error) => !connected && error._tag === "SocketError" && error.reason._tag === "SocketOpenError" }),
-                Effect.mapError((error) => (error instanceof EngineError ? error : failure(connected ? "closed" : "connect"))),
-                Effect.andThen(Effect.fail(failure(buffer.trim() ? "protocol" : "closed"))),
-                Effect.catch(fail),
-              );
+                }
+              }
+            }).pipe(
+              Effect.scoped,
+              Effect.retry({ schedule: Schedule.spaced("100 millis"), while: (error) => !connected && error._tag === "SocketError" && error.reason._tag === "SocketOpenError" }),
+              Effect.mapError((error) => (error instanceof EngineError ? error : failure(connected ? (buffer.trim() ? "protocol" : "closed") : "connect"))),
+              Effect.catch(fail),
+            );
             yield* read.pipe(Effect.forkScoped);
             yield* Deferred.await(opened).pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.fail(failure("connect")) }));
             const writer = yield* socket.writer;
             const write = (line: string) =>
-              writer(line).pipe(
+              writer.write(line).pipe(
                 Effect.mapError(() => failure("closed")),
                 Effect.raceFirst(Deferred.await(failed)),
               );

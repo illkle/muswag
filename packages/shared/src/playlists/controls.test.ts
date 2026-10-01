@@ -26,6 +26,29 @@ describe("playlist controls", () => {
     expect(saved.base).toBeNull();
   });
 
+  it("preserves the synced snapshot when local edits start from a shared object", () => {
+    const db = createInMemoryDb();
+    const state = {
+      name: "Synced",
+      comment: "",
+      public: false,
+      readonly: false,
+      entries: [{ id: "remote:server-1:0", songId: "song-a" }],
+    };
+    const snapshot = structuredClone(state);
+    db.playlists.insert({ id: "server-1", serverId: "server-1", base: state, local: state, revision: 0 });
+
+    renamePlaylist(db, "server-1", "Edited");
+    addPlaylistEntry(db, "server-1", "song-b");
+    removePlaylistEntry(db, "server-1", state.entries[0]!.id);
+
+    const saved = db.playlists.get("server-1")!;
+    expect(saved.base).toEqual(snapshot);
+    expect(saved.local?.name).toBe("Edited");
+    expect(saved.local?.entries.map(({ songId }) => songId)).toEqual(["song-b"]);
+    expect(saved.revision).toBe(3);
+  });
+
   it("keeps a tombstone for an unsynced create until sync can rule out an in-flight create", () => {
     const db = createInMemoryDb();
     const playlist = createPlaylist(db, { name: "Temporary" });

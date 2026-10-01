@@ -2,7 +2,7 @@ import { db } from "#/lib/db-renderer.ts";
 import { CredentialsStore, CredentialsStoreError, FileSystemError, MiniFs, MuswagDatabase, SessionManagerLive, type SessionCredentials } from "@muswag/shared";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BrowserCrypto } from "@effect/platform-browser";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 import { FilesystemIpc } from "#/lib/ipc.ts";
 import { PlayerIPC } from "#/player/connection";
 import { layer as PathLayer } from "effect/Path";

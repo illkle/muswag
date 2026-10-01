@@ -1,6 +1,6 @@
 import { NodeCrypto } from "@effect/platform-node";
 import { Layer } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 
 import { SubsonicAPILive } from "@muswag/shared";
 
