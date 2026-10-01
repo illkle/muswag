@@ -1,5 +1,5 @@
 import { SessionManager, type AuthSnapshot, type CoverTarget, type PlaylistSyncStatus, type SessionCredentials, type SyncMode } from "@muswag/shared";
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 
 import { runtime } from "#/core/runtime";
 
@@ -11,7 +11,7 @@ const IDLE_PLAYLIST_STATUS: PlaylistSyncStatus = {
 
 let authSnapshot: AuthSnapshot = { _tag: "Initializing" };
 let playlistStatus = IDLE_PLAYLIST_STATUS;
-let unsubscribePlaylistManager: (() => void) | undefined;
+let playlistStatusFiber: Fiber.Fiber<unknown, unknown> | undefined;
 let syncInFlight: { readonly mode: SyncMode; readonly controller: AbortController; readonly promise: Promise<void> } | undefined;
 
 const authListeners = new Set<() => void>();
@@ -27,30 +27,26 @@ function publishPlaylistStatus(next: PlaylistSyncStatus): void {
   for (const listener of playlistListeners) listener();
 }
 
-async function connectPlaylistStatus(): Promise<void> {
-  unsubscribePlaylistManager?.();
-  unsubscribePlaylistManager = undefined;
+function disconnectPlaylistStatus(): void {
+  if (playlistStatusFiber) Effect.runFork(Fiber.interrupt(playlistStatusFiber));
+  playlistStatusFiber = undefined;
+}
+
+/** Mirrors the session's playlist sync status until the next (dis)connect. */
+function connectPlaylistStatus(): void {
+  disconnectPlaylistStatus();
 
   if (authSnapshot._tag !== "LoggedIn") {
     publishPlaylistStatus(IDLE_PLAYLIST_STATUS);
     return;
   }
 
-  const connection = await runtime.runPromise(
+  playlistStatusFiber = runtime.runFork(
     Effect.gen(function* () {
       const manager = yield* SessionManager;
-      return yield* manager.use(({ playlists }) =>
-        Effect.gen(function* () {
-          const status = yield* playlists.getStatus;
-          const unsubscribe = yield* playlists.subscribe(publishPlaylistStatus);
-          return { status, unsubscribe };
-        }),
-      );
+      yield* manager.use(({ playlists }) => Stream.runForEach(playlists.changes, (status) => Effect.sync(() => publishPlaylistStatus(status))));
     }),
   );
-
-  publishPlaylistStatus(connection.status);
-  unsubscribePlaylistManager = connection.unsubscribe;
 }
 
 async function restore(): Promise<void> {
@@ -61,7 +57,7 @@ async function restore(): Promise<void> {
     }),
   );
   publishAuth(snapshot);
-  await connectPlaylistStatus();
+  connectPlaylistStatus();
 }
 
 let resolveAppReady!: () => void;
@@ -96,13 +92,12 @@ export const AppClient = {
       }),
     );
     publishAuth(snapshot);
-    await connectPlaylistStatus();
+    connectPlaylistStatus();
   },
 
   async logout(): Promise<void> {
     syncInFlight?.controller.abort();
-    unsubscribePlaylistManager?.();
-    unsubscribePlaylistManager = undefined;
+    disconnectPlaylistStatus();
 
     try {
       const { queueManager } = await import("#/components/player-provider");
@@ -121,7 +116,7 @@ export const AppClient = {
         }),
       );
       publishAuth(snapshot);
-      await connectPlaylistStatus();
+      connectPlaylistStatus();
     }
   },
 
@@ -187,7 +182,7 @@ export const AppClient = {
     playlistListeners.add(listener);
     return () => playlistListeners.delete(listener);
   },
-  syncPlaylists(): Promise<PlaylistSyncStatus> {
+  syncPlaylists(): Promise<void> {
     return runtime.runPromise(
       Effect.gen(function* () {
         const manager = yield* SessionManager;
@@ -200,7 +195,7 @@ export const AppClient = {
 window.addEventListener(
   "beforeunload",
   () => {
-    unsubscribePlaylistManager?.();
+    disconnectPlaylistStatus();
     void runtime.dispose();
   },
   { once: true },

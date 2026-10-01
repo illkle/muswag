@@ -116,11 +116,7 @@ export const SongListRoot = ({
         onOpenChange={setPlaylistCreatorOpen}
         title="New playlist"
         submitLabel="Create"
-        onSubmit={async ({ name, comment, public: isPublic }) => {
-          const created = await PlaylistActions.createWithSongs(name, songIds);
-          if (comment) await PlaylistActions.setComment(created.id, comment);
-          if (isPublic) await PlaylistActions.setVisibility(created.id, true);
-        }}
+        onSubmit={(details) => PlaylistActions.create({ ...details, songIds })}
       />
 
       <ContextMenuContent>

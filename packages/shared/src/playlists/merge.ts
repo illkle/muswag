@@ -61,20 +61,8 @@ function reconcileRemoteEntries(remote: RemotePlaylist, base: readonly PlaylistE
 }
 
 function remoteState(remote: RemotePlaylist, base: readonly PlaylistEntry[]): PlaylistState {
-  return {
-    name: remote.name,
-    comment: remote.comment,
-    public: remote.public,
-    readonly: remote.readonly,
-    entries: reconcileRemoteEntries(remote, base),
-    ...(remote.owner !== undefined && { owner: remote.owner }),
-    ...(remote.created !== undefined && { created: remote.created }),
-    ...(remote.changed !== undefined && { changed: remote.changed }),
-    ...(remote.duration !== undefined && { duration: remote.duration }),
-    ...(remote.coverArt !== undefined && { coverArt: remote.coverArt }),
-    ...(remote.allowedUser !== undefined && { allowedUser: remote.allowedUser }),
-    ...(remote.validUntil !== undefined && { validUntil: remote.validUntil }),
-  };
+  const { id: _id, songIds: _songIds, ...state } = remote;
+  return { ...state, entries: reconcileRemoteEntries(remote, base) };
 }
 
 function additionsByAnchor(entries: readonly PlaylistEntry[], baseIds: ReadonlySet<string>, survivingIds: ReadonlySet<string>): Map<string | null, PlaylistEntry[]> {

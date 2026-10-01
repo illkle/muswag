@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Layer, ManagedRuntime } from "effect";
 
-import { addPlaylistEntry, createPlaylist, deletePlaylist, MuswagDatabase, PlaylistSyncManager, PlaylistSyncManagerLive, renamePlaylist, SubsonicAPI } from "@muswag/shared";
+import { addSongsToPlaylist, createPlaylist, deletePlaylist, MuswagDatabase, PlaylistSyncManager, PlaylistSyncManagerLive, SubsonicAPI, updatePlaylist } from "@muswag/shared";
 import { librarySetA } from "./fixtures/library-sets.js";
 import { checkNavidromeDependencies, createInMemoryDb, createNavidromeTestConnection } from "./navidrome-testkit.js";
 import { subsonicLayerFor } from "./helpers/effect-runtime.js";
@@ -29,11 +29,8 @@ describeIfReady("Navidrome playlist sync", () => {
       const songs = (await runtime.runPromise(api.getAlbum({ id: listedAlbum!.id }))).album.song ?? [];
       expect(songs.length).toBeGreaterThanOrEqual(2);
 
-      const local = createPlaylist(db, {
-        name: "Offline playlist",
-        songIds: [songs[0]!.id, songs[0]!.id],
-      });
-      addPlaylistEntry(db, local.id, songs[1]!.id, local.local!.entries[1]!.id);
+      const local = runtime.runSync(createPlaylist({ name: "Offline playlist", songIds: [songs[0]!.id, songs[0]!.id] }));
+      runtime.runSync(addSongsToPlaylist(local.id, [songs[1]!.id], local.local!.entries[1]!.id));
       await runtime.runPromise(manager.sync);
 
       const created = (await runtime.runPromise(api.getPlaylists)).playlists.playlist?.find(({ name }) => name === "Offline playlist");
@@ -44,7 +41,7 @@ describeIfReady("Navidrome playlist sync", () => {
       await runtime.runPromise(manager.sync);
       expect(db.playlists.get(local.id)?.local?.name).toBe("Remote name");
 
-      renamePlaylist(db, local.id, "Local name");
+      runtime.runSync(updatePlaylist(local.id, { name: "Local name" }));
       await runtime.runPromise(api.updatePlaylist({ playlistId: created!.id, songIdToAdd: [songs[1]!.id] }));
       await runtime.runPromise(manager.sync);
 
@@ -52,7 +49,7 @@ describeIfReady("Navidrome playlist sync", () => {
       expect(merged.playlist.name).toBe("Local name");
       expect(merged.playlist.entry?.map(({ id }) => id)).toEqual([songs[0]!.id, songs[1]!.id, songs[0]!.id, songs[1]!.id]);
 
-      deletePlaylist(db, local.id);
+      runtime.runSync(deletePlaylist(local.id));
       await runtime.runPromise(manager.sync);
       expect(((await runtime.runPromise(api.getPlaylists)).playlists.playlist ?? []).some(({ id }) => id === created!.id)).toBe(false);
     } finally {

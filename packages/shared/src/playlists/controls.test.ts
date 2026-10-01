@@ -1,148 +1,198 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect } from "effect";
 
-import { addPlaylistEntries, addPlaylistEntry, createPlaylist, deletePlaylist, movePlaylistEntry, removePlaylistEntry, renamePlaylist, setPlaylistComment, setPlaylistVisibility } from "./controls.js";
+import { addSongsToPlaylist, createPlaylist, deletePlaylist, movePlaylistEntry, removePlaylistEntry, updatePlaylist } from "./controls.js";
+import type { PlaylistState } from "./types.js";
+import { MuswagDatabase, type MuswagDb } from "../db/database.js";
 import { createInMemoryDb } from "../test/database.js";
 
+function withDb<A, E>(test: (db: MuswagDb) => Effect.Effect<A, E, MuswagDatabase>) {
+  const db = createInMemoryDb();
+  return test(db).pipe(Effect.provideService(MuswagDatabase, db));
+}
+
+function syncedState(overrides: Partial<PlaylistState> = {}): PlaylistState {
+  return { name: "Synced", comment: "", public: false, readonly: false, entries: [], ...overrides };
+}
+
+const songIdsOf = (db: MuswagDb, id: string) => db.playlists.get(id)?.local?.entries.map(({ songId }) => songId);
+
 describe("playlist controls", () => {
-  it("applies ordered offline edits to the persisted playlist row", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Draft", songIds: ["song-a", "song-a"] });
-    const appended = addPlaylistEntry(db, playlist.id, "song-b");
+  it.effect("applies ordered offline edits to the persisted playlist row", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Draft", songIds: ["song-a", "song-a"] });
+        const [first, second] = playlist.local!.entries;
+        const appended = (yield* addSongsToPlaylist(playlist.id, ["song-b"])).local!.entries.at(-1)!;
 
-    movePlaylistEntry(db, playlist.id, appended.id, playlist.local!.entries[0]!.id);
-    removePlaylistEntry(db, playlist.id, playlist.local!.entries[1]!.id);
-    renamePlaylist(db, playlist.id, "Offline mix");
-    setPlaylistComment(db, playlist.id, "Train ride");
-    setPlaylistVisibility(db, playlist.id, true);
+        yield* movePlaylistEntry(playlist.id, appended.id, first!.id);
+        yield* removePlaylistEntry(playlist.id, second!.id);
+        yield* updatePlaylist(playlist.id, { name: "Offline mix", comment: "Train ride", public: true });
 
-    const saved = db.playlists.get(playlist.id)!;
-    expect(saved.local).toMatchObject({
-      name: "Offline mix",
-      comment: "Train ride",
-      public: true,
-    });
-    expect(saved.local?.entries.map(({ songId }) => songId)).toEqual(["song-b", "song-a"]);
-    expect(saved.revision).toBe(6);
-    expect(saved.base).toBeNull();
-  });
+        const saved = db.playlists.get(playlist.id)!;
+        expect(saved.local).toMatchObject({ name: "Offline mix", comment: "Train ride", public: true });
+        expect(songIdsOf(db, playlist.id)).toEqual(["song-b", "song-a"]);
+        expect(saved.revision).toBe(4);
+        expect(saved.base).toBeNull();
+      }),
+    ),
+  );
 
-  it("preserves the synced snapshot when local edits start from a shared object", () => {
-    const db = createInMemoryDb();
-    const state = {
-      name: "Synced",
-      comment: "",
-      public: false,
-      readonly: false,
-      entries: [{ id: "remote:server-1:0", songId: "song-a" }],
-    };
-    const snapshot = structuredClone(state);
-    db.playlists.insert({ id: "server-1", serverId: "server-1", base: state, local: state, revision: 0 });
+  it.effect("creates a playlist with its details and songs in one revision", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "  Trip  ", comment: "Road", public: true, songIds: ["song-a"] });
 
-    renamePlaylist(db, "server-1", "Edited");
-    addPlaylistEntry(db, "server-1", "song-b");
-    removePlaylistEntry(db, "server-1", state.entries[0]!.id);
+        expect(db.playlists.get(playlist.id)).toMatchObject({
+          serverId: null,
+          revision: 0,
+          local: { name: "Trip", comment: "Road", public: true },
+        });
+      }),
+    ),
+  );
 
-    const saved = db.playlists.get("server-1")!;
-    expect(saved.base).toEqual(snapshot);
-    expect(saved.local?.name).toBe("Edited");
-    expect(saved.local?.entries.map(({ songId }) => songId)).toEqual(["song-b"]);
-    expect(saved.revision).toBe(3);
-  });
+  it.effect("skips a write when an update changes nothing", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Same" });
 
-  it("keeps a tombstone for an unsynced create until sync can rule out an in-flight create", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Temporary" });
+        yield* updatePlaylist(playlist.id, { name: " Same ", comment: "", public: false });
 
-    deletePlaylist(db, playlist.id);
+        expect(db.playlists.get(playlist.id)?.revision).toBe(0);
+      }),
+    ),
+  );
 
-    expect(db.playlists.get(playlist.id)).toMatchObject({
-      serverId: null,
-      base: null,
-      local: null,
-      revision: 1,
-    });
-  });
+  it.effect("preserves the synced snapshot when local edits start from a shared object", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const state = syncedState({ entries: [{ id: "remote:server-1:0", songId: "song-a" }] });
+        const snapshot = structuredClone(state);
+        db.playlists.insert({ id: "server-1", serverId: "server-1", base: state, local: state, revision: 0 });
 
-  it("keeps a tombstone for a server playlist", () => {
-    const db = createInMemoryDb();
-    const state = {
-      name: "Synced",
-      comment: "",
-      public: false,
-      readonly: false,
-      entries: [],
-    };
-    db.playlists.insert({ id: "local-1", serverId: "server-1", base: state, local: state, revision: 0 });
+        yield* updatePlaylist("server-1", { name: "Edited" });
+        yield* addSongsToPlaylist("server-1", ["song-b"]);
+        yield* removePlaylistEntry("server-1", state.entries[0]!.id);
 
-    deletePlaylist(db, "local-1");
+        const saved = db.playlists.get("server-1")!;
+        expect(saved.base).toEqual(snapshot);
+        expect(saved.local?.name).toBe("Edited");
+        expect(songIdsOf(db, "server-1")).toEqual(["song-b"]);
+        expect(saved.revision).toBe(3);
+      }),
+    ),
+  );
 
-    expect(db.playlists.get("local-1")).toMatchObject({
-      serverId: "server-1",
-      local: null,
-      revision: 1,
-    });
-  });
+  it.effect("keeps a tombstone for an unsynced create until sync can rule out an in-flight create", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Temporary" });
 
-  it("adds many songs as one revision with unique entry ids", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Album drop", songIds: ["song-a"] });
+        yield* deletePlaylist(playlist.id);
 
-    const added = addPlaylistEntries(db, playlist.id, ["song-b", "song-c", "song-b"]);
+        expect(db.playlists.get(playlist.id)).toMatchObject({ serverId: null, base: null, local: null, revision: 1 });
+      }),
+    ),
+  );
 
-    const saved = db.playlists.get(playlist.id)!;
-    expect(saved.revision).toBe(1);
-    expect(saved.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b", "song-c", "song-b"]);
-    expect(new Set(saved.local!.entries.map(({ id }) => id)).size).toBe(4);
-    expect(added.map(({ songId }) => songId)).toEqual(["song-b", "song-c", "song-b"]);
-  });
+  it.effect("keeps a tombstone for a server playlist", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const state = syncedState();
+        db.playlists.insert({ id: "local-1", serverId: "server-1", base: state, local: state, revision: 0 });
 
-  it("inserts bulk additions before the anchor entry", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Anchored", songIds: ["song-a", "song-b"] });
+        yield* deletePlaylist("local-1");
 
-    addPlaylistEntries(db, playlist.id, ["song-x", "song-y"], playlist.local!.entries[1]!.id);
+        expect(db.playlists.get("local-1")).toMatchObject({ serverId: "server-1", local: null, revision: 1 });
+      }),
+    ),
+  );
 
-    expect(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-x", "song-y", "song-b"]);
-  });
+  it.effect("adds many songs as one revision with unique entry ids", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Album drop", songIds: ["song-a"] });
 
-  it("does not mint entry ids that collide across revisions", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Repeated", songIds: ["song-a"] });
+        yield* addSongsToPlaylist(playlist.id, ["song-b", "song-c", "song-b"]);
 
-    addPlaylistEntries(db, playlist.id, ["song-b", "song-c"]);
-    addPlaylistEntry(db, playlist.id, "song-d");
-    addPlaylistEntries(db, playlist.id, ["song-e", "song-f"]);
+        const saved = db.playlists.get(playlist.id)!;
+        expect(saved.revision).toBe(1);
+        expect(songIdsOf(db, playlist.id)).toEqual(["song-a", "song-b", "song-c", "song-b"]);
+        expect(new Set(saved.local!.entries.map(({ id }) => id)).size).toBe(4);
+      }),
+    ),
+  );
 
-    const ids = db.playlists.get(playlist.id)!.local!.entries.map(({ id }) => id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
+  it.effect("inserts bulk additions before the anchor entry", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Anchored", songIds: ["song-a", "song-b"] });
 
-  it("leaves the playlist untouched when an entry id is unknown", () => {
-    const db = createInMemoryDb();
-    const playlist = createPlaylist(db, { name: "Intact", songIds: ["song-a", "song-b"] });
-    const before = db.playlists.get(playlist.id)!;
+        yield* addSongsToPlaylist(playlist.id, ["song-x", "song-y"], playlist.local!.entries[1]!.id);
 
-    expect(() => removePlaylistEntry(db, playlist.id, "nope")).toThrow("Playlist entry not found");
-    expect(() => movePlaylistEntry(db, playlist.id, "nope", null)).toThrow("Playlist entry not found");
-    expect(() => movePlaylistEntry(db, playlist.id, before.local!.entries[0]!.id, "nope")).toThrow("Playlist entry not found");
-    expect(() => addPlaylistEntries(db, playlist.id, ["song-c"], "nope")).toThrow("Playlist entry not found");
+        expect(songIdsOf(db, playlist.id)).toEqual(["song-a", "song-x", "song-y", "song-b"]);
+      }),
+    ),
+  );
 
-    const after = db.playlists.get(playlist.id)!;
-    expect(after.revision).toBe(0);
-    expect(after.local?.entries).toEqual(before.local?.entries);
-  });
+  it.effect("does not mint entry ids that collide across revisions", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Repeated", songIds: ["song-a"] });
 
-  it("rejects edits to read-only playlists", () => {
-    const db = createInMemoryDb();
-    const state = {
-      name: "Smart",
-      comment: "",
-      public: false,
-      readonly: true,
-      entries: [],
-    };
-    db.playlists.insert({ id: "smart", serverId: "smart", base: state, local: state, revision: 0 });
+        yield* addSongsToPlaylist(playlist.id, ["song-b", "song-c"]);
+        yield* addSongsToPlaylist(playlist.id, ["song-d"]);
+        yield* addSongsToPlaylist(playlist.id, ["song-e", "song-f"]);
 
-    expect(() => renamePlaylist(db, "smart", "Changed")).toThrow("Playlist is read-only");
-  });
+        const ids = db.playlists.get(playlist.id)!.local!.entries.map(({ id }) => id);
+        expect(new Set(ids).size).toBe(ids.length);
+      }),
+    ),
+  );
+
+  it.effect("leaves the playlist untouched when an entry id is unknown", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const playlist = yield* createPlaylist({ name: "Intact", songIds: ["song-a", "song-b"] });
+        const first = playlist.local!.entries[0]!.id;
+
+        const failures = yield* Effect.all(
+          [
+            removePlaylistEntry(playlist.id, "nope"),
+            movePlaylistEntry(playlist.id, "nope", null),
+            movePlaylistEntry(playlist.id, first, "nope"),
+            addSongsToPlaylist(playlist.id, ["song-c"], "nope"),
+          ].map(Effect.flip),
+        );
+
+        expect(failures.map(({ _tag }) => _tag)).toEqual(Array(4).fill("PlaylistEntryNotFound"));
+        expect(db.playlists.get(playlist.id)).toMatchObject({ revision: 0, local: { entries: playlist.local!.entries } });
+      }),
+    ),
+  );
+
+  it.effect("rejects edits to read-only playlists", () =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        const state = syncedState({ readonly: true });
+        db.playlists.insert({ id: "smart", serverId: "smart", base: state, local: state, revision: 0 });
+
+        const error = yield* Effect.flip(updatePlaylist("smart", { name: "Changed" }));
+
+        expect(error._tag).toBe("PlaylistReadOnly");
+        expect(error.message).toBe("Playlist is read-only: smart");
+      }),
+    ),
+  );
+
+  it.effect("rejects an empty name", () =>
+    withDb(() =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(createPlaylist({ name: "   " }));
+
+        expect(error.message).toBe("Playlist name cannot be empty");
+      }),
+    ),
+  );
 });

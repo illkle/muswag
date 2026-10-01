@@ -1,167 +1,176 @@
-import type { MuswagDb } from "../db/database.js";
-import type { PlaylistEntry, PlaylistRecord, PlaylistState } from "./types.js";
+import { Data, Effect } from "effect";
 
-export interface CreatePlaylistInput {
+import { MuswagDatabase } from "../db/database.js";
+import type { PlaylistDetails, PlaylistEntry, PlaylistRecord, PlaylistState } from "./types.js";
+
+/**
+ * Local-first playlist edits. Each one writes a new revision to `db.playlists` and nothing else;
+ * the sync manager notices the change and pushes it.
+ */
+
+export class PlaylistNotFound extends Data.TaggedError("PlaylistNotFound")<{ readonly playlistId: string }> {
+  override get message() {
+    return `Playlist not found: ${this.playlistId}`;
+  }
+}
+
+export class PlaylistReadOnly extends Data.TaggedError("PlaylistReadOnly")<{ readonly playlistId: string }> {
+  override get message() {
+    return `Playlist is read-only: ${this.playlistId}`;
+  }
+}
+
+export class PlaylistEntryNotFound extends Data.TaggedError("PlaylistEntryNotFound")<{ readonly entryId: string }> {
+  override get message() {
+    return `Playlist entry not found: ${this.entryId}`;
+  }
+}
+
+export class EmptyPlaylistName extends Data.TaggedError("EmptyPlaylistName") {
+  override get message() {
+    return "Playlist name cannot be empty";
+  }
+}
+
+export type PlaylistEditError = PlaylistNotFound | PlaylistReadOnly | PlaylistEntryNotFound | EmptyPlaylistName;
+
+export interface CreatePlaylistInput extends Partial<PlaylistDetails> {
   name: string;
-  comment?: string;
-  public?: boolean;
-  songIds?: string[];
+  songIds?: readonly string[];
 }
 
 function createId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function getWritablePlaylist(db: MuswagDb, playlistId: string): PlaylistRecord & { local: PlaylistState } {
-  const playlist = db.playlists.get(playlistId);
-  if (!playlist?.local) {
-    throw new Error(`Playlist not found: ${playlistId}`);
-  }
-  if (playlist.local.readonly) {
-    throw new Error(`Playlist is read-only: ${playlistId}`);
-  }
-  return playlist as PlaylistRecord & { local: PlaylistState };
+/** Entry ids carry the index because every entry added in one revision shares that revision. */
+function newEntries(playlistId: string, revision: number, songIds: readonly string[]): PlaylistEntry[] {
+  return songIds.map((songId, index) => ({ id: `local:${playlistId}:${revision}:${index}`, songId }));
 }
 
-function updatePlaylist(db: MuswagDb, playlistId: string, update: (state: PlaylistState) => void): PlaylistRecord {
-  const playlist = getWritablePlaylist(db, playlistId);
-  const revision = playlist.revision + 1;
-  // Synced records can share base and local objects. Edit a separate copy so the
-  // database draft tracker cannot also change the last-synced snapshot.
-  const local = structuredClone(playlist.local);
-  update(local);
-
-  db.playlists.update(playlistId, (draft) => {
-    draft.local = local;
-    draft.revision = revision;
-  });
-
-  return db.playlists.get(playlistId)!;
-}
-
-function requireName(name: string): string {
+function validName(name: string): Effect.Effect<string, EmptyPlaylistName> {
   const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Playlist name cannot be empty");
-  }
-  return trimmed;
+  return trimmed ? Effect.succeed(trimmed) : Effect.fail(new EmptyPlaylistName());
 }
 
-function requireEntryIndex(entries: readonly PlaylistEntry[], entryId: string): number {
+function entryIndex(entries: readonly PlaylistEntry[], entryId: string): Effect.Effect<number, PlaylistEntryNotFound> {
   const index = entries.findIndex(({ id }) => id === entryId);
-  if (index < 0) {
-    throw new Error(`Playlist entry not found: ${entryId}`);
-  }
-  return index;
+  return index < 0 ? Effect.fail(new PlaylistEntryNotFound({ entryId })) : Effect.succeed(index);
 }
 
-/** Resolves the insertion point for `beforeEntryId`, where `null` means "append". */
-function requireAnchorIndex(entries: readonly PlaylistEntry[], beforeEntryId: string | null): number {
-  return beforeEntryId === null ? entries.length : requireEntryIndex(entries, beforeEntryId);
+/** Resolves the insertion point for `before`, where `null` means "append". */
+function anchorIndex(entries: readonly PlaylistEntry[], before: string | null): Effect.Effect<number, PlaylistEntryNotFound> {
+  return before === null ? Effect.succeed(entries.length) : entryIndex(entries, before);
 }
 
-export function createPlaylist(db: MuswagDb, input: CreatePlaylistInput): PlaylistRecord {
-  const id = createId();
-  const entries = (input.songIds ?? []).map((songId, index): PlaylistEntry => ({
-    id: `local:${id}:0:${index}`,
-    songId,
-  }));
-  const local: PlaylistState = {
-    name: requireName(input.name),
-    comment: input.comment ?? "",
-    public: input.public ?? false,
-    readonly: false,
-    entries,
-  };
-  const playlist: PlaylistRecord = {
-    id,
-    serverId: null,
-    base: null,
-    local,
-    revision: 0,
-  };
-
-  db.playlists.insert(playlist);
-  return playlist;
-}
-
-export function renamePlaylist(db: MuswagDb, playlistId: string, name: string): PlaylistRecord {
-  return updatePlaylist(db, playlistId, (state) => {
-    state.name = requireName(name);
+const writable = (playlistId: string) =>
+  Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    const playlist = db.playlists.get(playlistId);
+    if (!playlist?.local) return yield* new PlaylistNotFound({ playlistId });
+    if (playlist.local.readonly) return yield* new PlaylistReadOnly({ playlistId });
+    return { ...playlist, local: playlist.local };
   });
-}
-
-export function setPlaylistComment(db: MuswagDb, playlistId: string, comment: string): PlaylistRecord {
-  return updatePlaylist(db, playlistId, (state) => {
-    state.comment = comment;
-  });
-}
-
-export function setPlaylistVisibility(db: MuswagDb, playlistId: string, isPublic: boolean): PlaylistRecord {
-  return updatePlaylist(db, playlistId, (state) => {
-    state.public = isPublic;
-  });
-}
 
 /**
- * Inserts every song as one revision, so adding an album costs a single write and a single sync pass.
- * Entry ids carry the index because they all share the revision that makes them unique.
+ * Runs `change` against a private copy of the playlist and stores the result as the next revision.
+ * Synced records can share `base` and `local` objects, so editing in place would also rewrite the
+ * last-synced snapshot. A failing `change` leaves the record untouched.
  */
-export function addPlaylistEntries(db: MuswagDb, playlistId: string, songIds: readonly string[], beforeEntryId: string | null = null): PlaylistEntry[] {
-  const playlist = getWritablePlaylist(db, playlistId);
-  const insertAt = requireAnchorIndex(playlist.local.entries, beforeEntryId);
-  if (songIds.length === 0) {
-    return [];
-  }
+const edit = <E>(playlistId: string, change: (state: PlaylistState, revision: number) => Effect.Effect<PlaylistState | undefined, E>) =>
+  Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    const playlist = yield* writable(playlistId);
+    const revision = playlist.revision + 1;
+    const local = yield* change(structuredClone(playlist.local), revision);
+    if (!local) return playlist;
 
-  const revision = playlist.revision + 1;
-  const entries = songIds.map((songId, index): PlaylistEntry => ({ id: `local:${playlistId}:${revision}:${index}`, songId }));
-
-  updatePlaylist(db, playlistId, (state) => {
-    state.entries.splice(insertAt, 0, ...entries);
+    db.playlists.update(playlistId, (draft) => {
+      draft.local = local;
+      draft.revision = revision;
+    });
+    return db.playlists.get(playlistId)!;
   });
 
-  return entries;
-}
+export const createPlaylist = (input: CreatePlaylistInput): Effect.Effect<PlaylistRecord, EmptyPlaylistName, MuswagDatabase> =>
+  Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    const id = createId();
+    const playlist: PlaylistRecord = {
+      id,
+      serverId: null,
+      base: null,
+      local: {
+        name: yield* validName(input.name),
+        comment: input.comment ?? "",
+        public: input.public ?? false,
+        readonly: false,
+        entries: newEntries(id, 0, input.songIds ?? []),
+      },
+      revision: 0,
+    };
 
-export function addPlaylistEntry(db: MuswagDb, playlistId: string, songId: string, beforeEntryId: string | null = null): PlaylistEntry {
-  return addPlaylistEntries(db, playlistId, [songId], beforeEntryId)[0]!;
-}
-
-export function removePlaylistEntry(db: MuswagDb, playlistId: string, entryId: string): PlaylistRecord {
-  const playlist = getWritablePlaylist(db, playlistId);
-  const index = requireEntryIndex(playlist.local.entries, entryId);
-
-  return updatePlaylist(db, playlistId, (state) => {
-    state.entries.splice(index, 1);
+    db.playlists.insert(playlist);
+    return playlist;
   });
-}
 
-export function movePlaylistEntry(db: MuswagDb, playlistId: string, entryId: string, beforeEntryId: string | null): PlaylistRecord {
-  if (entryId === beforeEntryId) {
-    return getWritablePlaylist(db, playlistId);
-  }
+/** Applies every changed field as one revision. A patch that changes nothing writes nothing. */
+export const updatePlaylist = (playlistId: string, patch: Partial<PlaylistDetails>): Effect.Effect<PlaylistRecord, PlaylistEditError, MuswagDatabase> =>
+  edit(playlistId, (state) =>
+    Effect.gen(function* () {
+      const next = {
+        ...state,
+        ...patch,
+        name: patch.name === undefined ? state.name : yield* validName(patch.name),
+      };
+      const changed = next.name !== state.name || next.comment !== state.comment || next.public !== state.public;
+      return changed ? next : undefined;
+    }),
+  );
 
-  const playlist = getWritablePlaylist(db, playlistId);
-  const sourceIndex = requireEntryIndex(playlist.local.entries, entryId);
-  if (beforeEntryId !== null) {
-    requireEntryIndex(playlist.local.entries, beforeEntryId);
-  }
+/** Inserts every song as one revision, so adding an album costs a single write and a single sync pass. */
+export const addSongsToPlaylist = (playlistId: string, songIds: readonly string[], before: string | null = null): Effect.Effect<PlaylistRecord, PlaylistEditError, MuswagDatabase> =>
+  edit(playlistId, (state, revision) =>
+    anchorIndex(state.entries, before).pipe(
+      Effect.map((index) => {
+        if (songIds.length === 0) return undefined;
+        state.entries.splice(index, 0, ...newEntries(playlistId, revision, songIds));
+        return state;
+      }),
+    ),
+  );
 
-  return updatePlaylist(db, playlistId, (state) => {
-    const [entry] = state.entries.splice(sourceIndex, 1);
-    const targetIndex = requireAnchorIndex(state.entries, beforeEntryId);
-    state.entries.splice(targetIndex, 0, entry!);
+export const removePlaylistEntry = (playlistId: string, entryId: string): Effect.Effect<PlaylistRecord, PlaylistEditError, MuswagDatabase> =>
+  edit(playlistId, (state) =>
+    entryIndex(state.entries, entryId).pipe(
+      Effect.map((index) => {
+        state.entries.splice(index, 1);
+        return state;
+      }),
+    ),
+  );
+
+/** Moves an entry in front of `before`, where `null` moves it to the end. */
+export const movePlaylistEntry = (playlistId: string, entryId: string, before: string | null): Effect.Effect<PlaylistRecord, PlaylistEditError, MuswagDatabase> =>
+  edit(playlistId, (state) =>
+    Effect.gen(function* () {
+      if (entryId === before) return undefined;
+      const [entry] = state.entries.splice(yield* entryIndex(state.entries, entryId), 1);
+      state.entries.splice(yield* anchorIndex(state.entries, before), 0, entry!);
+      return state;
+    }),
+  );
+
+/**
+ * Leaves a tombstone even for playlists that never reached the server. A create request may already
+ * be in flight; keeping the row lets the sync manager attach the returned server id and delete it.
+ */
+export const deletePlaylist = (playlistId: string): Effect.Effect<void, PlaylistNotFound | PlaylistReadOnly, MuswagDatabase> =>
+  Effect.gen(function* () {
+    const db = yield* MuswagDatabase;
+    yield* writable(playlistId);
+    db.playlists.update(playlistId, (draft) => {
+      draft.local = null;
+      draft.revision += 1;
+    });
   });
-}
-
-export function deletePlaylist(db: MuswagDb, playlistId: string): void {
-  getWritablePlaylist(db, playlistId);
-
-  // Keep local-only deletes as tombstones too. A create request may already be in flight; retaining
-  // the row lets the sync manager attach the returned server id and delete that remote playlist.
-  db.playlists.update(playlistId, (draft) => {
-    draft.local = null;
-    draft.revision += 1;
-  });
-}
