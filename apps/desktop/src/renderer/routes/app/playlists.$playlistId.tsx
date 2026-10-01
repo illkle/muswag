@@ -172,11 +172,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
         title="Playlist details"
         submitLabel="Save"
         initialValues={{ name: state.name, comment: state.comment, public: state.public }}
-        onSubmit={async ({ name, comment, public: isPublic }) => {
-          if (name.trim() !== state.name) await PlaylistActions.rename(playlistId, name);
-          if (comment !== state.comment) await PlaylistActions.setComment(playlistId, comment);
-          if (isPublic !== state.public) await PlaylistActions.setVisibility(playlistId, isPublic);
-        }}
+        onSubmit={(details) => PlaylistActions.update(playlistId, details)}
       />
 
       <PlaylistDeleteDialog

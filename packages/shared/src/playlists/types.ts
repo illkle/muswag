@@ -3,10 +3,14 @@ export interface PlaylistEntry {
   songId: string;
 }
 
-export interface PlaylistState {
+/** The fields a user can edit and the server stores for us. */
+export interface PlaylistDetails {
   name: string;
   comment: string;
   public: boolean;
+}
+
+export interface PlaylistState extends PlaylistDetails {
   readonly: boolean;
   entries: PlaylistEntry[];
   owner?: string;
@@ -21,26 +25,18 @@ export interface PlaylistState {
 export interface PlaylistRecord {
   id: string;
   serverId: string | null;
+  /** Last state known to be on the server. `null` until the first successful push or pull. */
   base: PlaylistState | null;
+  /** `null` is a tombstone awaiting deletion on the server. */
   local: PlaylistState | null;
   revision: number;
 }
 
-export interface RemotePlaylist {
+/** The server's view of a playlist. It has no entry ids, only an ordered list of songs. */
+export type RemotePlaylist = Omit<PlaylistState, "entries"> & {
   id: string;
-  name: string;
-  comment: string;
-  public: boolean;
-  readonly: boolean;
   songIds: string[];
-  owner?: string;
-  created?: string;
-  changed?: string;
-  duration?: number;
-  coverArt?: string;
-  allowedUser?: string[];
-  validUntil?: string;
-}
+};
 
 export type RemotePlaylistMutation =
   | { type: "create"; localId: string; state: PlaylistState }

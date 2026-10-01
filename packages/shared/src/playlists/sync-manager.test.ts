@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { it as effectIt } from "@effect/vitest";
-import { Clock, Effect, Layer, ManagedRuntime } from "effect";
+import { Clock, Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
 
 import type { CreatePlaylistArgs, DeletePlaylistArgs, GetPlaylistArgs, PlaylistWithSongs, UpdatePlaylistArgs } from "../api/subsonic-api-schema.js";
-import { addPlaylistEntry, createPlaylist, deletePlaylist, PlaylistSyncManager, PlaylistSyncManagerLive, type PlaylistSyncManagerOptions, removePlaylistEntry, renamePlaylist } from "./index.js";
+import {
+  addSongsToPlaylist,
+  createPlaylist,
+  deletePlaylist,
+  PlaylistSyncManager,
+  PlaylistSyncManagerLive,
+  type PlaylistSyncManagerOptions,
+  type PlaylistSyncStatus,
+  removePlaylistEntry,
+  updatePlaylist,
+} from "./index.js";
 import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
 import { createMuswagDb, MuswagDatabase, type MuswagDb } from "../db/database.js";
 import { createInMemoryDb } from "../test/database.js";
@@ -130,63 +140,31 @@ function managerLayer(db: MuswagDb, api: FakePlaylistApi, options: PlaylistSyncM
   }).pipe(Layer.provide(Layer.mergeAll(Layer.succeed(MuswagDatabase, db), Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService))));
 }
 
+/** Runs a local playlist edit against `db`, the way the app does through its runtime. */
+function edit<A, E>(db: MuswagDb, effect: Effect.Effect<A, E, MuswagDatabase>): A {
+  return Effect.runSync(effect.pipe(Effect.provideService(MuswagDatabase, db)));
+}
+
 function createManager(db: MuswagDb, api: FakePlaylistApi, options: PlaylistSyncManagerOptions = {}) {
-  const layer = managerLayer(db, api, options);
-  const runtime = ManagedRuntime.make(layer);
+  const runtime = ManagedRuntime.make(managerLayer(db, api, options));
   const service = runtime.runSync(PlaylistSyncManager);
+  const firstStatus = (predicate: (status: PlaylistSyncStatus) => boolean, stream = service.changes) =>
+    runtime.runPromise(stream.pipe(Stream.filter(predicate), Stream.runHead, Effect.timeout("1 second")));
 
   return {
-    getStatus: () => runtime.runSync(service.getStatus),
-    subscribe: (listener: Parameters<typeof service.subscribe>[0]) => runtime.runSync(service.subscribe(listener)),
+    status: () => runtime.runSync(service.status),
     sync: () => runtime.runPromise(service.sync),
-    pause: () => runtime.runPromise(service.pause),
-    resume: () => runtime.runPromise(service.resume),
-    cancel: () => runtime.runPromise(service.cancel),
+    /** Resolves once a pass has completed successfully at some point. */
+    waitForCompletedSync: () => firstStatus((status) => status.lastSyncedAt !== null),
+    /** Resolves once a pass that starts after this call has finished, successfully or not. */
+    waitForSyncCycle: () => firstStatus((status) => status.state !== "syncing", service.changes.pipe(Stream.dropWhile((status) => status.state !== "syncing"))),
     destroy: () => runtime.dispose(),
   };
 }
 
-async function waitForCompletedSync(manager: ReturnType<typeof createManager>): Promise<void> {
-  if (manager.getStatus().lastSyncedAt) return;
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for playlist sync: ${JSON.stringify(manager.getStatus())}`));
-    }, 1_000);
-    const unsubscribe = manager.subscribe((status) => {
-      if (!status.lastSyncedAt) return;
-      clearTimeout(timeout);
-      unsubscribe();
-      resolve();
-    });
-  });
-}
-
-/** The status is published before the pass chain finishes unwinding; this waits for the rest. */
+/** Lets a pass that just published its status finish unwinding. */
 function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/** Resolves once a pass that started after this call has finished, successfully or not. */
-function waitForSyncCycle(manager: ReturnType<typeof createManager>, timeoutMs = 1_000): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    let sawSyncing = false;
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for a playlist sync cycle: ${JSON.stringify(manager.getStatus())}`));
-    }, timeoutMs);
-    const unsubscribe = manager.subscribe((status) => {
-      if (status.state === "syncing") {
-        sawSyncing = true;
-        return;
-      }
-      if (!sawSyncing) return;
-      clearTimeout(timeout);
-      unsubscribe();
-      resolve();
-    });
-  });
 }
 
 describe("playlist sync manager", () => {
@@ -203,7 +181,7 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
 
     expect(db.playlists.get("server-1")?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b"]);
     expect(db.playlists.get("server-1")?.base).toEqual(db.playlists.get("server-1")?.local);
@@ -214,7 +192,7 @@ describe("playlist sync manager", () => {
     const db = createInMemoryDb();
     const api = new FakePlaylistApi();
     insertCredentials(db);
-    const playlist = createPlaylist(db, { name: "Offline", songIds: ["song-a", "song-a"] });
+    const playlist = edit(db, createPlaylist({ name: "Offline", songIds: ["song-a", "song-a"] }));
     const manager = createManager(db, api);
 
     await manager.sync();
@@ -252,7 +230,7 @@ describe("playlist sync manager", () => {
 
     const syncing = manager.sync();
     await startedPromise;
-    renamePlaylist(db, "server-1", "Edited while fetching");
+    edit(db, updatePlaylist("server-1", { name: "Edited while fetching" }));
     release();
     await syncing;
 
@@ -265,14 +243,14 @@ describe("playlist sync manager", () => {
     const api = new FakePlaylistApi();
     api.createError = new Error("create failed");
     insertCredentials(db);
-    const playlist = createPlaylist(db, { name: "Still local" });
+    const playlist = edit(db, createPlaylist({ name: "Still local" }));
     const manager = createManager(db, api);
 
-    await manager.sync();
+    await expect(manager.sync()).rejects.toThrow("create failed");
 
     expect(db.playlists.get(playlist.id)).toMatchObject({ serverId: null, base: null });
     expect(db.playlists.get(playlist.id)?.local?.name).toBe("Still local");
-    expect(manager.getStatus().error).toBe("create failed");
+    expect(manager.status().error).toBe("create failed");
     manager.destroy();
   });
 
@@ -281,7 +259,7 @@ describe("playlist sync manager", () => {
     const api = new FakePlaylistApi();
     insertCredentials(db);
     const manager = createManager(db, api);
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
 
     let releaseCreate!: () => void;
@@ -294,10 +272,10 @@ describe("playlist sync manager", () => {
       releaseCreate = resolve;
     });
 
-    const playlist = createPlaylist(db, { name: "Delete me", songIds: ["song-a"] });
+    const playlist = edit(db, createPlaylist({ name: "Delete me", songIds: ["song-a"] }));
     const firstPass = manager.sync();
     await createStartedPromise;
-    deletePlaylist(db, playlist.id);
+    edit(db, deletePlaylist(playlist.id));
     releaseCreate();
     await firstPass;
     await settle();
@@ -314,11 +292,11 @@ describe("playlist sync manager", () => {
     api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
     insertCredentials(db);
     const manager = createManager(db, api);
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
     api.updatePlaylistCalls.length = 0;
 
-    renamePlaylist(db, "server-1", "Renamed");
+    edit(db, updatePlaylist("server-1", { name: "Renamed" }));
     await manager.sync();
 
     expect(api.updatePlaylistCalls).toEqual([
@@ -339,12 +317,12 @@ describe("playlist sync manager", () => {
     api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
     insertCredentials(db);
     const manager = createManager(db, api);
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
     api.getPlaylistCalls.length = 0;
     api.updatePlaylistCalls.length = 0;
 
-    addPlaylistEntry(db, "server-1", "song-local");
+    edit(db, addSongsToPlaylist("server-1", ["song-local"]));
     api.getPlaylistHook = (id, callNumber) => {
       if (id === "server-1" && callNumber === 2) {
         api.playlists.get(id)!.songIds.push("song-remote");
@@ -372,12 +350,12 @@ describe("playlist sync manager", () => {
       debounceMs: 5,
     });
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     expect(api.getPlaylistCalls).toEqual(["server-1", "server-2"]);
     api.getPlaylistCalls.length = 0;
 
-    const cycle = waitForSyncCycle(manager);
-    renamePlaylist(db, "server-1", "One edited");
+    const cycle = manager.waitForSyncCycle();
+    edit(db, updatePlaylist("server-1", { name: "One edited" }));
     await cycle;
 
     expect(api.getPlaylistCalls).toContain("server-1");
@@ -396,15 +374,15 @@ describe("playlist sync manager", () => {
       debounceMs: 5,
     });
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     api.getPlaylistCalls.length = 0;
 
     const remote = api.playlists.get("server-2")!;
     remote.name = "Two renamed elsewhere";
     remote.changed = "2026-07-11T00:00:00.000Z";
 
-    const cycle = waitForSyncCycle(manager);
-    renamePlaylist(db, "server-1", "One edited");
+    const cycle = manager.waitForSyncCycle();
+    edit(db, updatePlaylist("server-1", { name: "One edited" }));
     await cycle;
 
     expect(api.getPlaylistCalls).toContain("server-2");
@@ -420,7 +398,7 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
     api.getPlaylistCalls.length = 0;
 
@@ -436,7 +414,7 @@ describe("playlist sync manager", () => {
     api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: [] });
     insertCredentials(db);
     const manager = createManager(db, api);
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
 
     let release!: () => void;
     let started!: () => void;
@@ -465,29 +443,27 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
 
     expect(db.playlists.get("mine")?.local?.readonly).toBe(false);
     expect(db.playlists.get("theirs")?.local?.readonly).toBe(true);
-    expect(() => renamePlaylist(db, "theirs", "Hijacked")).toThrow("Playlist is read-only");
+    expect(() => edit(db, updatePlaylist("theirs", { name: "Hijacked" }))).toThrow("Playlist is read-only");
     manager.destroy();
   });
 
-  it("resolves sync() with the status of the pass", async () => {
+  it("fails sync() with the pass error and reports it in the status", async () => {
     const db = createInMemoryDb();
     const api = new FakePlaylistApi();
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    const ok = await manager.sync();
-    expect(ok.state).toBe("idle");
-    expect(ok.error).toBeNull();
-    expect(ok.lastSyncedAt).not.toBeNull();
+    await manager.sync();
+    expect(manager.status()).toMatchObject({ state: "idle", error: null });
+    expect(manager.status().lastSyncedAt).not.toBeNull();
 
     api.listError = new Error("server unreachable");
-    const failed = await manager.sync();
-    expect(failed.state).toBe("error");
-    expect(failed.error).toBe("server unreachable");
+    await expect(manager.sync()).rejects.toThrow("server unreachable");
+    expect(manager.status()).toMatchObject({ state: "error", error: "server unreachable" });
     manager.destroy();
   });
 
@@ -498,8 +474,9 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
 
     return Effect.gen(function* () {
-      const manager = yield* PlaylistSyncManager;
-      yield* manager.sync;
+      // The startup pass fails at t=0.
+      yield* PlaylistSyncManager;
+      yield* TestClock.adjust(0);
       yield* TestClock.adjust(20_000);
       yield* TestClock.adjust(40_000);
       yield* TestClock.adjust(60_000);
@@ -518,7 +495,7 @@ describe("playlist sync manager", () => {
     await seed.playlists.preload();
     await seed.userCredentials.preload();
     seed.userCredentials.insert({ id: 1, url: "https://music.example", username: "alice", password: "secret" });
-    const created = createPlaylist(seed, { name: "Written offline", songIds: ["song-a"] });
+    const created = edit(seed, createPlaylist({ name: "Written offline", songIds: ["song-a"] }));
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // A fresh process starts syncing against a collection that has not read from disk yet.
@@ -526,7 +503,7 @@ describe("playlist sync manager", () => {
     const api = new FakePlaylistApi();
     const manager = createManager(cold, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
 
     expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Written offline"]);
     expect(cold.playlists.get(created.id)?.serverId).toBe("server-1");
@@ -540,10 +517,10 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
 
-    addPlaylistEntry(db, "server-1", "song-b");
+    edit(db, addSongsToPlaylist("server-1", ["song-b"]));
     await manager.sync();
     expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b"]);
 
@@ -564,17 +541,17 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
 
-    addPlaylistEntry(db, "server-1", "song-b");
+    edit(db, addSongsToPlaylist("server-1", ["song-b"]));
     await manager.sync();
     await settle();
 
     const record = db.playlists.get("server-1")!;
     expect(record.base).toEqual(record.local);
     // A converged pass must not leave another one queued.
-    expect(manager.getStatus().state).toBe("idle");
+    expect(manager.status().state).toBe("idle");
     manager.destroy();
   });
 
@@ -585,10 +562,10 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
 
-    addPlaylistEntry(db, "server-1", "song-a");
+    edit(db, addSongsToPlaylist("server-1", ["song-a"]));
     await manager.sync();
     await manager.sync();
 
@@ -603,11 +580,11 @@ describe("playlist sync manager", () => {
     insertCredentials(db);
     const manager = createManager(db, api);
 
-    await waitForCompletedSync(manager);
+    await manager.waitForCompletedSync();
     await settle();
 
     const entries = db.playlists.get("server-1")!.local!.entries;
-    removePlaylistEntry(db, "server-1", entries[0]!.id);
+    edit(db, removePlaylistEntry("server-1", entries[0]!.id));
     await manager.sync();
     await manager.sync();
 
@@ -626,7 +603,7 @@ describe("playlist sync manager", () => {
       songIds: [],
     });
     insertCredentials(db);
-    createPlaylist(db, { name: "Pending" });
+    edit(db, createPlaylist({ name: "Pending" }));
     let release!: () => void;
     let started!: () => void;
     const startedPromise = new Promise<void>((resolve) => {

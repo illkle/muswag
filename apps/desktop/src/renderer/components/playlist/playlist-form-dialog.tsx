@@ -4,14 +4,9 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
 import { getErrorMessage } from "#/lib/err";
+import type { PlaylistDetails } from "@muswag/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-
-export type PlaylistFormValues = {
-  name: string;
-  comment: string;
-  public: boolean;
-};
 
 /** Shared by "New playlist" and "Playlist details", which differ only in labels and what they submit. */
 export function PlaylistFormDialog({
@@ -26,8 +21,8 @@ export function PlaylistFormDialog({
   onOpenChange: (open: boolean) => void;
   title: string;
   submitLabel: string;
-  initialValues?: PlaylistFormValues;
-  onSubmit: (values: PlaylistFormValues) => Promise<unknown>;
+  initialValues?: PlaylistDetails;
+  onSubmit: (values: PlaylistDetails) => Promise<unknown>;
 }) {
   const [name, setName] = useState(initialValues?.name ?? "");
   const [comment, setComment] = useState(initialValues?.comment ?? "");

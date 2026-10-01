@@ -24,7 +24,7 @@ export function SidebarPlaylists() {
   });
 
   const syncing = syncStatus.state === "syncing" || syncMutation.isPending;
-  // The retry path reports "scheduled" while still holding the failure, so key off `error`.
+  // The status keeps the failure until a retry succeeds; the mutation error covers a failed manual sync.
   const syncError = syncStatus.error ?? (syncMutation.isError ? getErrorMessage(syncMutation.error, "The playlists could not be synced.") : null);
 
   return (
@@ -66,10 +66,8 @@ export function SidebarPlaylists() {
         onOpenChange={setCreateOpen}
         title="New playlist"
         submitLabel="Create"
-        onSubmit={async ({ name, comment, public: isPublic }) => {
-          const created = await PlaylistActions.create({ name });
-          if (comment) await PlaylistActions.setComment(created.id, comment);
-          if (isPublic) await PlaylistActions.setVisibility(created.id, true);
+        onSubmit={async (details) => {
+          const created = await PlaylistActions.create(details);
           await navigate({ to: "/app/playlists/$playlistId", params: { playlistId: created.id } });
         }}
       />
