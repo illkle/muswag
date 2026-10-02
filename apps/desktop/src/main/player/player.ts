@@ -1,5 +1,6 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
+import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import {
   initialSnapshot,
   type CommandAck,
@@ -11,6 +12,7 @@ import {
   type PlayerSnapshot,
   type Selection,
 } from "#shared/player-contract";
+import { installOutputRows, player as playerTable, playerInstallOutput, playerIssueRows, playerIssues, playerPosition, playerPositionRow, playerRow } from "#shared/player-state";
 import { Binaries } from "./binary/binaries";
 import { Installer, type InstallProgress } from "./binary/installer";
 import {
@@ -94,6 +96,7 @@ export const PlayerLive = Layer.effect(
     const binaries = yield* Binaries;
     const installer = yield* Installer;
     const store = yield* SettingsStore;
+    const stateMirror = yield* MemoryMirror;
     const owner = yield* Effect.scope;
 
     const mailbox = yield* Queue.bounded<Message>(MAILBOX_CAPACITY);
@@ -133,10 +136,32 @@ export const PlayerLive = Layer.effect(
 
     // ---- State publication ----
 
+    /** The snapshot renderers last saw, through the state mirror. */
+    let mirrored: PlayerSnapshot | null = null;
+    /** Writes the rows of `next` that changed. Lists are rewritten only when they are new lists. */
+    const mirror = (next: PlayerSnapshot) =>
+      Effect.suspend(() => {
+        const previous = mirrored;
+        mirrored = next;
+        return stateMirror.write(
+          Effect.gen(function* () {
+            yield* stateMirror.upsert(playerTable, playerRow(next));
+            yield* stateMirror.upsert(playerPosition, playerPositionRow(next));
+            if (previous?.issues !== next.issues) yield* stateMirror.replace(playerIssues, playerIssueRows(next));
+            if (previous?.installOutput !== next.installOutput) yield* stateMirror.replace(playerInstallOutput, installOutputRows(next));
+          }),
+        );
+      }).pipe(
+        // Renderers would miss this state, but playback itself must not stop over it.
+        Effect.catchCause((cause) => Effect.logError("Mirroring the player state failed", cause)),
+      );
+    yield* mirror(initial);
+
     const publish = (next: PlayerSnapshot) =>
       Effect.suspend(() => {
         state = { ...next, stamp: { ...state.stamp, revision: state.stamp.revision + 1 } };
-        return SubscriptionRef.set(published, state);
+        // Mirrored first, so whoever reacts to the change finds renderers' view up to date.
+        return mirror(state).pipe(Effect.andThen(SubscriptionRef.set(published, state)));
       });
     const addIssue = (problem: PlayerIssue) =>
       publish({ ...state, issues: withIssue(state.issues, problem, (existing) => existing.operation === problem.operation && existing.occurrenceKey === problem.occurrenceKey) });

@@ -22,17 +22,13 @@ export type MuswagMainIpc = {
   "app:state": (name: string) => unknown;
 
   // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
-  // snapshots/results against the schemas in player-contract.ts.
+  // results against the schemas in player-contract.ts. The player's state reaches renderers through
+  // the state mirror (player-state.ts).
   "player:command": (commandId: string, command: unknown) => unknown;
-  "player:subscribe": (subscriptionId: string) => unknown;
-  "player:unsubscribe": (subscriptionId: string) => void;
-  "player:ackSnapshot": (subscriptionId: string) => void;
-  "player:getSnapshot": () => unknown;
   "player:locate": () => unknown;
 };
 
 export type MuswagRendererIpc = {
   "app:state": [event: { name: string; value: unknown }];
   "appUpdate:state": [state: AppUpdateState];
-  "player:snapshot": [event: { subscriptionId: string; snapshot: unknown }];
 };

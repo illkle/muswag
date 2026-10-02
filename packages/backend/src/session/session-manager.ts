@@ -1,4 +1,4 @@
-import { albums, artists, covers, playerQueue, playlists, songs, syncState, type AuthSnapshot, type SessionCredentials } from "@muswag/model";
+import { albums, artists, covers, playlists, queueItems, queueState, songs, syncState, type AuthSnapshot, type SessionCredentials } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Context, Crypto, Data, Effect, Layer, Scope, ScopedRef, Stream, SubscriptionRef } from "effect";
 import { HttpClient } from "effect/http";
@@ -68,7 +68,7 @@ const loggedInSnapshot = (credentials: SessionCredentials): AuthSnapshot & { rea
 });
 
 /** Tables that hold the logged-in user's data. */
-const USER_TABLES = [albums, artists, songs, playlists, playerQueue, syncState, covers] as const;
+const USER_TABLES = [albums, artists, songs, playlists, queueItems, queueState, syncState, covers] as const;
 
 const makeSessionManager = (options: SessionManagerOptions) =>
   Effect.gen(function* () {

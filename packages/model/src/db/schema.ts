@@ -2,7 +2,7 @@ import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core
 
 import type { ArtistID3, Contributor, DiscTitle, ItemDate, ItemGenre, MediaType, RecordLabel, ReplayGain } from "../api/subsonic-api-schema.js";
 import type { PlaylistState } from "../playlists/types.js";
-import type { QueueManagerSnapshot } from "../player-queue.js";
+import type { NowPlaying, QueueSourceRef, SourceCursor } from "../player-queue.js";
 
 /**
  * The library database. Main owns it; the renderer mirrors `MIRRORED_TABLES` as TanStack DB
@@ -131,12 +131,32 @@ export const playlists = sqliteTable(
   (table) => [index("playlists_server_id").on(table.serverId)],
 );
 
-// ---- Main-only tables ----
+// ---- The playback queue ----
 
-export const playerQueue = sqliteTable("player_queue", {
-  id: integer().primaryKey(),
-  snapshot: json<QueueManagerSnapshot>().notNull(),
+/**
+ * Every occurrence the queue holds: the user queue, the window of the source being played, and the
+ * occurrence playing when it is in neither. Each carries its own copy of the track, so the queue
+ * survives the song leaving the library.
+ */
+export const queueItems = sqliteTable("queue_items", {
+  key: text().primaryKey(),
+  list: text({ enum: ["now", "user", "source"] }).notNull(),
+  /** Order within the list: the index in the user queue, or the occurrence's offset in its source. */
+  position: integer().notNull(),
+  track: json<Song>().notNull(),
 });
+
+/** The queue's single row (`id` 1): what is playing, the source it plays from, and where to resume. */
+export const queueState = sqliteTable("queue_state", {
+  id: integer().primaryKey(),
+  nowPlayingKey: text(),
+  nowPlayingOrigin: text({ enum: ["source", "user"] }).$type<NowPlaying["origin"]>(),
+  source: json<{ ref: QueueSourceRef; cursor: SourceCursor; revision: string }>(),
+  /** Where playback resumes after a restart. Restores always start paused, so play state is not kept. */
+  resumePositionSeconds: real().notNull(),
+});
+
+// ---- Main-only tables ----
 
 export const syncState = sqliteTable("sync_state", {
   id: integer().primaryKey(),
@@ -161,11 +181,13 @@ export const credentials = sqliteTable("credentials", {
 });
 
 /** Tables the renderer mirrors. Everything else stays in main. */
-export const MIRRORED_TABLES = [albums, artists, songs, playlists] as const;
+export const MIRRORED_TABLES = [albums, artists, songs, playlists, queueItems, queueState] as const;
 
 export type Album = typeof albums.$inferSelect;
 export type Artist = typeof artists.$inferSelect;
 export type Song = typeof songs.$inferSelect;
 export type PlaylistRow = typeof playlists.$inferSelect;
 export type SyncStateRow = typeof syncState.$inferSelect;
+export type QueueItemRow = typeof queueItems.$inferSelect;
+export type QueueStateRow = typeof queueState.$inferSelect;
 export type CoverRow = typeof covers.$inferSelect;

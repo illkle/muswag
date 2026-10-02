@@ -1,12 +1,15 @@
-import { appCommand, appStates } from "#/lib/app-ipc";
-import { initializePlayerConnection, PlayerConnectionStore } from "#/player/connection";
-import type { PlayerRuntimeState } from "#shared/player";
-import { binaryView, installView, runtimeView } from "#shared/player-snapshot";
-import { getQueueCanGoNext, getQueueCanGoPrevious } from "#shared/queue-state";
-import type { QueueSourceRef, Song } from "@muswag/model";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useStore } from "@tanstack/react-store";
+import { useMemo } from "react";
 
-initializePlayerConnection();
+import { appCommand } from "#/lib/app-ipc";
+import { db } from "#/lib/db-renderer";
+import { commandIssue, playerState } from "#/player/connection";
+import type { PlayerStatus } from "#shared/player";
+import type { PlaybackState } from "#shared/player-state";
+import { binaryView, installView } from "#shared/player-snapshot";
+import { getQueueCanGoNext, getQueueCanGoPrevious, queueStateFromRows, type QueueManagerState } from "#shared/queue-state";
+import type { QueueSourceRef, Song } from "@muswag/model";
 
 /** The playback queue lives in main; these send it commands. */
 export const queueManager = {
@@ -22,26 +25,69 @@ export const queueManager = {
   previous: () => appCommand("queue:previous"),
 };
 
-type ConnectionView = typeof PlayerConnectionStore.state;
-const usePlayerRuntime = <A,>(select: (runtime: PlayerRuntimeState, view: ConnectionView) => A) => useStore(PlayerConnectionStore, (view) => select(runtimeView(view.snapshot), view));
+// ---- Rows ----
+// Each player table has one row, keyed "player", except issues and install output.
 
-export const usePlayerConnected = () => useStore(PlayerConnectionStore, (view) => view.connected);
-export const usePlayerCurrentTrackId = () => usePlayerRuntime((runtime) => runtime.current?.track.id ?? null);
-export const usePlayerCurrentTrack = () => usePlayerRuntime((runtime) => runtime.current?.track ?? null);
-export const usePlayerStatus = () => usePlayerRuntime((runtime) => runtime.status);
-export const usePlayerBuffering = () => usePlayerRuntime((runtime) => runtime.buffering);
-export const usePlayerDuration = () => usePlayerRuntime((runtime) => runtime.durationSeconds);
-export const usePlayerPositionSeconds = () => usePlayerRuntime((runtime) => runtime.positionSeconds);
-export const usePlayerMuted = () => usePlayerRuntime((runtime) => runtime.muted);
-export const usePlayerVolumePercent = () => usePlayerRuntime((runtime) => runtime.volumePercent);
-export const usePlayerError = () => usePlayerRuntime((runtime, view) => (!view.connected ? "Playback disconnected. Reconnecting…" : (view.issue?.message ?? runtime.error)));
-export const usePlayerIssue = () => useStore(PlayerConnectionStore, (view) => view.issue ?? view.snapshot.issues.at(-1) ?? null);
+/** `undefined` until the state mirror has loaded. */
+const usePlayerRow = () => useLiveQuery((q) => q.from({ player: playerState.player }).findOne()).data;
+const usePositionRow = () => useLiveQuery((q) => q.from({ position: playerState.position }).findOne()).data;
+const useLatestIssue = () =>
+  useLiveQuery((q) =>
+    q
+      .from({ issue: playerState.issues })
+      .orderBy(({ issue }) => issue.order, "desc")
+      .findOne(),
+  ).data;
 
-/** Controls are disabled while disconnected or while main is still processing a command. */
-const isIdleConnection = (view: ConnectionView) => view.connected && !view.snapshot.pending;
-export const usePlayerCanPlay = () => usePlayerRuntime((runtime, view) => isIdleConnection(view) && runtime.current !== null && runtime.status !== "loading");
-export const usePlayerCanSeek = () =>
-  usePlayerRuntime((runtime, view) => isIdleConnection(view) && (runtime.status === "playing" || runtime.status === "paused") && (runtime.durationSeconds ?? 0) > 0);
+const statusOf = (playback: PlaybackState | undefined): PlayerStatus => {
+  if (!playback) return "idle";
+  if (playback._tag === "Recovering") return "loading";
+  if (playback._tag === "Failed") return "error";
+  return playback._tag.toLowerCase() as PlayerStatus;
+};
+const itemOf = (playback: PlaybackState | undefined) => (playback && playback._tag !== "Idle" ? playback.item : null);
+
+// ---- Player ----
+
+export const usePlayerConnected = () => usePlayerRow() !== undefined;
+export const usePlayerCurrentTrackId = () => itemOf(usePlayerRow()?.playback)?.track.id ?? null;
+export const usePlayerCurrentTrack = () => itemOf(usePlayerRow()?.playback)?.track ?? null;
+export const usePlayerStatus = () => statusOf(usePlayerRow()?.playback);
+export const usePlayerBuffering = () => {
+  const playback = usePlayerRow()?.playback;
+  return playback?._tag === "Playing" && playback.buffering;
+};
+export const usePlayerDuration = () => usePositionRow()?.durationSeconds ?? null;
+export const usePlayerPositionSeconds = () => usePositionRow()?.positionSeconds ?? 0;
+export const usePlayerMuted = () => usePlayerRow()?.muted ?? false;
+export const usePlayerVolumePercent = () => usePlayerRow()?.volumePercent ?? 100;
+
+/** The issue to show: a rejected command's, or else the latest the player recorded. */
+export const usePlayerIssue = () => {
+  const rejected = useStore(commandIssue);
+  const latest = useLatestIssue();
+  return rejected ?? latest ?? null;
+};
+export const usePlayerError = () => {
+  const row = usePlayerRow();
+  const rejected = useStore(commandIssue);
+  const latest = useLatestIssue();
+  if (!row) return "Playback disconnected. Reconnecting…";
+  const failure = row.playback._tag === "Failed" ? row.playback.issue : null;
+  return rejected?.message ?? failure?.message ?? latest?.message ?? null;
+};
+
+/** Controls wait while main is still working on a command. */
+export const usePlayerCanPlay = () => {
+  const row = usePlayerRow();
+  return row !== undefined && !row.pending && itemOf(row.playback) !== null && statusOf(row.playback) !== "loading";
+};
+export const usePlayerCanSeek = () => {
+  const row = usePlayerRow();
+  const duration = usePlayerDuration();
+  const status = statusOf(row?.playback);
+  return row !== undefined && !row.pending && (status === "playing" || status === "paused") && (duration ?? 0) > 0;
+};
 
 export function usePlayerCanGoForward() {
   const connected = usePlayerConnected();
@@ -49,13 +95,32 @@ export function usePlayerCanGoForward() {
   return connected && getQueueCanGoNext(queue);
 }
 export function usePlayerCanGoBack() {
-  const queue = useQueueManagerState();
-  const runtime = usePlayerRuntime((runtime) => runtime);
   const connected = usePlayerConnected();
-  return connected && getQueueCanGoPrevious(queue, runtime);
+  const queue = useQueueManagerState();
+  const positionSeconds = usePlayerPositionSeconds();
+  return connected && getQueueCanGoPrevious(queue, positionSeconds);
 }
 
-export const usePlayerMpvAvailable = () => useStore(PlayerConnectionStore, (view) => view.connected && view.snapshot.binary._tag === "Ready");
-export const usePlayerMpvState = () => useStore(PlayerConnectionStore, (view) => binaryView(view.snapshot));
-export const usePlayerMpvInstallState = () => useStore(PlayerConnectionStore, (view) => installView(view.snapshot));
-export const useQueueManagerState = () => useStore(appStates.queue, (state) => state);
+// ---- mpv ----
+
+export const usePlayerMpvAvailable = () => usePlayerRow()?.binary._tag === "Ready";
+export const usePlayerMpvState = () => binaryView(usePlayerRow()?.binary ?? { _tag: "Checking" });
+export const usePlayerMpvInstallState = () => installView(usePlayerRow()?.install ?? { _tag: "Idle" });
+/** The output of the running or last mpv installation, oldest line first. */
+export const usePlayerInstallOutput = () => {
+  const { data } = useLiveQuery((q) =>
+    q
+      .from({ output: playerState.installOutput })
+      .orderBy(({ output }) => output.sequence)
+      .select(({ output }) => ({ id: output.id, line: output.line })),
+  );
+  return useMemo(() => (data ?? []).map(({ line }) => line), [data]);
+};
+
+// ---- Queue ----
+
+export function useQueueManagerState(): QueueManagerState {
+  const { data: state } = useLiveQuery((q) => q.from({ state: db.queueState }).findOne());
+  const { data: items } = useLiveQuery((q) => q.from({ item: db.queueItems }));
+  return useMemo(() => queueStateFromRows(state, items ?? []), [state, items]);
+}

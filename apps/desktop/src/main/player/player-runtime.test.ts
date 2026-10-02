@@ -1,8 +1,11 @@
 import { it } from "@effect/vitest";
+import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
+import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import { EngineError } from "./errors";
+import { player as playerTable, playerIssues, playerPosition } from "#shared/player-state";
 import { Player } from "./player";
 import { fixture, login, tracks, until } from "./test/player";
 
@@ -44,6 +47,32 @@ describe("Effect player", () => {
       yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.buffering);
       test.emit({ type: "property", name: "paused-for-cache", data: undefined });
       yield* until(player, (state) => state.playback._tag === "Playing" && !state.playback.buffering);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("mirrors its state for renderers, with position updates apart from everything else", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      const mirror = yield* MemoryMirror;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      expect(yield* mirror.get(playerTable, "player")).toMatchObject({ playback: { _tag: "Playing", item: { key: "a" }, buffering: false }, pending: null });
+
+      const batches: MirrorChangeBatch[] = [];
+      const unsubscribe = mirror.subscribe((batch) => batches.push(batch));
+      test.emit({ type: "property", name: "time-pos", data: 12 });
+      yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.media.positionSeconds === 12);
+      unsubscribe();
+      expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player_position"]);
+      expect(yield* mirror.get(playerPosition, "player")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null });
+
+      const failed = yield* player.execute("restart", { _tag: "Restart" }).pipe(Effect.andThen(player.execute("seek-while-loading", { _tag: "Seek", seconds: 5 })), Effect.flip, Effect.option);
+      expect(failed._tag).toBe("Some");
+      const issues = yield* mirror.rows(playerIssues);
+      expect(issues.map(({ code, order }) => [code, order])).toEqual([["InvalidCommand", 0]]);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });

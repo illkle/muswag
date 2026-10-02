@@ -20,5 +20,16 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1790932470000,
     "hash": "c4a9361f1b3b0a868ea30275c257f6686bd8ca8be09215026976e38a8d89b944",
     "name": "20261002091430_init"
+  },
+  {
+    "sql": [
+      "CREATE TABLE `queue_items` (\n\t`key` text PRIMARY KEY,\n\t`list` text NOT NULL,\n\t`position` integer NOT NULL,\n\t`track` text NOT NULL\n);\n",
+      "\nCREATE TABLE `queue_state` (\n\t`id` integer PRIMARY KEY,\n\t`nowPlayingKey` text,\n\t`nowPlayingOrigin` text,\n\t`source` text,\n\t`resumePositionSeconds` real NOT NULL\n);\n",
+      "\nDROP TABLE `player_queue`;"
+    ],
+    "bps": true,
+    "folderMillis": 1790948438000,
+    "hash": "a5bafe9fac853212a246a21f97c93f0db6e5d655194d5e90c465bddb9ab64dc0",
+    "name": "20261002134038_queue_tables"
   }
 ];

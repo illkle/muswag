@@ -1,6 +1,7 @@
-import type { PlayerSnapshot } from "#shared/player-contract";
+import type { BinaryState, InstallState, PlayerSnapshot } from "#shared/player-contract";
 import type { MpvInstallState, MpvState, PlayerRuntimeState } from "#shared/player";
 
+/** The snapshot as main's queue manager follows it. */
 export function runtimeView(snapshot: PlayerSnapshot): PlayerRuntimeState {
   const playback = snapshot.playback;
   const media = playback._tag === "Idle" ? null : playback.media;
@@ -18,22 +19,15 @@ export function runtimeView(snapshot: PlayerSnapshot): PlayerRuntimeState {
     muted: snapshot.audio.muted,
   };
 }
-export function binaryView(snapshot: PlayerSnapshot): MpvState {
-  const binary = snapshot.binary;
+export function binaryView(binary: BinaryState): MpvState {
   if (binary._tag === "Checking") return { status: "checking" };
   if (binary._tag === "Ready") return { status: "ready", binaryPath: binary.path, version: binary.version, source: binary.source };
   return { status: "missing", checkedPaths: [], installOptions: [...binary.options], reason: binary.issue.message };
 }
-export function installView(snapshot: PlayerSnapshot): MpvInstallState {
-  const install = snapshot.install;
+export function installView(install: InstallState): MpvInstallState {
   if (install._tag === "Idle") return { status: "idle" };
   if (install._tag === "Failed") return { status: "failed", method: install.method, error: install.issue.message };
   if (install._tag === "Cancelled") return { status: "cancelled", method: install.method };
   if (install._tag === "Succeeded") return { status: "succeeded", method: install.method };
   return { status: "running", method: install.method };
-}
-
-/** A subscription establishes the epoch. Delayed replies cannot replace newer state. */
-export function acceptSnapshot(current: PlayerSnapshot, incoming: PlayerSnapshot, epoch: string): PlayerSnapshot {
-  return incoming.stamp.epoch === epoch && (current.stamp.epoch !== epoch || incoming.stamp.revision > current.stamp.revision) ? incoming : current;
 }

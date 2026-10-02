@@ -81,7 +81,7 @@ const makeBackend = (options: BackendOptions) =>
     const session = yield* SessionManager;
     const commands = yield* PlaylistCommands;
     const mirror = yield* SqliteMirror;
-    const run = Effect.runPromiseWith(yield* Effect.context<Db>());
+    const run = Effect.runPromiseWith(yield* Effect.context<Db | SqliteMirror>());
     const states = makeStates(options);
 
     yield* mirror.serve(createElectronMainTransport({ ipcMain: options.ipcMain }));
@@ -107,17 +107,16 @@ const makeBackend = (options: BackendOptions) =>
               subscribe: (listener) => options.player.subscribe((snapshot) => listener(runtimeView(snapshot))),
             },
             sources: createQueueSourceFactory(sourceDb),
+            // Stored in mirrored tables, which is also how renderers see the queue.
             storage: new DbQueueStorage({
               load: () => run(LibraryQueries.loadQueue),
-              save: (snapshot) => run(LibraryQueries.saveQueue(snapshot)),
+              write: (change) => run(LibraryQueries.writeQueue(change)),
               clear: () => run(LibraryQueries.clearQueue),
             }),
           }),
       ),
       (manager) => Effect.sync(() => manager.dispose()),
     );
-    const unsubscribeQueue = queue.store.subscribe(() => states.set("queue", queue.store.state));
-    yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribeQueue.unsubscribe()));
 
     /** Songs in the order of `ids`, skipping any that are gone. */
     const songsInOrder = async (ids: readonly string[]): Promise<Song[]> => {

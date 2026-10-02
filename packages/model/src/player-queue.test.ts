@@ -4,8 +4,6 @@ import { songRow } from "./db/rows.js";
 import { parseQueueManagerSnapshot, type QueueManagerSnapshot } from "./player-queue.js";
 
 const valid: QueueManagerSnapshot = {
-  version: 1,
-  savedAt: "2026-08-13T00:00:00.000Z",
   nowPlaying: { key: "user:playing", origin: "user", track: songRow({ id: "deleted-song", title: "Preserved" }) },
   userQueue: [{ key: "user:next", track: songRow({ id: "next", title: "Next" }) }],
   source: { ref: { type: "playlist", playlistId: "playlist" }, cursor: { type: "gap", offset: 4 } },
@@ -24,10 +22,6 @@ describe("player queue persistence DTO", () => {
     const parsed = parseQueueManagerSnapshot({ ...valid, nowPlaying: { ...valid.nowPlaying, track } });
 
     expect(parsed?.nowPlaying?.track).toEqual(track);
-  });
-
-  it("accepts records from builds that persisted play state, dropping it", () => {
-    expect(parseQueueManagerSnapshot({ ...valid, playback: { paused: false, positionSeconds: 12.5 } })).toEqual(valid);
   });
 
   it("rejects malformed top-level records", () => {

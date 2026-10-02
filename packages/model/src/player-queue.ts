@@ -16,9 +16,8 @@ export type SourceCursor = { type: "item"; key: string; offset: number } | { typ
 
 export type QueueSourceRef = { type: "playlist"; playlistId: string } | { type: "album"; albumId: string };
 
+/** What the queue restores from after a restart. */
 export type QueueManagerSnapshot = {
-  version: 1;
-  savedAt: string;
   nowPlaying: NowPlaying | null;
   userQueue: PlaybackItem[];
   source: { ref: QueueSourceRef; cursor: SourceCursor } | null;
@@ -27,17 +26,6 @@ export type QueueManagerSnapshot = {
     positionSeconds: number;
   };
 };
-
-export type PlayerQueueRecord = {
-  id: 1;
-  snapshot: QueueManagerSnapshot;
-};
-
-export interface QueueStorage {
-  load(): Promise<QueueManagerSnapshot | null>;
-  save(snapshot: QueueManagerSnapshot): Promise<void>;
-  clear(): Promise<void>;
-}
 
 export function playlistOccurrenceKey(playlistId: string, entryId: string): string {
   return `playlist:${playlistId}:${entryId}`;
@@ -64,8 +52,6 @@ const trackSchema = z.looseObject({ id: z.string(), title: z.string(), isDir: z.
 const playbackItemSchema = z.object({ key: occurrenceKey, track: trackSchema });
 
 const snapshotSchema = z.object({
-  version: z.literal(1),
-  savedAt: z.string(),
   nowPlaying: playbackItemSchema.extend({ origin: z.enum(["source", "user"]) }).nullable(),
   // A malformed user occurrence is recoverable and must not discard the rest of the record.
   userQueue: z.array(z.unknown()).transform((items) => items.flatMap((item) => playbackItemSchema.safeParse(item).data ?? [])),
@@ -75,11 +61,10 @@ const snapshotSchema = z.object({
       cursor: z.discriminatedUnion("type", [z.object({ type: z.literal("item"), key: occurrenceKey, offset }), z.object({ type: z.literal("gap"), offset })]),
     })
     .nullable(),
-  // Records from older builds also carry `paused`; zod strips it.
   playback: z.object({ positionSeconds: z.number().nonnegative() }),
 });
 
-/** Defensive validation for the single persisted queue record. */
+/** Defensive validation for the queue as read back from the database. */
 export function parseQueueManagerSnapshot(value: unknown): QueueManagerSnapshot | null {
   const parsed = snapshotSchema.safeParse(value);
   if (!parsed.success) return null;

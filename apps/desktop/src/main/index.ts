@@ -7,6 +7,7 @@ import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 import { getDefaultMpvIpcPath } from "./player";
 import { registerPlayerIpc } from "./player-ipc";
+import { startStateMirror } from "./state-mirror";
 import { startBackend } from "./backend";
 import { resolveInside } from "./backend/platform";
 import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
@@ -15,6 +16,7 @@ import { Effect } from "effect";
 
 let unsubscribeAppUpdateState: (() => void) | undefined;
 let player: ReturnType<typeof registerPlayerIpc> | undefined;
+let stateMirror: Awaited<ReturnType<typeof startStateMirror>> | undefined;
 let backend: Awaited<ReturnType<typeof startBackend>> | undefined;
 const moduleDirectory = __dirname;
 
@@ -108,9 +110,11 @@ app.whenReady().then(async () => {
     }
   });
 
-  player = registerPlayerIpc(mainIpc, rendererIpc, {
+  stateMirror = await startStateMirror(ipcMain);
+  player = registerPlayerIpc(mainIpc, {
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     settingsPath: join(app.getPath("userData"), "player-settings.json"),
+    stateMirror: stateMirror.mirror,
   });
   // The library is migrated and mirrored before any window can ask for it.
   try {
@@ -153,6 +157,7 @@ app.on("before-quit", (event) => {
     Effect.tryPromise(async () => {
       await backend?.dispose();
       await player?.shutdown();
+      await stateMirror?.dispose();
     }).pipe(
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.logWarning("Desktop shutdown deadline reached") }),
       Effect.catch(() => Effect.logError("Desktop shutdown failed")),
