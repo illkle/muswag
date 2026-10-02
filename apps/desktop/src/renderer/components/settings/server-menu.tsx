@@ -6,6 +6,7 @@ import { usePlayerError, usePlayerMpvBinary } from "#/player/hooks";
 import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/updates/app-update";
 import { useUser, Session } from "#/session/session";
 import { LibraryActions } from "#/library/actions";
+import { useLibrarySyncStatus } from "#/library/queries";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
@@ -49,7 +50,9 @@ export function ServerMenu() {
     return new URL(userStateQuery.data.url).hostname;
   }, [userStateQuery.data]);
 
-  const syncRunning = syncMutation.isPending;
+  // The sync runs in main and outlives this menu, e.g. across a window reload, so follow main's status too.
+  const librarySync = useLibrarySyncStatus();
+  const syncRunning = syncMutation.isPending || librarySync.running !== null;
 
   // `checking` is the startup state, so it must not paint the button red before mpv is actually missing.
   const playbackBroken = binary._tag === "Unavailable" || Boolean(playerError);
