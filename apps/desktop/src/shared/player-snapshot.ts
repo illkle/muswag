@@ -12,6 +12,7 @@ export function runtimeView(snapshot: PlayerSnapshot): PlayerRuntimeState {
     positionSeconds: media?.positionSeconds ?? 0,
     durationSeconds: media?.durationSeconds ?? null,
     paused: playback._tag === "Paused" || (playback._tag === "Loading" && playback.targetPaused),
+    buffering: playback._tag === "Playing" && playback.buffering,
     error: playback._tag === "Failed" ? playback.issue.message : (snapshot.issues.at(-1)?.message ?? null),
     volumePercent: snapshot.audio.volumePercent,
     muted: snapshot.audio.muted,

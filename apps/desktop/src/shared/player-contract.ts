@@ -110,7 +110,8 @@ export type Media = typeof Media.Type;
 export const Playback = Schema.Union([
   Schema.TaggedStruct("Idle", {}),
   Schema.TaggedStruct("Loading", { media: Media, targetPaused: Schema.Boolean }),
-  Schema.TaggedStruct("Playing", { media: Media }),
+  /** `buffering`: mpv should be playing but is waiting for data, e.g. after seeking far into a stream. */
+  Schema.TaggedStruct("Playing", { media: Media, buffering: Schema.Boolean }),
   Schema.TaggedStruct("Paused", { media: Media }),
   Schema.TaggedStruct("Ended", { media: Media }),
   Schema.TaggedStruct("Recovering", { media: Media, attempt: Schema.Literal(1) }),

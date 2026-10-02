@@ -23,6 +23,30 @@ describe("Effect player", () => {
       expect(test.closes).toBe(1);
     }).pipe(Effect.provide(test.layer));
   });
+  it.effect("reports buffering while mpv is seeking or refilling its cache, but only when playing", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing" && !state.playback.buffering);
+      yield* player.execute("seek", { _tag: "Seek", seconds: 1800 });
+      test.emit({ type: "property", name: "seeking", data: true });
+      yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.buffering);
+      yield* player.execute("pause", { _tag: "Pause" });
+      expect((yield* player.snapshot).playback._tag).toBe("Paused");
+      yield* player.execute("play", { _tag: "Play" });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Playing", buffering: true });
+      test.emit({ type: "property", name: "seeking", data: false });
+      yield* until(player, (state) => state.playback._tag === "Playing" && !state.playback.buffering);
+      test.emit({ type: "property", name: "paused-for-cache", data: true });
+      yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.buffering);
+      test.emit({ type: "property", name: "paused-for-cache", data: undefined });
+      yield* until(player, (state) => state.playback._tag === "Playing" && !state.playback.buffering);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("idle volume preferences do not acquire mpv", () => {
     const test = fixture();
     return Effect.gen(function* () {

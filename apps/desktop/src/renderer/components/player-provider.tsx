@@ -29,6 +29,7 @@ export const usePlayerConnected = () => useStore(PlayerConnectionStore, (view) =
 export const usePlayerCurrentTrackId = () => usePlayerRuntime((runtime) => runtime.current?.track.id ?? null);
 export const usePlayerCurrentTrack = () => usePlayerRuntime((runtime) => runtime.current?.track ?? null);
 export const usePlayerStatus = () => usePlayerRuntime((runtime) => runtime.status);
+export const usePlayerBuffering = () => usePlayerRuntime((runtime) => runtime.buffering);
 export const usePlayerDuration = () => usePlayerRuntime((runtime) => runtime.durationSeconds);
 export const usePlayerPositionSeconds = () => usePlayerRuntime((runtime) => runtime.positionSeconds);
 export const usePlayerMuted = () => usePlayerRuntime((runtime) => runtime.muted);
