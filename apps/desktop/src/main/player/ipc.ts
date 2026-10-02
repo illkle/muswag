@@ -3,14 +3,26 @@ import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { Effect, ManagedRuntime, Schema, Stream } from "effect";
 import type { MuswagMainIpc } from "#shared/ipc";
 import { PlayerCommand, type CommandAck, type CommandResult, type PlayerCredentials, type PlayerSnapshot } from "#shared/commands/player";
-import { makePlayerLayer, Player } from "./player";
-import { CommandFailed, InvalidCommand, toIssue } from "./player/errors";
+import { CommandFailed, InvalidCommand, toIssue } from "./errors";
+import { makePlayerLayer } from "./layer";
+import { Player } from "./player";
+
+/** The player as the rest of main uses it. */
+export interface PlayerHandle {
+  /** Runs a command from main itself, such as the queue manager. */
+  readonly execute: (command: PlayerCommand) => Promise<CommandResult>;
+  /** Credentials sign stream URLs; `null` stops playback. */
+  readonly setCredentials: (credentials: PlayerCredentials | null) => Promise<CommandResult>;
+  readonly snapshot: () => Promise<PlayerSnapshot>;
+  readonly subscribe: (listener: (snapshot: PlayerSnapshot) => void) => () => void;
+  readonly shutdown: () => Promise<void>;
+}
 
 const invalid = (operation: string, message: string) => new CommandFailed({ issue: toIssue(new InvalidCommand({ operation, message })) });
 const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(PlayerCommand)(input).pipe(Effect.mapError(() => invalid("decode", "Invalid player command.")));
 
 /** Runs the player and its commands. Renderers see its state through `options.stateMirror`. */
-export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]) {
+export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
   const runtime = ManagedRuntime.make(makePlayerLayer(options));
   const snapshot = () => runtime.runPromise(Player.use((player) => player.snapshot));
   /** Runs a player operation and pairs its outcome with the state-mirror position that reflects it. */
@@ -44,20 +56,18 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
   );
 
   return {
-    /** Runs a command from main itself, such as the queue manager. */
-    execute: (command: PlayerCommand) =>
+    execute: (command) =>
       respond(
         crypto.randomUUID(),
         Player.use((player) => player.execute(crypto.randomUUID(), command)),
       ),
-    /** Credentials sign stream URLs; `null` stops playback. */
-    setCredentials: (credentials: PlayerCredentials | null) =>
+    setCredentials: (credentials) =>
       respond(
         "credentials",
         Player.use((player) => player.setCredentials(credentials)),
       ),
     snapshot,
-    subscribe: (listener: (snapshot: PlayerSnapshot) => void) => {
+    subscribe: (listener) => {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);

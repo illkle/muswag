@@ -1,7 +1,8 @@
 import electronUpdater from "electron-updater";
-import { app, dialog } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
+import type { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 
-import type { AppUpdateState } from "#shared/ipc";
+import type { AppUpdateState, MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 
 const { autoUpdater } = electronUpdater;
 
@@ -135,4 +136,18 @@ export function initializeAutoUpdater(): void {
   });
 
   void checkForAppUpdates();
+}
+
+/** Answers renderers' update requests and sends every window each state change. Returns a function that stops sending. */
+export function registerAppUpdateIpc(mainIpc: IpcListener<MuswagMainIpc>, rendererIpc: IpcEmitter<MuswagRendererIpc>): () => void {
+  mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
+  mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());
+  mainIpc.handle("appUpdate:install", async () => {
+    installAppUpdate();
+  });
+  return subscribeToAppUpdateState((state) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      rendererIpc.send(window.webContents, "appUpdate:state", state);
+    }
+  });
 }

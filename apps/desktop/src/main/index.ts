@@ -1,80 +1,28 @@
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
-import { electronApp, is, optimizer } from "@electron-toolkit/utils";
+import { electronApp, optimizer } from "@electron-toolkit/utils";
 import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 import { getDefaultMpvIpcPath } from "./player";
-import { registerPlayerIpc } from "./player-ipc";
+import { registerPlayerIpc, type PlayerHandle } from "./player/ipc";
 import { startStateMirror } from "./state-mirror";
-import { startBackend } from "./backend";
-import { resolveInside } from "./backend/platform";
-import { checkForAppUpdates, getAppUpdateState, initializeAutoUpdater, installAppUpdate, subscribeToAppUpdateState } from "./app-updater";
+import { startApp } from "./app";
+import { initializeAutoUpdater, registerAppUpdateIpc } from "./app-updater";
+import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
+import { createWindow } from "./window";
 
 import { Effect } from "effect";
 
 let unsubscribeAppUpdateState: (() => void) | undefined;
-let player: ReturnType<typeof registerPlayerIpc> | undefined;
+let player: PlayerHandle | undefined;
 let stateMirror: Awaited<ReturnType<typeof startStateMirror>> | undefined;
-let backend: Awaited<ReturnType<typeof startBackend>> | undefined;
-const moduleDirectory = __dirname;
+let mainApp: Awaited<ReturnType<typeof startApp>> | undefined;
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "muswag-cover",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
-    },
-  },
-]);
+registerCoverScheme();
 
 const mainIpc = new IpcListener<MuswagMainIpc>();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
-
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 720,
-    minHeight: 600,
-    minWidth: 800,
-    show: false,
-    autoHideMenuBar: true,
-    ...(process.platform === "darwin"
-      ? {
-          titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 14, y: 14 },
-        }
-      : {}),
-    webPreferences: {
-      preload: join(moduleDirectory, "../preload/index.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      focusOnNavigation: process.env.NODE_ENV !== "development",
-    },
-  });
-
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-  });
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
-    return { action: "deny" };
-  });
-
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-    return;
-  }
-
-  mainWindow.loadFile(join(moduleDirectory, "../renderer/index.html"));
-}
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.muswag.desktop");
@@ -83,32 +31,8 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  protocol.handle("muswag-cover", (request) => {
-    const requestedPath = new URL(request.url).searchParams.get("path");
-    if (!requestedPath) {
-      return new Response("Missing path", { status: 400 });
-    }
-
-    let absolutePath: string;
-    try {
-      absolutePath = resolveInside(app.getPath("userData"), requestedPath);
-    } catch {
-      return new Response("Invalid path", { status: 400 });
-    }
-
-    return net.fetch(pathToFileURL(absolutePath).toString());
-  });
-
-  mainIpc.handle("appUpdate:getState", async () => getAppUpdateState());
-  mainIpc.handle("appUpdate:check", async () => checkForAppUpdates());
-  mainIpc.handle("appUpdate:install", async () => {
-    installAppUpdate();
-  });
-  unsubscribeAppUpdateState = subscribeToAppUpdateState((state) => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      rendererIpc.send(window.webContents, "appUpdate:state", state);
-    }
-  });
+  handleCoverProtocol(app.getPath("userData"));
+  unsubscribeAppUpdateState = registerAppUpdateIpc(mainIpc, rendererIpc);
 
   stateMirror = await startStateMirror(ipcMain);
   player = registerPlayerIpc(mainIpc, {
@@ -118,7 +42,7 @@ app.whenReady().then(async () => {
   });
   // The library is migrated and mirrored before any window can ask for it.
   try {
-    backend = await startBackend({
+    mainApp = await startApp({
       databasePath: process.env.NODE_ENV === "development" ? "./dev-library.db" : join(app.getPath("userData"), "library.db"),
       userDataPath: app.getPath("userData"),
       ipcMain,
@@ -155,7 +79,7 @@ app.on("before-quit", (event) => {
   shutdownStarted = true;
   void Effect.runPromise(
     Effect.tryPromise(async () => {
-      await backend?.dispose();
+      await mainApp?.dispose();
       await player?.shutdown();
       await stateMirror?.dispose();
     }).pipe(
