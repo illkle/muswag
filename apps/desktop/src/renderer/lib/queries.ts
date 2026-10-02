@@ -1,15 +1,16 @@
-import { AppClient } from "#/core/client";
 import type { PlaylistSyncStatus } from "@muswag/model";
-import { useSyncExternalStore } from "react";
+import { useLiveQuery } from "@tanstack/react-db";
+
+import { appState } from "./state-mirror";
+
+const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
 
 export const useUser = () => {
-  const snapshot = useSyncExternalStore(AppClient.subscribeAuth, AppClient.getAuthSnapshot);
+  const session = useLiveQuery((q) => q.from({ auth: appState.auth }).findOne()).data?.value;
   return {
-    data: snapshot._tag === "LoggedIn" ? { url: snapshot.url, username: snapshot.username } : undefined,
-    isLoading: snapshot._tag === "Initializing",
+    data: session?._tag === "LoggedIn" ? { url: session.url, username: session.username } : undefined,
+    isLoading: !session || session._tag === "Initializing",
   };
 };
 
-export const usePlaylistSyncStatus = (): PlaylistSyncStatus => {
-  return useSyncExternalStore(AppClient.subscribePlaylistSync, AppClient.getPlaylistSyncStatus);
-};
+export const usePlaylistSyncStatus = (): PlaylistSyncStatus => useLiveQuery((q) => q.from({ status: appState.playlistSync }).findOne()).data?.value ?? IDLE_PLAYLIST_SYNC;

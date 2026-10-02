@@ -1,5 +1,5 @@
-import { albums, artists, covers, playerQueue, playlists, songs, syncState, type AuthSnapshot, type SessionCredentials } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { albums, artists, covers, playlists, queueItems, queueState, songs, syncState, type AuthSnapshot, type SessionCredentials } from "@muswag/model";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Context, Crypto, Data, Effect, Layer, Scope, ScopedRef, Stream, SubscriptionRef } from "effect";
 import { HttpClient } from "effect/http";
 import { Path } from "effect/Path";
@@ -50,7 +50,7 @@ export interface SessionManagerOptions {
   readonly coverSaveLocation: string;
 }
 
-type SessionDependencies = Db | MirrorServer | PlaylistEdits | MiniFs | Path | HttpClient.HttpClient | Crypto.Crypto | CredentialsStore;
+type SessionDependencies = Db | SqliteMirror | PlaylistEdits | MiniFs | Path | HttpClient.HttpClient | Crypto.Crypto | CredentialsStore;
 type SessionState = { readonly _tag: "LoggedOut" } | { readonly _tag: "LoggedIn"; readonly session: AuthenticatedSession };
 
 const toApiConfig = (credentials: SessionCredentials): SubsonicApiConfig => ({
@@ -68,7 +68,7 @@ const loggedInSnapshot = (credentials: SessionCredentials): AuthSnapshot & { rea
 });
 
 /** Tables that hold the logged-in user's data. */
-const USER_TABLES = [albums, artists, songs, playlists, playerQueue, syncState, covers] as const;
+const USER_TABLES = [albums, artists, songs, playlists, queueItems, queueState, syncState, covers] as const;
 
 const makeSessionManager = (options: SessionManagerOptions) =>
   Effect.gen(function* () {
@@ -77,7 +77,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     const dependencies = Context.omit(Scope.Scope)(yield* Effect.context<SessionDependencies>());
     const credentialsStore = yield* CredentialsStore;
     const db = yield* Db;
-    const mirror = yield* MirrorServer;
+    const mirror = yield* SqliteMirror;
     const fs = yield* MiniFs;
     const path = yield* Path;
     const current = yield* ScopedRef.make<SessionState>(() => ({ _tag: "LoggedOut" }));

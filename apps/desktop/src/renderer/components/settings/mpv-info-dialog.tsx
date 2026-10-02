@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "#/components/ui/dialog";
-import { usePlayerError, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
+import { usePlayerError, usePlayerInstallOutput, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
 import { MpvIPC } from "#/player/connection";
 import type { MpvInstallOption, MpvSource, MpvState, PlayerStatus } from "#shared/player";
 import { getMpvInstallOptions, getMpvUnavailableReason } from "#shared/player";
@@ -88,16 +88,10 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
   const installState = usePlayerMpvInstallState();
   const playerError = usePlayerError();
   const playerStatus = usePlayerStatus();
-  const [installLog, setInstallLog] = useState<string[]>([]);
+  const installLog = usePlayerInstallOutput().slice(-100);
   const [busy, setBusy] = useState(false);
   const autoOpenedRef = useRef(false);
   const logEndRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    return MpvIPC.subscribeInstallOutput((output) => {
-      setInstallLog((lines) => [...lines, output.line].slice(-100));
-    });
-  }, []);
 
   // Playback is impossible without mpv, so surface setup as soon as the startup check fails.
   useEffect(() => {
@@ -118,7 +112,6 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
   const installOptions = getMpvInstallOptions(mpvState);
 
   const runInstall = (option: MpvInstallOption) => {
-    setInstallLog([]);
     setBusy(true);
     void MpvIPC.install(option.method)
       .catch(() => {})

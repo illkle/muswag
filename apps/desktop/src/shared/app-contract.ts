@@ -1,31 +1,12 @@
-import type { AuthSnapshot, LibrarySyncStatus, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/model";
-import type { MirrorPosition } from "@muswag/tanstack-db-sqlite-mirror/protocol";
+import type { AuthSnapshot, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/model";
+import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
-
-import { emptyQueueState, type QueueManagerState } from "./queue-state";
 
 /**
  * The contract between the renderer and main, which owns the library, the session and the queue.
- * The renderer reads library data from mirrored collections; everything else goes through commands
- * and the states below.
+ * The renderer reads library data and the queue from mirrored collections, and main's in-memory state
+ * from the state mirror (`state-mirror.ts`); it changes anything only through the commands below.
  */
-
-// ---- States main publishes ----
-
-export type AppStates = {
-  auth: AuthSnapshot;
-  librarySync: LibrarySyncStatus;
-  playlistSync: PlaylistSyncStatus;
-  queue: QueueManagerState;
-};
-export type AppStateName = keyof AppStates;
-
-export const initialAppStates = (): AppStates => ({
-  auth: { _tag: "Initializing" },
-  librarySync: { running: null, error: null, lastSyncedAt: null },
-  playlistSync: { state: "idle", error: null, lastSyncedAt: null },
-  queue: emptyQueueState(),
-});
 
 // ---- Commands ----
 

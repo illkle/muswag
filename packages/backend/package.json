@@ -38,7 +38,7 @@
   "dependencies": {
     "@effect/sql-sqlite-node": "catalog:",
     "@muswag/model": "workspace:*",
-    "@muswag/tanstack-db-sqlite-mirror": "workspace:*",
+    "@muswag/tanstack-db-mirror": "workspace:*",
     "@noble/hashes": "^2.4.0",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

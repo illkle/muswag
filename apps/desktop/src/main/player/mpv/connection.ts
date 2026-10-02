@@ -12,8 +12,25 @@ export class MpvConnection extends Context.Service<MpvConnection, { readonly ope
   "@muswag/player/MpvConnection",
 ) {}
 const failure = (reason: EngineError["reason"]) => new EngineError({ reason, operation: "connection", uncertain: true });
-/** Headless, config-free audio playback controlled only through the IPC socket. */
-const MPV_ARGS = ["--no-config", "--idle=yes", "--no-video", "--audio-display=no", "--force-window=no", "--terminal=no", "--gapless-audio=weak", "--prefetch-playlist=yes"];
+/**
+ * Headless, config-free audio playback controlled only through the IPC socket.
+ *
+ * `fastseek`: without it, ffmpeg seeks in an mp3 that has no seek table by reading every byte up to the
+ * target, which over a slow stream means minutes of silent downloading before a seek deep into a long
+ * mix lands. With it, ffmpeg jumps to the position the bitrate implies: exact for constant-bitrate files,
+ * a few seconds off at worst for variable-bitrate ones.
+ */
+const MPV_ARGS = [
+  "--no-config",
+  "--idle=yes",
+  "--no-video",
+  "--audio-display=no",
+  "--force-window=no",
+  "--terminal=no",
+  "--gapless-audio=weak",
+  "--prefetch-playlist=yes",
+  "--demuxer-lavf-o-add=fflags=+fastseek",
+];
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 
 export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>

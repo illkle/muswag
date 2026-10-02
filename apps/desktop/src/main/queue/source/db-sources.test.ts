@@ -1,7 +1,7 @@
 import { Db, LibraryQueries, PlaylistCommands, PlaylistEdits, write } from "@muswag/backend";
 import { apiSong, seed, TestDatabase } from "@muswag/backend/testing";
 import { albumOccurrenceKey, songs } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Layer, ManagedRuntime } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,7 +19,7 @@ afterEach(async () => {
 async function setup() {
   runtime = ManagedRuntime.make(layer());
   const run = runtime.runPromise;
-  const mirror = await run(MirrorServer);
+  const mirror = await run(SqliteMirror);
   const db: SourceDb = {
     playlist: (id) => run(LibraryQueries.playlist(id)),
     songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)),

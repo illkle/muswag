@@ -1,8 +1,8 @@
-import { playerQueue, playlists, songs, type QueueManagerSnapshot } from "@muswag/model";
+import { playlists, queueItems, queueState, songs, type QueueItemRow, type QueueStateRow } from "@muswag/model";
 import { asc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 
-import { Db } from "../db/database.js";
+import { Db, position, write } from "../db/database.js";
 import { chunks, STATEMENT_IDS } from "../db/upsert.js";
 
 /** Reads main itself needs, such as the playback queue's sources. */
@@ -22,11 +22,34 @@ export const LibraryQueries = {
   /** The album's songs in playback order. */
   albumSongs: (albumId: string) => Db.use((db) => db.select().from(songs).where(eq(songs.albumId, albumId)).orderBy(asc(songs.discNumber), asc(songs.track), asc(songs.id))),
 
-  /** The persisted queue, unvalidated. */
-  loadQueue: Db.use((db) => db.select().from(playerQueue).where(eq(playerQueue.id, 1))).pipe(Effect.map((rows): unknown => rows[0]?.snapshot)),
+  /** The playback queue as stored: its single state row, if any, and its occurrences. */
+  loadQueue: Db.use((db) =>
+    Effect.all({
+      state: db
+        .select()
+        .from(queueState)
+        .where(eq(queueState.id, 1))
+        .pipe(Effect.map((rows) => rows[0] ?? null)),
+      items: db.select().from(queueItems),
+    }),
+  ),
 
-  saveQueue: (snapshot: QueueManagerSnapshot) =>
-    Db.use((db) => db.insert(playerQueue).values({ id: 1, snapshot }).onConflictDoUpdate({ target: playerQueue.id, set: { snapshot } })).pipe(Effect.asVoid),
+  /** Applies a change to the stored queue in one write, and returns the position renderers can await. */
+  writeQueue: (change: { readonly upsert: ReadonlyArray<QueueItemRow>; readonly remove: ReadonlyArray<string>; readonly state: QueueStateRow | null }) =>
+    write(
+      Db.use((db) =>
+        Effect.gen(function* () {
+          for (const chunk of chunks(change.remove, STATEMENT_IDS)) yield* db.delete(queueItems).where(inArray(queueItems.key, [...chunk]));
+          for (const row of change.upsert) {
+            yield* db
+              .insert(queueItems)
+              .values(row)
+              .onConflictDoUpdate({ target: queueItems.key, set: { list: row.list, position: row.position, track: row.track } });
+          }
+          if (change.state) yield* db.insert(queueState).values(change.state).onConflictDoUpdate({ target: queueState.id, set: change.state });
+        }),
+      ).pipe(Effect.andThen(position)),
+    ),
 
-  clearQueue: Db.use((db) => db.delete(playerQueue)).pipe(Effect.asVoid),
+  clearQueue: write(Db.use((db) => Effect.all([db.delete(queueItems), db.delete(queueState)], { discard: true }))),
 };

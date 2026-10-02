@@ -1,4 +1,4 @@
-import type { NowPlaying, PlaybackItem, QueueManagerSnapshot, QueueSourceRef, QueueStorage, Song, SourceCursor } from "@muswag/model";
+import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor } from "@muswag/model";
 import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
@@ -6,6 +6,7 @@ import type { MpvQueueSnapshot, PlayerRuntimeState, QueuePlayerPort } from "#sha
 import type { QueueSourceFactory } from "#shared/queue-source";
 import { nextTarget, previousTarget, type QueueManagerState } from "#shared/queue-state";
 import { SerialQueue } from "#shared/serial-queue";
+import type { QueueStorage } from "./db-queue-storage";
 import { VirtualSourceWindow } from "./source/virtual-source-window";
 
 const TELEMETRY_SAVE_DELAY_MS = 5_000;
@@ -65,16 +66,16 @@ export class QueueManager {
         source: active ? publicSource(active) : null,
       };
       const nowPlaying = restoredState.nowPlaying;
-      try {
-        await this.player.applyQueue({
-          snapshot: composeMpvQueue(restoredState),
+      // Without an occurrence playing there is nothing to load; the queue reaches mpv with the next selection.
+      if (nowPlaying) {
+        try {
           // Always restore paused: launching the app should never start audio by itself.
-          ...(nowPlaying ? { select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } } : {}),
-        });
-      } catch (cause) {
-        active?.window.dispose();
-        console.error("[queue] failed to restore mpv mirror", cause);
-        return false;
+          await this.player.applyQueue({ snapshot: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } });
+        } catch (cause) {
+          // The queue is the user's even when mpv cannot load it (mpv missing, say): keep it, so what main
+          // holds matches what is stored and shown, and let the next selection load it.
+          console.error("[queue] failed to restore mpv mirror", cause);
+        }
       }
 
       this.activeSource?.window.dispose();
@@ -271,8 +272,11 @@ export class QueueManager {
     this.saveLogicalState();
   }
 
+  /** Makes `state` current and stores it, which is how renderers see it. */
   private publish(state: QueueManagerState): void {
     this.store.setState(() => structuredClone(state));
+    const published = this.store.state;
+    void this.persist(() => this.storage.save(published, null));
   }
 
   private scheduleTelemetrySave(): void {
@@ -300,18 +304,11 @@ export class QueueManager {
     return this.persist(() => this.storage.clear());
   }
 
+  /** Stores where playback would resume after a restart. */
   private saveLogicalState(runtime = this.runtime): void {
     const state = this.store.state;
     const matchingRuntime = state.nowPlaying?.key === runtime?.current?.key ? runtime : null;
-    const snapshot: QueueManagerSnapshot = {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      nowPlaying: state.nowPlaying ? cloneNowPlaying(state.nowPlaying) : null,
-      userQueue: state.userQueue.map(clonePlaybackItem),
-      source: state.source ? { ref: { ...state.source.ref }, cursor: { ...state.source.window.cursor } } : null,
-      playback: { positionSeconds: matchingRuntime?.positionSeconds ?? 0 },
-    };
-    void this.persist(() => this.storage.save(snapshot));
+    void this.persist(() => this.storage.save(state, matchingRuntime?.positionSeconds ?? 0));
   }
 }
 

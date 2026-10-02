@@ -216,9 +216,9 @@ importers:
       '@muswag/model':
         specifier: workspace:*
         version: link:../../packages/model
-      '@muswag/tanstack-db-sqlite-mirror':
+      '@muswag/tanstack-db-mirror':
         specifier: workspace:*
-        version: link:../../packages/tanstack-db-sqlite-mirror
+        version: link:../../packages/tanstack-db-mirror
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -363,9 +363,9 @@ importers:
       '@muswag/model':
         specifier: workspace:*
         version: link:../model
-      '@muswag/tanstack-db-sqlite-mirror':
+      '@muswag/tanstack-db-mirror':
         specifier: workspace:*
-        version: link:../tanstack-db-sqlite-mirror
+        version: link:../tanstack-db-mirror
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
@@ -411,7 +411,7 @@ importers:
         specifier: 'catalog:'
         version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@5.0.2)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))
 
-  packages/tanstack-db-sqlite-mirror:
+  packages/tanstack-db-mirror:
     dependencies:
       '@tanstack/db':
         specifier: 'catalog:'

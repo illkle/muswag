@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
     mpvState: { status: "checking" } as MpvState,
   },
   recheck: vi.fn(),
-  subscribeInstallOutput: vi.fn((_listener: (output: { line: string; stream: "stdout" | "stderr" }) => void) => () => undefined),
+  installOutput: [] as string[],
 }));
 
 vi.mock("#/player/connection", () => ({
@@ -28,12 +28,12 @@ vi.mock("#/player/connection", () => ({
     install: mocks.install,
     locate: mocks.locate,
     recheck: mocks.recheck,
-    subscribeInstallOutput: mocks.subscribeInstallOutput,
   },
 }));
 
 vi.mock("#/components/player-provider", () => ({
   usePlayerError: () => mocks.playerState.error,
+  usePlayerInstallOutput: () => mocks.installOutput,
   usePlayerMpvInstallState: () => mocks.playerState.installState,
   usePlayerMpvState: () => mocks.playerState.mpvState,
   usePlayerStatus: () => "idle",
@@ -75,7 +75,7 @@ describe("MpvInfoDialog", () => {
     mocks.install.mockReset().mockResolvedValue(readyState);
     mocks.locate.mockReset().mockResolvedValue(readyState);
     mocks.recheck.mockReset().mockResolvedValue(readyState);
-    mocks.subscribeInstallOutput.mockClear();
+    mocks.installOutput = [];
     mocks.playerState.error = null;
     mocks.playerState.installState = { status: "idle" };
     mocks.playerState.mpvState = { status: "checking" };
@@ -141,15 +141,14 @@ describe("MpvInfoDialog", () => {
     expect(mocks.install).not.toHaveBeenCalled();
   });
 
-  it("streams install output and can cancel a running install", async () => {
+  it("shows install output and can cancel a running install", async () => {
     mocks.playerState.mpvState = missingState;
     mocks.playerState.installState = { method: "brew", status: "running" };
 
+    mocks.installOutput = ["==> Fetching mpv"];
+
     render(<MpvInfoDialogHarness />);
     await screen.findByText("Unavailable");
-
-    const emit = mocks.subscribeInstallOutput.mock.calls[0]?.[0];
-    emit?.({ line: "==> Fetching mpv", stream: "stdout" });
 
     expect(await screen.findByText(/==> Fetching mpv/)).toBeTruthy();
 

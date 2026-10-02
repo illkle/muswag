@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { songRow, type PlaybackItem, type QueueManagerSnapshot, type QueueStorage, type Song } from "@muswag/model";
+import { songRow, type PlaybackItem, type QueueManagerSnapshot, type Song } from "@muswag/model";
 import type { ApplyMpvQueueInput, PlayerRuntimeState, QueuePlayerPort } from "#shared/player";
 import { createDefaultPlayerRuntimeState } from "#shared/player";
 import type { QueueSource, QueueSourceFactory, SourceItem } from "#shared/queue-source";
+import type { QueueManagerState } from "#shared/queue-state";
+import type { QueueStorage } from "./db-queue-storage";
 import { QueueManager } from "./queue-manager";
 
 const song = (id: string): Song => songRow({ id, title: id });
@@ -53,15 +55,18 @@ class FakeSource implements QueueSource {
 }
 
 class MemoryStorage implements QueueStorage {
+  /** What `load` returns. */
   snapshot: QueueManagerSnapshot | null = null;
+  saved: { state: QueueManagerState; resumePositionSeconds: number } | null = null;
   async load() {
     return this.snapshot;
   }
-  async save(snapshot: QueueManagerSnapshot) {
-    this.snapshot = structuredClone(snapshot);
+  async save(state: QueueManagerState, resumePositionSeconds: number | null) {
+    this.saved = structuredClone({ state, resumePositionSeconds: resumePositionSeconds ?? this.saved?.resumePositionSeconds ?? 0 });
   }
   async clear() {
     this.snapshot = null;
+    this.saved = null;
   }
 }
 
@@ -79,8 +84,6 @@ describe("QueueManager", () => {
     const player = new FakePlayer();
     const storage = new MemoryStorage();
     storage.snapshot = {
-      version: 1,
-      savedAt: "2026-08-13T00:00:00.000Z",
       nowPlaying: { key: "a", origin: "source", track: song("embedded-deleted-library-row") },
       userQueue: [{ key: "user:saved", track: song("queued") }],
       source: { ref: { type: "album", albumId: "album" }, cursor: { type: "item", key: "a", offset: 0 } },
@@ -93,6 +96,24 @@ describe("QueueManager", () => {
     expect(player.applies.at(-1)?.select).toEqual({ key: "a", play: false, positionSeconds: 42 });
     expect(player.applies.at(-1)?.snapshot.items.map(({ key }) => key)).toEqual(["a", "user:saved", "c"]);
     manager.dispose();
+  });
+
+  it("restores a queue with nothing playing without loading it, and keeps a queue mpv cannot load", async () => {
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    storage.snapshot = { nowPlaying: null, userQueue: [{ key: "user:saved", track: song("queued") }], source: null, playback: { positionSeconds: 0 } };
+    const idle = new QueueManager({ player, sources: factory, storage });
+    await expect(idle.restore()).resolves.toBe(true);
+    expect(player.applies).toEqual([]);
+    expect(idle.store.state.userQueue.map(({ key }) => key)).toEqual(["user:saved"]);
+    idle.dispose();
+
+    storage.snapshot = { ...storage.snapshot, nowPlaying: { key: "user:now", origin: "user", track: song("now") } };
+    player.applyError = new Error("mpv is missing");
+    const broken = new QueueManager({ player, sources: factory, storage });
+    await expect(broken.restore()).resolves.toBe(true);
+    expect(broken.store.state).toMatchObject({ nowPlaying: { key: "user:now" }, userQueue: [{ key: "user:saved" }] });
+    broken.dispose();
   });
 
   it("commits only correlated starts and keeps manual items out of source history", async () => {
@@ -152,6 +173,22 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("stores every published state, and the resume position only when playback is saved", async () => {
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    const manager = new QueueManager({ player, sources: factory, storage });
+    await manager.playSource({ type: "album", albumId: "album" }, "a");
+    player.start({ key: "a", track: song("a") }, 1, 7);
+    await flush();
+    expect(storage.saved).toMatchObject({ state: { nowPlaying: { key: "a" } }, resumePositionSeconds: 7 });
+
+    await manager.enqueue([song("queued")]);
+    await flush();
+    expect(storage.saved?.state.userQueue.map(({ track }) => track.id)).toEqual(["queued"]);
+    expect(storage.saved?.resumePositionSeconds).toBe(7);
+    manager.dispose();
+  });
+
   it("does not publish or persist queue edits that mpv rejects", async () => {
     const player = new FakePlayer();
     const storage = new MemoryStorage();
@@ -168,7 +205,7 @@ describe("QueueManager", () => {
     await expect(manager.clearQueued()).rejects.toThrow("mpv rejected queue");
 
     expect(manager.store.state.userQueue).toEqual(before);
-    expect(storage.snapshot?.userQueue).toEqual(before);
+    expect(storage.saved?.state.userQueue).toEqual(before);
     manager.dispose();
   });
 
@@ -183,10 +220,10 @@ describe("QueueManager", () => {
     });
     class DelayedStorage extends MemoryStorage {
       clearCalls = 0;
-      override async save(snapshot: QueueManagerSnapshot): Promise<void> {
+      override async save(state: QueueManagerState, resumePositionSeconds: number | null): Promise<void> {
         markSaveStarted();
         await saveGate;
-        await super.save(snapshot);
+        await super.save(state, resumePositionSeconds);
       }
       override async clear(): Promise<void> {
         this.clearCalls += 1;
@@ -205,7 +242,7 @@ describe("QueueManager", () => {
     await clearing;
 
     expect(storage.clearCalls).toBe(1);
-    expect(storage.snapshot).toBeNull();
+    expect(storage.saved).toBeNull();
     manager.dispose();
   });
 
@@ -226,7 +263,7 @@ describe("QueueManager", () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(save).toHaveBeenCalledTimes(savesAfterClear);
-    expect(storage.snapshot).toBeNull();
+    expect(storage.saved).toBeNull();
     manager.dispose();
   });
 });

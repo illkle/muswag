@@ -1,6 +1,18 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
-import { initialSnapshot, type CommandAck, type Media, type PlayerCommand, type PlayerCredentials, type PlayerIssue, type PlayerSnapshot, type Selection } from "#shared/player-contract";
+import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
+import {
+  initialSnapshot,
+  type CommandAck,
+  type Media,
+  type Playback,
+  type PlayerCommand,
+  type PlayerCredentials,
+  type PlayerIssue,
+  type PlayerSnapshot,
+  type Selection,
+} from "#shared/player-contract";
+import { installOutputRows, player as playerTable, playerInstallOutput, playerIssueRows, playerIssues, playerPosition, playerPositionRow, playerRow } from "#shared/player-state";
 import { Binaries } from "./binary/binaries";
 import { Installer, type InstallProgress } from "./binary/installer";
 import {
@@ -30,7 +42,12 @@ const MAILBOX_CAPACITY = 512;
 const MAX_PENDING_COMMANDS = 32;
 /** Stop and logout may exceed the command limit, so the user can always get out of a stuck state. */
 const PREEMPTING_RESERVE = 2;
-const LOAD_TIMEOUT = "20 seconds";
+/**
+ * A backstop for loads that never finish. mpv itself gives up on a connection that stops sending data, so
+ * this must outlast slow but progressing loads: a large tag at the start of a long file (embedded cover
+ * art, say) can take a minute to download from a slow server before the first audio frame.
+ */
+const LOAD_TIMEOUT = "2 minutes";
 const QUEUE_TIMEOUT = "15 seconds";
 const POSITION_INTERVAL = "500 millis";
 
@@ -68,6 +85,9 @@ interface Engine {
   correlation: Correlation | null;
   /** Property observations up to this sequence predate a value we set and read back, so they are stale. */
   propertyFence: number;
+  /** mpv is restarting playback after a seek or load, or paused itself to refill its cache: unpaused, it is silent. */
+  seeking: boolean;
+  pausedForCache: boolean;
 }
 
 /**
@@ -81,6 +101,7 @@ export const PlayerLive = Layer.effect(
     const binaries = yield* Binaries;
     const installer = yield* Installer;
     const store = yield* SettingsStore;
+    const stateMirror = yield* MemoryMirror;
     const owner = yield* Effect.scope;
 
     const mailbox = yield* Queue.bounded<Message>(MAILBOX_CAPACITY);
@@ -120,10 +141,32 @@ export const PlayerLive = Layer.effect(
 
     // ---- State publication ----
 
+    /** The snapshot renderers last saw, through the state mirror. */
+    let mirrored: PlayerSnapshot | null = null;
+    /** Writes the rows of `next` that changed. Lists are rewritten only when they are new lists. */
+    const mirror = (next: PlayerSnapshot) =>
+      Effect.suspend(() => {
+        const previous = mirrored;
+        mirrored = next;
+        return stateMirror.write(
+          Effect.gen(function* () {
+            yield* stateMirror.upsert(playerTable, playerRow(next));
+            yield* stateMirror.upsert(playerPosition, playerPositionRow(next));
+            if (previous?.issues !== next.issues) yield* stateMirror.replace(playerIssues, playerIssueRows(next));
+            if (previous?.installOutput !== next.installOutput) yield* stateMirror.replace(playerInstallOutput, installOutputRows(next));
+          }),
+        );
+      }).pipe(
+        // Renderers would miss this state, but playback itself must not stop over it.
+        Effect.catchCause((cause) => Effect.logError("Mirroring the player state failed", cause)),
+      );
+    yield* mirror(initial);
+
     const publish = (next: PlayerSnapshot) =>
       Effect.suspend(() => {
         state = { ...next, stamp: { ...state.stamp, revision: state.stamp.revision + 1 } };
-        return SubscriptionRef.set(published, state);
+        // Mirrored first, so whoever reacts to the change finds renderers' view up to date.
+        return mirror(state).pipe(Effect.andThen(SubscriptionRef.set(published, state)));
       });
     const addIssue = (problem: PlayerIssue) =>
       publish({ ...state, issues: withIssue(state.issues, problem, (existing) => existing.operation === problem.operation && existing.occurrenceKey === problem.occurrenceKey) });
@@ -143,6 +186,9 @@ export const PlayerLive = Layer.effect(
         settings = { ...settings, ...patch };
         return settingsWriter.schedule(settings);
       });
+    const isBuffering = () => engine !== null && (engine.seeking || engine.pausedForCache);
+    /** The playback state of a loaded track; playing reports whether mpv is actually producing audio. */
+    const settled = (paused: boolean, media: Media): Playback => (paused ? { _tag: "Paused", media } : { _tag: "Playing", media, buffering: isBuffering() });
     const commitAudio = Effect.fn("Player.commitAudio")(function* (patch: Partial<Pick<Settings, "volumePercent" | "muted">>) {
       yield* updateSettings(patch);
       yield* publish({ ...state, audio: { volumePercent: settings.volumePercent, muted: settings.muted, applied: engine !== null } });
@@ -212,7 +258,7 @@ export const PlayerLive = Layer.effect(
         ),
         Effect.forkIn(scope),
       );
-      const opened: Engine = { session, scope, correlation: null, propertyFence: 0 };
+      const opened: Engine = { session, scope, correlation: null, propertyFence: 0, seeking: false, pausedForCache: false };
       engine = opened;
       yield* session.execute(command("set_property", "volume", settings.volumePercent));
       yield* session.execute(command("set_property", "mute", settings.muted));
@@ -271,7 +317,7 @@ export const PlayerLive = Layer.effect(
       const confirmed = yield* writeAndConfirm(engine, command("set_property", "pause", paused), booleanProperty("pause"));
       if (target) target = { ...target, play: !confirmed };
       if (state.playback._tag === "Loading") yield* publish({ ...state, playback: { ...state.playback, targetPaused: confirmed } });
-      else yield* publish({ ...state, playback: { _tag: confirmed ? "Paused" : "Playing", media } });
+      else yield* publish({ ...state, playback: settled(confirmed, media) });
     });
     /** Play and Toggle start an ended or failed track over; otherwise they only change pause. */
     const playOrPause = Effect.fn("Player.playOrPause")(function* (paused: boolean) {
@@ -395,7 +441,7 @@ export const PlayerLive = Layer.effect(
       const paused = yield* writeAndConfirm(active, command("set_property", "pause", targetPaused), booleanProperty("pause"));
       yield* clearLoadDeadline;
       if (target) target = { ...target, positionSeconds: 0 };
-      yield* publish({ ...state, playback: { _tag: paused ? "Paused" : "Playing", media }, issues: state.issues.filter((issue) => issue.occurrenceKey !== media.item.key) });
+      yield* publish({ ...state, playback: settled(paused, media), issues: state.issues.filter((issue) => issue.occurrenceKey !== media.item.key) });
     });
     const onEndFile = Effect.fn("Player.onEndFile")(function* (correlation: Correlation, entryId: number, reason: string) {
       const media = currentMedia(state);
@@ -418,7 +464,7 @@ export const PlayerLive = Layer.effect(
         const media = currentMedia(state);
         if (!media) return Effect.void;
         if (name === "duration" && isFiniteNonNegative(data)) return publish(withDuration(state, data));
-        if (name === "pause" && fresh && typeof data === "boolean" && isSettled(state.playback)) return publish({ ...state, playback: { _tag: data ? "Paused" : "Playing", media } });
+        if (name === "pause" && fresh && typeof data === "boolean" && isSettled(state.playback)) return publish({ ...state, playback: settled(data, media) });
         return Effect.void;
       });
     const handleEvent = Effect.fn("Player.handleEvent")(function* (message: SessionEvent) {
@@ -433,6 +479,13 @@ export const PlayerLive = Layer.effect(
         if (!fresh) return;
         if (event.name === "volume" && isFiniteNonNegative(event.data) && event.data <= 100) yield* commitAudio({ volumePercent: event.data });
         else if (event.name === "mute" && typeof event.data === "boolean") yield* commitAudio({ muted: event.data });
+        return;
+      }
+      // So does whether it is stalled. Nothing writes these, so no observation is stale; unavailable means not stalled.
+      if (event.type === "property" && (event.name === "seeking" || event.name === "paused-for-cache")) {
+        if (event.name === "seeking") active.seeking = event.data === true;
+        else active.pausedForCache = event.data === true;
+        if (state.playback._tag === "Playing" && state.playback.buffering !== isBuffering()) yield* publish({ ...state, playback: settled(false, state.playback.media) });
         return;
       }
       if (!isCurrentEvent(message, active.session.generation, correlation.currentId)) return;

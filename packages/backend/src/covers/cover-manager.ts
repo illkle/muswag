@@ -8,7 +8,7 @@ import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 
 import SubsonicAPI from "../api/subsonic-api.js";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 
 import { Db } from "../db/database.js";
 
@@ -57,7 +57,7 @@ const make = (coverSaveLocation: string) =>
     const fs = yield* MiniFs;
     const path = yield* Path;
     const api = yield* SubsonicAPI;
-    const mirror = yield* MirrorServer;
+    const mirror = yield* SqliteMirror;
     const scope = yield* Effect.scope;
     const inFlight = new Map<string, Deferred.Deferred<string | null, CoverManagerError>>();
 

@@ -3,7 +3,8 @@ import type { PlaybackItem } from "@muswag/model";
 
 /**
  * The wire contract between the main-process player and the renderer. Every type is derived from its schema,
- * so main decodes commands and the renderer decodes snapshots against the same definitions.
+ * so main decodes commands and the renderer decodes results against the same definitions. Renderers
+ * see the player's state through the tables in `player-state.ts`.
  */
 
 const Key = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
@@ -110,7 +111,8 @@ export type Media = typeof Media.Type;
 export const Playback = Schema.Union([
   Schema.TaggedStruct("Idle", {}),
   Schema.TaggedStruct("Loading", { media: Media, targetPaused: Schema.Boolean }),
-  Schema.TaggedStruct("Playing", { media: Media }),
+  /** `buffering`: mpv should be playing but is waiting for data, e.g. after seeking far into a stream. */
+  Schema.TaggedStruct("Playing", { media: Media, buffering: Schema.Boolean }),
   Schema.TaggedStruct("Paused", { media: Media }),
   Schema.TaggedStruct("Ended", { media: Media }),
   Schema.TaggedStruct("Recovering", { media: Media, attempt: Schema.Literal(1) }),
@@ -156,9 +158,11 @@ export type PlayerSnapshot = typeof PlayerSnapshot.Type;
 
 export const CommandAck = Schema.Struct({ commandId: Schema.String, stamp: Stamp, jobId: Schema.NullOr(Schema.String) });
 export type CommandAck = typeof CommandAck.Type;
+/** Where the state mirror stood once the command was handled; renderers await it to see its outcome. */
+const MirrorPosition = Schema.Struct({ epoch: Schema.Finite, seq: Count });
 export const CommandResult = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), ack: CommandAck, snapshot: PlayerSnapshot }),
-  Schema.Struct({ ok: Schema.Literal(false), commandId: Schema.String, issue: PlayerIssue, snapshot: PlayerSnapshot }),
+  Schema.Struct({ ok: Schema.Literal(true), ack: CommandAck, position: MirrorPosition }),
+  Schema.Struct({ ok: Schema.Literal(false), commandId: Schema.String, issue: PlayerIssue, position: MirrorPosition }),
 ]);
 export type CommandResult = typeof CommandResult.Type;
 

@@ -15,6 +15,7 @@ import {
   usePlayerIssue,
   usePlayerError,
   usePlayerCanSeek,
+  usePlayerBuffering,
   usePlayerCurrentTrackId,
   usePlayerCurrentTrack,
   usePlayerDuration,
@@ -33,6 +34,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canGoForward = usePlayerCanGoForward();
   const canPlay = usePlayerCanPlay();
   const status = usePlayerStatus();
+  const buffering = usePlayerBuffering();
 
   const togglePlay = () => {
     if (!canPlay) return;
@@ -61,7 +63,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
       </Button>
 
       <Button size="icon" className="h-7 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
-        {status === "playing" ? <PauseIcon className="size-3" /> : status === "loading" ? <SpinnerGapIcon className="size-3 animate-spin" /> : <PlayIcon className="size-3" />}
+        {status === "loading" || buffering ? <SpinnerGapIcon className="size-3 animate-spin" /> : status === "playing" ? <PauseIcon className="size-3" /> : <PlayIcon className="size-3" />}
       </Button>
 
       <Button

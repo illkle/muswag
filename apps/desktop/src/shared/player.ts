@@ -34,6 +34,8 @@ export type PlayerRuntimeState = {
   positionSeconds: number;
   durationSeconds: number | null;
   paused: boolean;
+  /** Playing, but mpv is waiting for data, so the position is not advancing. */
+  buffering: boolean;
   error: string | null;
   volumePercent: number;
   muted: boolean;
@@ -55,6 +57,7 @@ export function createDefaultPlayerRuntimeState(): PlayerRuntimeState {
     positionSeconds: 0,
     durationSeconds: null,
     paused: false,
+    buffering: false,
     error: null,
     volumePercent: 100,
     muted: false,
