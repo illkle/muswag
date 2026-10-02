@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import type { PlaybackItem } from "@muswag/model";
+import { Id as Key, type PlaybackItem } from "@muswag/model";
 
 /**
  * The wire contract between the main-process player and the renderer. Every type is derived from its schema,
@@ -7,7 +7,6 @@ import type { PlaybackItem } from "@muswag/model";
  * see the player's state through the tables in `player-state.ts`.
  */
 
-const Key = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 const Seconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Percent = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
@@ -158,7 +157,10 @@ export type PlayerSnapshot = typeof PlayerSnapshot.Type;
 
 export const CommandAck = Schema.Struct({ commandId: Schema.String, stamp: Stamp, jobId: Schema.NullOr(Schema.String) });
 export type CommandAck = typeof CommandAck.Type;
-/** Where the state mirror stood once the command was handled; renderers await it to see its outcome. */
+/**
+ * Where the state mirror stood once the command was handled; renderers await it to see its outcome.
+ * The mirror's protocol does not depend on Effect, so its position is declared again as a schema here.
+ */
 const MirrorPosition = Schema.Struct({ epoch: Schema.Finite, seq: Count });
 export const CommandResult = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), ack: CommandAck, position: MirrorPosition }),

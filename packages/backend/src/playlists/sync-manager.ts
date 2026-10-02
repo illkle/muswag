@@ -1,4 +1,4 @@
-import { playlists, type PlaylistRecord, type PlaylistState, type PlaylistSyncStatus, type PlaylistWithSongs, type RemotePlaylist, type RemotePlaylistMutation } from "@muswag/model";
+import { IDLE_PLAYLIST_SYNC, playlists, type PlaylistRecord, type PlaylistState, type PlaylistSyncStatus, type PlaylistWithSongs, type RemotePlaylist, type RemotePlaylistMutation } from "@muswag/model";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Queue, Stream } from "effect";
 
@@ -254,7 +254,7 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
     const requests = yield* Queue.unbounded<SyncRequest>();
     const waiters = new Set<Deferred.Deferred<PlaylistSyncStatus>>();
     const listeners = new Set<(status: PlaylistSyncStatus) => void>();
-    let status: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
+    let status: PlaylistSyncStatus = IDLE_PLAYLIST_SYNC;
     let scheduled: Fiber.Fiber<void> | undefined;
     let currentPass: Fiber.Fiber<boolean, unknown> | undefined;
     let currentRequest: SyncRequest | undefined;

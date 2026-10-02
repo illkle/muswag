@@ -1,3 +1,6 @@
+import { Schema } from "effect";
+
+import { Id } from "./contract.js";
 import type { Song } from "./db/schema.js";
 
 /** A single playback occurrence. Keys, unlike song ids, are unique in a queue. */
@@ -12,7 +15,8 @@ export type NowPlaying = PlaybackItem & {
 
 export type SourceCursor = { type: "item"; key: string; offset: number } | { type: "gap"; offset: number };
 
-export type QueueSourceRef = { type: "playlist"; playlistId: string } | { type: "album"; albumId: string };
+export const QueueSourceRef = Schema.Union([Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }), Schema.Struct({ type: Schema.Literal("album"), albumId: Id })]);
+export type QueueSourceRef = typeof QueueSourceRef.Type;
 
 export function playlistOccurrenceKey(playlistId: string, entryId: string): string {
   return `playlist:${playlistId}:${entryId}`;

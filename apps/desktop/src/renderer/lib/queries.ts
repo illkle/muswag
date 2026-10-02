@@ -1,9 +1,7 @@
-import type { PlaylistSyncStatus } from "@muswag/model";
+import { IDLE_PLAYLIST_SYNC, type PlaylistSyncStatus } from "@muswag/model";
 import { useLiveQuery } from "@tanstack/react-db";
 
 import { appState } from "./state-mirror";
-
-const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
 
 export const useUser = () => {
   const session = useLiveQuery((q) => q.from({ auth: appState.auth }).findOne()).data?.value;

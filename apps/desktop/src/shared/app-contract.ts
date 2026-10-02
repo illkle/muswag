@@ -1,4 +1,4 @@
-import type { AuthSnapshot, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/model";
+import { CoverTarget, CreatePlaylistInput, Id, Ids, QueueSourceRef, RefreshStatTarget, SessionCredentials, SyncMode, Text, type AuthSnapshot, type PlaylistEntry, type PlaylistRecord, type PlaylistSyncStatus } from "@muswag/model";
 import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
 
@@ -10,22 +10,16 @@ import { Schema } from "effect";
 
 // ---- Commands ----
 
-const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
-const Text = Schema.String.check(Schema.isMaxLength(65_536));
-const Ids = Schema.Array(Id).check(Schema.isMaxLength(100_000));
-const CoverTarget = Schema.Struct({ type: Schema.Literals(["album", "artist"]), id: Id, coverArtId: Schema.NullOr(Id) });
-const QueueSourceRef = Schema.Union([Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }), Schema.Struct({ type: Schema.Literal("album"), albumId: Id })]);
-
 /** Argument schemas; main decodes every command against them before running it. */
 export const AppCommandArgs = {
-  "session:login": Schema.Tuple([Schema.Struct({ url: Text, username: Text, password: Text })]),
+  "session:login": Schema.Tuple([SessionCredentials]),
   "session:logout": Schema.Tuple([]),
-  "library:sync": Schema.Tuple([Schema.Literals(["full", "quick"])]),
+  "library:sync": Schema.Tuple([SyncMode]),
   "library:cancelSync": Schema.Tuple([]),
-  "library:refreshStats": Schema.Tuple([Schema.Struct({ type: Schema.Literals(["album", "playlist"]), id: Id })]),
+  "library:refreshStats": Schema.Tuple([RefreshStatTarget]),
   "covers:ensure": Schema.Tuple([CoverTarget]),
   "covers:repair": Schema.Tuple([CoverTarget, Text]),
-  "playlists:create": Schema.Tuple([Schema.Struct({ name: Text, comment: Schema.optional(Text), public: Schema.optional(Schema.Boolean), songIds: Schema.optional(Ids) })]),
+  "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
   "playlists:setVisibility": Schema.Tuple([Id, Schema.Boolean]),

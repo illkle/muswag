@@ -1,5 +1,5 @@
 import { BackendLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/backend";
-import type { AuthSnapshot, LibrarySyncStatus, PlaylistSyncStatus, Song } from "@muswag/model";
+import { IDLE_LIBRARY_SYNC, IDLE_PLAYLIST_SYNC, type AuthSnapshot, type PlaylistSyncStatus, type Song } from "@muswag/model";
 import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
 import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
@@ -41,9 +41,6 @@ const playerCommand = (player: PlayerHandle, command: PlayerCommand) =>
   player.execute(command).then((result) => {
     if (!result.ok) throw new Error(result.issue.message);
   });
-
-const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, error: null, lastSyncedAt: null };
-const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
 
 /** A stream of the logged-in session's values, switching whenever the session changes. */
 const followSession = <A>(session: typeof SessionManager.Service, loggedOut: A, select: (session: AuthenticatedSession) => Stream.Stream<A>) =>
@@ -176,15 +173,7 @@ const makeBackend = (options: BackendOptions) =>
       "library:refreshStats": (target) => session.use((active) => active.library.refreshStats(target)),
       "covers:ensure": (target) => session.use((active) => active.covers.ensure(target)),
       "covers:repair": (target, failedPath) => session.use((active) => active.covers.repair(target, failedPath)),
-      "playlists:create": (input) =>
-        written(
-          commands.create({
-            name: input.name,
-            ...(input.comment !== undefined && { comment: input.comment }),
-            ...(input.public !== undefined && { public: input.public }),
-            ...(input.songIds && { songIds: [...input.songIds] }),
-          }),
-        ),
+      "playlists:create": (input) => written(commands.create(input)),
       "playlists:rename": (id, name) => written(commands.rename(id, name)),
       "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),
       "playlists:setVisibility": (id, isPublic) => written(commands.setVisibility(id, isPublic)),
