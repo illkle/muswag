@@ -1,9 +1,9 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
-import { useUser } from "#/lib/queries";
+import { useUser } from "#/session/session";
+import { db } from "#/data/library";
 import { useLiveQuery } from "@tanstack/react-db";
-import { db } from "#/lib/db-renderer";
 import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 

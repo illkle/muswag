@@ -1,9 +1,17 @@
-import { parseQueueManagerSnapshot, type QueueItemRow, type QueueManagerSnapshot, type QueueStateRow } from "@muswag/model";
+import type { NowPlaying, PlaybackItem, QueueItemRow, QueueSourceRef, QueueStateRow, SourceCursor } from "@muswag/model";
 
 import { queueItemRows, queueStateFromRows, queueStateRow, type QueueManagerState } from "#shared/queue-state";
 
+/** What the queue restores from after a restart. Restores always start paused, so play state is not stored. */
+export type StoredQueue = {
+  nowPlaying: NowPlaying | null;
+  userQueue: readonly PlaybackItem[];
+  source: { ref: QueueSourceRef; cursor: SourceCursor } | null;
+  resumePositionSeconds: number;
+};
+
 export interface QueueStorage {
-  load(): Promise<QueueManagerSnapshot | null>;
+  load(): Promise<StoredQueue | null>;
   /** Stores `state`. `resumePositionSeconds` replaces where playback resumes after a restart; `null` keeps it. */
   save(state: QueueManagerState, resumePositionSeconds: number | null): Promise<void>;
   clear(): Promise<void>;
@@ -27,18 +35,17 @@ export class DbQueueStorage implements QueueStorage {
 
   constructor(private readonly tables: QueueTables) {}
 
-  async load(): Promise<QueueManagerSnapshot | null> {
-    const stored = await this.read();
-    if (!stored.state) return null;
-    const queue = queueStateFromRows(stored.state, stored.items);
-    const snapshot = parseQueueManagerSnapshot({
-      nowPlaying: queue.nowPlaying,
-      userQueue: queue.userQueue,
-      source: queue.source && stored.state.source ? { ref: queue.source.ref, cursor: stored.state.source.cursor } : null,
-      playback: { positionSeconds: stored.state.resumePositionSeconds },
-    });
-    if (!snapshot) await this.clear();
-    return snapshot;
+  async load(): Promise<StoredQueue | null> {
+    const { state, items } = await this.read();
+    if (!state) return null;
+    const { nowPlaying, userQueue } = queueStateFromRows(state, items);
+    return {
+      nowPlaying,
+      // The occurrence playing is no longer queued.
+      userQueue: userQueue.filter(({ key }) => key !== nowPlaying?.key),
+      source: state.source ? { ref: state.source.ref, cursor: state.source.cursor } : null,
+      resumePositionSeconds: state.resumePositionSeconds,
+    };
   }
 
   async save(queue: QueueManagerState, resumePositionSeconds: number | null): Promise<void> {

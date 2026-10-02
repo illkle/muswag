@@ -2,9 +2,9 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 
 import { AlbumList } from "#/components/album-list/album-list";
-import { useUser } from "#/lib/queries";
+import { useUser } from "#/session/session";
+import { db } from "#/data/library";
 import { useLiveQuery } from "@tanstack/react-db";
-import { db } from "#/lib/db-renderer";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,

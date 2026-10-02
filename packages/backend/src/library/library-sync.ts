@@ -1,4 +1,4 @@
-import { albums, artists, songs, syncState, toRow, type AlbumID3, type Child, type IndexArtist, type LibrarySyncStatus, type RefreshStatTarget, type SyncMode } from "@muswag/model";
+import { albums, artists, IDLE_LIBRARY_SYNC, songs, syncState, toRow, type AlbumID3, type Child, type IndexArtist, type LibrarySyncStatus, type RefreshStatTarget, type SyncMode } from "@muswag/model";
 import { eq, inArray } from "drizzle-orm";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
@@ -23,7 +23,7 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
     const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
-    const status = yield* SubscriptionRef.make<LibrarySyncStatus>({ running: null, error: null, lastSyncedAt: null });
+    const status = yield* SubscriptionRef.make<LibrarySyncStatus>(IDLE_LIBRARY_SYNC);
     type Running = { readonly mode: SyncMode; readonly done: Deferred.Deferred<void, SyncError>; fiber: Fiber.Fiber<unknown> | null };
     let current: Running | null = null;
 
@@ -31,7 +31,7 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
       syncLibrary(running.mode).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit)
-            ? SubscriptionRef.set(status, { running: null, error: null, lastSyncedAt: new Date().toISOString() })
+            ? SubscriptionRef.set(status, { ...IDLE_LIBRARY_SYNC, lastSyncedAt: new Date().toISOString() })
             : SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: Cause.hasInterruptsOnly(exit.cause) ? null : Cause.pretty(exit.cause) })),
         ),
         Effect.exit,

@@ -2,11 +2,11 @@ import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor } fro
 import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
-import type { MpvQueueSnapshot, PlayerRuntimeState, QueuePlayerPort } from "#shared/player";
-import type { QueueSourceFactory } from "#shared/queue-source";
+import type { QueueSourceFactory } from "./source/types";
 import { nextTarget, previousTarget, type QueueManagerState } from "#shared/queue-state";
-import { SerialQueue } from "#shared/serial-queue";
+import { SerialQueue } from "./serial-queue";
 import type { QueueStorage } from "./db-queue-storage";
+import type { PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { VirtualSourceWindow } from "./source/virtual-source-window";
 
 const TELEMETRY_SAVE_DELAY_MS = 5_000;
@@ -45,15 +45,15 @@ export class QueueManager {
     return this.serial.run(async () => {
       const initial = await this.player.getState();
       this.acceptRuntime(initial);
-      const snapshot = await this.storage.load();
-      if (!snapshot) return false;
+      const stored = await this.storage.load();
+      if (!stored) return false;
 
       let active: ActiveSource | null = null;
       let repaired = false;
-      if (snapshot.source) {
+      if (stored.source) {
         try {
-          active = await this.openWindow(snapshot.source.ref, { cursor: snapshot.source.cursor });
-          repaired = !sameCursor(active.window.cursor, snapshot.source.cursor);
+          active = await this.openWindow(stored.source.ref, { cursor: stored.source.cursor });
+          repaired = !sameCursor(active.window.cursor, stored.source.cursor);
         } catch (cause) {
           console.error("[queue] failed to restore source", cause);
           repaired = true;
@@ -61,8 +61,8 @@ export class QueueManager {
       }
 
       const restoredState: QueueManagerState = {
-        nowPlaying: snapshot.nowPlaying ? cloneNowPlaying(snapshot.nowPlaying) : null,
-        userQueue: snapshot.userQueue.map(clonePlaybackItem),
+        nowPlaying: stored.nowPlaying ? cloneNowPlaying(stored.nowPlaying) : null,
+        userQueue: stored.userQueue.map(clonePlaybackItem),
         source: active ? publicSource(active) : null,
       };
       const nowPlaying = restoredState.nowPlaying;
@@ -70,7 +70,7 @@ export class QueueManager {
       if (nowPlaying) {
         try {
           // Always restore paused: launching the app should never start audio by itself.
-          await this.player.applyQueue({ snapshot: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } });
+          await this.player.applyQueue({ items: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: stored.resumePositionSeconds } });
         } catch (cause) {
           // The queue is the user's even when mpv cannot load it (mpv missing, say): keep it, so what main
           // holds matches what is stored and shown, and let the next selection load it.
@@ -110,7 +110,7 @@ export class QueueManager {
           userQueue: this.store.state.userQueue,
           source: publicSource(candidate),
         };
-        await this.player.applyQueue({ snapshot: composeMpvQueue(prospective), select: { key, play: true } });
+        await this.player.applyQueue({ items: composeMpvQueue(prospective), select: { key, play: true } });
       } catch (cause) {
         if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
         candidate?.window.dispose();
@@ -211,7 +211,7 @@ export class QueueManager {
     const generation = ++this.selectionGeneration;
     this.pendingSelection = { candidate: null, generation, key };
     try {
-      await this.player.applyQueue({ snapshot: composeMpvQueue(this.store.state), select: { key, play: !(this.runtime?.paused ?? false) } });
+      await this.player.applyQueue({ items: composeMpvQueue(this.store.state), select: { key, play: !(this.runtime?.paused ?? false) } });
     } catch (cause) {
       if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
       throw cause;
@@ -263,11 +263,11 @@ export class QueueManager {
 
   private applyMirror(): Promise<void> {
     if (!this.store.state.nowPlaying) return Promise.resolve();
-    return this.player.applyQueue({ snapshot: composeMpvQueue(this.store.state) });
+    return this.player.applyQueue({ items: composeMpvQueue(this.store.state) });
   }
 
   private async commitQueueEdit(next: QueueManagerState): Promise<void> {
-    if (next.nowPlaying) await this.player.applyQueue({ snapshot: composeMpvQueue(next) });
+    if (next.nowPlaying) await this.player.applyQueue({ items: composeMpvQueue(next) });
     this.publish(next);
     this.saveLogicalState();
   }
@@ -312,7 +312,7 @@ export class QueueManager {
   }
 }
 
-export function composeMpvQueue(state: QueueManagerState): MpvQueueSnapshot {
+export function composeMpvQueue(state: QueueManagerState): PlaybackItem[] {
   const source = state.source?.window;
   const candidates: PlaybackItem[] = [
     ...(source?.previous ?? []),
@@ -326,7 +326,7 @@ export function composeMpvQueue(state: QueueManagerState): MpvQueueSnapshot {
     if (keys.has(item.key)) throw new Error(`Duplicate playback occurrence key: ${item.key}`);
     keys.add(item.key);
   }
-  return { items: candidates.map(clonePlaybackItem) };
+  return candidates.map(clonePlaybackItem);
 }
 
 function publicSource(active: ActiveSource): NonNullable<QueueManagerState["source"]> {

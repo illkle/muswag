@@ -1,5 +1,5 @@
 import { Cause, Data } from "effect";
-import type { IssueCode, PlayerIssue } from "#shared/player-contract";
+import type { IssueCode, PlayerIssue } from "#shared/commands/player";
 
 /** A failure talking to mpv. `uncertain` means mpv's state is unknown afterwards (e.g. a timeout mid-mutation). */
 export class EngineError extends Data.TaggedError("EngineError")<{

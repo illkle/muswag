@@ -7,7 +7,7 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { ThemeProvider } from "#/components/utils/theme-provider";
-import { AppClient } from "#/core/client";
+import { Session } from "#/session/session";
 if (import.meta.env.DEV) {
   void import("react-scan").then(({ scan }) => scan({ enabled: true }));
 }
@@ -32,7 +32,7 @@ setupRouterSsrQueryIntegration({
 const rootElement = document.getElementById("root")!;
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
-  void AppClient.start().then(() => {
+  void Session.start().then(() => {
     root.render(
       <StrictMode>
         <ThemeProvider>

@@ -49,10 +49,10 @@ describe("DbQueueStorage", () => {
     expect(tables.state?.resumePositionSeconds).toBe(12);
   });
 
-  it("loads what it saved as a snapshot to restore from", async () => {
+  it("loads what it saved as the queue to restore", async () => {
     const tables = new FakeTables();
     await new DbQueueStorage(tables).save(queued("a"), 30);
-    expect(await new DbQueueStorage(tables).load()).toEqual({ nowPlaying: { ...item("now"), origin: "user" }, userQueue: [item("a")], source: null, playback: { positionSeconds: 30 } });
+    expect(await new DbQueueStorage(tables).load()).toEqual({ nowPlaying: { ...item("now"), origin: "user" }, userQueue: [item("a")], source: null, resumePositionSeconds: 30 });
   });
 
   it("reads the tables again after a write fails", async () => {

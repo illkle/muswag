@@ -5,9 +5,9 @@ import { Deferred, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import { EngineError } from "./errors";
-import { player as playerTable, playerIssues, playerPosition } from "#shared/player-state";
+import { player as playerTable, playerIssues, playerPosition } from "#shared/state/player";
 import { Player } from "./player";
-import { fixture, login, tracks, until } from "./test/player";
+import { fixture, login, tracks, until } from "./test/player-harness";
 
 describe("Effect player", () => {
   it.effect("commits a duplicate-media queue while events arrive before replies; restores only after load", () => {

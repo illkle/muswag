@@ -1,5 +1,5 @@
 import { cn } from "#/lib/utils";
-import { AppClient } from "#/core/client";
+import { LibraryActions } from "#/library/actions";
 import type { CoverTarget } from "@muswag/model";
 import { startTransition, useEffect, useRef, useState } from "react";
 
@@ -41,7 +41,7 @@ export function AlbumCover({
   useEffect(() => {
     if (!loadImage || effectiveCoverArtPath || !target?.coverArtId) return;
     const requestedTargetKey = targetKey;
-    void AppClient.ensureCover(target)
+    void LibraryActions.ensureCover(target)
       .then((path) => {
         if (path && currentTargetKey.current === requestedTargetKey) setRepairedPath(path);
       })
@@ -78,7 +78,7 @@ export function AlbumCover({
 
             repairAttempts.current += 1;
             const requestedTargetKey = targetKey;
-            void AppClient.repairCover(target, effectiveCoverArtPath)
+            void LibraryActions.repairCover(target, effectiveCoverArtPath)
               .then((path) => {
                 if (!path || currentTargetKey.current !== requestedTargetKey) return;
                 setRepairedPath(path);

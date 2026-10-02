@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "#/components/ui/dialog";
-import { usePlayerError, usePlayerInstallOutput, usePlayerMpvInstallState, usePlayerMpvState, usePlayerStatus } from "#/components/player-provider";
-import { MpvIPC } from "#/player/connection";
-import type { MpvInstallOption, MpvSource, MpvState, PlayerStatus } from "#shared/player";
-import { getMpvInstallOptions, getMpvUnavailableReason } from "#shared/player";
+import { usePlayerError, usePlayerInstallOutput, usePlayerMpvBinary, usePlayerMpvInstall, usePlayerStatus } from "#/player/hooks";
+import { MpvIPC } from "#/player/commands";
+import type { BinaryState, MpvInstallOption, MpvSource } from "#shared/commands/player";
+import type { PlayerStatus } from "#shared/state/player";
 
 const playerStatusLabels: Record<PlayerStatus, string> = {
   idle: "Idle",
@@ -27,18 +27,17 @@ const mpvSourceLabels: Record<MpvSource, string> = {
   "login-shell": "Found via your shell profile",
 };
 
-export const mpvStatusLabels: Record<MpvState["status"], string> = {
-  checking: "Checking",
-  ready: "Available",
-  missing: "Unavailable",
-  invalid: "Not usable",
+export const mpvStatusLabels: Record<BinaryState["_tag"], string> = {
+  Checking: "Checking",
+  Ready: "Available",
+  Unavailable: "Unavailable",
 };
 
-function MpvStatusIcon({ status }: { status: MpvState["status"] }) {
-  if (status === "ready") {
+function MpvStatusIcon({ status }: { status: BinaryState["_tag"] }) {
+  if (status === "Ready") {
     return <CheckCircleIcon className="size-4 text-emerald-500" />;
   }
-  if (status === "checking") {
+  if (status === "Checking") {
     return <SpinnerGapIcon className="size-4 animate-spin" />;
   }
   return <XCircleIcon className="size-4" />;
@@ -84,8 +83,8 @@ function InstallOptionRow({ busy, onInstall, option }: { busy: boolean; onInstal
 }
 
 export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) => void; open: boolean }) {
-  const mpvState = usePlayerMpvState();
-  const installState = usePlayerMpvInstallState();
+  const binary = usePlayerMpvBinary();
+  const install = usePlayerMpvInstall();
   const playerError = usePlayerError();
   const playerStatus = usePlayerStatus();
   const installLog = usePlayerInstallOutput().slice(-100);
@@ -95,21 +94,20 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
 
   // Playback is impossible without mpv, so surface setup as soon as the startup check fails.
   useEffect(() => {
-    if (autoOpenedRef.current || mpvState.status === "checking" || mpvState.status === "ready") {
+    if (autoOpenedRef.current || binary._tag !== "Unavailable") {
       return;
     }
 
     autoOpenedRef.current = true;
     onOpenChange(true);
-  }, [mpvState.status, onOpenChange]);
+  }, [binary._tag, onOpenChange]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView?.({ block: "end" });
   }, [installLog.length]);
 
-  const installing = installState.status === "running";
-  const unavailableReason = getMpvUnavailableReason(mpvState);
-  const installOptions = getMpvInstallOptions(mpvState);
+  const installing = install._tag === "Running" || install._tag === "Cancelling";
+  const installOptions = binary._tag === "Unavailable" ? binary.options : [];
 
   const runInstall = (option: MpvInstallOption) => {
     setBusy(true);
@@ -143,30 +141,30 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
             <div className="flex items-center gap-2">
-              <MpvStatusIcon status={mpvState.status} />
+              <MpvStatusIcon status={binary._tag} />
               <span className="font-medium">mpv</span>
             </div>
-            <Badge variant={mpvState.status === "ready" ? "secondary" : "destructive"}>{mpvStatusLabels[mpvState.status]}</Badge>
+            <Badge variant={binary._tag === "Ready" ? "secondary" : "destructive"}>{mpvStatusLabels[binary._tag]}</Badge>
           </div>
 
-          {mpvState.status === "ready" ? (
+          {binary._tag === "Ready" ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
               <dt className="text-muted-foreground">Version</dt>
-              <dd className="font-mono">{mpvState.version}</dd>
+              <dd className="font-mono">{binary.version}</dd>
               <dt className="text-muted-foreground">Binary</dt>
-              <dd className="font-mono text-xs break-all">{mpvState.binaryPath}</dd>
+              <dd className="font-mono text-xs break-all">{binary.path}</dd>
               <dt className="text-muted-foreground">Found by</dt>
-              <dd>{mpvSourceLabels[mpvState.source]}</dd>
+              <dd>{mpvSourceLabels[binary.source]}</dd>
             </dl>
           ) : null}
 
-          {unavailableReason && mpvState.status !== "checking" ? (
+          {binary._tag === "Unavailable" ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <div className="flex items-center gap-2 font-medium">
                 <WarningCircleIcon className="size-4" />
                 mpv cannot be used
               </div>
-              <p className="mt-2 break-words text-destructive/90">{unavailableReason}</p>
+              <p className="mt-2 break-words text-destructive/90">{binary.issue.message}</p>
             </div>
           ) : null}
 
@@ -179,8 +177,8 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
             </div>
           ) : null}
 
-          {installState.status === "cancelled" ? <p className="text-sm text-muted-foreground">Installation cancelled.</p> : null}
-          {installState.status === "failed" ? <p className="text-sm break-words text-destructive">{installState.error}</p> : null}
+          {install._tag === "Cancelled" ? <p className="text-sm text-muted-foreground">Installation cancelled.</p> : null}
+          {install._tag === "Failed" ? <p className="text-sm break-words text-destructive">{install.issue.message}</p> : null}
 
           {installLog.length > 0 ? (
             <div className="max-h-48 overflow-auto rounded-lg border bg-muted/40 p-2">
@@ -198,7 +196,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
               <FolderOpenIcon />
               Locate mpv…
             </Button>
-            {(mpvState.status === "ready" || mpvState.status === "invalid") && mpvState.source === "manual" ? (
+            {binary._tag === "Ready" && binary.source === "manual" ? (
               <Button
                 disabled={busy || installing}
                 onClick={() => {

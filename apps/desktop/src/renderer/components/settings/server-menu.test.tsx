@@ -5,31 +5,39 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MpvState } from "#shared/player";
+import type { LibrarySyncStatus } from "@muswag/model";
+
+import type { BinaryState } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn<() => Promise<void>>(),
   playerError: null as string | null,
-  mpvState: { binaryPath: "/opt/homebrew/bin/mpv", source: "well-known", status: "ready", version: "0.40.0" } as MpvState,
+  librarySync: { running: null, error: null, lastSyncedAt: null } as LibrarySyncStatus,
+  binary: { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" } as BinaryState,
   sync: vi.fn<(mode: "full" | "quick") => Promise<void>>(),
   user: { id: 1, password: "secret", url: "https://music.example.com/", username: "tester" } as { id: number; password: string; url: string; username: string } | undefined,
 }));
 
-vi.mock("#/lib/queries", () => ({
+vi.mock("#/session/session", () => ({
+  Session: { logout: mocks.logout },
   useUser: () => ({ data: mocks.user }),
 }));
 
-vi.mock("#/core/client", () => ({
-  AppClient: { logout: mocks.logout, sync: mocks.sync },
+vi.mock("#/library/actions", () => ({
+  LibraryActions: { sync: mocks.sync },
 }));
 
-vi.mock("#/components/player-provider", () => ({
+vi.mock("#/library/queries", () => ({
+  useLibrarySyncStatus: () => mocks.librarySync,
+}));
+
+vi.mock("#/player/hooks", () => ({
   usePlayerError: () => mocks.playerError,
-  usePlayerMpvState: () => mocks.mpvState,
+  usePlayerMpvBinary: () => mocks.binary,
 }));
 
-vi.mock("#/hooks/use-app-update", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("#/hooks/use-app-update")>()),
+vi.mock("#/updates/app-update", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#/updates/app-update")>()),
   useAppUpdate: () => ({
     canCheck: true,
     currentVersion: "1.2.3",
@@ -60,7 +68,7 @@ vi.mock("#/components/settings/theme-switcher", () => ({
 
 vi.mock("#/components/settings/mpv-info-dialog", () => ({
   MpvInfoDialog: () => null,
-  mpvStatusLabels: { checking: "Checking", invalid: "Not usable", missing: "Not installed", ready: "Available" },
+  mpvStatusLabels: { Checking: "Checking", Ready: "Available", Unavailable: "Not installed" },
 }));
 vi.mock("#/components/settings/app-update-dialog", () => ({ AppUpdateDialog: () => null }));
 
@@ -85,7 +93,8 @@ describe("ServerMenu", () => {
     mocks.logout.mockReset().mockResolvedValue(undefined);
     mocks.sync.mockReset().mockResolvedValue(undefined);
     mocks.playerError = null;
-    mocks.mpvState = { binaryPath: "/opt/homebrew/bin/mpv", source: "well-known", status: "ready", version: "0.40.0" };
+    mocks.librarySync = { running: null, error: null, lastSyncedAt: null };
+    mocks.binary = { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" };
   });
 
   it("names the server on the button and gathers the settings behind it", () => {
@@ -108,8 +117,25 @@ describe("ServerMenu", () => {
     await waitFor(() => expect(mocks.sync).toHaveBeenCalledWith("quick"));
   });
 
+  it("shows a sync running in main that this menu did not start, and does not start another", () => {
+    mocks.librarySync = { running: "full", error: null, lastSyncedAt: null };
+
+    renderServerMenu();
+
+    expect(screen.getByRole("button", { name: "music.example.com, server and app settings, syncing" })).toBeTruthy();
+    const syncItem = screen.getByRole("button", { name: "Syncing library…" }) as HTMLButtonElement;
+    expect(syncItem.disabled).toBe(true);
+    fireEvent.click(syncItem);
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
   it("raises an alert on the button and the mpv row when playback is unavailable", () => {
-    mocks.mpvState = { checkedPaths: [], installOptions: [], status: "missing" };
+    mocks.binary = {
+      _tag: "Unavailable",
+      reason: "missing",
+      issue: { actions: [], code: "BinaryUnavailable", id: "binary", message: "Install mpv or select its executable.", occurrenceKey: null, operation: "discovery" },
+      options: [],
+    };
 
     renderServerMenu();
 

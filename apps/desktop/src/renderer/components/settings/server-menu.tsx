@@ -2,15 +2,16 @@ import { ArrowsClockwiseIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, Sign
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { usePlayerError, usePlayerMpvState } from "#/components/player-provider";
+import { usePlayerError, usePlayerMpvBinary } from "#/player/hooks";
+import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/updates/app-update";
+import { useUser, Session } from "#/session/session";
+import { LibraryActions } from "#/library/actions";
+import { useLibrarySyncStatus } from "#/library/queries";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "#/components/ui/menu";
 import { SidebarMenuButton } from "#/components/ui/sidebar";
-import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/hooks/use-app-update";
-import { useUser } from "#/lib/queries";
-import { AppClient } from "#/core/client";
 import { cn } from "#/lib/utils";
 
 type SettingsDialog = "mpv" | "update";
@@ -25,17 +26,17 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" |
 
 export function ServerMenu() {
   const userStateQuery = useUser();
-  const mpvState = usePlayerMpvState();
+  const binary = usePlayerMpvBinary();
   const playerError = usePlayerError();
   const appUpdate = useAppUpdate();
 
   const [dialog, setDialog] = useState<SettingsDialog | null>(null);
 
   const logoutMutation = useMutation({
-    mutationFn: () => AppClient.logout(),
+    mutationFn: () => Session.logout(),
   });
   const syncMutation = useMutation({
-    mutationFn: () => AppClient.sync("quick"),
+    mutationFn: () => LibraryActions.sync("quick"),
   });
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -49,10 +50,12 @@ export function ServerMenu() {
     return new URL(userStateQuery.data.url).hostname;
   }, [userStateQuery.data]);
 
-  const syncRunning = syncMutation.isPending;
+  // The sync runs in main and outlives this menu, e.g. across a window reload, so follow main's status too.
+  const librarySync = useLibrarySyncStatus();
+  const syncRunning = syncMutation.isPending || librarySync.running !== null;
 
   // `checking` is the startup state, so it must not paint the button red before mpv is actually missing.
-  const playbackBroken = mpvState.status === "missing" || mpvState.status === "invalid" || Boolean(playerError);
+  const playbackBroken = binary._tag === "Unavailable" || Boolean(playerError);
 
   const updateStatus = getAppUpdateStatus(appUpdate);
   const updateWaiting = hasAppUpdate(updateStatus);
@@ -104,9 +107,9 @@ export function ServerMenu() {
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
             <span className="flex-1 truncate">Playback engine</span>
             {playbackBroken ? (
-              <StatusPill tone="destructive">{playerError ? "Error" : mpvStatusLabels[mpvState.status]}</StatusPill>
+              <StatusPill tone="destructive">{playerError ? "Error" : mpvStatusLabels[binary._tag]}</StatusPill>
             ) : (
-              <span className="shrink-0 text-xs text-muted-foreground">{mpvStatusLabels[mpvState.status]}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{mpvStatusLabels[binary._tag]}</span>
             )}
           </MenuItem>
 

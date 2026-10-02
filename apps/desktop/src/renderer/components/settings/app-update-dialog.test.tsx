@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(() => () => undefined),
 }));
 
-vi.mock("#/lib/ipc", () => ({
+vi.mock("#/updates/app-update", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#/updates/app-update")>()),
   AppUpdateIPC: mocks,
 }));
 

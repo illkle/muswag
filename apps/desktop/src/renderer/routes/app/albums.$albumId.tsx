@@ -2,15 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
-import { queueManager, usePlayerStatus, useQueueManagerState } from "#/components/player-provider";
+import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { usePlayerStatus } from "#/player/hooks";
+import { db } from "#/data/library";
+import { useAlbumStatsRefresh } from "#/library/stats-refresh";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
-import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
 import { albumOccurrenceKey, type Song } from "@muswag/model";
-import { useAlbumStatsRefresh } from "#/core/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
@@ -102,7 +103,7 @@ function RouteComponent() {
   const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const onPlay = (song: Song) => {
-    void queueManager.playSource({ type: "album", albumId }, albumOccurrenceKey(albumId, song.id));
+    void QueueActions.playSource({ type: "album", albumId }, albumOccurrenceKey(albumId, song.id));
   };
 
   const rowKeys = songs.map((song) => albumOccurrenceKey(albumId, song.id));

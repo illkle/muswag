@@ -3,12 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
 import { Button } from "#/components/ui/button";
-import { MpvIPC, PlayerIPC } from "#/player/connection";
-import { db } from "#/lib/db-renderer";
-import { cn } from "#/lib/utils";
-
+import { MpvIPC, PlayerIPC } from "#/player/commands";
+import { db } from "#/data/library";
+import { QueueActions } from "#/queue/queue";
 import {
-  queueManager,
   usePlayerCanGoBack,
   usePlayerCanGoForward,
   usePlayerCanPlay,
@@ -23,7 +21,9 @@ import {
   usePlayerPositionSeconds,
   usePlayerStatus,
   usePlayerVolumePercent,
-} from "./player-provider";
+} from "#/player/hooks";
+import { cn } from "#/lib/utils";
+
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
@@ -54,7 +54,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.previous().catch(() => {});
+          void QueueActions.previous().catch(() => {});
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
@@ -70,7 +70,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.next().catch(() => {});
+          void QueueActions.next().catch(() => {});
         }}
         disabled={!canGoForward}
         aria-label="Next track"

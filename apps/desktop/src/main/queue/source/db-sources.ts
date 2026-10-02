@@ -2,7 +2,8 @@ import type { PlaylistRecord, QueueSourceRef, Song } from "@muswag/model";
 import { albumOccurrenceKey, playlistOccurrenceKey } from "@muswag/model";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 
-import type { QueueSource, QueueSourceFactory, SourceLocation, SourcePage, SourceRevision } from "#shared/queue-source";
+import type { SourceRevision } from "#shared/queue-state";
+import type { QueueSource, QueueSourceFactory, SourceLocation, SourcePage } from "./types";
 
 /** What queue sources read from the library database. */
 export interface SourceDb {

@@ -1,6 +1,6 @@
 import { Effect, type Redacted } from "effect";
 import type { PlaybackItem } from "@muswag/model";
-import type { Selection } from "#shared/player-contract";
+import type { Selection } from "#shared/commands/player";
 import { InvalidCommand, QueueOutOfSync, type EngineError } from "./errors";
 import { command, load, playlist } from "./mpv/protocol";
 import type { SessionHandle } from "./mpv/session";

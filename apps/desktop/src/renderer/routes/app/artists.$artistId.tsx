@@ -3,7 +3,7 @@ import { AlbumCover } from "#/components/album-list/album-cover";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
-import { db } from "#/lib/db-renderer";
+import { db } from "#/data/library";
 import { eq, not, useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute } from "@tanstack/react-router";
 

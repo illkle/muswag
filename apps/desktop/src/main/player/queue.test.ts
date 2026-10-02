@@ -4,7 +4,7 @@ import { describe, expect } from "vitest";
 import { applyQueue, type Correlation } from "./queue";
 import type { SessionHandle } from "./mpv/session";
 import { EngineError } from "./errors";
-import { tracks } from "./test/player";
+import { tracks } from "./test/player-harness";
 
 const old: Correlation = { generation: 1, entries: tracks.slice(0, 2).map((item, index) => ({ ...item, entryId: index + 1 })), currentId: 1 };
 const urls = new Map(tracks.map((item) => [item.key, Redacted.make("https://secret.test")]));

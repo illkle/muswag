@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 
-import type { MpvInstallMethod, MpvInstallOption } from "#shared/player";
+import type { MpvInstallMethod, MpvInstallOption } from "#shared/commands/player";
 import type { MpvLocatorDeps } from "./mpv-locator";
 import { joinWindowsPath, probeLoginShell } from "./mpv-locator";
 

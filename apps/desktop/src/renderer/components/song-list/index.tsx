@@ -1,8 +1,10 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
-import { db } from "#/lib/db-renderer";
+import { db } from "#/data/library";
+import { PlaylistActions } from "#/playlists/actions";
+import { QueueActions } from "#/queue/queue";
 import { cn } from "#/lib/utils";
-import type { PlayerStatus } from "#shared/player.ts";
+import type { PlayerStatus } from "#shared/state/player";
 import type { Album, Song } from "@muswag/model";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { Link, useElementScrollRestoration } from "@tanstack/react-router";
@@ -12,8 +14,6 @@ import { useMemo, useRef, useState, type JSX, type ReactNode } from "react";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger } from "#/components/ui/context-menu";
 import { AddToPlaylistMenu } from "#/components/playlist/add-to-playlist-menu";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
-import { PlaylistActions } from "#/core/playlist-actions";
-import { queueManager } from "#/components/player-provider";
 
 function makeGridSvg(size: number) {
   const svg = `
@@ -122,7 +122,7 @@ export const SongListRoot = ({
       <ContextMenuContent>
         <ContextMenuGroup>
           <AddToPlaylistMenu setCreateOpen={setPlaylistCreatorOpen} songIds={songIds} />
-          <ContextMenuItem disabled={selectedSongs.length === 0} onClick={() => void queueManager.enqueue(selectedSongs)}>
+          <ContextMenuItem disabled={selectedSongs.length === 0} onClick={() => void QueueActions.enqueue(selectedSongs)}>
             Add to queue
           </ContextMenuItem>
         </ContextMenuGroup>
