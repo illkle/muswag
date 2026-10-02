@@ -335,7 +335,7 @@ export class MirrorClient {
       try {
         listener(event);
       } catch (cause) {
-        console.error("[tanstack-db-sqlite-mirror] collection failed to apply a change", cause);
+        console.error("[tanstack-db-mirror] collection failed to apply a change", cause);
       }
     }
   }

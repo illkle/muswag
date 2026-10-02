@@ -8,7 +8,7 @@ import { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 
 import SubsonicAPI from "../api/subsonic-api.js";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 
 import { Db } from "../db/database.js";
 

@@ -1,6 +1,6 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { MIRRORED_TABLES } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import { makeWithDefaults, type EffectSQLiteNodeDatabase } from "drizzle-orm/effect-sqlite-node";
 import { migrate } from "drizzle-orm/sqlite-core/effect";
 import { Context, Effect, Layer } from "effect";

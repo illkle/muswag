@@ -48,7 +48,7 @@
     "@electron-toolkit/utils": "catalog:",
     "@muswag/backend": "workspace:*",
     "@muswag/model": "workspace:*",
-    "@muswag/tanstack-db-sqlite-mirror": "workspace:*",
+    "@muswag/tanstack-db-mirror": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "@rolldown/plugin-babel": "catalog:",
     "@tailwindcss/vite": "catalog:",

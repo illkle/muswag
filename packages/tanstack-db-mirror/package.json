@@ -1,8 +1,8 @@
 {
-  "name": "@muswag/tanstack-db-sqlite-mirror",
+  "name": "@muswag/tanstack-db-mirror",
   "version": "0.0.0",
   "private": true,
-  "description": "TanStack DB collections that mirror SQLite tables owned by another process (e.g. Electron main).",
+  "description": "TanStack DB collections that mirror data owned by another process (e.g. Electron main).",
   "type": "module",
   "exports": {
     "./protocol": {

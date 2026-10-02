@@ -1,4 +1,4 @@
-# @muswag/tanstack-db-sqlite-mirror
+# @muswag/tanstack-db-mirror
 
 TanStack DB collections that mirror SQLite tables owned by another process. In Electron, the main process owns the database and the renderer gets live, optimistic collections on top of it.
 
@@ -45,8 +45,8 @@ Main process. The tables must exist before the server starts, so run migrations 
 
 ```ts
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
-import { createElectronMainTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/main";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
+import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
 import { eq } from "drizzle-orm";
 import { makeWithDefaults } from "drizzle-orm/effect-sqlite-node";
 import { ipcMain } from "electron";
@@ -80,8 +80,8 @@ Renderer:
 
 ```ts
 import { createCollection } from "@tanstack/react-db";
-import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-sqlite-mirror/client";
-import { createElectronRendererTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/renderer";
+import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
+import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
 
 const client = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer }) });
 
@@ -129,7 +129,7 @@ mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
 
 ## Testing
 
-`@muswag/tanstack-db-sqlite-mirror/testing` provides `createMemoryTransport()`. It's an in-process transport with IPC-like behavior: structured cloning, FIFO requests and batches, latency you can configure, and the ability to pause or drop batches.
+`@muswag/tanstack-db-mirror/testing` provides `createMemoryTransport()`. It's an in-process transport with IPC-like behavior: structured cloning, FIFO requests and batches, latency you can configure, and the ability to pause or drop batches.
 
 The package's own suite covers the following:
 

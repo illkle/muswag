@@ -1,5 +1,5 @@
 import type { AuthSnapshot, LibrarySyncStatus, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/model";
-import type { MirrorPosition } from "@muswag/tanstack-db-sqlite-mirror/protocol";
+import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
 
 import { emptyQueueState, type QueueManagerState } from "./queue-state";

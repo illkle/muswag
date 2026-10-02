@@ -157,7 +157,7 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
       try {
         return [decodeChange(row)];
       } catch (cause) {
-        console.error(`[tanstack-db-sqlite-mirror] skipping change ${row.seq} of "${row.tbl}" that cannot be mirrored`, cause);
+        console.error(`[tanstack-db-mirror] skipping change ${row.seq} of "${row.tbl}" that cannot be mirrored`, cause);
         return [];
       }
     });
@@ -177,7 +177,7 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
       try {
         listener(batch);
       } catch (cause) {
-        console.error("[tanstack-db-sqlite-mirror] change listener failed", cause);
+        console.error("[tanstack-db-mirror] change listener failed", cause);
       }
     }
   };
@@ -331,7 +331,7 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
   return { epoch, write, flush, position, handle, subscribe, serve } satisfies MirrorServerService;
 });
 
-export class MirrorServer extends Context.Service<MirrorServer, MirrorServerService>()("@muswag/tanstack-db-sqlite-mirror/MirrorServer") {
+export class MirrorServer extends Context.Service<MirrorServer, MirrorServerService>()("@muswag/tanstack-db-mirror/MirrorServer") {
   static readonly make = make;
   static readonly layer = (options: MirrorServerOptions) => Layer.effect(MirrorServer, make(options));
 }

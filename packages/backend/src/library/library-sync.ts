@@ -1,6 +1,6 @@
 import { albums, artists, songs, syncState, toRow, type AlbumID3, type Child, type IndexArtist, type LibrarySyncStatus, type RefreshStatTarget, type SyncMode } from "@muswag/model";
 import { eq, inArray } from "drizzle-orm";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
 import SubsonicAPI from "../api/subsonic-api.js";

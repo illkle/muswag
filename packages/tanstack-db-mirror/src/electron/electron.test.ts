@@ -111,20 +111,20 @@ describe("electron transports", () => {
 
     await collection.cleanup();
     client.dispose();
-    expect(renderer.listenerCount("tanstack-db-sqlite-mirror:changes")).toBe(0);
+    expect(renderer.listenerCount("tanstack-db-mirror:changes")).toBe(0);
   });
 
   it("only sends batches to renderers that have made a request", async () => {
     const { electron } = await serveOverElectron();
     const idle = electron.createRenderer("toolkit");
     const active = electron.createRenderer("toolkit");
-    await active.ipcRenderer.invoke("tanstack-db-sqlite-mirror:request", { v: 1, type: "hello" });
+    await active.ipcRenderer.invoke("tanstack-db-mirror:request", { v: 1, type: "hello" });
 
     await harness.insertAlbums([album("a1")]);
 
     expect(idle.sent).toEqual([]);
     expect(active.sent).toHaveLength(1);
-    expect(active.sent[0]!.channel).toBe("tanstack-db-sqlite-mirror:changes");
+    expect(active.sent[0]!.channel).toBe("tanstack-db-mirror:changes");
     expect((active.sent[0]!.args[0] as MirrorChangeBatch).changes).toHaveLength(1);
   });
 
@@ -132,8 +132,8 @@ describe("electron transports", () => {
     const { electron } = await serveOverElectron();
     const closed = electron.createRenderer("toolkit");
     const open = electron.createRenderer("toolkit");
-    await closed.ipcRenderer.invoke("tanstack-db-sqlite-mirror:request", { v: 1, type: "hello" });
-    await open.ipcRenderer.invoke("tanstack-db-sqlite-mirror:request", { v: 1, type: "hello" });
+    await closed.ipcRenderer.invoke("tanstack-db-mirror:request", { v: 1, type: "hello" });
+    await open.ipcRenderer.invoke("tanstack-db-mirror:request", { v: 1, type: "hello" });
 
     closed.destroy();
     await harness.insertAlbums([album("a1")]);
@@ -174,8 +174,8 @@ describe("electron transports", () => {
     const { electron } = await serveOverElectron();
     const broken = electron.createRenderer("toolkit");
     const healthy = electron.createRenderer("toolkit");
-    await broken.ipcRenderer.invoke("tanstack-db-sqlite-mirror:request", { v: 1, type: "hello" });
-    await healthy.ipcRenderer.invoke("tanstack-db-sqlite-mirror:request", { v: 1, type: "hello" });
+    await broken.ipcRenderer.invoke("tanstack-db-mirror:request", { v: 1, type: "hello" });
+    await healthy.ipcRenderer.invoke("tanstack-db-mirror:request", { v: 1, type: "hello" });
     broken.webContents.send = () => {
       throw new Error("Render frame was disposed");
     };

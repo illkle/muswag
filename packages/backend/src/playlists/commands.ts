@@ -1,6 +1,6 @@
 import { playlists, type CreatePlaylistInput, type PlaylistEntry, type PlaylistRecord, type PlaylistState } from "@muswag/model";
 import { eq } from "drizzle-orm";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import { Context, Data, Effect, Layer, PubSub, Stream } from "effect";
 
 import { Db } from "../db/database.js";

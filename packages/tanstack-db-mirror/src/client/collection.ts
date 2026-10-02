@@ -140,7 +140,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
           }
           // Before the first load the collection reports the error; afterwards stale data stays visible.
           if (!loaded) markError(error);
-          else console.error(`[tanstack-db-sqlite-mirror] failed to reload "${id}"`, error);
+          else console.error(`[tanstack-db-mirror] failed to reload "${id}"`, error);
           const delay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** failures++);
           setTimeout(() => {
             if (isCurrent()) void load();

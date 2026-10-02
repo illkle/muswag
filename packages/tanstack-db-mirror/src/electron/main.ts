@@ -70,7 +70,7 @@ export function createElectronMainTransport(options: ElectronMainTransportOption
           contents.send(channels.changes, batch);
         } catch (cause) {
           // The renderer misses this batch and recovers through its gap check.
-          console.error("[tanstack-db-sqlite-mirror] failed to send changes to a renderer", cause);
+          console.error("[tanstack-db-mirror] failed to send changes to a renderer", cause);
         }
       }
     },

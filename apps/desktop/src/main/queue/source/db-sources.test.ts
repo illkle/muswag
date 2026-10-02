@@ -1,7 +1,7 @@
 import { Db, LibraryQueries, PlaylistCommands, PlaylistEdits, write } from "@muswag/backend";
 import { apiSong, seed, TestDatabase } from "@muswag/backend/testing";
 import { albumOccurrenceKey, songs } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import { Layer, ManagedRuntime } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";

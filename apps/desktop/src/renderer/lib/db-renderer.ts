@@ -1,6 +1,6 @@
 import { albums, artists, playlists, songs } from "@muswag/model";
-import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-sqlite-mirror/client";
-import { createElectronRendererTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/renderer";
+import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
+import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
 import { BasicIndex, createCollection } from "@tanstack/react-db";
 
 import { CreateFuse } from "./search";

@@ -1,7 +1,7 @@
 import { BackendLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/backend";
 import type { AuthSnapshot, PlaylistSyncStatus, Song } from "@muswag/model";
-import { createElectronMainTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/main";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Queue, Redacted, Schema, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";

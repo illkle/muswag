@@ -1,5 +1,5 @@
 import { albums, artists, covers, playerQueue, playlists, songs, syncState, type AuthSnapshot, type SessionCredentials } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
+import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
 import { Context, Crypto, Data, Effect, Layer, Scope, ScopedRef, Stream, SubscriptionRef } from "effect";
 import { HttpClient } from "effect/http";
 import { Path } from "effect/Path";
