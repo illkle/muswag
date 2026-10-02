@@ -8,7 +8,7 @@ import { MpvSessionLive } from "./mpv/session";
 import { PlayerLive } from "./player";
 import { SettingsLive } from "./settings";
 
-/** `stateMirror` serves the player's state to renderers; it must mirror `STATE_TABLES`. */
+/** `stateMirror` serves the player's state to renderers; it must mirror `PLAYER_TABLES`. */
 export const makePlayerLayer = (options: { ipcPath: string; settingsPath: string; stateMirror: MemoryMirrorService; extraMpvArgs?: readonly string[] }) =>
   PlayerLive.pipe(
     Layer.provide([

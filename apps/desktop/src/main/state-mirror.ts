@@ -2,7 +2,7 @@ import { createElectronMainTransport, type IpcMainLike } from "@muswag/tanstack-
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { Effect, Exit, Scope } from "effect";
 
-import { STATE_MIRROR_CHANNEL, STATE_TABLES } from "#shared/player-state";
+import { STATE_MIRROR_CHANNEL, STATE_TABLES } from "#shared/state-mirror";
 
 /**
  * Serves main's in-memory state to renderers, on a channel of its own. Read-only: renderers change it

@@ -4,13 +4,10 @@ import { Schema } from "effect";
 import { BinaryState, InstallOutput, InstallState, PlaybackItemSchema, PlayerIssue, type PlayerSnapshot } from "./player-contract";
 
 /**
- * The player's state as renderers see it: memory tables main writes whenever the player publishes,
- * mirrored over their own channel. Position has a table of its own, so its updates twice a second
+ * The player's state as renderers see it: memory tables in the state mirror (`state-mirror.ts`), which
+ * main writes whenever the player publishes. Position has a table of its own, so its updates twice a second
  * do not touch anything else.
  */
-
-/** The channel of the app-state mirror, apart from the library's. */
-export const STATE_MIRROR_CHANNEL = "muswag-state";
 
 const PLAYER = "player";
 const PlayerId = Schema.Literal(PLAYER);
@@ -55,7 +52,7 @@ export const InstallOutputRow = Schema.Struct({ id: Schema.String, ...InstallOut
 export type InstallOutputRow = typeof InstallOutputRow.Type;
 export const playerInstallOutput = memoryTable("player_install_output", InstallOutputRow, { primaryKey: "id" });
 
-export const STATE_TABLES = [player, playerPosition, playerIssues, playerInstallOutput] as const;
+export const PLAYER_TABLES = [player, playerPosition, playerIssues, playerInstallOutput] as const;
 
 // ---- From a player snapshot ----
 

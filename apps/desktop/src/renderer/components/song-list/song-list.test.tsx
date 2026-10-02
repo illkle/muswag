@@ -11,6 +11,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("#/lib/db-renderer", () => ({ db: {} }));
+vi.mock("#/lib/state-mirror", () => ({ appState: {} }));
 
 vi.mock("#/core/playlist-actions", () => ({
   PlaylistActions: {

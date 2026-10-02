@@ -1,15 +1,17 @@
 import { BackendLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/backend";
-import type { AuthSnapshot, PlaylistSyncStatus, Song } from "@muswag/model";
+import type { AuthSnapshot, LibrarySyncStatus, PlaylistSyncStatus, Song } from "@muswag/model";
 import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
+import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Queue, Redacted, Schema, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { BrowserWindow, type IpcMain } from "electron";
-import type { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
+import type { IpcMain } from "electron";
+import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 
-import { AppCommandArgs, initialAppStates, type AppCommandName, type AppCommandReply, type AppCommandResults, type AppStateName, type AppStates } from "#shared/app-contract";
-import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
+import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/app-contract";
+import { auth, librarySync, playlistSync } from "#shared/app-state";
+import type { MuswagMainIpc } from "#shared/ipc";
 import { runtimeView } from "#shared/player-snapshot";
 import type { CommandResult, PlayerCommand, PlayerSnapshot } from "#shared/player-contract";
 import { DbQueueStorage } from "../queue/db-queue-storage";
@@ -30,8 +32,9 @@ export interface BackendOptions {
   readonly userDataPath: string;
   readonly ipcMain: IpcMain;
   readonly mainIpc: IpcListener<MuswagMainIpc>;
-  readonly rendererIpc: IpcEmitter<MuswagRendererIpc>;
   readonly player: PlayerHandle;
+  /** Where renderers see the session and sync status; it must mirror `APP_TABLES`. */
+  readonly stateMirror: MemoryMirrorService;
 }
 
 const playerCommand = (player: PlayerHandle, command: PlayerCommand) =>
@@ -39,19 +42,8 @@ const playerCommand = (player: PlayerHandle, command: PlayerCommand) =>
     if (!result.ok) throw new Error(result.issue.message);
   });
 
-/** Publishes main's states to every window and answers when a window asks for one. */
-function makeStates(options: BackendOptions) {
-  const current = initialAppStates();
-  return {
-    get: <K extends AppStateName>(name: K) => current[name],
-    set: <K extends AppStateName>(name: K, value: AppStates[K]) => {
-      current[name] = value;
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.webContents.isDestroyed()) options.rendererIpc.send(window.webContents, "app:state", { name, value });
-      }
-    },
-  };
-}
+const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, error: null, lastSyncedAt: null };
+const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
 
 /** A stream of the logged-in session's values, switching whenever the session changes. */
 const followSession = <A>(session: typeof SessionManager.Service, loggedOut: A, select: (session: AuthenticatedSession) => Stream.Stream<A>) =>
@@ -82,7 +74,15 @@ const makeBackend = (options: BackendOptions) =>
     const commands = yield* PlaylistCommands;
     const mirror = yield* SqliteMirror;
     const run = Effect.runPromiseWith(yield* Effect.context<Db | SqliteMirror>());
-    const states = makeStates(options);
+    const state = options.stateMirror;
+    // Renderers wait for the session to leave Initializing before they show anything.
+    yield* state.write(
+      Effect.all([
+        state.upsert(auth, { id: "auth", value: { _tag: "Initializing" } }),
+        state.upsert(librarySync, { id: "library_sync", value: IDLE_LIBRARY_SYNC }),
+        state.upsert(playlistSync, { id: "playlist_sync", value: IDLE_PLAYLIST_SYNC }),
+      ]),
+    );
 
     yield* mirror.serve(createElectronMainTransport({ ipcMain: options.ipcMain }));
 
@@ -139,15 +139,15 @@ const makeBackend = (options: BackendOptions) =>
     );
 
     yield* session.changes.pipe(
-      Stream.runForEach((snapshot) => Effect.sync(() => states.set("auth", snapshot)).pipe(Effect.andThen(syncPlayerCredentials))),
+      Stream.runForEach((snapshot) => state.upsert(auth, { id: "auth", value: snapshot }).pipe(Effect.andThen(syncPlayerCredentials))),
       Effect.forkScoped,
     );
-    yield* followSession(session, initialAppStates().librarySync, (active) => active.library.changes).pipe(
-      Stream.runForEach((status) => Effect.sync(() => states.set("librarySync", status))),
+    yield* followSession(session, IDLE_LIBRARY_SYNC, (active) => active.library.changes).pipe(
+      Stream.runForEach((status) => state.upsert(librarySync, { id: "library_sync", value: status })),
       Effect.forkScoped,
     );
-    yield* followSession(session, initialAppStates().playlistSync, playlistStatusStream).pipe(
-      Stream.runForEach((status) => Effect.sync(() => states.set("playlistSync", status))),
+    yield* followSession(session, IDLE_PLAYLIST_SYNC, playlistStatusStream).pipe(
+      Stream.runForEach((status) => state.upsert(playlistSync, { id: "playlist_sync", value: status })),
       Effect.forkScoped,
     );
 
@@ -224,12 +224,10 @@ const makeBackend = (options: BackendOptions) =>
           if (!Object.hasOwn(AppCommandArgs, name)) return { ok: false, error: { tag: "InvalidCommand", message: `Unknown command ${name}` } };
           return run(execute(name as AppCommandName, args));
         });
-        options.mainIpc.handle("app:state", (_event, name) => (Object.hasOwn(initialAppStates(), name) ? states.get(name as AppStateName) : null));
       }),
       () =>
         Effect.sync(() => {
           options.ipcMain.removeHandler("app:command");
-          options.ipcMain.removeHandler("app:state");
         }),
     );
   });

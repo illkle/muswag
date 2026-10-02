@@ -123,8 +123,8 @@ app.whenReady().then(async () => {
       userDataPath: app.getPath("userData"),
       ipcMain,
       mainIpc,
-      rendererIpc,
       player,
+      stateMirror: stateMirror.mirror,
     });
   } catch (cause) {
     console.error("Failed to open the library database", cause);

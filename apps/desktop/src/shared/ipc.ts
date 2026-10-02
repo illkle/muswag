@@ -18,8 +18,6 @@ export type MuswagMainIpc = {
 
   /** Runs a command from `app-contract.ts`; replies with an `AppCommandReply`. */
   "app:command": (name: string, args: readonly unknown[]) => unknown;
-  /** Current value of a state from `app-contract.ts`. */
-  "app:state": (name: string) => unknown;
 
   // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
   // results against the schemas in player-contract.ts. The player's state reaches renderers through
@@ -29,6 +27,5 @@ export type MuswagMainIpc = {
 };
 
 export type MuswagRendererIpc = {
-  "app:state": [event: { name: string; value: unknown }];
   "appUpdate:state": [state: AppUpdateState];
 };

@@ -1,20 +1,16 @@
-import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
-import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
-import { BasicIndex, createCollection } from "@tanstack/react-db";
+import { mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
+import { createCollection } from "@tanstack/react-db";
 import { createStore } from "@tanstack/react-store";
 import { Schema } from "effect";
 
 import { mainIpc } from "#/lib/ipc";
+import { stateCollectionOptions as options } from "#/lib/state-mirror";
 import type { MpvInstallMethod } from "#shared/player";
 import { CommandResult, type PlayerCommand, type PlayerIssue } from "#shared/player-contract";
-import { player, playerInstallOutput, playerIssues, playerPosition, STATE_MIRROR_CHANNEL } from "#shared/player-state";
+import { player, playerInstallOutput, playerIssues, playerPosition } from "#shared/player-state";
 
 /** How long a command waits for its outcome to show up in the state before it returns anyway. */
 const SETTLE_TIMEOUT_MS = 5_000;
-
-/** Main's in-memory state, mirrored over its own channel; the library has a client of its own. */
-const stateClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer, channel: STATE_MIRROR_CHANNEL }) });
-const options = { client: stateClient, defaultIndexType: BasicIndex, readOnly: true } as const;
 
 /** The player as main publishes it. Change it only through `PlayerIPC` and `MpvIPC`. */
 export const playerState = {

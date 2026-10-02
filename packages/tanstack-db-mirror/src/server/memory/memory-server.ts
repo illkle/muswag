@@ -26,12 +26,12 @@ export interface MemoryMirrorService {
    */
   readonly write: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   /** Inserts or replaces the row with `row`'s key. Dies if `row` does not satisfy the table's schema. */
-  readonly upsert: <Row extends object>(table: MemoryTable<Row, any>, row: Row) => Effect.Effect<void>;
-  readonly delete: <Key extends MirrorKey>(table: MemoryTable<any, Key>, key: Key) => Effect.Effect<void>;
+  readonly upsert: <Row extends object>(table: MemoryTable<Row, any>, row: NoInfer<Row>) => Effect.Effect<void>;
+  readonly delete: <Key extends MirrorKey>(table: MemoryTable<any, Key>, key: NoInfer<Key>) => Effect.Effect<void>;
   /** Makes `rows` the table's entire contents. */
-  readonly replace: <Row extends object>(table: MemoryTable<Row, any>, rows: Iterable<Row>) => Effect.Effect<void>;
+  readonly replace: <Row extends object>(table: MemoryTable<Row, any>, rows: Iterable<NoInfer<Row>>) => Effect.Effect<void>;
   /** Reads include the changes of the enclosing write. */
-  readonly get: <Row extends object, Key extends MirrorKey>(table: MemoryTable<Row, Key>, key: Key) => Effect.Effect<Row | undefined>;
+  readonly get: <Row extends object, Key extends MirrorKey>(table: MemoryTable<Row, Key>, key: NoInfer<Key>) => Effect.Effect<Row | undefined>;
   readonly rows: <Row extends object>(table: MemoryTable<Row, any>) => Effect.Effect<ReadonlyArray<Row>>;
   /**
    * Latest change position. Changes get their position when their write commits, so read it after the
