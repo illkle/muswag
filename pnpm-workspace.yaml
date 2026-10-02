@@ -41,7 +41,7 @@ catalog:
   better-sqlite3: ^13.0.3
   better-sqlite3-test: npm:better-sqlite3@13.0.3
   date-fns: ^4.4.0
-  drizzle-orm: 1.0.0-rc.4
+  drizzle-orm: 1.0.0-rc.5-5935859
   electron: ^44.5.0
   electron-builder: ^26.15.3
   electron-to-chromium: ^1.5.442

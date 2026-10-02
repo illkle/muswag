@@ -47,9 +47,10 @@ Main process. The tables must exist before the server starts, so run migrations 
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
 import { createElectronMainTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/main";
+import { eq } from "drizzle-orm";
+import { makeWithDefaults } from "drizzle-orm/effect-sqlite-node";
 import { ipcMain } from "electron";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
 
 const MirrorLive = Layer.effect(
   MirrorServer,
@@ -65,10 +66,10 @@ const runtime = ManagedRuntime.make(MirrorLive.pipe(Layer.provideMerge(Migration
 const starAlbum = (id: string) =>
   Effect.gen(function* () {
     const mirror = yield* MirrorServer;
-    const sql = yield* SqlClient;
+    const db = yield* makeWithDefaults(); // Drizzle on the same connection; create it once in real code
     return yield* mirror.write(
       Effect.gen(function* () {
-        yield* sql`UPDATE albums SET starred = 1 WHERE id = ${id}`;
+        yield* db.update(albums).set({ starred: true }).where(eq(albums.id, id));
         return yield* mirror.position; // lets the renderer await this write
       }),
     );
@@ -115,7 +116,7 @@ When a main-process command returns the position from its `write`, as `starAlbum
 - **One connection.** The server relies on Effect's single-connection SQLite client: it turns on `PRAGMA recursive_triggers` (so rows removed by `REPLACE` produce delete events), and it detects open transactions through `sql.withTransaction`. Raw `BEGIN` statements, other connections and other processes writing the same file aren't covered. `recursive_triggers` also applies to your own triggers on that connection.
 - **Schema changes:** triggers are rebuilt from the table definitions at every start, so migrations don't need to know about them. Exclude `__mirror_changes` and `__mirror_changes_meta` from drizzle-kit (`tablesFilter`). Capture triggers are named `__mirror_changes__<table>_<op>`; only those are dropped on restart.
 - **Electron renderer transport:** pass an `ipcRenderer` whose `on` returns an unsubscribe function, such as the one `@electron-toolkit/preload` exposes. With the raw `ipcRenderer` behind `contextBridge`, `removeListener` can't match the proxied listener, so the listener leaks when the client is disposed.
-- **Drizzle's Effect driver:** the server only uses Drizzle for table metadata and talks SQL through Effect's `SqlClient`, so it works with `drizzle-orm@1.0.0-rc.4` and the `1.0.0-rc.5` nightlies. `rc.4`'s `effect-sqlite-node` driver does not run on `effect@4.0.0` final; `rc.5`'s does. Its queries share the `SqlClient` connection, so they can run inside `mirror.write`, and `db.transaction` composes with it in both directions.
+- **Drizzle:** the server reads table metadata and value codecs from Drizzle and runs its own SQL through Effect's `SqlClient`. It is built against `drizzle-orm@1.0.0-rc.5` (a nightly; `rc.4`'s Effect driver does not run on `effect@4.0.0`), which decodes values through per-type codecs, so upgrades should be deliberate pin bumps. Application code should write through Drizzle's `effect-sqlite-node` driver: its queries use the same connection, values are encoded exactly as the mirror decodes them, and `db.transaction` nests with `mirror.write` in either direction.
 
 ## Testing
 

@@ -1,6 +1,5 @@
 import { getColumns, getTableName, type Column, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
-import * as SqliteCore from "drizzle-orm/sqlite-core";
-import { getTableConfig, type SQLiteTable } from "drizzle-orm/sqlite-core";
+import { genericSQLiteCodecs, getTableConfig, type SQLiteTable } from "drizzle-orm/sqlite-core";
 
 import type { MirrorKey, MirrorRow } from "./protocol.js";
 
@@ -92,18 +91,17 @@ export function describeTable(table: AnyMirrorTable): MirrorTableInfo {
   return info;
 }
 
+// Built-in column types decode through per-type codecs (keyed by the column's untyped `codec`) rather
+// than their own mapFromDriverValue; custom types can bring a JSON decoder of their own.
 type JsonDecodingColumn = Column & { readonly codec?: string; readonly mapFromJsonValue?: (value: unknown) => unknown };
-
-// From drizzle-orm 1.0.0-rc.5 on, built-in column types decode through per-type codecs instead of
-// their own mapFromDriverValue. Earlier versions don't export these.
-const jsonCodecs = (SqliteCore as { genericSQLiteCodecs?: Record<string, { normalizeInJson?: (value: unknown) => unknown } | undefined> }).genericSQLiteCodecs;
+const jsonCodecs = genericSQLiteCodecs as Partial<Record<string, { readonly normalizeInJson?: (value: unknown) => unknown }>>;
 
 /** Decodes a column value read from `json_object(...)`, the way Drizzle decodes relational query results. */
 export function decodeValue(column: Column, value: unknown): unknown {
   if (value === null || value === undefined) return null;
   const jsonColumn = column as JsonDecodingColumn;
   if (jsonColumn.mapFromJsonValue) return jsonColumn.mapFromJsonValue(value);
-  const normalize = jsonColumn.codec === undefined ? undefined : jsonCodecs?.[jsonColumn.codec]?.normalizeInJson;
+  const normalize = jsonColumn.codec === undefined ? undefined : jsonCodecs[jsonColumn.codec]?.normalizeInJson;
   return column.mapFromDriverValue(normalize ? normalize(value) : value);
 }
 
