@@ -6,6 +6,7 @@ catalog:
   "@base-ui/react": ^1.8.0
   "@effect/platform-browser": 4.0.0
   "@effect/platform-node": 4.0.0
+  "@effect/sql-sqlite-node": 4.0.0
   "@effect/tsgo": 0.47.1
   "@effect/vitest": 4.0.0
   "@electron-toolkit/preload": ^3.0.2
@@ -40,6 +41,7 @@ catalog:
   better-sqlite3: ^13.0.3
   better-sqlite3-test: npm:better-sqlite3@13.0.3
   date-fns: ^4.4.0
+  drizzle-orm: 1.0.0-rc.4
   electron: ^44.5.0
   electron-builder: ^26.15.3
   electron-to-chromium: ^1.5.442
@@ -71,5 +73,6 @@ minimumReleaseAgeExclude:
   - "@effect/platform-browser@4.0.0"
   - "@effect/platform-node-shared@4.0.0"
   - "@effect/platform-node@4.0.0"
+  - "@effect/sql-sqlite-node@4.0.0"
   - "@effect/vitest@4.0.0"
   - effect@4.0.0
