@@ -168,7 +168,12 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
 
   const getKey = (row: Row) => (row as Record<string, unknown>)[primaryKey] as Key;
   const persist = (params: { transaction: { mutations: ReadonlyArray<any> } }) => client.applyTransaction(params.transaction);
-  const awaitPosition: MirrorCollectionUtils["awaitPosition"] = (position, timeoutMs) => tracker.waitFor(position, timeoutMs ?? client.mutationTimeoutMs);
+  const awaitPosition: MirrorCollectionUtils["awaitPosition"] = (position, timeoutMs) => {
+    // The position may come from a restarted server, or its last batch may have been lost.
+    client.observeEpoch(position.epoch);
+    client.expect(position);
+    return tracker.waitFor(position, timeoutMs ?? client.mutationTimeoutMs);
+  };
   attachCollectionHandle(awaitPosition, { client, table: info.name, waitFor: (position, timeoutMs) => tracker.waitFor(position, timeoutMs) });
 
   return {

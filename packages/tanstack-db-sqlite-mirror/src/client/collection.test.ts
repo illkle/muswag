@@ -365,6 +365,23 @@ describe("server commands", () => {
 
     expect(client.albums.has("a1")).toBe(true);
   });
+
+  it("pulls the batch of an awaited position when it is lost", async () => {
+    harness = await createHarness();
+    const client = harness.connect();
+    await client.albums.preload();
+
+    client.connection.dropNextBatches(1);
+    const position = await harness.write(
+      Effect.gen(function* () {
+        yield* harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a1', 'A')`);
+        return yield* harness.server.position;
+      }),
+    );
+    await client.albums.utils.awaitPosition(position, 2_000);
+
+    expect(client.albums.has("a1")).toBe(true);
+  });
 });
 
 describe("stream recovery", () => {

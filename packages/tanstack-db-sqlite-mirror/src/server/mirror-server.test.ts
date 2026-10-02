@@ -1,4 +1,4 @@
-import { blob, numeric, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { blob, customType, numeric, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { Cause, Effect, Exit, Scope } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";
@@ -205,6 +205,48 @@ describe("change capture", () => {
       { table: "genres", type: "delete", key: "rock" },
       { table: "genres", type: "upsert", key: "Rock", value: { id: "Rock", label: "Rock" } },
     ]);
+    await harness.run(Scope.close(scope, Exit.void));
+  });
+
+  it("reads real keys as the same numbers the rows carry", async () => {
+    harness = await createHarness();
+    await harness.run(harness.sql.unsafe(`CREATE TABLE points (id REAL PRIMARY KEY, label TEXT)`));
+    const points = sqliteTable("points", { id: real().primaryKey(), label: text() });
+    const scope = await harness.run(Scope.make());
+    const server = await harness.run(MirrorServer.make({ tables: [points], changeLogTable: "point_changes" }).pipe(Scope.provide(scope)));
+    const batches: Array<MirrorChangeBatch> = [];
+    server.subscribe((batch) => batches.push(batch));
+
+    await harness.run(server.write(harness.sql.unsafe(`INSERT INTO points (id, label) VALUES (1.5, 'a'), (0.1 + 0.2, 'b')`)));
+    await harness.run(server.write(harness.sql.unsafe(`DELETE FROM points`)));
+
+    expect(withoutSeq(batches.flatMap((batch) => batch.changes))).toEqual([
+      { table: "points", type: "upsert", key: 1.5, value: { id: 1.5, label: "a" } },
+      { table: "points", type: "upsert", key: 0.1 + 0.2, value: { id: 0.1 + 0.2, label: "b" } },
+      { table: "points", type: "delete", key: 1.5 },
+      { table: "points", type: "delete", key: 0.1 + 0.2 },
+    ]);
+    await harness.run(Scope.close(scope, Exit.void));
+  });
+
+  it("encodes and decodes custom column types", async () => {
+    harness = await createHarness();
+    await harness.run(harness.sql.unsafe(`CREATE TABLE tagged (id TEXT PRIMARY KEY, tags TEXT NOT NULL)`));
+    const tagList = customType<{ data: Array<string>; driverData: string }>({
+      dataType: () => "text",
+      toDriver: (value) => value.join(","),
+      fromDriver: (value) => value.split(","),
+    });
+    const tagged = sqliteTable("tagged", { id: text().primaryKey(), tags: tagList().notNull() });
+    const scope = await harness.run(Scope.make());
+    const server = await harness.run(MirrorServer.make({ tables: [tagged], changeLogTable: "tagged_changes" }).pipe(Scope.provide(scope)));
+    const batches: Array<MirrorChangeBatch> = [];
+    server.subscribe((batch) => batches.push(batch));
+
+    await harness.run(server.handle({ v: 1, type: "mutate", mutations: [{ table: "tagged", type: "insert", value: { id: "t1", tags: ["a", "b"] } }] }));
+
+    expect(await harness.run(harness.sql.unsafe(`SELECT tags FROM tagged`))).toEqual([{ tags: "a,b" }]);
+    expect(withoutSeq(batches.flatMap((batch) => batch.changes))).toEqual([{ table: "tagged", type: "upsert", key: "t1", value: { id: "t1", tags: ["a", "b"] } }]);
     await harness.run(Scope.close(scope, Exit.void));
   });
 

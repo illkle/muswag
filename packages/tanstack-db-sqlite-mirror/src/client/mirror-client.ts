@@ -234,10 +234,10 @@ export class MirrorClient {
   }
 
   /**
-   * Called with a position the server has already broadcast past. If the stream has not caught up
-   * shortly after, the batch was lost and nothing later revealed the gap, so pull it.
+   * @internal Called with a position the server has already broadcast past. If the stream has not
+   * caught up shortly after, the batch was lost and nothing later revealed the gap, so pull it.
    */
-  private expect(position: MirrorPosition): void {
+  expect(position: MirrorPosition): void {
     const generation = this.generation;
     setTimeout(() => {
       if (generation !== this.generation || this.disposed || this.pulling) return;

@@ -65,7 +65,7 @@ type ChangeRow = {
   readonly tbl: string;
   readonly op: string;
   readonly key_type: string;
-  readonly key_text: string;
+  readonly key_json: string | null;
   readonly value: string | null;
 };
 
@@ -136,12 +136,11 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
 
   const decodeChange = (row: ChangeRow): MirrorChange => {
     const info = requireTable(row.tbl);
-    // Keys are read as text: node:sqlite throws on integers beyond Number.MAX_SAFE_INTEGER.
-    let rawKey: unknown = row.key_text;
-    if (row.key_type === "integer") {
-      rawKey = Number(row.key_text);
-      if (!Number.isSafeInteger(rawKey)) throw new Error(`Key ${row.key_text} of "${row.tbl}" is outside the safe integer range`);
-    }
+    // Keys are read as JSON, formatted like the row values: node:sqlite throws on integers beyond
+    // Number.MAX_SAFE_INTEGER, and a text cast would turn real keys into strings.
+    if (row.key_json === null) throw new Error(`Key of type ${row.key_type} of "${row.tbl}" cannot be mirrored`);
+    const rawKey: unknown = JSON.parse(row.key_json);
+    if (row.key_type === "integer" && !Number.isSafeInteger(rawKey)) throw new Error(`Key ${row.key_json} of "${row.tbl}" is outside the safe integer range`);
     const key = decodeValue(info.primaryKey.column, rawKey) as MirrorKey;
     if (row.op === "d") return { seq: row.seq, table: row.tbl, type: "delete", key };
     return { seq: row.seq, table: row.tbl, type: "upsert", key, value: decodeRow(info, row.value ?? "{}") };
@@ -159,9 +158,12 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
     });
 
   const readChangesAfter = (seq: number) =>
-    internal(sql.unsafe<ChangeRow>(`SELECT seq, tbl, op, typeof(key) AS key_type, CAST(key AS TEXT) AS key_text, value FROM ${changeLogSql} WHERE seq > ? ORDER BY seq`, [seq])).pipe(
-      Effect.map((rows) => ({ toSeq: rows.at(-1)?.seq, changes: decodeChanges(rows) })),
-    );
+    internal(
+      sql.unsafe<ChangeRow>(
+        `SELECT seq, tbl, op, typeof(key) AS key_type, CASE WHEN typeof(key) = 'blob' THEN NULL ELSE json_quote(key) END AS key_json, value FROM ${changeLogSql} WHERE seq > ? ORDER BY seq`,
+        [seq],
+      ),
+    ).pipe(Effect.map((rows) => ({ toSeq: rows.at(-1)?.seq, changes: decodeChanges(rows) })));
 
   const inTransaction = Effect.map(Effect.serviceOption(sql.transactionService), Option.isSome);
 
