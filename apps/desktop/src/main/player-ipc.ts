@@ -2,7 +2,7 @@ import { dialog, type WebContents } from "electron";
 import type { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { Effect, ManagedRuntime, Schema, Stream } from "effect";
 import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
-import { PlayerCommand, PlayerCredentials, type CommandAck, type CommandResult, type PlayerSnapshot } from "#shared/player-contract";
+import { PlayerCommand, type CommandAck, type CommandResult, type PlayerCredentials, type PlayerSnapshot } from "#shared/player-contract";
 import { makePlayerLayer, Player } from "./player";
 import { CommandFailed, InvalidCommand, toIssue } from "./player/errors";
 
@@ -11,7 +11,6 @@ type Subscriber = { readonly id: string; readonly contents: WebContents; awaitin
 
 const invalid = (operation: string, message: string) => new CommandFailed({ issue: toIssue(new InvalidCommand({ operation, message })) });
 const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(PlayerCommand)(input).pipe(Effect.mapError(() => invalid("decode", "Invalid player command.")));
-const decodeCredentials = (input: unknown) => Schema.decodeUnknownEffect(Schema.NullOr(PlayerCredentials))(input).pipe(Effect.mapError(() => invalid("credentials", "Invalid credentials.")));
 
 export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, renderer: IpcEmitter<MuswagRendererIpc>, options: Parameters<typeof makePlayerLayer>[0]) {
   const runtime = ManagedRuntime.make(makePlayerLayer(options));
@@ -70,19 +69,47 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, renderer: Ip
   });
   main.handle("player:getSnapshot", snapshot);
   main.handle("player:command", (_event, commandId, command) => execute(commandId, command));
-  main.handle("player:setCredentials", (_event, input) =>
-    respond("credentials", decodeCredentials(input).pipe(Effect.flatMap((credentials) => Player.use((player) => player.setCredentials(credentials))))),
-  );
   main.handle("player:locate", async () => {
     const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
     const path = result.canceled ? undefined : result.filePaths[0];
     return path ? execute(crypto.randomUUID(), { _tag: "SetBinaryPath", path }) : null;
   });
 
+  const listeners = new Set<(snapshot: PlayerSnapshot) => void>();
+  runtime.runFork(
+    Player.use((player) =>
+      Stream.runForEach(player.changes, (snapshot) =>
+        Effect.sync(() => {
+          for (const listener of listeners) listener(snapshot);
+        }),
+      ),
+    ),
+  );
+
   return {
+    /** Runs a command from main itself, such as the queue manager. */
+    execute: (command: PlayerCommand) =>
+      respond(
+        crypto.randomUUID(),
+        Player.use((player) => player.execute(crypto.randomUUID(), command)),
+      ),
+    /** Credentials sign stream URLs; `null` stops playback. */
+    setCredentials: (credentials: PlayerCredentials | null) =>
+      respond(
+        "credentials",
+        Player.use((player) => player.setCredentials(credentials)),
+      ),
+    snapshot,
+    subscribe: (listener: (snapshot: PlayerSnapshot) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     shutdown: async () => {
       await runtime.runPromise(Player.use((player) => player.shutdown));
       subscribers.clear();
+      listeners.clear();
       await runtime.dispose();
     },
   };

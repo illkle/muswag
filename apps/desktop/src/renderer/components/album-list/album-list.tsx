@@ -4,7 +4,7 @@ import { useContentSize } from "#/components/utils/app-content-size";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { cn } from "#/lib/utils";
-import type { Album } from "@muswag/shared";
+import type { Album } from "@muswag/model";
 import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";

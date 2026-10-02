@@ -1,6 +1,6 @@
 import { db } from "#/lib/db-renderer";
 import type { PlaylistRow } from "#/lib/playlist-queue";
-import type { PlaylistEntry } from "@muswag/shared";
+import type { PlaylistEntry } from "@muswag/model";
 import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 

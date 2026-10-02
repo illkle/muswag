@@ -14,8 +14,3 @@ export const AppUpdateIPC = {
       listener(state);
     }),
 };
-
-export const FilesystemIpc = {
-  writeFile: (path: string, data: Uint8Array) => mainIpc.invoke("fs:write", path, data),
-  remove: (path: string) => mainIpc.invoke("fs:delete", path),
-};

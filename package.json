@@ -9,10 +9,10 @@
     "lint:fix": "pnpm -r --if-present run lint:fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "typecheck": "pnpm --filter @muswag/shared build && pnpm -r --if-present run typecheck",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
-    "test:integration": "pnpm --filter @muswag/shared build && pnpm --filter @muswag/tests test:integration",
+    "test:integration": "pnpm --filter @muswag/tests test:integration",
     "test:sync-benchmark": "pnpm --filter @muswag/tests test:sync-benchmark",
     "prepare": "effect-tsgo patch --typescript --oxlint"
   },

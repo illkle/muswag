@@ -1,0 +1,90 @@
+{
+  "name": "@muswag/tanstack-db-sqlite-mirror",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TanStack DB collections that mirror SQLite tables owned by another process (e.g. Electron main).",
+  "type": "module",
+  "exports": {
+    "./protocol": {
+      "source": {
+        "types": "./src/protocol.ts",
+        "default": "./src/protocol.ts"
+      },
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js",
+      "default": "./dist/protocol.js"
+    },
+    "./server": {
+      "source": {
+        "types": "./src/server/index.ts",
+        "default": "./src/server/index.ts"
+      },
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
+    "./client": {
+      "source": {
+        "types": "./src/client/index.ts",
+        "default": "./src/client/index.ts"
+      },
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js",
+      "default": "./dist/client/index.js"
+    },
+    "./electron/main": {
+      "source": {
+        "types": "./src/electron/main.ts",
+        "default": "./src/electron/main.ts"
+      },
+      "types": "./dist/electron/main.d.ts",
+      "import": "./dist/electron/main.js",
+      "default": "./dist/electron/main.js"
+    },
+    "./electron/renderer": {
+      "source": {
+        "types": "./src/electron/renderer.ts",
+        "default": "./src/electron/renderer.ts"
+      },
+      "types": "./dist/electron/renderer.d.ts",
+      "import": "./dist/electron/renderer.js",
+      "default": "./dist/electron/renderer.js"
+    },
+    "./testing": {
+      "source": {
+        "types": "./src/testing/index.ts",
+        "default": "./src/testing/index.ts"
+      },
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/db": "catalog:",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/sql-sqlite-node": "catalog:",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "effect": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    }
+  }
+}

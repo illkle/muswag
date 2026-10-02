@@ -1,4 +1,4 @@
-import type { Song } from "@muswag/shared";
+import type { Song } from "@muswag/model";
 
 /** One playlist entry with its library song, or `null` when the song is not in the local library. */
 export type PlaylistRow = {

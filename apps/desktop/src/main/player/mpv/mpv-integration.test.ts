@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { songRow } from "@muswag/model";
 import type { EngineError } from "../errors";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -43,7 +44,7 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
               Effect.forkScoped,
             );
             yield* session.execute(command("set_property", "pause", true));
-            const items = ["a", "b", "c"].map((key) => ({ key, track: { id: "same", title: key, isDir: false } }));
+            const items = ["a", "b", "c"].map((key) => ({ key, track: songRow({ id: "same", title: key }) }));
             const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, new Map(items.map((item) => [item.key, Redacted.make(file)])));
             expect(mirrored.entries.map((entry) => entry.key)).toEqual(["a", "b", "c"]);
             yield* Deferred.await(loaded);

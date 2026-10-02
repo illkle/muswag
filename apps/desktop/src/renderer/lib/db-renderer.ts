@@ -1,11 +1,24 @@
-import { createElectronSQLitePersistence } from "@tanstack/electron-db-sqlite-persistence";
-import { createMuswagDb } from "@muswag/shared/db";
-import { CreateFuse } from "@muswag/shared";
+import { albums, artists, playlists, songs } from "@muswag/model";
+import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-sqlite-mirror/client";
+import { createElectronRendererTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/renderer";
+import { BasicIndex, createCollection } from "@tanstack/react-db";
 
-const persistence = createElectronSQLitePersistence({
-  invoke: (channel, request) => window.electron.ipcRenderer.invoke(channel, request),
-});
+import { CreateFuse } from "./search";
 
-export const db = createMuswagDb(persistence);
+/** Main owns the library database; these collections mirror its tables. Changes go through main's commands. */
+export const mirrorClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer }) });
+
+const options = { client: mirrorClient, defaultIndexType: BasicIndex, readOnly: true } as const;
+
+export const db = {
+  albums: createCollection(mirrorCollectionOptions({ ...options, table: albums })),
+  artists: createCollection(mirrorCollectionOptions({ ...options, table: artists })),
+  songs: createCollection(mirrorCollectionOptions({ ...options, table: songs })),
+  playlists: createCollection(mirrorCollectionOptions({ ...options, table: playlists })),
+};
+
+export type LibraryCollections = typeof db;
+
+db.songs.createIndex(({ albumId }) => albumId);
 
 export const FuzeSearch = CreateFuse(db);

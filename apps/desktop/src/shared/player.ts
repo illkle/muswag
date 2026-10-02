@@ -1,4 +1,4 @@
-import type { PlaybackItem } from "@muswag/shared";
+import type { PlaybackItem } from "@muswag/model";
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 

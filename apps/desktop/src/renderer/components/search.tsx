@@ -1,6 +1,7 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { FuzeSearch } from "#/lib/db-renderer";
-import type { CoverTarget, SearchResult, SearchResultAlbum, SearchResultArtist, SearchResultSong } from "@muswag/shared";
+import type { SearchResult, SearchResultAlbum, SearchResultArtist, SearchResultSong } from "#/lib/search";
+import type { CoverTarget } from "@muswag/model";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import type { FuseResult } from "fuse.js";
@@ -17,8 +18,8 @@ const InnerResult = ({
   ...props
 }: React.ComponentProps<"div"> & {
   title?: string;
-  subtitle?: string | undefined;
-  coverPath?: string | undefined;
+  subtitle?: string | null | undefined;
+  coverPath?: string | null | undefined;
   target?: CoverTarget | undefined;
 }) => {
   return (

@@ -24,7 +24,7 @@ export function SidebarPlaylists() {
   });
 
   const syncing = syncStatus.state === "syncing" || syncMutation.isPending;
-  // The status keeps the failure until a retry succeeds; the mutation error covers a failed manual sync.
+  // The retry path reports "scheduled" while still holding the failure, so key off `error`.
   const syncError = syncStatus.error ?? (syncMutation.isError ? getErrorMessage(syncMutation.error, "The playlists could not be synced.") : null);
 
   return (

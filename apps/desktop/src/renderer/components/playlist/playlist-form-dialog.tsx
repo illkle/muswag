@@ -4,7 +4,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
 import { getErrorMessage } from "#/lib/err";
-import type { PlaylistDetails } from "@muswag/shared";
+import type { PlaylistDetails } from "@muswag/model";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 

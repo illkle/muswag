@@ -1,6 +1,6 @@
 import { cn } from "#/lib/utils";
 import { AppClient } from "#/core/client";
-import type { CoverTarget } from "@muswag/shared";
+import type { CoverTarget } from "@muswag/model";
 import { startTransition, useEffect, useRef, useState } from "react";
 
 export function AlbumCover({
@@ -9,7 +9,7 @@ export function AlbumCover({
   target,
   className,
 }: {
-  coverArtPath: string | undefined;
+  coverArtPath: string | null | undefined;
   instantLoad?: boolean | undefined;
   target?: CoverTarget | undefined;
   className?: string | undefined;
