@@ -1,6 +1,6 @@
-import { Db, LibraryQueries, PlaylistCommands, PlaylistEdits, write } from "@muswag/core";
-import { apiSong, seed, TestDatabase } from "@muswag/core/testing";
-import { albumOccurrenceKey, songs } from "@muswag/shared";
+import { Db, LibraryQueries, PlaylistCommands, PlaylistEdits, write } from "@muswag/backend";
+import { apiSong, seed, TestDatabase } from "@muswag/backend/testing";
+import { albumOccurrenceKey, songs } from "@muswag/model";
 import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
 import { Layer, ManagedRuntime } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";

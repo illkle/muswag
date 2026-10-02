@@ -1,4 +1,4 @@
-import type { AuthSnapshot, CoverTarget, LibrarySyncStatus, PlaylistSyncStatus, RefreshStatTarget, SessionCredentials, SyncMode } from "@muswag/shared";
+import type { AuthSnapshot, CoverTarget, LibrarySyncStatus, PlaylistSyncStatus, RefreshStatTarget, SessionCredentials, SyncMode } from "@muswag/model";
 
 import { appCommand, appStates, loadAppStates } from "#/lib/app-ipc";
 

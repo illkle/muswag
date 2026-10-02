@@ -1,5 +1,5 @@
-import type { NowPlaying, PlaybackItem, QueueManagerSnapshot, QueueSourceRef, QueueStorage, Song, SourceCursor } from "@muswag/shared";
-import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/shared";
+import type { NowPlaying, PlaybackItem, QueueManagerSnapshot, QueueSourceRef, QueueStorage, Song, SourceCursor } from "@muswag/model";
+import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
 import type { MpvQueueSnapshot, PlayerRuntimeState, QueuePlayerPort } from "#shared/player";

@@ -12,8 +12,8 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
-    "@muswag/core": "workspace:*",
-    "@muswag/shared": "workspace:*",
+    "@muswag/backend": "workspace:*",
+    "@muswag/model": "workspace:*",
     "effect": "catalog:",
     "testcontainers": "^12.2.0",
     "vitest": "catalog:"

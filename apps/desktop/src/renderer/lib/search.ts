@@ -1,4 +1,4 @@
-import type { Album, Artist, Song } from "@muswag/shared";
+import type { Album, Artist, Song } from "@muswag/model";
 import Fuse from "fuse.js";
 
 import type { LibraryCollections } from "./db-renderer";

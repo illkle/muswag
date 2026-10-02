@@ -9,7 +9,7 @@ import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { db } from "#/lib/db-renderer";
 import { SongListRoot } from "#/components/song-list";
-import { albumOccurrenceKey, type Song } from "@muswag/shared";
+import { albumOccurrenceKey, type Song } from "@muswag/model";
 import { useAlbumStatsRefresh } from "#/core/stats-refresh";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 

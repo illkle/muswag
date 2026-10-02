@@ -1,9 +1,9 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 
-import { LibrarySync } from "@muswag/core";
-import { apiAlbum, apiLayer, apiSong, idsOf, TestDatabase } from "@muswag/core/testing";
-import { albums, songs } from "@muswag/shared";
+import { LibrarySync } from "@muswag/backend";
+import { apiAlbum, apiLayer, apiSong, idsOf, TestDatabase } from "@muswag/backend/testing";
+import { albums, songs } from "@muswag/model";
 import { Effect, Layer } from "effect";
 
 describe("sync storage benchmark", () => {

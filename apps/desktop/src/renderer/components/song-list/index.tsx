@@ -3,7 +3,7 @@ import { ArtistLinks } from "#/components/utils/artist-links";
 import { db } from "#/lib/db-renderer";
 import { cn } from "#/lib/utils";
 import type { PlayerStatus } from "#shared/player.ts";
-import type { Album, Song } from "@muswag/shared";
+import type { Album, Song } from "@muswag/model";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { Link, useElementScrollRestoration } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";

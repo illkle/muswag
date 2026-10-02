@@ -3,7 +3,7 @@ import { initializePlayerConnection, PlayerConnectionStore } from "#/player/conn
 import type { PlayerRuntimeState } from "#shared/player";
 import { binaryView, installView, runtimeView } from "#shared/player-snapshot";
 import { getQueueCanGoNext, getQueueCanGoPrevious } from "#shared/queue-state";
-import type { QueueSourceRef, Song } from "@muswag/shared";
+import type { QueueSourceRef, Song } from "@muswag/model";
 import { useStore } from "@tanstack/react-store";
 
 initializePlayerConnection();

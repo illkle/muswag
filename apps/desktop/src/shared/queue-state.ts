@@ -1,4 +1,4 @@
-import type { NowPlaying, PlaybackItem, QueueSourceRef } from "@muswag/shared";
+import type { NowPlaying, PlaybackItem, QueueSourceRef } from "@muswag/model";
 
 import type { PlayerRuntimeState } from "./player";
 import type { SourceWindow } from "./queue-source";

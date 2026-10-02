@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PlaylistCommands, PlaylistSyncManager, PlaylistSyncManagerLive, SubsonicAPI } from "@muswag/core";
-import { rowOf } from "@muswag/core/testing";
-import { playlists } from "@muswag/shared";
+import { PlaylistCommands, PlaylistSyncManager, PlaylistSyncManagerLive, SubsonicAPI } from "@muswag/backend";
+import { rowOf } from "@muswag/backend/testing";
+import { playlists } from "@muswag/model";
 import { Layer, ManagedRuntime } from "effect";
 
 import { librarySetA } from "./fixtures/library-sets.js";

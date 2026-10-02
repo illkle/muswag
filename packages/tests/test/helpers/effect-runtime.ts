@@ -1,6 +1,6 @@
 import { NodeCrypto } from "@effect/platform-node";
-import { PlaylistCommands, PlaylistEdits, SubsonicAPILive } from "@muswag/core";
-import { TestDatabase } from "@muswag/core/testing";
+import { PlaylistCommands, PlaylistEdits, SubsonicAPILive } from "@muswag/backend";
+import { TestDatabase } from "@muswag/backend/testing";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { FetchHttpClient } from "effect/http";
 

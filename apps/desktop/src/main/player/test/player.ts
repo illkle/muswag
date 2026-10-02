@@ -1,5 +1,5 @@
 import { Effect, Layer, Queue, Redacted, Stream } from "effect";
-import { songRow, type PlaybackItem } from "@muswag/shared";
+import { songRow, type PlaybackItem } from "@muswag/model";
 import type { PlayerSnapshot } from "#shared/player-contract";
 import { Binaries } from "../binary/binaries";
 import { Installer } from "../binary/installer";

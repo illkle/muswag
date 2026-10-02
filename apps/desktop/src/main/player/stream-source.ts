@@ -1,4 +1,4 @@
-import { buildSubsonicStreamUrl, type PlaybackItem } from "@muswag/shared";
+import { buildSubsonicStreamUrl, type PlaybackItem } from "@muswag/model";
 import { createHash } from "node:crypto";
 import { Effect, Redacted, Schema } from "effect";
 import type { PlayerCredentials } from "#shared/player-contract";

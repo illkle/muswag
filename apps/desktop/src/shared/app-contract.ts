@@ -1,4 +1,4 @@
-import type { AuthSnapshot, LibrarySyncStatus, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/shared";
+import type { AuthSnapshot, LibrarySyncStatus, PlaylistEntry, PlaylistRecord, PlaylistSyncStatus } from "@muswag/model";
 import type { MirrorPosition } from "@muswag/tanstack-db-sqlite-mirror/protocol";
 import { Schema } from "effect";
 

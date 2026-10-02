@@ -1,7 +1,7 @@
 import { db } from "#/lib/db-renderer";
 import { appCommand } from "#/lib/app-ipc";
 import type { Written } from "#shared/app-contract";
-import type { CreatePlaylistInput, PlaylistEntry, PlaylistRecord } from "@muswag/shared";
+import type { CreatePlaylistInput, PlaylistEntry, PlaylistRecord } from "@muswag/model";
 
 /**
  * Playlist edits run in main, which saves them locally and syncs them to the server. Each resolves

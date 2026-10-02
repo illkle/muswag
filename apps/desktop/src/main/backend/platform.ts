@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
-import { FileSystemError, MiniFs, type CredentialsCipher } from "@muswag/core";
+import { FileSystemError, MiniFs, type CredentialsCipher } from "@muswag/backend";
 import { Effect, Layer } from "effect";
 import { safeStorage } from "electron";
 

@@ -1,5 +1,5 @@
-import type { QueueManagerSnapshot, QueueStorage } from "@muswag/shared";
-import { parseQueueManagerSnapshot } from "@muswag/shared";
+import type { QueueManagerSnapshot, QueueStorage } from "@muswag/model";
+import { parseQueueManagerSnapshot } from "@muswag/model";
 
 /** The single persisted queue record. */
 export interface QueueRecordStore {

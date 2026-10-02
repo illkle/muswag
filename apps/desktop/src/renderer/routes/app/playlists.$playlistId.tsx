@@ -13,7 +13,7 @@ import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
 import { PlaylistActions } from "#/core/playlist-actions";
 import { totalDuration, usePlaylist } from "#/lib/playlist-queries";
-import { songRow, playlistOccurrenceKey, type Song } from "@muswag/shared";
+import { songRow, playlistOccurrenceKey, type Song } from "@muswag/model";
 import { usePlaylistSongStatsRefresh } from "#/core/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({

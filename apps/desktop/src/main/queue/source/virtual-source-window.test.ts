@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { songRow, type Song } from "@muswag/shared";
+import { songRow, type Song } from "@muswag/model";
 import type { QueueSource, SourceItem, SourcePage } from "#shared/queue-source";
 import { VirtualSourceWindow } from "./virtual-source-window";
 

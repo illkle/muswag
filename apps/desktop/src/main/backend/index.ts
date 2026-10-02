@@ -1,5 +1,5 @@
-import { CoreLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/core";
-import type { AuthSnapshot, PlaylistSyncStatus, Song } from "@muswag/shared";
+import { BackendLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/backend";
+import type { AuthSnapshot, PlaylistSyncStatus, Song } from "@muswag/model";
 import { createElectronMainTransport } from "@muswag/tanstack-db-sqlite-mirror/electron/main";
 import { MirrorServer } from "@muswag/tanstack-db-sqlite-mirror/server";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -238,8 +238,8 @@ const makeBackend = (options: BackendOptions) =>
 /** Starts the backend once the database is migrated and the session is being restored. */
 export async function startBackend(options: BackendOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const core = CoreLive({ filename: options.databasePath, coverSaveLocation: "covers", cipher: safeStorageCipher }).pipe(Layer.provide(platform));
-  const runtime = ManagedRuntime.make(Layer.effectDiscard(makeBackend(options)).pipe(Layer.provideMerge(core)));
+  const services = BackendLive({ filename: options.databasePath, coverSaveLocation: "covers", cipher: safeStorageCipher }).pipe(Layer.provide(platform));
+  const runtime = ManagedRuntime.make(Layer.effectDiscard(makeBackend(options)).pipe(Layer.provideMerge(services)));
   await runtime.runPromise(Effect.void);
   return { dispose: () => runtime.dispose() };
 }

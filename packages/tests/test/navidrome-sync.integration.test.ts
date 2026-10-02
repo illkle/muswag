@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Db, LibrarySync } from "@muswag/core";
-import { albums, songs } from "@muswag/shared";
+import { Db, LibrarySync } from "@muswag/backend";
+import { albums, songs } from "@muswag/model";
 import { Effect, Layer, ManagedRuntime } from "effect";
 
 import { librarySetA, librarySetB, type AlbumFixture } from "./fixtures/library-sets.js";

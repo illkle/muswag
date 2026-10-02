@@ -1,4 +1,4 @@
-import type { SourceCursor } from "@muswag/shared";
+import type { SourceCursor } from "@muswag/model";
 
 import { SOURCE_AHEAD, SOURCE_BEHIND, sourceWindowItems, type QueueSource, type SourceItem, type SourcePage, type SourceWindow } from "#shared/queue-source";
 

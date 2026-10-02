@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { songRow, type Song } from "@muswag/shared";
+import { songRow, type Song } from "@muswag/model";
 
 vi.mock("@tanstack/react-router", () => ({
   useElementScrollRestoration: () => undefined,

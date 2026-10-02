@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import type { PlaybackItem } from "@muswag/shared";
+import type { PlaybackItem } from "@muswag/model";
 
 /**
  * The wire contract between the main-process player and the renderer. Every type is derived from its schema,

@@ -1,5 +1,5 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
-import { clonePlaybackItem, type PlaybackItem } from "@muswag/shared";
+import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
 import { initialSnapshot, type CommandAck, type Media, type PlayerCommand, type PlayerCredentials, type PlayerIssue, type PlayerSnapshot, type Selection } from "#shared/player-contract";
 import { Binaries } from "./binary/binaries";
 import { Installer, type InstallProgress } from "./binary/installer";

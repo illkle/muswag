@@ -1,4 +1,4 @@
-import type { PlaybackItem, QueueSourceRef, SourceCursor } from "@muswag/shared";
+import type { PlaybackItem, QueueSourceRef, SourceCursor } from "@muswag/model";
 
 export const SOURCE_BEHIND = 10;
 export const SOURCE_AHEAD = 30;

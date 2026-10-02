@@ -1,5 +1,5 @@
 import { AppClient } from "#/core/client";
-import type { PlaylistSyncStatus } from "@muswag/shared";
+import type { PlaylistSyncStatus } from "@muswag/model";
 import { useSyncExternalStore } from "react";
 
 export const useUser = () => {

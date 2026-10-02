@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { songRow } from "@muswag/shared";
+import { songRow } from "@muswag/model";
 import type { EngineError } from "../errors";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

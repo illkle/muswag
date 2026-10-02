@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { songRow } from "@muswag/shared";
+import { songRow } from "@muswag/model";
 import { initialSnapshot } from "#shared/player-contract";
 import { acceptSnapshot, runtimeView } from "./player-snapshot";
 
