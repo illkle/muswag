@@ -15,9 +15,7 @@ vi.mock("#/lib/db-renderer", () => ({ db: {} }));
 vi.mock("#/core/playlist-actions", () => ({
   PlaylistActions: {
     addSongs: vi.fn(),
-    createWithSongs: vi.fn(),
-    setComment: vi.fn(),
-    setVisibility: vi.fn(),
+    create: vi.fn(),
   },
 }));
 

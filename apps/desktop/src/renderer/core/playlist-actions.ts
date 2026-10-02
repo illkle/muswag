@@ -16,9 +16,6 @@ const synced = async <T>(write: Promise<Written<T>>): Promise<T> => {
 export const PlaylistActions = {
   create: (input: CreatePlaylistInput): Promise<PlaylistRecord> => synced(appCommand("playlists:create", input)),
 
-  /** Creates a playlist and seeds it in one revision, so the sync manager pushes a single create. */
-  createWithSongs: (name: string, songIds: readonly string[]): Promise<PlaylistRecord> => synced(appCommand("playlists:create", { name, songIds: [...songIds] })),
-
   rename: (playlistId: string, name: string): Promise<void> => synced(appCommand("playlists:rename", playlistId, name)),
 
   setComment: (playlistId: string, comment: string): Promise<void> => synced(appCommand("playlists:setComment", playlistId, comment)),

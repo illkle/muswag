@@ -66,10 +66,8 @@ export function SidebarPlaylists() {
         onOpenChange={setCreateOpen}
         title="New playlist"
         submitLabel="Create"
-        onSubmit={async ({ name, comment, public: isPublic }) => {
-          const created = await PlaylistActions.create({ name });
-          if (comment) await PlaylistActions.setComment(created.id, comment);
-          if (isPublic) await PlaylistActions.setVisibility(created.id, true);
+        onSubmit={async (details) => {
+          const created = await PlaylistActions.create(details);
           await navigate({ to: "/app/playlists/$playlistId", params: { playlistId: created.id } });
         }}
       />
