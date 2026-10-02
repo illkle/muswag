@@ -4,7 +4,7 @@ import { makeWithDefaults } from "drizzle-orm/effect-sqlite-node";
 import { Effect, Exit } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { albums, createHarness, eventually, expectInSync, stripVirtual, type Harness } from "../test/harness.js";
+import { albums, createHarness, eventually, expectInSync, stripVirtual, type Harness } from "../../test/harness.js";
 
 let harness: Harness;
 

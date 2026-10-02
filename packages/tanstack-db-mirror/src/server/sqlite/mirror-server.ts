@@ -1,31 +1,17 @@
 import { is, SQL } from "drizzle-orm";
-import { Cause, Context, Data, Duration, Effect, FiberSet, Layer, Option, Schedule, Scope, Semaphore } from "effect";
+import { Context, Duration, Effect, FiberSet, Layer, Option, Schedule, Scope, Semaphore } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
-import {
-  MIRROR_PROTOCOL_VERSION,
-  type MirrorChange,
-  type MirrorChangeBatch,
-  type MirrorKey,
-  type MirrorMutation,
-  type MirrorPosition,
-  type MirrorRequest,
-  type MirrorResponse,
-  type MirrorResults,
-  type MirrorRow,
-  type MirrorServerTransport,
-} from "../protocol.js";
-import { decodeRow, decodeValue, describeTable, encodeValue, MirrorSchemaError, type AnyMirrorTable, type MirrorTableInfo } from "../table.js";
+import type { MirrorChange, MirrorChangeBatch, MirrorKey, MirrorMutation, MirrorPosition, MirrorRequest, MirrorResponse, MirrorResults, MirrorRow, MirrorServerTransport } from "../../protocol.js";
+import { decodeRow, decodeValue, describeTable, encodeValue, MirrorSchemaError, type SqliteMirrorTable, type MirrorTableInfo } from "../../drizzle.js";
+import { handleRequest, makeListeners, MirrorRequestError, readOnlyError, serveWith } from "../shared.js";
 import { createChangeLogSql, createTriggerSql, quoteIdentifier, rowJson, triggerPrefix } from "./sql.js";
 
 export { MirrorSchemaError };
 
-/** A request the server refused: unknown table or column, missing row, malformed payload. */
-export class MirrorRequestError extends Data.TaggedError("MirrorRequestError")<{ readonly message: string }> {}
-
-export interface MirrorServerOptions {
-  readonly tables: ReadonlyArray<AnyMirrorTable>;
+export interface SqliteMirrorOptions {
+  readonly tables: ReadonlyArray<SqliteMirrorTable>;
   /** How many already-broadcast changes to keep for clients recovering from a gap. Defaults to 10 000. */
   readonly retainChanges?: number | undefined;
   /** Name of the change-log table. Defaults to `__mirror_changes`. */
@@ -43,7 +29,7 @@ export interface MirrorServerOptions {
   readonly readOnly?: boolean | undefined;
 }
 
-export interface MirrorServerService {
+export interface SqliteMirrorService {
   /** Increases every time a server starts on this database; clients reload when it changes. */
   readonly epoch: number;
   /**
@@ -77,7 +63,7 @@ type ChangeRow = {
 const DEFAULT_CHANGE_LOG = "__mirror_changes";
 const DEFAULT_RETAIN_CHANGES = 10_000;
 
-export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
+export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const changeLog = options.changeLogTable ?? DEFAULT_CHANGE_LOG;
   const changeLogSql = quoteIdentifier(changeLog);
@@ -129,7 +115,7 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
 
   let lastFlushedSeq = startSeq;
   let prunedThroughSeq = startSeq;
-  const listeners = new Set<(batch: MirrorChangeBatch) => void>();
+  const { subscribe, broadcast } = makeListeners();
   const flushLock = yield* Semaphore.make(1);
   const fibers = yield* FiberSet.make();
 
@@ -171,16 +157,6 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
     ).pipe(Effect.map((rows) => ({ toSeq: rows.at(-1)?.seq, changes: decodeChanges(rows) })));
 
   const inTransaction = Effect.map(Effect.serviceOption(sql.transactionService), Option.isSome);
-
-  const broadcast = (batch: MirrorChangeBatch) => {
-    for (const listener of listeners) {
-      try {
-        listener(batch);
-      } catch (cause) {
-        console.error("[tanstack-db-mirror] change listener failed", cause);
-      }
-    }
-  };
 
   const flushNow = flushLock.withPermits(1)(
     Effect.gen(function* () {
@@ -286,37 +262,14 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
       case "snapshot":
         return snapshot(request.table);
       case "mutate":
-        return options.readOnly ? Effect.fail(new MirrorRequestError({ message: "This mirror is read-only; change the data through the server instead" })) : mutate(request.mutations);
+        return options.readOnly ? Effect.fail(readOnlyError()) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
     }
   };
 
-  const handle = (raw: unknown): Effect.Effect<MirrorResponse> =>
-    Effect.suspend(() => dispatch(parseRequest(raw))).pipe(
-      Effect.map((result): MirrorResponse => ({ ok: true, result })),
-      Effect.catchCause((cause) => Effect.succeed<MirrorResponse>({ ok: false, error: errorPayload(Cause.squash(cause)) })),
-    );
-
-  const subscribe = (listener: (batch: MirrorChangeBatch) => void) => {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  };
-
-  const serve = (transport: MirrorServerTransport) =>
-    Effect.gen(function* () {
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-      const stopListening = transport.listen((request) => runPromise(handle(request)));
-      const unsubscribe = subscribe((batch) => transport.broadcast(batch));
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          stopListening();
-          unsubscribe();
-        }),
-      );
-    });
+  const handle = handleRequest(dispatch);
+  const serve = serveWith(handle, subscribe);
 
   if (options.autoFlushInterval !== undefined) {
     yield* flushNow.pipe(
@@ -328,12 +281,12 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
 
   const position = Effect.map(currentSeq, (seq) => ({ epoch, seq }));
 
-  return { epoch, write, flush, position, handle, subscribe, serve } satisfies MirrorServerService;
+  return { epoch, write, flush, position, handle, subscribe, serve } satisfies SqliteMirrorService;
 });
 
-export class MirrorServer extends Context.Service<MirrorServer, MirrorServerService>()("@muswag/tanstack-db-mirror/MirrorServer") {
+export class SqliteMirror extends Context.Service<SqliteMirror, SqliteMirrorService>()("@muswag/tanstack-db-mirror/SqliteMirror") {
   static readonly make = make;
-  static readonly layer = (options: MirrorServerOptions) => Layer.effect(MirrorServer, make(options));
+  static readonly layer = (options: SqliteMirrorOptions) => Layer.effect(SqliteMirror, make(options));
 }
 
 function encodeInsert(info: MirrorTableInfo, value: MirrorRow) {
@@ -386,53 +339,4 @@ function assertKnownColumns(info: MirrorTableInfo, row: MirrorRow) {
       throw new MirrorRequestError({ message: `Unknown column "${key}" for table "${info.name}"` });
     }
   }
-}
-
-const MUTATION_TYPES = new Set(["insert", "update", "delete"]);
-
-function parseRequest(raw: unknown): MirrorRequest {
-  const invalid = (message: string) => new MirrorRequestError({ message: `Invalid mirror request: ${message}` });
-  if (!isRecord(raw)) throw invalid("expected an object");
-  if (raw.v !== MIRROR_PROTOCOL_VERSION) throw invalid(`unsupported protocol version ${String(raw.v)}`);
-
-  switch (raw.type) {
-    case "hello":
-      return { v: MIRROR_PROTOCOL_VERSION, type: "hello" };
-    case "snapshot":
-      if (typeof raw.table !== "string") throw invalid("snapshot.table must be a string");
-      return { v: MIRROR_PROTOCOL_VERSION, type: "snapshot", table: raw.table };
-    case "pull":
-      if (typeof raw.fromSeq !== "number") throw invalid("pull.fromSeq must be a number");
-      return { v: MIRROR_PROTOCOL_VERSION, type: "pull", fromSeq: raw.fromSeq };
-    case "mutate": {
-      if (!Array.isArray(raw.mutations)) throw invalid("mutate.mutations must be an array");
-      for (const mutation of raw.mutations as Array<unknown>) {
-        if (!isRecord(mutation) || typeof mutation.table !== "string" || !MUTATION_TYPES.has(mutation.type as string)) {
-          throw invalid("malformed mutation");
-        }
-        if (mutation.type === "insert" ? !isRecord(mutation.value) : !isKey(mutation.key)) throw invalid("malformed mutation");
-        if (mutation.type === "update" && !isRecord(mutation.changes)) throw invalid("malformed mutation");
-      }
-      return { v: MIRROR_PROTOCOL_VERSION, type: "mutate", mutations: raw.mutations as Array<MirrorMutation> };
-    }
-    default:
-      throw invalid(`unknown request type ${String(raw.type)}`);
-  }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const isKey = (value: unknown): value is MirrorKey => typeof value === "string" || typeof value === "number";
-
-function errorPayload(error: unknown) {
-  if (!(error instanceof Error)) return { name: "Error", message: String(error) };
-  // SqlError's own message is generic ("Failed to execute statement"); the driver's message
-  // ("FOREIGN KEY constraint failed") sits on its reason's cause.
-  const details: Array<string> = [];
-  let cause: unknown = (error as { reason?: { cause?: unknown } }).reason?.cause ?? error.cause;
-  while (cause instanceof Error && details.length < 5) {
-    if (cause.message && !details.includes(cause.message)) details.push(cause.message);
-    cause = (cause as { reason?: { cause?: unknown } }).reason?.cause ?? cause.cause;
-  }
-  const message = [error.message, ...details.filter((detail) => detail !== error.message)].join(": ");
-  return { name: (error as { _tag?: string })._tag ?? error.name, message };
 }

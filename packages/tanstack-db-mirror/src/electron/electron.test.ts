@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createMirrorClient, mirrorCollectionOptions } from "../client/index.js";
 import type { MirrorChangeBatch, MirrorResponse } from "../protocol.js";
-import { MirrorServer } from "../server/index.js";
+import { SqliteMirror } from "../server/sqlite/index.js";
 import { album, albums, createHarness, eventually, rowsOf, type Harness } from "../test/harness.js";
 import { createElectronMainTransport, type IpcMainLike, type WebContentsLike } from "./main.js";
 import { createElectronRendererTransport, type IpcRendererLike } from "./renderer.js";
@@ -154,7 +154,7 @@ describe("electron transports", () => {
     const scope = await harness.run(Scope.make());
     const restarted = await harness.run(
       Effect.gen(function* () {
-        const server = yield* MirrorServer.make({ tables: [albums] });
+        const server = yield* SqliteMirror.make({ tables: [albums] });
         yield* server.serve(createElectronMainTransport({ ipcMain: electron.ipcMain }));
         return server;
       }).pipe(Scope.provide(scope)),

@@ -1,4 +1,4 @@
-import type { MirrorTableInfo } from "../table.js";
+import type { MirrorTableInfo } from "../../drizzle.js";
 
 export const quoteIdentifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const quoteLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;

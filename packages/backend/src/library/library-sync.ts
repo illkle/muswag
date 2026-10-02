@@ -1,6 +1,6 @@
 import { albums, artists, songs, syncState, toRow, type AlbumID3, type Child, type IndexArtist, type LibrarySyncStatus, type RefreshStatTarget, type SyncMode } from "@muswag/model";
 import { eq, inArray } from "drizzle-orm";
-import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
 import SubsonicAPI from "../api/subsonic-api.js";
@@ -20,7 +20,7 @@ export class SyncAlreadyRunning extends Data.TaggedError("SyncAlreadyRunning")<{
 /** Downloads the library from the server into the database and keeps play statistics fresh. */
 export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend/LibrarySync", {
   make: Effect.gen(function* () {
-    const context = yield* Effect.context<Db | SubsonicAPI | MirrorServer>();
+    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
     const status = yield* SubscriptionRef.make<LibrarySyncStatus>({ running: null, error: null, lastSyncedAt: null });

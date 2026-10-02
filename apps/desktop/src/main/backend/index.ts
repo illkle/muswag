@@ -1,7 +1,7 @@
 import { BackendLive, LibraryQueries, PlaylistCommands, SessionManager, type AuthenticatedSession, type Db } from "@muswag/backend";
 import type { AuthSnapshot, PlaylistSyncStatus, Song } from "@muswag/model";
 import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
-import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Queue, Redacted, Schema, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -80,7 +80,7 @@ const makeBackend = (options: BackendOptions) =>
   Effect.gen(function* () {
     const session = yield* SessionManager;
     const commands = yield* PlaylistCommands;
-    const mirror = yield* MirrorServer;
+    const mirror = yield* SqliteMirror;
     const run = Effect.runPromiseWith(yield* Effect.context<Db>());
     const states = makeStates(options);
 

@@ -1,120 +1,48 @@
-import { getColumns, getTableName, type Column, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
-import { genericSQLiteCodecs, getTableConfig, type SQLiteTable } from "drizzle-orm/sqlite-core";
-
+import { describeTable, type SqliteInsertOf, type SqliteKeyOf, type SqliteMirrorTable, type SqliteRowOf } from "./drizzle.js";
 import type { MirrorKey, MirrorRow } from "./protocol.js";
 
-export type AnyMirrorTable = SQLiteTable;
+export const MemoryTableTypeId: unique symbol = Symbol.for("@muswag/tanstack-db-mirror/MemoryTable");
 
-type TableColumns<TTable extends AnyMirrorTable> = TTable["_"]["columns"];
-
-/** TypeScript key of the table's primary-key column. */
-export type MirrorPrimaryKeyName<TTable extends AnyMirrorTable> = {
-  [K in keyof TableColumns<TTable>]: TableColumns<TTable>[K] extends Column<infer TConfig> ? (TConfig["isPrimaryKey"] extends true ? K : never) : never;
-}[keyof TableColumns<TTable>] &
-  string;
-
-export type MirrorRowOf<TTable extends AnyMirrorTable> = InferSelectModel<TTable>;
-export type MirrorInsertOf<TTable extends AnyMirrorTable> = InferInsertModel<TTable>;
-export type MirrorKeyOf<TTable extends AnyMirrorTable> = Extract<TableColumns<TTable>[MirrorPrimaryKeyName<TTable>]["_"]["data"], MirrorKey>;
-
-export class MirrorSchemaError extends Error {
-  override readonly name = "MirrorSchemaError";
-}
-
-export type MirrorColumn = {
-  /** Property name on the row object. */
-  readonly key: string;
-  /** Column name in SQLite. */
+/**
+ * A table a `MemoryMirror` keeps in memory. Its rows cross processes in their encoded form and are
+ * decoded on arrival. Create one with `memoryTable` from `@muswag/tanstack-db-mirror/memory`.
+ */
+export interface MemoryTable<Row extends object, Key extends MirrorKey> {
+  readonly [MemoryTableTypeId]: true;
   readonly name: string;
-  readonly column: Column;
-};
+  /** Property of the row that identifies it. */
+  readonly primaryKey: string;
+  readonly keyOf: (row: Row) => Key;
+  /** Throws when `row` does not satisfy the table's schema. */
+  readonly encode: (row: Row) => MirrorRow;
+  /** Throws when `encoded` does not satisfy the table's schema. */
+  readonly decode: (encoded: unknown) => Row;
+}
+export type AnyMemoryTable = MemoryTable<any, any>;
 
-export type MirrorTableInfo = {
-  readonly table: AnyMirrorTable;
+export const isMemoryTable = (table: unknown): table is AnyMemoryTable => typeof table === "object" && table !== null && MemoryTableTypeId in table;
+
+/** A Drizzle SQLite table served by a `SqliteMirror`, or a memory table served by a `MemoryMirror`. */
+export type AnyMirrorTable = SqliteMirrorTable | AnyMemoryTable;
+
+export type MirrorRowOf<TTable extends AnyMirrorTable> = TTable extends MemoryTable<infer Row, any> ? Row : TTable extends SqliteMirrorTable ? SqliteRowOf<TTable> : never;
+export type MirrorKeyOf<TTable extends AnyMirrorTable> = TTable extends MemoryTable<any, infer Key> ? Key : TTable extends SqliteMirrorTable ? SqliteKeyOf<TTable> : never;
+export type MirrorInsertOf<TTable extends AnyMirrorTable> = TTable extends MemoryTable<infer Row, any> ? Row : TTable extends SqliteMirrorTable ? SqliteInsertOf<TTable> : never;
+
+/** What a client needs to know about a mirrored table, whatever stores it. */
+export interface MirrorTableAccess {
   readonly name: string;
-  readonly columns: ReadonlyArray<MirrorColumn>;
-  readonly columnsByKey: ReadonlyMap<string, MirrorColumn>;
-  readonly primaryKey: MirrorColumn;
-};
-
-// json_object() takes two arguments per column and SQLite caps function arguments at 127 by default.
-const MAX_COLUMNS = 63;
-// Types whose values round-trip through json_object() and JSON. Blobs cannot be embedded in JSON,
-// and bigint modes would lose precision. Custom columns must not store blobs.
-const SUPPORTED_COLUMN_TYPES = new Set([
-  "SQLiteText",
-  "SQLiteTextJson",
-  "SQLiteInteger",
-  "SQLiteBoolean",
-  "SQLiteTimestamp",
-  "SQLiteReal",
-  "SQLiteNumeric",
-  "SQLiteNumericNumber",
-  "SQLiteCustomColumn",
-]);
-
-const cache = new WeakMap<AnyMirrorTable, MirrorTableInfo>();
-
-export function describeTable(table: AnyMirrorTable): MirrorTableInfo {
-  const cached = cache.get(table);
-  if (cached) return cached;
-
-  const name = getTableName(table);
-  const config = getTableConfig(table);
-  const columns = Object.entries(getColumns(table) as Record<string, Column>).map(([key, column]) => ({ key, name: column.name, column }));
-
-  if (config.primaryKeys.length > 0) {
-    throw new MirrorSchemaError(`Table "${name}" uses a composite primary key; mirrored tables need a single primary-key column`);
-  }
-  const primaryKeys = columns.filter((column) => column.column.primary);
-  const primaryKey = primaryKeys[0];
-  if (primaryKeys.length !== 1 || !primaryKey) {
-    throw new MirrorSchemaError(`Table "${name}" must have exactly one primary-key column`);
-  }
-  if (columns.length > MAX_COLUMNS) {
-    throw new MirrorSchemaError(`Table "${name}" has ${columns.length} columns; at most ${MAX_COLUMNS} are supported`);
-  }
-  for (const { name: columnName, column } of columns) {
-    if (!SUPPORTED_COLUMN_TYPES.has(column.columnType)) {
-      throw new MirrorSchemaError(`Column "${name}.${columnName}" has unsupported type ${column.columnType}; blob and bigint columns cannot be mirrored`);
-    }
-  }
-
-  const info: MirrorTableInfo = {
-    table,
-    name,
-    columns,
-    columnsByKey: new Map(columns.map((column) => [column.key, column])),
-    primaryKey,
-  };
-  cache.set(table, info);
-  return info;
+  readonly primaryKey: string;
+  /** Turns a row as it arrives into the collection's value. SQLite rows arrive decoded already. */
+  readonly decode: ((value: unknown) => MirrorRow) | null;
+  /** Turns a collection value into what the server accepts in a mutation. */
+  readonly encode: ((row: MirrorRow) => MirrorRow) | null;
 }
 
-// Built-in column types decode through per-type codecs (keyed by the column's untyped `codec`) rather
-// than their own mapFromDriverValue; custom types can bring a JSON decoder of their own.
-type JsonDecodingColumn = Column & { readonly codec?: string; readonly mapFromJsonValue?: (value: unknown) => unknown };
-const jsonCodecs = genericSQLiteCodecs as Partial<Record<string, { readonly normalizeInJson?: (value: unknown) => unknown }>>;
-
-/** Decodes a column value read from `json_object(...)`, the way Drizzle decodes relational query results. */
-export function decodeValue(column: Column, value: unknown): unknown {
-  if (value === null || value === undefined) return null;
-  const jsonColumn = column as JsonDecodingColumn;
-  if (jsonColumn.mapFromJsonValue) return jsonColumn.mapFromJsonValue(value);
-  const normalize = jsonColumn.codec === undefined ? undefined : jsonCodecs[jsonColumn.codec]?.normalizeInJson;
-  return column.mapFromDriverValue(normalize ? normalize(value) : value);
-}
-
-export function encodeValue(column: Column, value: unknown): unknown {
-  return value === null || value === undefined ? null : column.mapToDriverValue(value);
-}
-
-/** Decodes the `json_object(...)` text produced by the capture triggers and snapshot queries. */
-export function decodeRow(info: MirrorTableInfo, json: string): MirrorRow {
-  const raw = JSON.parse(json) as Record<string, unknown>;
-  const row: MirrorRow = {};
-  for (const { key, name, column } of info.columns) {
-    row[key] = decodeValue(column, raw[name]);
+export function tableAccess(table: AnyMirrorTable): MirrorTableAccess {
+  if (isMemoryTable(table)) {
+    return { name: table.name, primaryKey: table.primaryKey, decode: (value) => table.decode(value) as MirrorRow, encode: (row) => table.encode(row) };
   }
-  return row;
+  const info = describeTable(table);
+  return { name: info.name, primaryKey: info.primaryKey.key, decode: null, encode: null };
 }

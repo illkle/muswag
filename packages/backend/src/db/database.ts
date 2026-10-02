@@ -1,6 +1,6 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { MIRRORED_TABLES } from "@muswag/model";
-import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { makeWithDefaults, type EffectSQLiteNodeDatabase } from "drizzle-orm/effect-sqlite-node";
 import { migrate } from "drizzle-orm/sqlite-core/effect";
 import { Context, Effect, Layer } from "effect";
@@ -28,7 +28,7 @@ const DbLive = Layer.effect(
  * Mirrors `MIRRORED_TABLES` to renderers, read-only: renderers change data only through commands.
  * The interval only catches writes that bypassed `write`.
  */
-const MirrorLive = Layer.effect(MirrorServer, MirrorServer.make({ tables: MIRRORED_TABLES, autoFlushInterval: "2 seconds", readOnly: true })).pipe(Layer.provide(DbLive));
+const MirrorLive = Layer.effect(SqliteMirror, SqliteMirror.make({ tables: MIRRORED_TABLES, autoFlushInterval: "2 seconds", readOnly: true })).pipe(Layer.provide(DbLive));
 
 /** The migrated database and its mirror server, on top of a SQLite client. */
 export const DatabaseFromClient = Layer.merge(DbLive, MirrorLive);
@@ -40,7 +40,7 @@ export const DatabaseLive = (filename: string) => DatabaseFromClient.pipe(Layer.
  * Commits `effect` in one transaction and pushes the resulting changes to renderers. Every write to a
  * mirrored table should go through here; nested calls join the outer transaction.
  */
-export const write = <A, E, R>(effect: Effect.Effect<A, E, R>) => MirrorServer.use((mirror) => mirror.write(effect));
+export const write = <A, E, R>(effect: Effect.Effect<A, E, R>) => SqliteMirror.use((mirror) => mirror.write(effect));
 
 /** The current position of the change stream, for renderers to await a write. */
-export const position = MirrorServer.use((mirror) => mirror.position);
+export const position = SqliteMirror.use((mirror) => mirror.position);

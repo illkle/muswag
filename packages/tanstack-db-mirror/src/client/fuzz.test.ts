@@ -1,20 +1,8 @@
 import { createTransaction, type Transaction } from "@tanstack/db";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { album, createHarness, expectInSync, sleep, song, type ConnectedClient, type Harness } from "../test/harness.js";
+import { album, createHarness, expectInSync, mulberry32, sleep, song, type ConnectedClient, type Harness } from "../test/harness.js";
 import { MirrorClientDisposedError, MirrorRemoteError, MirrorTimeoutError } from "./index.js";
-
-/** Small seeded PRNG so failures reproduce. */
-function mulberry32(seed: number) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 const EXPECTED_ERRORS = [MirrorRemoteError, MirrorTimeoutError, MirrorClientDisposedError];
 
@@ -32,7 +20,7 @@ async function runScenario(seed: number, steps: number) {
   let nextSongId = 1;
 
   harness = await createHarness({ latency: () => random() * 4, server: { retainChanges: 15 } });
-  const clients: Array<ConnectedClient> = [0, 1, 2].map(() => harness.connect({ mutationTimeoutMs: 2_000 }));
+  const clients: Array<ConnectedClient> = [0, 1, 2].map(() => harness.connect({ mutationTimeoutMs: 2_000, heartbeatMs: 100 }));
 
   const unexpected: Array<unknown> = [];
   const consoleErrors: Array<unknown> = [];

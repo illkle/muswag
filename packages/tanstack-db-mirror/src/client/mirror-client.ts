@@ -9,6 +9,7 @@ import {
   type MirrorRequestPayloads,
   type MirrorRequestType,
   type MirrorResults,
+  type MirrorRow,
 } from "../protocol.js";
 
 /** An error raised by the server while handling a request. */
@@ -41,12 +42,19 @@ export interface MirrorClientOptions {
   readonly requestTimeoutMs?: number | undefined;
   /** How long a mutation waits for its changes to come back through the stream. Defaults to 30 seconds. */
   readonly mutationTimeoutMs?: number | undefined;
+  /**
+   * How often a connected client asks the server how far its stream has got, to recover a lost batch
+   * that no later batch revealed, or a restart it missed. Defaults to 5 seconds; `0` turns it off.
+   */
+  readonly heartbeatMs?: number | undefined;
 }
 
 /** @internal Links a mirror collection to its client and table. */
 export interface MirrorCollectionHandle {
   readonly client: MirrorClient;
   readonly table: string;
+  /** Turns a row into what the server accepts; `null` when rows are sent as they are. */
+  readonly encode: ((row: MirrorRow) => MirrorRow) | null;
   readonly waitFor: (position: MirrorPosition, timeoutMs: number) => Promise<void>;
 }
 
@@ -95,6 +103,7 @@ export class MirrorClient {
   /** Bumped on every reset so in-flight work from before it is discarded. */
   private generation = 0;
   private disposed = false;
+  private readonly heartbeat: ReturnType<typeof setInterval> | null;
 
   constructor(options: MirrorClientOptions) {
     this.transport = options.transport;
@@ -105,6 +114,8 @@ export class MirrorClient {
       this.pending.push(batch);
       this.drain();
     });
+    const heartbeatMs = options.heartbeatMs ?? 5_000;
+    this.heartbeat = heartbeatMs > 0 ? setInterval(() => this.checkPosition(), heartbeatMs) : null;
   }
 
   /** Epoch of the connected server, or `null` while (re)connecting. */
@@ -167,12 +178,14 @@ export class MirrorClient {
       involved.set(handle, collection);
 
       const key = mutation.key as string | number;
+      // A schema cannot encode part of a row, so updates to an encoded table send the whole row.
+      const encoded = handle.encode && mutation.type !== "delete" ? handle.encode(withoutVirtual(mutation.modified as MirrorRow)) : null;
       switch (mutation.type) {
         case "insert":
-          mutations.push({ table: handle.table, type: "insert", value: mutation.modified as Record<string, unknown> });
+          mutations.push({ table: handle.table, type: "insert", value: encoded ?? (mutation.modified as MirrorRow) });
           break;
         case "update":
-          mutations.push({ table: handle.table, type: "update", key, changes: mutation.changes as Record<string, unknown> });
+          mutations.push({ table: handle.table, type: "update", key, changes: encoded ?? (mutation.changes as MirrorRow) });
           break;
         case "delete":
           mutations.push({ table: handle.table, type: "delete", key });
@@ -208,6 +221,7 @@ export class MirrorClient {
     if (this.disposed) return;
     this.disposed = true;
     this.generation++;
+    if (this.heartbeat) clearInterval(this.heartbeat);
     this.unsubscribeTransport();
     this.listeners.clear();
     this.pending = [];
@@ -244,6 +258,25 @@ export class MirrorClient {
       if (this.connectedEpoch !== position.epoch || this.cursor === null || this.cursor >= position.seq) return;
       this.pull(this.cursor);
     }, CATCH_UP_DELAY_MS);
+  }
+
+  /** Compares the stream with the server's position: pulls what it is missing, or reconnects to a different server. */
+  private checkPosition(): void {
+    const generation = this.generation;
+    const epoch = this.connectedEpoch;
+    if (this.disposed || epoch === null || this.cursor === null || this.pulling) return;
+    this.request("hello", {}).then(
+      (hello) => {
+        if (generation !== this.generation || this.disposed) return;
+        // A newer epoch reconnects; a lower one may be a replaced server answering late, so ask again.
+        if (hello.epoch > epoch) return this.observeEpoch(hello.epoch);
+        if (hello.epoch < epoch) return void this.verifyEpoch();
+        // The batch up to `hello.seq` may still be on its way; `expect` pulls only if it does not arrive.
+        if (this.cursor !== null && hello.seq > this.cursor) this.expect({ epoch, seq: hello.seq });
+      },
+      // An unreachable server is retried on the next beat.
+      () => undefined,
+    );
   }
 
   private async connect(): Promise<void> {
@@ -344,6 +377,9 @@ export class MirrorClient {
 export function createMirrorClient(options: MirrorClientOptions): MirrorClient {
   return new MirrorClient(options);
 }
+
+// `$`-prefixed keys are TanStack DB virtual properties.
+const withoutVirtual = (row: MirrorRow): MirrorRow => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("$")));
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

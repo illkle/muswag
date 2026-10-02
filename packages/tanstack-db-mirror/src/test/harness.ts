@@ -7,7 +7,7 @@ import { expect } from "vitest";
 
 import { createMirrorClient, mirrorCollectionOptions, type MirrorClient, type MirrorClientOptions, type MirrorCollectionUtils } from "../client/index.js";
 import type { MirrorRow } from "../protocol.js";
-import { MirrorServer, type MirrorServerOptions, type MirrorServerService } from "../server/index.js";
+import { SqliteMirror, type SqliteMirrorOptions, type SqliteMirrorService } from "../server/sqlite/index.js";
 import type { MirrorRowOf } from "../table.js";
 import { createMemoryTransport, type MemoryConnection, type MemoryTransportOptions } from "../testing/index.js";
 
@@ -84,7 +84,7 @@ export const song = (id: number, albumId: string, overrides: Partial<SongRow> = 
 
 export type HarnessOptions = {
   readonly latency?: MemoryTransportOptions["latency"];
-  readonly server?: Partial<MirrorServerOptions>;
+  readonly server?: Partial<SqliteMirrorOptions>;
 };
 
 export type ConnectedClient = {
@@ -109,10 +109,10 @@ export async function createHarness(options: HarnessOptions = {}) {
   );
 
   const transport = createMemoryTransport({ latency: options.latency });
-  const serverOptions: MirrorServerOptions = { tables: [albums, songs], ...options.server };
+  const serverOptions: SqliteMirrorOptions = { tables: [albums, songs], ...options.server };
 
   let serverScope: Scope.Closeable | null = null;
-  let server!: MirrorServerService;
+  let server!: SqliteMirrorService;
 
   const startServer = async () => {
     if (serverScope) await run(Scope.close(serverScope, Exit.void));
@@ -120,7 +120,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     serverScope = scope;
     server = await run(
       Effect.gen(function* () {
-        const next = yield* MirrorServer.make(serverOptions);
+        const next = yield* SqliteMirror.make(serverOptions);
         yield* next.serve(transport.server);
         return next;
       }).pipe(Scope.provide(scope)),
@@ -145,7 +145,7 @@ export async function createHarness(options: HarnessOptions = {}) {
     return connected;
   };
 
-  /** Runs `effect` through `MirrorServer.write`, so its changes are broadcast. */
+  /** Runs `effect` through `SqliteMirror.write`, so its changes are broadcast. */
   const write = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => run(server.write(effect));
   const exec = (statement: string, params: ReadonlyArray<unknown> = []) => write(sql.unsafe(statement, params));
 
@@ -237,3 +237,15 @@ export async function expectInSync(harness: Harness, connected: ConnectedClient,
 }
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Small seeded PRNG so failures reproduce. */
+export function mulberry32(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}

@@ -1,6 +1,6 @@
 import { playlists, type CreatePlaylistInput, type PlaylistEntry, type PlaylistRecord, type PlaylistState } from "@muswag/model";
 import { eq } from "drizzle-orm";
-import { MirrorServer } from "@muswag/tanstack-db-mirror/server";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Context, Data, Effect, Layer, PubSub, Stream } from "effect";
 
 import { Db } from "../db/database.js";
@@ -73,7 +73,7 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
   make: Effect.gen(function* () {
     const db = yield* Db;
     const edits = yield* PlaylistEdits;
-    const mirror = yield* MirrorServer;
+    const mirror = yield* SqliteMirror;
 
     const read = (playlistId: string) =>
       db

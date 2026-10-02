@@ -14,14 +14,23 @@
       "import": "./dist/protocol.js",
       "default": "./dist/protocol.js"
     },
-    "./server": {
+    "./server/sqlite": {
       "source": {
-        "types": "./src/server/index.ts",
-        "default": "./src/server/index.ts"
+        "types": "./src/server/sqlite/index.ts",
+        "default": "./src/server/sqlite/index.ts"
       },
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
-      "default": "./dist/server/index.js"
+      "types": "./dist/server/sqlite/index.d.ts",
+      "import": "./dist/server/sqlite/index.js",
+      "default": "./dist/server/sqlite/index.js"
+    },
+    "./server/memory": {
+      "source": {
+        "types": "./src/server/memory/index.ts",
+        "default": "./src/server/memory/index.ts"
+      },
+      "types": "./dist/server/memory/index.d.ts",
+      "import": "./dist/server/memory/index.js",
+      "default": "./dist/server/memory/index.js"
     },
     "./client": {
       "source": {
@@ -31,6 +40,15 @@
       "types": "./dist/client/index.d.ts",
       "import": "./dist/client/index.js",
       "default": "./dist/client/index.js"
+    },
+    "./memory": {
+      "source": {
+        "types": "./src/memory/index.ts",
+        "default": "./src/memory/index.ts"
+      },
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js",
+      "default": "./dist/memory/index.js"
     },
     "./electron/main": {
       "source": {

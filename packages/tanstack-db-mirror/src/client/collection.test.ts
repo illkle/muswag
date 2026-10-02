@@ -420,6 +420,18 @@ describe("stream recovery", () => {
     expect(client.connection.requests.filter((request) => request.type === "snapshot")).toHaveLength(2);
   });
 
+  it("recovers a lost batch that no later batch reveals through the heartbeat", async () => {
+    harness = await createHarness();
+    const client = harness.connect({ heartbeatMs: 50 });
+    await client.albums.preload();
+
+    client.connection.dropNextBatches(1);
+    await harness.insertAlbums([album("a1")]);
+
+    await eventually(() => expect(rowsOf(client.albums)).toEqual([album("a1")]));
+    expect(client.connection.requests.filter((request) => request.type === "pull")).toHaveLength(1);
+  });
+
   it("pulls a lost batch when a mutation reveals the stream is behind", async () => {
     harness = await createHarness();
     const client = harness.connect({ mutationTimeoutMs: 5_000 });

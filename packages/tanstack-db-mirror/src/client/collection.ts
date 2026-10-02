@@ -1,7 +1,7 @@
 import type { BaseCollectionConfig, CollectionConfig, SyncConfig, UtilsRecord } from "@tanstack/db";
 
-import type { MirrorChangeBatch, MirrorPosition } from "../protocol.js";
-import { describeTable, type AnyMirrorTable, type MirrorKeyOf, type MirrorRowOf } from "../table.js";
+import type { MirrorChangeBatch, MirrorPosition, MirrorRow } from "../protocol.js";
+import { tableAccess, type AnyMirrorTable, type MirrorKeyOf, type MirrorRowOf } from "../table.js";
 import { attachCollectionHandle, MirrorClientDisposedError, MirrorTimeoutError, type MirrorClient } from "./mirror-client.js";
 
 const RETRY_BASE_DELAY_MS = 500;
@@ -10,7 +10,7 @@ const RETRY_MAX_DELAY_MS = 30_000;
 export interface MirrorCollectionUtils extends UtilsRecord {
   /**
    * Resolves once the collection has synced everything up to `position`, e.g. the position a
-   * main-process command returned after writing through `MirrorServer.write`.
+   * main-process command returned after writing through the server's `write`.
    */
   awaitPosition: (position: MirrorPosition, timeoutMs?: number) => Promise<void>;
 }
@@ -23,7 +23,7 @@ export type MirrorCollectionConfig<TTable extends AnyMirrorTable> = Omit<
   readonly table: TTable;
   /**
    * Leaves out the mutation handlers, so `insert`, `update` and `delete` throw instead of writing to
-   * SQLite. Use it when the server is `readOnly` and changes go through your own commands.
+   * the server. Use it when the server is `readOnly` and changes go through your own commands.
    */
   readonly readOnly?: boolean | undefined;
 };
@@ -34,18 +34,29 @@ export type MirrorCollectionOptions<TTable extends AnyMirrorTable> = CollectionC
 };
 
 /**
- * Collection options for a TanStack DB collection that mirrors a SQLite table owned by a
- * `MirrorServer`. Loads the whole table, then applies the server's change stream. Mutations are
- * written to SQLite and resolve once their changes come back through the stream, unless `readOnly`.
+ * Collection options for a TanStack DB collection that mirrors a table owned by another process: a
+ * Drizzle SQLite table served by a `SqliteMirror`, or a memory table served by a `MemoryMirror`.
+ * Loads the whole table, then applies the server's change stream. Mutations are written to the
+ * server and resolve once their changes come back through the stream, unless `readOnly`.
  */
 export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: MirrorCollectionConfig<TTable>): MirrorCollectionOptions<TTable> {
   type Row = MirrorRowOf<TTable>;
   type Key = MirrorKeyOf<TTable>;
 
   const { client, table, readOnly = false, ...collectionConfig } = config;
-  const info = describeTable(table);
-  const primaryKey = info.primaryKey.key;
+  const info = tableAccess(table);
+  const primaryKey = info.primaryKey;
   const id = config.id ?? `mirror:${info.name}`;
+  /** Memory rows arrive encoded. One that does not decode is skipped rather than allowed to break the collection. */
+  const decode = (value: MirrorRow): Row | undefined => {
+    if (!info.decode) return value as Row;
+    try {
+      return info.decode(value) as Row;
+    } catch (cause) {
+      console.error(`[tanstack-db-mirror] skipping a row of "${info.name}" that cannot be decoded`, cause);
+      return undefined;
+    }
+  };
   const tracker = new PositionTracker();
 
   const sync: SyncConfig<Row, Key> = {
@@ -75,7 +86,9 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
               write({ type: "delete", key: change.key as Key });
               syncedKeys.delete(change.key as Key);
             } else {
-              write({ type: "update", value: change.value as Row });
+              const value = decode(change.value);
+              if (value === undefined) continue;
+              write({ type: "update", value });
               syncedKeys.add(change.key as Key);
             }
           }
@@ -112,7 +125,8 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
           const keys = new Set<Key>();
           begin();
           for (const row of snapshot.rows) {
-            const value = row as Row;
+            const value = decode(row);
+            if (value === undefined) continue;
             const key = getKey(value);
             keys.add(key);
             // Full-row updates upsert, so a retry after a failed commit cannot hit duplicate keys.
@@ -179,7 +193,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
     client.expect(position);
     return tracker.waitFor(position, timeoutMs ?? client.mutationTimeoutMs);
   };
-  attachCollectionHandle(awaitPosition, { client, table: info.name, waitFor: (position, timeoutMs) => tracker.waitFor(position, timeoutMs) });
+  attachCollectionHandle(awaitPosition, { client, table: info.name, encode: info.encode, waitFor: (position, timeoutMs) => tracker.waitFor(position, timeoutMs) });
 
   return {
     ...collectionConfig,

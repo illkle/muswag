@@ -3,9 +3,9 @@ import { Cause, Effect, Exit, Scope } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { MirrorChange, MirrorChangeBatch, MirrorMutation, MirrorResponse, MirrorResults } from "../protocol.js";
-import { album, albums, createHarness, song, type Harness } from "../test/harness.js";
-import { MirrorSchemaError, MirrorServer } from "./index.js";
+import type { MirrorChange, MirrorChangeBatch, MirrorMutation, MirrorResponse, MirrorResults } from "../../protocol.js";
+import { album, albums, createHarness, song, type Harness } from "../../test/harness.js";
+import { MirrorSchemaError, SqliteMirror } from "./index.js";
 
 let harness: Harness;
 
@@ -194,7 +194,7 @@ describe("change capture", () => {
     await harness.run(harness.sql.unsafe(`CREATE TABLE genres (id TEXT PRIMARY KEY COLLATE NOCASE, label TEXT)`));
     const genres = sqliteTable("genres", { id: text().primaryKey(), label: text() });
     const scope = await harness.run(Scope.make());
-    const server = await harness.run(MirrorServer.make({ tables: [genres], changeLogTable: "genre_changes" }).pipe(Scope.provide(scope)));
+    const server = await harness.run(SqliteMirror.make({ tables: [genres], changeLogTable: "genre_changes" }).pipe(Scope.provide(scope)));
     const batches: Array<MirrorChangeBatch> = [];
     server.subscribe((batch) => batches.push(batch));
 
@@ -213,7 +213,7 @@ describe("change capture", () => {
     await harness.run(harness.sql.unsafe(`CREATE TABLE points (id REAL PRIMARY KEY, label TEXT)`));
     const points = sqliteTable("points", { id: real().primaryKey(), label: text() });
     const scope = await harness.run(Scope.make());
-    const server = await harness.run(MirrorServer.make({ tables: [points], changeLogTable: "point_changes" }).pipe(Scope.provide(scope)));
+    const server = await harness.run(SqliteMirror.make({ tables: [points], changeLogTable: "point_changes" }).pipe(Scope.provide(scope)));
     const batches: Array<MirrorChangeBatch> = [];
     server.subscribe((batch) => batches.push(batch));
 
@@ -239,7 +239,7 @@ describe("change capture", () => {
     });
     const tagged = sqliteTable("tagged", { id: text().primaryKey(), tags: tagList().notNull() });
     const scope = await harness.run(Scope.make());
-    const server = await harness.run(MirrorServer.make({ tables: [tagged], changeLogTable: "tagged_changes" }).pipe(Scope.provide(scope)));
+    const server = await harness.run(SqliteMirror.make({ tables: [tagged], changeLogTable: "tagged_changes" }).pipe(Scope.provide(scope)));
     const batches: Array<MirrorChangeBatch> = [];
     server.subscribe((batch) => batches.push(batch));
 
@@ -618,7 +618,7 @@ describe("startup", () => {
     const widened = sqliteTable("unmirrored", { id: text().primaryKey(), label: text() });
 
     const scope = await harness.run(Scope.make());
-    const server = await harness.run(MirrorServer.make({ tables: [widened] }).pipe(Scope.provide(scope)));
+    const server = await harness.run(SqliteMirror.make({ tables: [widened] }).pipe(Scope.provide(scope)));
     const batches: Array<MirrorChangeBatch> = [];
     server.subscribe((batch) => batches.push(batch));
 
@@ -632,7 +632,7 @@ describe("startup", () => {
   it("fails when a mirrored table does not exist", async () => {
     harness = await createHarness();
     const missing = sqliteTable("missing", { id: text().primaryKey() });
-    const exit = await harness.run(Effect.exit(Effect.scoped(MirrorServer.make({ tables: [missing] }))));
+    const exit = await harness.run(Effect.exit(Effect.scoped(SqliteMirror.make({ tables: [missing] }))));
     expect(Exit.isFailure(exit)).toBe(true);
   });
 
@@ -645,7 +645,7 @@ describe("startup", () => {
   ])("rejects %s", async (_name, table, message) => {
     harness = await createHarness();
     const tables = table === albums ? [albums, albums] : [table];
-    const exit = await harness.run(Effect.exit(Effect.scoped(MirrorServer.make({ tables }))));
+    const exit = await harness.run(Effect.exit(Effect.scoped(SqliteMirror.make({ tables }))));
     const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
     expect(error).toBeInstanceOf(MirrorSchemaError);
     expect((error as Error).message).toMatch(message);

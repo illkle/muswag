@@ -10,7 +10,7 @@
     "vitest/expect-expect": [
       "error",
       {
-        "assertFunctionNames": ["expect", "expectTypeOf", "expectInSync", "expectError", "runScenario"]
+        "assertFunctionNames": ["expect", "expectTypeOf", "expectInSync", "expectMemoryInSync", "expectError", "runScenario"]
       }
     ]
   },
