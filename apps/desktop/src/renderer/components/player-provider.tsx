@@ -5,8 +5,8 @@ import { useMemo } from "react";
 import { appCommand } from "#/lib/app-ipc";
 import { db } from "#/lib/db-renderer";
 import { commandIssue, playerState } from "#/player/connection";
-import type { BinaryState, InstallState } from "#shared/player-contract";
-import { playerStatus, type PlaybackState, type PlayerStatus } from "#shared/player-state";
+import type { BinaryState, InstallState } from "#shared/commands/player";
+import { playerStatus, type PlaybackState, type PlayerStatus } from "#shared/state/player";
 import { getQueueCanGoNext, getQueueCanGoPrevious, queueStateFromRows, type QueueManagerState } from "#shared/queue-state";
 import type { QueueSourceRef, Song } from "@muswag/model";
 

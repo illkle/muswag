@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { songRow } from "@muswag/model";
-import { initialSnapshot } from "#shared/player-contract";
+import { initialSnapshot } from "#shared/commands/player";
 import { runtimeView } from "./player-port";
 
 describe("player runtime view", () => {

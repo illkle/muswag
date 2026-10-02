@@ -9,10 +9,10 @@ import { FetchHttpClient } from "effect/http";
 import type { IpcMain } from "electron";
 import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 
-import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/app-contract";
-import { auth, librarySync, playlistSync } from "#shared/app-state";
+import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
+import { auth, librarySync, playlistSync } from "#shared/state/session";
 import type { MuswagMainIpc } from "#shared/ipc";
-import type { CommandResult, PlayerCommand, PlayerSnapshot } from "#shared/player-contract";
+import type { CommandResult, PlayerCommand, PlayerSnapshot } from "#shared/commands/player";
 import { DbQueueStorage } from "../queue/db-queue-storage";
 import { runtimeView } from "../queue/player-port";
 import { QueueManager } from "../queue/queue-manager";
@@ -33,7 +33,7 @@ export interface BackendOptions {
   readonly ipcMain: IpcMain;
   readonly mainIpc: IpcListener<MuswagMainIpc>;
   readonly player: PlayerHandle;
-  /** Where renderers see the session and sync status; it must mirror `APP_TABLES`. */
+  /** Where renderers see the session and sync status; it must mirror `SESSION_TABLES`. */
   readonly stateMirror: MemoryMirrorService;
 }
 
@@ -96,8 +96,7 @@ const makeBackend = (options: BackendOptions) =>
         () =>
           new QueueManager({
             player: {
-              applyQueue: ({ items, select }) =>
-                playerCommand(options.player, { _tag: "ApplyQueue", items, select: select ? { ...select, positionSeconds: select.positionSeconds ?? 0 } : null }),
+              applyQueue: ({ items, select }) => playerCommand(options.player, { _tag: "ApplyQueue", items, select: select ? { ...select, positionSeconds: select.positionSeconds ?? 0 } : null }),
               restartCurrent: () => playerCommand(options.player, { _tag: "Restart" }),
               stop: () => playerCommand(options.player, { _tag: "Stop" }),
               getState: async () => runtimeView(await options.player.snapshot()),

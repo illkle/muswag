@@ -1,7 +1,7 @@
 import { buildSubsonicStreamUrl, type PlaybackItem } from "@muswag/model";
 import { createHash } from "node:crypto";
 import { Effect, Redacted, Schema } from "effect";
-import type { PlayerCredentials } from "#shared/player-contract";
+import type { PlayerCredentials } from "#shared/commands/player";
 import { InvalidCommand, NotAuthenticated } from "./errors";
 
 const md5 = (input: string) => createHash("md5").update(input).digest("hex");

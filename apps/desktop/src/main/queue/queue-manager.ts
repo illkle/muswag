@@ -2,9 +2,9 @@ import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor } fro
 import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
-import type { QueueSourceFactory } from "#shared/queue-source";
+import type { QueueSourceFactory } from "./source/types";
 import { nextTarget, previousTarget, type QueueManagerState } from "#shared/queue-state";
-import { SerialQueue } from "#shared/serial-queue";
+import { SerialQueue } from "./serial-queue";
 import type { QueueStorage } from "./db-queue-storage";
 import type { PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { VirtualSourceWindow } from "./source/virtual-source-window";

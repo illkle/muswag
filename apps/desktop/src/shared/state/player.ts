@@ -1,10 +1,10 @@
 import { memoryTable } from "@muswag/tanstack-db-mirror/memory";
 import { Schema } from "effect";
 
-import { BinaryState, InstallOutput, InstallState, PlaybackItemSchema, PlayerIssue, type PlayerSnapshot } from "./player-contract";
+import { BinaryState, InstallOutput, InstallState, PlaybackItemSchema, PlayerIssue, type PlayerSnapshot } from "#shared/commands/player";
 
 /**
- * The player's state as renderers see it: memory tables in the state mirror (`state-mirror.ts`), which
+ * The player's state as renderers see it: memory tables in the state mirror (`mirror.ts`), which
  * main writes whenever the player publishes. Position has a table of its own, so its updates twice a second
  * do not touch anything else.
  */

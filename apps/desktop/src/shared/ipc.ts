@@ -16,12 +16,12 @@ export type MuswagMainIpc = {
   /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
   "appUpdate:install": () => void;
 
-  /** Runs a command from `app-contract.ts`; replies with an `AppCommandReply`. */
+  /** Runs a command from `commands/app.ts`; replies with an `AppCommandReply`. */
   "app:command": (name: string, args: readonly unknown[]) => unknown;
 
   // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
-  // results against the schemas in player-contract.ts. The player's state reaches renderers through
-  // the state mirror (player-state.ts).
+  // results against the schemas in commands/player.ts. The player's state reaches renderers through
+  // the state mirror (state/player.ts).
   "player:command": (commandId: string, command: unknown) => unknown;
   "player:locate": () => unknown;
 };

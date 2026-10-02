@@ -1,6 +1,25 @@
-import type { NowPlaying, PlaybackItem, QueueItemRow, QueueSourceRef, QueueStateRow } from "@muswag/model";
+import type { NowPlaying, PlaybackItem, QueueItemRow, QueueSourceRef, QueueStateRow, SourceCursor } from "@muswag/model";
 
-import { sourceWindowItems, type SourceItem, type SourceWindow } from "./queue-source";
+export type SourceRevision = string;
+
+export type SourceItem = PlaybackItem & {
+  /** Absolute raw position in this source revision. */
+  offset: number;
+};
+
+/** The part of a queue source main keeps loaded around the cursor. */
+export type SourceWindow = {
+  revision: SourceRevision;
+  cursor: SourceCursor;
+  previous: readonly SourceItem[];
+  current: SourceItem | null;
+  next: readonly SourceItem[];
+};
+
+/** Everything the window has materialised, in playback order. */
+export function sourceWindowItems(window: SourceWindow): SourceItem[] {
+  return [...window.previous, ...(window.current ? [window.current] : []), ...window.next];
+}
 
 /** What main's queue manager publishes: the occurrence playing, the user queue and the source around it. */
 export type QueueManagerState = {

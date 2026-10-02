@@ -1,14 +1,9 @@
-import type { PlaybackItem, QueueSourceRef, SourceCursor } from "@muswag/model";
+import type { QueueSourceRef } from "@muswag/model";
+
+import type { SourceItem, SourceRevision } from "#shared/queue-state";
 
 export const SOURCE_BEHIND = 10;
 export const SOURCE_AHEAD = 30;
-
-export type SourceRevision = string;
-
-export type SourceItem = PlaybackItem & {
-  /** Absolute raw position in this source revision. */
-  offset: number;
-};
 
 export type SourcePage = {
   revision: SourceRevision;
@@ -26,19 +21,6 @@ export interface QueueSource {
   subscribe(listener: (revision: SourceRevision) => void): () => void;
 }
 
-export type SourceWindow = {
-  revision: SourceRevision;
-  cursor: SourceCursor;
-  previous: readonly SourceItem[];
-  current: SourceItem | null;
-  next: readonly SourceItem[];
-};
-
 export interface QueueSourceFactory {
   open(ref: QueueSourceRef): QueueSource;
-}
-
-/** Everything the window has materialised, in playback order. */
-export function sourceWindowItems(window: SourceWindow): SourceItem[] {
-  return [...window.previous, ...(window.current ? [window.current] : []), ...window.next];
 }

@@ -4,7 +4,7 @@ import { Id as Key, type PlaybackItem } from "@muswag/model";
 /**
  * The wire contract between the main-process player and the renderer. Every type is derived from its schema,
  * so main decodes commands and the renderer decodes results against the same definitions. Renderers
- * see the player's state through the tables in `player-state.ts`.
+ * see the player's state through the tables in `state/player.ts`.
  */
 
 const Seconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));

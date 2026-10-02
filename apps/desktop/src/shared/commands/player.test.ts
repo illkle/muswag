@@ -1,6 +1,6 @@
 import { Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { initialSnapshot, PlayerCommand, PlayerCredentials, PlayerSnapshot } from "./player-contract";
+import { initialSnapshot, PlayerCommand, PlayerCredentials, PlayerSnapshot } from "./player";
 
 const decode = Schema.decodeUnknownExit(PlayerCommand);
 const track = (id: string) => ({ id, title: id, isDir: false, album: "kept" });

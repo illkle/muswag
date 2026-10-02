@@ -1,4 +1,4 @@
-import type { Media, Playback, PlayerIssue, PlayerSnapshot } from "#shared/player-contract";
+import type { Media, Playback, PlayerIssue, PlayerSnapshot } from "#shared/commands/player";
 import type { SessionEvent } from "./mpv/session";
 
 const MAX_ISSUES = 20;

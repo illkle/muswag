@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BinaryState } from "#shared/player-contract";
+import type { BinaryState } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn<() => Promise<void>>(),

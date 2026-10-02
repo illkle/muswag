@@ -1,7 +1,7 @@
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { delimiter, dirname } from "node:path";
 import { Context, Deferred, Effect, FiberHandle, Layer, Semaphore, Stream, SubscriptionRef } from "effect";
-import type { InstallOutput, InstallState, MpvInstallMethod } from "#shared/player-contract";
+import type { InstallOutput, InstallState, MpvInstallMethod } from "#shared/commands/player";
 import { Busy, InstallFailed, toIssue } from "../errors";
 import { installationLines } from "../support/output";
 import { Binaries } from "./binaries";

@@ -13,4 +13,4 @@ export const librarySync = memoryTable("library_sync", Schema.Struct({ id: Schem
 
 export const playlistSync = memoryTable("playlist_sync", Schema.Struct({ id: Schema.Literal("playlist_sync"), value: PlaylistSyncStatus }), { primaryKey: "id" });
 
-export const APP_TABLES = [auth, librarySync, playlistSync] as const;
+export const SESSION_TABLES = [auth, librarySync, playlistSync] as const;

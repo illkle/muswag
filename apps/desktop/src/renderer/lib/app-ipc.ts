@@ -1,4 +1,4 @@
-import type { AppCommandArgs, AppCommandName, AppCommandReply, AppCommandResults } from "#shared/app-contract";
+import type { AppCommandArgs, AppCommandName, AppCommandReply, AppCommandResults } from "#shared/commands/app";
 import { mainIpc } from "./ipc";
 
 /** A command main rejected; `message` is main's own description of the failure. */

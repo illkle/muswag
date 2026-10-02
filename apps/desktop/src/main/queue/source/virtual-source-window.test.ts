@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { songRow, type Song } from "@muswag/model";
-import type { QueueSource, SourceItem, SourcePage } from "#shared/queue-source";
+import type { SourceItem } from "#shared/queue-state";
+import type { QueueSource, SourcePage } from "./types";
 import { VirtualSourceWindow } from "./virtual-source-window";
 
 const song = (id: string): Song => songRow({ id, title: id });

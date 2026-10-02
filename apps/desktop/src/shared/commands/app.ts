@@ -1,11 +1,25 @@
-import { CoverTarget, CreatePlaylistInput, Id, Ids, QueueSourceRef, RefreshStatTarget, SessionCredentials, SyncMode, Text, type AuthSnapshot, type PlaylistEntry, type PlaylistRecord, type PlaylistSyncStatus } from "@muswag/model";
+import {
+  CoverTarget,
+  CreatePlaylistInput,
+  Id,
+  Ids,
+  QueueSourceRef,
+  RefreshStatTarget,
+  SessionCredentials,
+  SyncMode,
+  Text,
+  type AuthSnapshot,
+  type PlaylistEntry,
+  type PlaylistRecord,
+  type PlaylistSyncStatus,
+} from "@muswag/model";
 import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
 
 /**
  * The contract between the renderer and main, which owns the library, the session and the queue.
  * The renderer reads library data and the queue from mirrored collections, and main's in-memory state
- * from the state mirror (`state-mirror.ts`); it changes anything only through the commands below.
+ * from the state mirror (`state/mirror.ts`); it changes anything only through the commands below.
  */
 
 // ---- Commands ----

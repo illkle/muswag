@@ -1,6 +1,7 @@
 import type { SourceCursor } from "@muswag/model";
 
-import { SOURCE_AHEAD, SOURCE_BEHIND, sourceWindowItems, type QueueSource, type SourceItem, type SourcePage, type SourceWindow } from "#shared/queue-source";
+import { sourceWindowItems, type SourceItem, type SourceWindow } from "#shared/queue-state";
+import { SOURCE_AHEAD, SOURCE_BEHIND, type QueueSource, type SourcePage } from "./types";
 
 const PAGE_SIZE = 30;
 

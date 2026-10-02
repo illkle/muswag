@@ -1,7 +1,7 @@
 import type { PlaybackItem } from "@muswag/model";
 
-import type { PlayerSnapshot } from "#shared/player-contract";
-import { playerStatus, type PlayerStatus } from "#shared/player-state";
+import type { PlayerSnapshot } from "#shared/commands/player";
+import { playerStatus, type PlayerStatus } from "#shared/state/player";
 
 /** Every occurrence mpv should hold, in order, and optionally which one to play. */
 export type ApplyQueueInput = {

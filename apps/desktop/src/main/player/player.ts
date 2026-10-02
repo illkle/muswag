@@ -11,8 +11,8 @@ import {
   type PlayerIssue,
   type PlayerSnapshot,
   type Selection,
-} from "#shared/player-contract";
-import { installOutputRows, player as playerTable, playerInstallOutput, playerIssueRows, playerIssues, playerPosition, playerPositionRow, playerRow } from "#shared/player-state";
+} from "#shared/commands/player";
+import { installOutputRows, player as playerTable, playerInstallOutput, playerIssueRows, playerIssues, playerPosition, playerPositionRow, playerRow } from "#shared/state/player";
 import { Binaries } from "./binary/binaries";
 import { Installer, type InstallProgress } from "./binary/installer";
 import {

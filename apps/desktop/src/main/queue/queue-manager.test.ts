@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { songRow, type PlaybackItem, type Song } from "@muswag/model";
-import type { QueueSource, QueueSourceFactory, SourceItem } from "#shared/queue-source";
-import type { QueueManagerState } from "#shared/queue-state";
+import type { QueueManagerState, SourceItem } from "#shared/queue-state";
+import type { QueueSource, QueueSourceFactory } from "./source/types";
 import type { QueueStorage, StoredQueue } from "./db-queue-storage";
 import type { ApplyQueueInput, PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { QueueManager } from "./queue-manager";

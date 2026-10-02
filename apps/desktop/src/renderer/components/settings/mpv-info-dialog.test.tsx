@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BinaryState, InstallState, MpvInstallOption } from "#shared/player-contract";
+import type { BinaryState, InstallState, MpvInstallOption } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
   cancelInstall: vi.fn(async () => {}),

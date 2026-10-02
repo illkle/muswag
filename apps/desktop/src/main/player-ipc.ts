@@ -2,7 +2,7 @@ import { dialog } from "electron";
 import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { Effect, ManagedRuntime, Schema, Stream } from "effect";
 import type { MuswagMainIpc } from "#shared/ipc";
-import { PlayerCommand, type CommandAck, type CommandResult, type PlayerCredentials, type PlayerSnapshot } from "#shared/player-contract";
+import { PlayerCommand, type CommandAck, type CommandResult, type PlayerCredentials, type PlayerSnapshot } from "#shared/commands/player";
 import { makePlayerLayer, Player } from "./player";
 import { CommandFailed, InvalidCommand, toIssue } from "./player/errors";
 

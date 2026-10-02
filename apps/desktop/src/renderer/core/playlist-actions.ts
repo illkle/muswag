@@ -1,6 +1,6 @@
 import { db } from "#/lib/db-renderer";
 import { appCommand } from "#/lib/app-ipc";
-import type { Written } from "#shared/app-contract";
+import type { Written } from "#shared/commands/app";
 import type { CreatePlaylistInput, PlaylistEntry, PlaylistRecord } from "@muswag/model";
 
 /**
