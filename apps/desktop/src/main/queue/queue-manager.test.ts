@@ -98,6 +98,24 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("restores a queue with nothing playing without loading it, and keeps a queue mpv cannot load", async () => {
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    storage.snapshot = { nowPlaying: null, userQueue: [{ key: "user:saved", track: song("queued") }], source: null, playback: { positionSeconds: 0 } };
+    const idle = new QueueManager({ player, sources: factory, storage });
+    await expect(idle.restore()).resolves.toBe(true);
+    expect(player.applies).toEqual([]);
+    expect(idle.store.state.userQueue.map(({ key }) => key)).toEqual(["user:saved"]);
+    idle.dispose();
+
+    storage.snapshot = { ...storage.snapshot, nowPlaying: { key: "user:now", origin: "user", track: song("now") } };
+    player.applyError = new Error("mpv is missing");
+    const broken = new QueueManager({ player, sources: factory, storage });
+    await expect(broken.restore()).resolves.toBe(true);
+    expect(broken.store.state).toMatchObject({ nowPlaying: { key: "user:now" }, userQueue: [{ key: "user:saved" }] });
+    broken.dispose();
+  });
+
   it("commits only correlated starts and keeps manual items out of source history", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });

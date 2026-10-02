@@ -66,16 +66,16 @@ export class QueueManager {
         source: active ? publicSource(active) : null,
       };
       const nowPlaying = restoredState.nowPlaying;
-      try {
-        await this.player.applyQueue({
-          snapshot: composeMpvQueue(restoredState),
+      // Without an occurrence playing there is nothing to load; the queue reaches mpv with the next selection.
+      if (nowPlaying) {
+        try {
           // Always restore paused: launching the app should never start audio by itself.
-          ...(nowPlaying ? { select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } } : {}),
-        });
-      } catch (cause) {
-        active?.window.dispose();
-        console.error("[queue] failed to restore mpv mirror", cause);
-        return false;
+          await this.player.applyQueue({ snapshot: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } });
+        } catch (cause) {
+          // The queue is the user's even when mpv cannot load it (mpv missing, say): keep it, so what main
+          // holds matches what is stored and shown, and let the next selection load it.
+          console.error("[queue] failed to restore mpv mirror", cause);
+        }
       }
 
       this.activeSource?.window.dispose();
