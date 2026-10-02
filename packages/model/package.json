@@ -28,8 +28,7 @@
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
-    "effect": "catalog:",
-    "zod": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "catalog:",

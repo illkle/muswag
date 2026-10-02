@@ -45,15 +45,15 @@ export class QueueManager {
     return this.serial.run(async () => {
       const initial = await this.player.getState();
       this.acceptRuntime(initial);
-      const snapshot = await this.storage.load();
-      if (!snapshot) return false;
+      const stored = await this.storage.load();
+      if (!stored) return false;
 
       let active: ActiveSource | null = null;
       let repaired = false;
-      if (snapshot.source) {
+      if (stored.source) {
         try {
-          active = await this.openWindow(snapshot.source.ref, { cursor: snapshot.source.cursor });
-          repaired = !sameCursor(active.window.cursor, snapshot.source.cursor);
+          active = await this.openWindow(stored.source.ref, { cursor: stored.source.cursor });
+          repaired = !sameCursor(active.window.cursor, stored.source.cursor);
         } catch (cause) {
           console.error("[queue] failed to restore source", cause);
           repaired = true;
@@ -61,8 +61,8 @@ export class QueueManager {
       }
 
       const restoredState: QueueManagerState = {
-        nowPlaying: snapshot.nowPlaying ? cloneNowPlaying(snapshot.nowPlaying) : null,
-        userQueue: snapshot.userQueue.map(clonePlaybackItem),
+        nowPlaying: stored.nowPlaying ? cloneNowPlaying(stored.nowPlaying) : null,
+        userQueue: stored.userQueue.map(clonePlaybackItem),
         source: active ? publicSource(active) : null,
       };
       const nowPlaying = restoredState.nowPlaying;
@@ -70,7 +70,7 @@ export class QueueManager {
       if (nowPlaying) {
         try {
           // Always restore paused: launching the app should never start audio by itself.
-          await this.player.applyQueue({ snapshot: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: snapshot.playback.positionSeconds } });
+          await this.player.applyQueue({ snapshot: composeMpvQueue(restoredState), select: { key: nowPlaying.key, play: false, positionSeconds: stored.resumePositionSeconds } });
         } catch (cause) {
           // The queue is the user's even when mpv cannot load it (mpv missing, say): keep it, so what main
           // holds matches what is stored and shown, and let the next selection load it.
