@@ -21,6 +21,11 @@ export type MirrorCollectionConfig<TTable extends AnyMirrorTable> = Omit<
 > & {
   readonly client: MirrorClient;
   readonly table: TTable;
+  /**
+   * Leaves out the mutation handlers, so `insert`, `update` and `delete` throw instead of writing to
+   * SQLite. Use it when the server is `readOnly` and changes go through your own commands.
+   */
+  readonly readOnly?: boolean | undefined;
 };
 
 export type MirrorCollectionOptions<TTable extends AnyMirrorTable> = CollectionConfig<MirrorRowOf<TTable>, MirrorKeyOf<TTable>, never, MirrorCollectionUtils> & {
@@ -31,13 +36,13 @@ export type MirrorCollectionOptions<TTable extends AnyMirrorTable> = CollectionC
 /**
  * Collection options for a TanStack DB collection that mirrors a SQLite table owned by a
  * `MirrorServer`. Loads the whole table, then applies the server's change stream. Mutations are
- * written to SQLite and resolve once their changes come back through the stream.
+ * written to SQLite and resolve once their changes come back through the stream, unless `readOnly`.
  */
 export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: MirrorCollectionConfig<TTable>): MirrorCollectionOptions<TTable> {
   type Row = MirrorRowOf<TTable>;
   type Key = MirrorKeyOf<TTable>;
 
-  const { client, table, ...collectionConfig } = config;
+  const { client, table, readOnly = false, ...collectionConfig } = config;
   const info = describeTable(table);
   const primaryKey = info.primaryKey.key;
   const id = config.id ?? `mirror:${info.name}`;
@@ -182,9 +187,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: M
     getKey,
     sync,
     startSync: collectionConfig.startSync ?? true,
-    onInsert: persist,
-    onUpdate: persist,
-    onDelete: persist,
+    ...(!readOnly && { onInsert: persist, onUpdate: persist, onDelete: persist }),
     utils: { awaitPosition },
   };
 }

@@ -382,6 +382,23 @@ describe("server commands", () => {
 
     expect(client.albums.has("a1")).toBe(true);
   });
+
+  it("throws on local writes to a read-only collection, which still follows the server", async () => {
+    harness = await createHarness({ server: { readOnly: true } });
+    await harness.insertAlbums([album("a1")]);
+    const client = harness.connect();
+    const collection = createCollection(mirrorCollectionOptions({ client: client.client, table: albums, id: "read-only-albums", readOnly: true }));
+    await collection.preload();
+
+    expect(() => collection.insert(album("a2"))).toThrow(/handler/i);
+    expect(() => collection.update("a1", (draft) => void (draft.name = "Changed"))).toThrow(/handler/i);
+    expect(() => collection.delete("a1")).toThrow(/handler/i);
+    expect(rowsOf(collection)).toEqual([album("a1")]);
+
+    await harness.exec(`UPDATE albums SET name = 'Server' WHERE id = 'a1'`);
+    await eventually(() => expect(collection.get("a1")?.name).toBe("Server"));
+    await collection.cleanup();
+  });
 });
 
 describe("stream recovery", () => {

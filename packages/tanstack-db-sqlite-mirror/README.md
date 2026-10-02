@@ -105,6 +105,15 @@ tx.mutate(() => {
 
 When a main-process command returns the position from its `write`, as `starAlbum` does, the renderer can wait for its effects with `collection.utils.awaitPosition(position)`.
 
+### Read-only mirrors
+
+If every change should go through your own main-process commands, turn off renderer writes on both sides. The server then rejects `mutate` requests, so a renderer can't write to mirrored tables even if its code is compromised. The collections leave out their mutation handlers, so `insert`, `update` and `delete` throw in the renderer instead of reaching SQLite. Commands return a position for `awaitPosition` as above.
+
+```ts
+MirrorServer.make({ tables: [albums, songs], readOnly: true }); // main
+mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
+```
+
 ## Rules and limits
 
 - **Write through `mirror.write`.** Writes made any other way are still captured, but they aren't broadcast until the next `write` or `mirror.flush`. `autoFlushInterval` adds a periodic backstop.

@@ -36,6 +36,11 @@ export interface MirrorServerOptions {
    * the next flush.
    */
   readonly autoFlushInterval?: Duration.Input | undefined;
+  /**
+   * Rejects `mutate` requests, so clients can only read and every change goes through `write` in the
+   * server process. Pair it with `readOnly` collections on the client.
+   */
+  readonly readOnly?: boolean | undefined;
 }
 
 export interface MirrorServerService {
@@ -281,7 +286,7 @@ export const make = Effect.fnUntraced(function* (options: MirrorServerOptions) {
       case "snapshot":
         return snapshot(request.table);
       case "mutate":
-        return mutate(request.mutations);
+        return options.readOnly ? Effect.fail(new MirrorRequestError({ message: "This mirror is read-only; change the data through the server instead" })) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
     }

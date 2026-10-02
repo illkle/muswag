@@ -566,6 +566,20 @@ describe("mutate", () => {
     expect((await mutate(harness, [{ table: "albums", type: "update", key: "a1", changes: {} }])).ok).toBe(true);
     expect(log.batches).toEqual([]);
   });
+
+  it("rejects mutations on a read-only server, which still writes through `write`", async () => {
+    harness = await createHarness({ server: { readOnly: true } });
+    await harness.insertAlbums([album("a1")]);
+    const log = record(harness);
+
+    expectError(await mutate(harness, [{ table: "albums", type: "update", key: "a1", changes: { name: "Changed" } }]), "MirrorRequestError", /read-only/);
+    expectError(await mutate(harness, [{ table: "albums", type: "delete", key: "a1" }]), "MirrorRequestError", /read-only/);
+    expect(log.batches).toEqual([]);
+    expect(await harness.dbRows("albums")).toEqual([album("a1")]);
+
+    await harness.exec(`UPDATE albums SET name = 'Server' WHERE id = 'a1'`);
+    expect(log.batches).toHaveLength(1);
+  });
 });
 
 describe("startup", () => {
