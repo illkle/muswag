@@ -2,8 +2,7 @@ import { ArrowsClockwiseIcon, CheckCircleIcon, DownloadSimpleIcon, PackageIcon, 
 
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "#/components/ui/dialog";
-import { getAppUpdateStatus, isAppUpdateBusy } from "#/hooks/use-app-update";
-import { AppUpdateIPC } from "#/lib/ipc";
+import { getAppUpdateStatus, isAppUpdateBusy, AppUpdateIPC } from "#/updates/app-update";
 import type { AppUpdateState, AppUpdateStatus } from "#shared/ipc";
 
 const statusLabels: Record<AppUpdateStatus, string> = {

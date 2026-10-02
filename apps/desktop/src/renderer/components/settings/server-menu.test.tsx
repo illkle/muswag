@@ -15,21 +15,22 @@ const mocks = vi.hoisted(() => ({
   user: { id: 1, password: "secret", url: "https://music.example.com/", username: "tester" } as { id: number; password: string; url: string; username: string } | undefined,
 }));
 
-vi.mock("#/lib/queries", () => ({
+vi.mock("#/session/session", () => ({
+  Session: { logout: mocks.logout },
   useUser: () => ({ data: mocks.user }),
 }));
 
-vi.mock("#/core/client", () => ({
-  AppClient: { logout: mocks.logout, sync: mocks.sync },
+vi.mock("#/library/actions", () => ({
+  LibraryActions: { sync: mocks.sync },
 }));
 
-vi.mock("#/components/player-provider", () => ({
+vi.mock("#/player/hooks", () => ({
   usePlayerError: () => mocks.playerError,
   usePlayerMpvBinary: () => mocks.binary,
 }));
 
-vi.mock("#/hooks/use-app-update", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("#/hooks/use-app-update")>()),
+vi.mock("#/updates/app-update", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#/updates/app-update")>()),
   useAppUpdate: () => ({
     canCheck: true,
     currentVersion: "1.2.3",

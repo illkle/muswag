@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "#/components/ui/dialog";
-import { usePlayerError, usePlayerInstallOutput, usePlayerMpvBinary, usePlayerMpvInstall, usePlayerStatus } from "#/components/player-provider";
-import { MpvIPC } from "#/player/connection";
+import { usePlayerError, usePlayerInstallOutput, usePlayerMpvBinary, usePlayerMpvInstall, usePlayerStatus } from "#/player/hooks";
+import { MpvIPC } from "#/player/commands";
 import type { BinaryState, MpvInstallOption, MpvSource } from "#shared/commands/player";
 import type { PlayerStatus } from "#shared/state/player";
 

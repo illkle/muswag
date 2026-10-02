@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { totalDuration, type PlaylistRow } from "#/lib/playlist-queue";
+import { totalDuration, type PlaylistRow } from "#/playlists/rows";
 import { songRow, type Song } from "@muswag/model";
 
 function song(id: string, duration?: number): Song {

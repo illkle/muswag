@@ -1,10 +1,9 @@
-import { db } from "#/lib/db-renderer";
-import type { PlaylistRow } from "#/lib/playlist-queue";
-import type { PlaylistEntry } from "@muswag/model";
+import { db } from "#/data/library";
+import { appState } from "#/data/state";
+import type { PlaylistRow } from "#/playlists/rows";
+import { IDLE_PLAYLIST_SYNC, type PlaylistEntry, type PlaylistSyncStatus } from "@muswag/model";
 import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-
-export { totalDuration, type PlaylistRow } from "#/lib/playlist-queue";
 
 export type PlaylistSummary = {
   id: string;
@@ -83,3 +82,5 @@ export function usePlaylist(playlistId: string) {
     isError: recordQuery.isError || songsQuery.isError,
   };
 }
+
+export const usePlaylistSyncStatus = (): PlaylistSyncStatus => useLiveQuery((q) => q.from({ status: appState.playlistSync }).findOne()).data?.value ?? IDLE_PLAYLIST_SYNC;

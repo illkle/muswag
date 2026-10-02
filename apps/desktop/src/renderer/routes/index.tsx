@@ -4,8 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/com
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { getErrorMessage } from "#/lib/err";
-import { useUser } from "#/lib/queries";
-import { AppClient } from "#/core/client";
+import { useUser, Session } from "#/session/session";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
@@ -30,7 +29,7 @@ const defaultCredentials = {
 function LoginScreen() {
   const loginMutation = useMutation({
     mutationFn: async (values: CredentialsForm) => {
-      await AppClient.login(values);
+      await Session.login(values);
     },
   });
 

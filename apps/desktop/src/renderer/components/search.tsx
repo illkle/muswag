@@ -1,6 +1,5 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { FuzeSearch } from "#/lib/db-renderer";
-import type { SearchResult, SearchResultAlbum, SearchResultArtist, SearchResultSong } from "#/lib/search";
+import { FuzeSearch, type SearchResult, type SearchResultAlbum, type SearchResultArtist, type SearchResultSong } from "#/library/search";
 import type { CoverTarget } from "@muswag/model";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";

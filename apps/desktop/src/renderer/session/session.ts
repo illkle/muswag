@@ -1,7 +1,8 @@
-import type { CoverTarget, RefreshStatTarget, SessionCredentials, SyncMode } from "@muswag/model";
+import type { SessionCredentials } from "@muswag/model";
+import { useLiveQuery } from "@tanstack/react-db";
 
-import { appCommand } from "#/lib/app-ipc";
-import { appState } from "#/lib/state-mirror";
+import { appCommand } from "#/data/app-command";
+import { appState } from "#/data/state";
 
 let startPromise: Promise<void> | undefined;
 
@@ -21,8 +22,8 @@ const whenInitialized = () =>
     });
   });
 
-/** The session, library sync and covers, all of which main runs. Their state is in `appState`. */
-export const AppClient = {
+/** The session, which main runs. Its state is in `appState.auth`. */
+export const Session = {
   /** Resolves once main has restored the session, logged in or not. */
   start(): Promise<void> {
     startPromise ??= appState.auth.preload().then(whenInitialized);
@@ -32,13 +33,12 @@ export const AppClient = {
   login: (credentials: SessionCredentials) => appCommand("session:login", credentials).then(() => undefined),
   /** Main stops playback, ends the session and deletes the local library. */
   logout: () => appCommand("session:logout").then(() => undefined),
+};
 
-  sync: (mode: SyncMode) => appCommand("library:sync", mode),
-  cancelSync: () => appCommand("library:cancelSync"),
-  refreshStats: (target: RefreshStatTarget) => appCommand("library:refreshStats", target),
-
-  ensureCover: (target: CoverTarget) => appCommand("covers:ensure", target),
-  repairCover: (target: CoverTarget, failedPath: string) => appCommand("covers:repair", target, failedPath),
-
-  syncPlaylists: () => appCommand("playlists:sync"),
+export const useUser = () => {
+  const session = useLiveQuery((q) => q.from({ auth: appState.auth }).findOne()).data?.value;
+  return {
+    data: session?._tag === "LoggedIn" ? { url: session.url, username: session.username } : undefined,
+    isLoading: !session || session._tag === "Initializing",
+  };
 };

@@ -6,15 +6,17 @@ import { useMemo, useState } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader, DetailHeaderPlaceholder } from "#/components/detail-header";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
-import { queueManager, usePlayerStatus, useQueueManagerState } from "#/components/player-provider";
+import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { usePlayerStatus } from "#/player/hooks";
+import { PlaylistActions } from "#/playlists/actions";
+import { totalDuration } from "#/playlists/rows";
+import { usePlaylist } from "#/playlists/queries";
+import { usePlaylistSongStatsRefresh } from "#/library/stats-refresh";
 import { SongListRoot, SongRenderPlaylist } from "#/components/song-list";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
-import { PlaylistActions } from "#/core/playlist-actions";
-import { totalDuration, usePlaylist } from "#/lib/playlist-queries";
 import { songRow, playlistOccurrenceKey, type Song } from "@muswag/model";
-import { usePlaylistSongStatsRefresh } from "#/core/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
   component: RouteComponent,
@@ -105,7 +107,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     state.readonly ? "read-only" : null,
   ]);
 
-  const playFrom = (entryId: string) => void queueManager.playSource({ type: "playlist", playlistId }, playlistOccurrenceKey(playlistId, entryId));
+  const playFrom = (entryId: string) => void QueueActions.playSource({ type: "playlist", playlistId }, playlistOccurrenceKey(playlistId, entryId));
 
   const onPlay = (_song: Song, index: number) => {
     const row = rows[index];

@@ -1,5 +1,5 @@
-import { PlaylistActions } from "#/core/playlist-actions";
-import { usePlaylists } from "#/lib/playlist-queries";
+import { PlaylistActions } from "#/playlists/actions";
+import { usePlaylists } from "#/playlists/queries";
 import { useMutation } from "@tanstack/react-query";
 import { PlusIcon } from "@phosphor-icons/react";
 

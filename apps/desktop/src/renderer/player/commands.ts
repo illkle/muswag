@@ -1,23 +1,12 @@
-import { mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
-import { createCollection } from "@tanstack/react-db";
 import { createStore } from "@tanstack/react-store";
 import { Schema } from "effect";
 
-import { mainIpc } from "#/lib/ipc";
-import { stateCollectionOptions as options } from "#/lib/state-mirror";
+import { mainIpc } from "#/data/ipc";
+import { playerState } from "#/data/state";
 import { CommandResult, type MpvInstallMethod, type PlayerCommand, type PlayerIssue } from "#shared/commands/player";
-import { player, playerInstallOutput, playerIssues, playerPosition } from "#shared/state/player";
 
 /** How long a command waits for its outcome to show up in the state before it returns anyway. */
 const SETTLE_TIMEOUT_MS = 5_000;
-
-/** The player as main publishes it. Change it only through `PlayerIPC` and `MpvIPC`. */
-export const playerState = {
-  player: createCollection(mirrorCollectionOptions({ ...options, table: player })),
-  position: createCollection(mirrorCollectionOptions({ ...options, table: playerPosition })),
-  issues: createCollection(mirrorCollectionOptions({ ...options, table: playerIssues })),
-  installOutput: createCollection(mirrorCollectionOptions({ ...options, table: playerInstallOutput })),
-};
 
 /** Main rejected a command; `issue` says why. */
 export class CommandFailed extends Error {
@@ -64,7 +53,7 @@ export const MpvIPC = {
   recheck: () => execute({ _tag: "RefreshBinary" }),
 };
 
-/** Transport controls. The queue itself is main's; see `queueManager`. */
+/** Transport controls. The queue itself is main's; see `QueueActions`. */
 export const PlayerIPC = {
   pause: () => execute({ _tag: "Pause" }),
   play: () => execute({ _tag: "Play" }),

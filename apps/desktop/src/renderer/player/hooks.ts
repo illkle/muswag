@@ -2,27 +2,12 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useStore } from "@tanstack/react-store";
 import { useMemo } from "react";
 
-import { appCommand } from "#/lib/app-ipc";
-import { db } from "#/lib/db-renderer";
-import { commandIssue, playerState } from "#/player/connection";
+import { playerState } from "#/data/state";
+import { commandIssue } from "#/player/commands";
+import { useQueueManagerState } from "#/queue/queue";
 import type { BinaryState, InstallState } from "#shared/commands/player";
+import { getQueueCanGoNext, getQueueCanGoPrevious } from "#shared/queue-state";
 import { playerStatus, type PlaybackState, type PlayerStatus } from "#shared/state/player";
-import { getQueueCanGoNext, getQueueCanGoPrevious, queueStateFromRows, type QueueManagerState } from "#shared/queue-state";
-import type { QueueSourceRef, Song } from "@muswag/model";
-
-/** The playback queue lives in main; these send it commands. */
-export const queueManager = {
-  playSource: (ref: QueueSourceRef, key: string) => appCommand("queue:playSource", ref, key),
-  enqueue: (tracks: readonly Pick<Song, "id">[]) =>
-    appCommand(
-      "queue:enqueue",
-      tracks.map(({ id }) => id),
-    ),
-  removeQueued: (key: string) => appCommand("queue:removeQueued", key),
-  clearQueued: () => appCommand("queue:clearQueued"),
-  next: () => appCommand("queue:next"),
-  previous: () => appCommand("queue:previous"),
-};
 
 // ---- Rows ----
 // Each player table has one row, keyed "player", except issues and install output.
@@ -113,11 +98,3 @@ export const usePlayerInstallOutput = () => {
   );
   return useMemo(() => (data ?? []).map(({ line }) => line), [data]);
 };
-
-// ---- Queue ----
-
-export function useQueueManagerState(): QueueManagerState {
-  const { data: state } = useLiveQuery((q) => q.from({ state: db.queueState }).findOne());
-  const { data: items } = useLiveQuery((q) => q.from({ item: db.queueItems }));
-  return useMemo(() => queueStateFromRows(state, items ?? []), [state, items]);
-}

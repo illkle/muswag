@@ -1,7 +1,7 @@
 import type { Album, Artist, Song } from "@muswag/model";
 import Fuse from "fuse.js";
 
-import type { LibraryCollections } from "./db-renderer";
+import { db, type LibraryCollections } from "#/data/library";
 
 export type SearchResultSong = {
   type: "song";
@@ -156,3 +156,5 @@ export function CreateFuse(db: Pick<LibraryCollections, "albums" | "artists" | "
 
   return f;
 }
+
+export const FuzeSearch = CreateFuse(db);

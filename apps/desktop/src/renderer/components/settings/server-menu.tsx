@@ -2,15 +2,15 @@ import { ArrowsClockwiseIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, Sign
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { usePlayerError, usePlayerMpvBinary } from "#/components/player-provider";
+import { usePlayerError, usePlayerMpvBinary } from "#/player/hooks";
+import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/updates/app-update";
+import { useUser, Session } from "#/session/session";
+import { LibraryActions } from "#/library/actions";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "#/components/ui/menu";
 import { SidebarMenuButton } from "#/components/ui/sidebar";
-import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/hooks/use-app-update";
-import { useUser } from "#/lib/queries";
-import { AppClient } from "#/core/client";
 import { cn } from "#/lib/utils";
 
 type SettingsDialog = "mpv" | "update";
@@ -32,10 +32,10 @@ export function ServerMenu() {
   const [dialog, setDialog] = useState<SettingsDialog | null>(null);
 
   const logoutMutation = useMutation({
-    mutationFn: () => AppClient.logout(),
+    mutationFn: () => Session.logout(),
   });
   const syncMutation = useMutation({
-    mutationFn: () => AppClient.sync("quick"),
+    mutationFn: () => LibraryActions.sync("quick"),
   });
 
   const closeDialog = useCallback(() => setDialog(null), []);

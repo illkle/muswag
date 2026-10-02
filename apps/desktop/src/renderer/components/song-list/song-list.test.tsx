@@ -10,10 +10,10 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 }));
 
-vi.mock("#/lib/db-renderer", () => ({ db: {} }));
-vi.mock("#/lib/state-mirror", () => ({ appState: {} }));
+vi.mock("#/data/library", () => ({ db: {} }));
+vi.mock("#/data/state", () => ({ appState: {} }));
 
-vi.mock("#/core/playlist-actions", () => ({
+vi.mock("#/playlists/actions", () => ({
   PlaylistActions: {
     addSongs: vi.fn(),
     create: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("#/core/playlist-actions", () => ({
 
 vi.mock("#/components/playlist/add-to-playlist-menu", () => ({ AddToPlaylistMenu: () => null }));
 vi.mock("#/components/playlist/playlist-form-dialog", () => ({ PlaylistFormDialog: () => null }));
-vi.mock("#/components/player-provider", () => ({ queueManager: { enqueue: vi.fn() } }));
+vi.mock("#/queue/queue", () => ({ QueueActions: { enqueue: vi.fn() } }));
 
 vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: undefined }),

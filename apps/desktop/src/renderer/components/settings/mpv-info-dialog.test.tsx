@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   installOutput: [] as string[],
 }));
 
-vi.mock("#/player/connection", () => ({
+vi.mock("#/player/commands", () => ({
   MpvIPC: {
     cancelInstall: mocks.cancelInstall,
     clearManualPath: mocks.clearManualPath,
@@ -31,7 +31,7 @@ vi.mock("#/player/connection", () => ({
   },
 }));
 
-vi.mock("#/components/player-provider", () => ({
+vi.mock("#/player/hooks", () => ({
   usePlayerError: () => mocks.playerState.error,
   usePlayerInstallOutput: () => mocks.installOutput,
   usePlayerMpvBinary: () => mocks.playerState.binary,

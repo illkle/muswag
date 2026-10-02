@@ -3,8 +3,6 @@ import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db
 import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
 import { BasicIndex, createCollection } from "@tanstack/react-db";
 
-import { CreateFuse } from "./search";
-
 /** Main owns the library database and the queue; these collections mirror their tables. Changes go through main's commands. */
 export const mirrorClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer }) });
 
@@ -23,5 +21,3 @@ export const db = {
 export type LibraryCollections = typeof db;
 
 db.songs.createIndex(({ albumId }) => albumId);
-
-export const FuzeSearch = CreateFuse(db);

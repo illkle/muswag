@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 
-import { AppUpdateIPC } from "#/lib/ipc";
+import { mainIpc, rendererIpc } from "#/data/ipc";
 import type { AppUpdateState, AppUpdateStatus } from "#shared/ipc";
+
+export const AppUpdateIPC = {
+  check: () => mainIpc.invoke("appUpdate:check"),
+  getState: () => mainIpc.invoke("appUpdate:getState"),
+  install: () => mainIpc.invoke("appUpdate:install"),
+  subscribe: (listener: (state: AppUpdateState) => void) =>
+    rendererIpc.on("appUpdate:state", (_event, state) => {
+      listener(state);
+    }),
+};
 
 /** Mirrors the main process update state, which changes on its own while a download runs. */
 export function useAppUpdate(): AppUpdateState | null {
