@@ -2,7 +2,7 @@ import { ArrowsClockwiseIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, Sign
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { usePlayerError, usePlayerMpvState } from "#/components/player-provider";
+import { usePlayerError, usePlayerMpvBinary } from "#/components/player-provider";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
@@ -25,7 +25,7 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" |
 
 export function ServerMenu() {
   const userStateQuery = useUser();
-  const mpvState = usePlayerMpvState();
+  const binary = usePlayerMpvBinary();
   const playerError = usePlayerError();
   const appUpdate = useAppUpdate();
 
@@ -52,7 +52,7 @@ export function ServerMenu() {
   const syncRunning = syncMutation.isPending;
 
   // `checking` is the startup state, so it must not paint the button red before mpv is actually missing.
-  const playbackBroken = mpvState.status === "missing" || mpvState.status === "invalid" || Boolean(playerError);
+  const playbackBroken = binary._tag === "Unavailable" || Boolean(playerError);
 
   const updateStatus = getAppUpdateStatus(appUpdate);
   const updateWaiting = hasAppUpdate(updateStatus);
@@ -104,9 +104,9 @@ export function ServerMenu() {
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
             <span className="flex-1 truncate">Playback engine</span>
             {playbackBroken ? (
-              <StatusPill tone="destructive">{playerError ? "Error" : mpvStatusLabels[mpvState.status]}</StatusPill>
+              <StatusPill tone="destructive">{playerError ? "Error" : mpvStatusLabels[binary._tag]}</StatusPill>
             ) : (
-              <span className="shrink-0 text-xs text-muted-foreground">{mpvStatusLabels[mpvState.status]}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{mpvStatusLabels[binary._tag]}</span>
             )}
           </MenuItem>
 

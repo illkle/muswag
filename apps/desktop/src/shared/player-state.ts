@@ -25,6 +25,11 @@ export const PlaybackState = Schema.Union([
 ]);
 export type PlaybackState = typeof PlaybackState.Type;
 
+/** What the player is doing, as controls show it: recovering counts as loading. */
+export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
+export const playerStatus = ({ _tag }: { readonly _tag: PlaybackState["_tag"] }): PlayerStatus =>
+  _tag === "Recovering" ? "loading" : _tag === "Failed" ? "error" : (_tag.toLowerCase() as PlayerStatus);
+
 export const PlayerRow = Schema.Struct({
   id: PlayerId,
   playback: PlaybackState,

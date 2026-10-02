@@ -1,24 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { songRow, type PlaybackItem, type Song } from "@muswag/model";
-import type { ApplyMpvQueueInput, PlayerRuntimeState, QueuePlayerPort } from "#shared/player";
-import { createDefaultPlayerRuntimeState } from "#shared/player";
 import type { QueueSource, QueueSourceFactory, SourceItem } from "#shared/queue-source";
 import type { QueueManagerState } from "#shared/queue-state";
 import type { QueueStorage, StoredQueue } from "./db-queue-storage";
+import type { ApplyQueueInput, PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { QueueManager } from "./queue-manager";
 
 const song = (id: string): Song => songRow({ id, title: id });
 const sourceItem = (key: string, offset: number): SourceItem => ({ key, offset, track: song(key) });
 
 class FakePlayer implements QueuePlayerPort {
-  state = createDefaultPlayerRuntimeState();
+  state: PlayerRuntimeState = { sequence: 0, current: null, status: "idle", positionSeconds: 0, paused: false };
   listeners = new Set<(state: PlayerRuntimeState) => void>();
-  applies: ApplyMpvQueueInput[] = [];
+  applies: ApplyQueueInput[] = [];
   applyError: Error | null = null;
   restarts = 0;
 
-  async applyQueue(input: ApplyMpvQueueInput): Promise<void> {
+  async applyQueue(input: ApplyQueueInput): Promise<void> {
     this.applies.push(structuredClone(input));
     if (this.applyError) throw this.applyError;
   }
@@ -94,7 +93,7 @@ describe("QueueManager", () => {
     await expect(manager.restore()).resolves.toBe(true);
     expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a", track: { id: "embedded-deleted-library-row" } }, source: { window: { cursor: { key: "a", offset: 0 } } } });
     expect(player.applies.at(-1)?.select).toEqual({ key: "a", play: false, positionSeconds: 42 });
-    expect(player.applies.at(-1)?.snapshot.items.map(({ key }) => key)).toEqual(["a", "user:saved", "c"]);
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["a", "user:saved", "c"]);
     manager.dispose();
   });
 

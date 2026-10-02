@@ -5,8 +5,7 @@ import { Schema } from "effect";
 
 import { mainIpc } from "#/lib/ipc";
 import { stateCollectionOptions as options } from "#/lib/state-mirror";
-import type { MpvInstallMethod } from "#shared/player";
-import { CommandResult, type PlayerCommand, type PlayerIssue } from "#shared/player-contract";
+import { CommandResult, type MpvInstallMethod, type PlayerCommand, type PlayerIssue } from "#shared/player-contract";
 import { player, playerInstallOutput, playerIssues, playerPosition } from "#shared/player-state";
 
 /** How long a command waits for its outcome to show up in the state before it returns anyway. */

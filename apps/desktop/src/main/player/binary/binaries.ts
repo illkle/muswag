@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import type { BinaryState } from "#shared/player-contract";
-import type { MpvInstallMethod } from "#shared/player";
+import type { MpvInstallMethod } from "#shared/player-contract";
 import { issue } from "../errors";
 import { detectInstallCandidates, type MpvInstallCandidate } from "./install-catalog";
 import { collectMpvCandidates, createMpvLocatorDeps, type MpvLocatorDeps } from "./mpv-locator";

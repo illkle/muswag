@@ -5,9 +5,8 @@ import { useMemo } from "react";
 import { appCommand } from "#/lib/app-ipc";
 import { db } from "#/lib/db-renderer";
 import { commandIssue, playerState } from "#/player/connection";
-import type { PlayerStatus } from "#shared/player";
-import type { PlaybackState } from "#shared/player-state";
-import { binaryView, installView } from "#shared/player-snapshot";
+import type { BinaryState, InstallState } from "#shared/player-contract";
+import { playerStatus, type PlaybackState, type PlayerStatus } from "#shared/player-state";
 import { getQueueCanGoNext, getQueueCanGoPrevious, queueStateFromRows, type QueueManagerState } from "#shared/queue-state";
 import type { QueueSourceRef, Song } from "@muswag/model";
 
@@ -39,12 +38,7 @@ const useLatestIssue = () =>
       .findOne(),
   ).data;
 
-const statusOf = (playback: PlaybackState | undefined): PlayerStatus => {
-  if (!playback) return "idle";
-  if (playback._tag === "Recovering") return "loading";
-  if (playback._tag === "Failed") return "error";
-  return playback._tag.toLowerCase() as PlayerStatus;
-};
+const statusOf = (playback: PlaybackState | undefined): PlayerStatus => (playback ? playerStatus(playback) : "idle");
 const itemOf = (playback: PlaybackState | undefined) => (playback && playback._tag !== "Idle" ? playback.item : null);
 
 // ---- Player ----
@@ -103,9 +97,12 @@ export function usePlayerCanGoBack() {
 
 // ---- mpv ----
 
+const CHECKING: BinaryState = { _tag: "Checking" };
+const INSTALL_IDLE: InstallState = { _tag: "Idle" };
+
 export const usePlayerMpvAvailable = () => usePlayerRow()?.binary._tag === "Ready";
-export const usePlayerMpvState = () => binaryView(usePlayerRow()?.binary ?? { _tag: "Checking" });
-export const usePlayerMpvInstallState = () => installView(usePlayerRow()?.install ?? { _tag: "Idle" });
+export const usePlayerMpvBinary = (): BinaryState => usePlayerRow()?.binary ?? CHECKING;
+export const usePlayerMpvInstall = (): InstallState => usePlayerRow()?.install ?? INSTALL_IDLE;
 /** The output of the running or last mpv installation, oldest line first. */
 export const usePlayerInstallOutput = () => {
   const { data } = useLiveQuery((q) =>

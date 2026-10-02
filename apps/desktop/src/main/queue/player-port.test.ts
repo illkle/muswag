@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { songRow } from "@muswag/model";
 import { initialSnapshot } from "#shared/player-contract";
-import { runtimeView } from "./player-snapshot";
+import { runtimeView } from "./player-port";
 
-describe("player snapshots", () => {
+describe("player runtime view", () => {
   it("projects recovering as loading, never playing, and carries epoch for queue ordering", () => {
     const snapshot = {
       ...initialSnapshot("current"),
