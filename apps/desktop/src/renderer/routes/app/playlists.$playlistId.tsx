@@ -13,7 +13,7 @@ import { Button } from "#/components/ui/button";
 import { getErrorMessage } from "#/lib/err";
 import { PlaylistActions } from "#/core/playlist-actions";
 import { totalDuration, usePlaylist } from "#/lib/playlist-queries";
-import { playlistOccurrenceKey, type Song } from "@muswag/shared";
+import { songRow, playlistOccurrenceKey, type Song } from "@muswag/shared";
 import { usePlaylistSongStatsRefresh } from "#/core/stats-refresh";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -53,7 +53,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   });
   const songs = useMemo(
     // Unavailable entries still need a row, so stand in a minimal song carrying the raw id.
-    (): Song[] => rows.map(({ songId, song }) => song ?? { id: songId, title: songId, isDir: false }),
+    (): Song[] => rows.map(({ songId, song }) => song ?? songRow({ id: songId, title: songId })),
     [rows],
   );
   const rowKeys = useMemo(() => rows.map(({ entryId }) => playlistOccurrenceKey(playlistId, entryId)), [playlistId, rows]);

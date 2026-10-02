@@ -16,8 +16,10 @@ export type MuswagMainIpc = {
   /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
   "appUpdate:install": () => void;
 
-  "fs:write": (path: string, data: Uint8Array) => void;
-  "fs:delete": (path: string) => void;
+  /** Runs a command from `app-contract.ts`; replies with an `AppCommandReply`. */
+  "app:command": (name: string, args: readonly unknown[]) => unknown;
+  /** Current value of a state from `app-contract.ts`. */
+  "app:state": (name: string) => unknown;
 
   // Player payloads are `unknown` on both sides: main decodes commands and the renderer decodes
   // snapshots/results against the schemas in player-contract.ts.
@@ -26,11 +28,11 @@ export type MuswagMainIpc = {
   "player:unsubscribe": (subscriptionId: string) => void;
   "player:ackSnapshot": (subscriptionId: string) => void;
   "player:getSnapshot": () => unknown;
-  "player:setCredentials": (credentials: unknown) => unknown;
   "player:locate": () => unknown;
 };
 
 export type MuswagRendererIpc = {
+  "app:state": [event: { name: string; value: unknown }];
   "appUpdate:state": [state: AppUpdateState];
   "player:snapshot": [event: { subscriptionId: string; snapshot: unknown }];
 };

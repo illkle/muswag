@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { songRow } from "./db/rows.js";
 import { parseQueueManagerSnapshot, type QueueManagerSnapshot } from "./player-queue.js";
-import { createInMemoryDb } from "./test/database.js";
 
 const valid: QueueManagerSnapshot = {
   version: 1,
   savedAt: "2026-08-13T00:00:00.000Z",
-  nowPlaying: { key: "user:playing", origin: "user", track: { id: "deleted-song", isDir: false, title: "Preserved" } },
-  userQueue: [{ key: "user:next", track: { id: "next", isDir: false, title: "Next" } }],
+  nowPlaying: { key: "user:playing", origin: "user", track: songRow({ id: "deleted-song", title: "Preserved" }) },
+  userQueue: [{ key: "user:next", track: songRow({ id: "next", title: "Next" }) }],
   source: { ref: { type: "playlist", playlistId: "playlist" }, cursor: { type: "gap", offset: 4 } },
   playback: { positionSeconds: 12.5 },
 };
@@ -33,13 +33,5 @@ describe("player queue persistence DTO", () => {
   it("rejects malformed top-level records", () => {
     expect(parseQueueManagerSnapshot({ ...valid, playback: { positionSeconds: -1 } })).toBeNull();
     expect(parseQueueManagerSnapshot({ ...valid, source: { ref: { type: "songs", queryId: "opaque" }, cursor: { type: "gap", offset: 0 } } })).toBeNull();
-  });
-
-  it("stores and removes the singleton locally", async () => {
-    const db = createInMemoryDb();
-    await db.playerQueue.insert({ id: 1, snapshot: valid }).isPersisted.promise;
-    expect(db.playerQueue.get(1)?.snapshot.nowPlaying?.track.title).toBe("Preserved");
-    db.playerQueue.delete(1);
-    expect(db.playerQueue.get(1)).toBeUndefined();
   });
 });

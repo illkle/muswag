@@ -9,7 +9,7 @@ export function AlbumCover({
   target,
   className,
 }: {
-  coverArtPath: string | undefined;
+  coverArtPath: string | null | undefined;
   instantLoad?: boolean | undefined;
   target?: CoverTarget | undefined;
   className?: string | undefined;

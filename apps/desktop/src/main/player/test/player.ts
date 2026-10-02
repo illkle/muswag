@@ -1,5 +1,5 @@
 import { Effect, Layer, Queue, Redacted, Stream } from "effect";
-import type { PlaybackItem } from "@muswag/shared";
+import { songRow, type PlaybackItem } from "@muswag/shared";
 import type { PlayerSnapshot } from "#shared/player-contract";
 import { Binaries } from "../binary/binaries";
 import { Installer } from "../binary/installer";
@@ -9,7 +9,7 @@ import type { MpvCommand, MpvEvent } from "../mpv/protocol";
 import { PlayerLive, type PlayerService } from "../player";
 import { SettingsStore, defaultSettings } from "../settings";
 
-export const tracks: PlaybackItem[] = ["a", "b", "c"].map((key) => ({ key, track: { id: "same-track", title: key, isDir: false } }));
+export const tracks: PlaybackItem[] = ["a", "b", "c"].map((key) => ({ key, track: songRow({ id: "same-track", title: key }) }));
 
 /** A PlayerLive wired to an in-memory mpv that records commands and lets tests inject events. */
 export function fixture() {

@@ -1,57 +1,38 @@
 import { db } from "#/lib/db-renderer";
-import { AppClient } from "#/core/client";
-import {
-  addPlaylistEntries,
-  createPlaylist,
-  deletePlaylist,
-  removePlaylistEntry,
-  renamePlaylist,
-  setPlaylistComment,
-  setPlaylistVisibility,
-  type CreatePlaylistInput,
-  type PlaylistRecord,
-} from "@muswag/shared";
+import { appCommand } from "#/lib/app-ipc";
+import type { Written } from "#shared/app-contract";
+import type { CreatePlaylistInput, PlaylistEntry, PlaylistRecord } from "@muswag/shared";
 
 /**
- * The shared controls are synchronous and throw. Wrapping them in async functions turns those
- * throws into rejections so components can drive them with `useMutation` like the rest of the app.
- * Every edit is local-first — the sync manager picks the change up from the collection.
+ * Playlist edits run in main, which saves them locally and syncs them to the server. Each resolves
+ * once the change has reached the playlists collection, so the UI can read it right away.
  */
+const synced = async <T>(write: Promise<Written<T>>): Promise<T> => {
+  const { value, position } = await write;
+  await db.playlists.utils.awaitPosition(position);
+  return value;
+};
+
 export const PlaylistActions = {
-  async create(input: CreatePlaylistInput): Promise<PlaylistRecord> {
-    return createPlaylist(db, input);
-  },
-
-  async rename(playlistId: string, name: string): Promise<PlaylistRecord> {
-    return renamePlaylist(db, playlistId, name);
-  },
-
-  async setComment(playlistId: string, comment: string): Promise<PlaylistRecord> {
-    return setPlaylistComment(db, playlistId, comment);
-  },
-
-  async setVisibility(playlistId: string, isPublic: boolean): Promise<PlaylistRecord> {
-    return setPlaylistVisibility(db, playlistId, isPublic);
-  },
-
-  async addSongs(playlistId: string, songIds: readonly string[], beforeEntryId: string | null = null) {
-    return addPlaylistEntries(db, playlistId, songIds, beforeEntryId);
-  },
+  create: (input: CreatePlaylistInput): Promise<PlaylistRecord> => synced(appCommand("playlists:create", input)),
 
   /** Creates a playlist and seeds it in one revision, so the sync manager pushes a single create. */
-  async createWithSongs(name: string, songIds: readonly string[]): Promise<PlaylistRecord> {
-    return createPlaylist(db, { name, songIds: [...songIds] });
-  },
+  createWithSongs: (name: string, songIds: readonly string[]): Promise<PlaylistRecord> => synced(appCommand("playlists:create", { name, songIds: [...songIds] })),
 
-  async removeEntry(playlistId: string, entryId: string): Promise<PlaylistRecord> {
-    return removePlaylistEntry(db, playlistId, entryId);
-  },
+  rename: (playlistId: string, name: string): Promise<void> => synced(appCommand("playlists:rename", playlistId, name)),
 
-  async remove(playlistId: string): Promise<void> {
-    deletePlaylist(db, playlistId);
-  },
+  setComment: (playlistId: string, comment: string): Promise<void> => synced(appCommand("playlists:setComment", playlistId, comment)),
 
-  syncNow() {
-    return AppClient.syncPlaylists();
-  },
+  setVisibility: (playlistId: string, isPublic: boolean): Promise<void> => synced(appCommand("playlists:setVisibility", playlistId, isPublic)),
+
+  addSongs: (playlistId: string, songIds: readonly string[], beforeEntryId: string | null = null): Promise<PlaylistEntry[]> =>
+    synced(appCommand("playlists:addEntries", playlistId, [...songIds], beforeEntryId)),
+
+  removeEntry: (playlistId: string, entryId: string): Promise<void> => synced(appCommand("playlists:removeEntry", playlistId, entryId)),
+
+  moveEntry: (playlistId: string, entryId: string, beforeEntryId: string | null): Promise<void> => synced(appCommand("playlists:moveEntry", playlistId, entryId, beforeEntryId)),
+
+  remove: (playlistId: string): Promise<void> => synced(appCommand("playlists:delete", playlistId)),
+
+  syncNow: () => appCommand("playlists:sync"),
 };

@@ -1,27 +1,26 @@
-import { appReady } from "#/core/client";
-import { initializePlayerConnection, PlayerConnectionStore, PlayerIPC } from "#/player/connection";
-import { DbQueueStorage } from "#/player/db-queue-storage";
-import { getQueueCanGoNext, getQueueCanGoPrevious, QueueManager } from "#/player/queue-manager";
-import { binaryView, installView, runtimeView } from "#/player/snapshot";
-import { createQueueSourceFactory } from "#/player/source";
+import { appCommand, appStates } from "#/lib/app-ipc";
+import { initializePlayerConnection, PlayerConnectionStore } from "#/player/connection";
 import type { PlayerRuntimeState } from "#shared/player";
+import { binaryView, installView, runtimeView } from "#shared/player-snapshot";
+import { getQueueCanGoNext, getQueueCanGoPrevious } from "#shared/queue-state";
+import type { QueueSourceRef, Song } from "@muswag/shared";
 import { useStore } from "@tanstack/react-store";
 
 initializePlayerConnection();
 
-export const queueManager = new QueueManager({
-  player: {
-    applyQueue: PlayerIPC.applyQueue,
-    getState: PlayerIPC.getRuntimeState,
-    restartCurrent: PlayerIPC.restartCurrent,
-    stop: PlayerIPC.stop,
-    subscribe: PlayerIPC.subscribeRuntime,
-  },
-  sources: createQueueSourceFactory(),
-  storage: new DbQueueStorage(),
-});
-
-void appReady.then(() => queueManager.restore()).catch((cause) => console.error("[queue] startup restoration failed", cause));
+/** The playback queue lives in main; these send it commands. */
+export const queueManager = {
+  playSource: (ref: QueueSourceRef, key: string) => appCommand("queue:playSource", ref, key),
+  enqueue: (tracks: readonly Pick<Song, "id">[]) =>
+    appCommand(
+      "queue:enqueue",
+      tracks.map(({ id }) => id),
+    ),
+  removeQueued: (key: string) => appCommand("queue:removeQueued", key),
+  clearQueued: () => appCommand("queue:clearQueued"),
+  next: () => appCommand("queue:next"),
+  previous: () => appCommand("queue:previous"),
+};
 
 type ConnectionView = typeof PlayerConnectionStore.state;
 const usePlayerRuntime = <A,>(select: (runtime: PlayerRuntimeState, view: ConnectionView) => A) => useStore(PlayerConnectionStore, (view) => select(runtimeView(view.snapshot), view));
@@ -58,4 +57,4 @@ export function usePlayerCanGoBack() {
 export const usePlayerMpvAvailable = () => useStore(PlayerConnectionStore, (view) => view.connected && view.snapshot.binary._tag === "Ready");
 export const usePlayerMpvState = () => useStore(PlayerConnectionStore, (view) => binaryView(view.snapshot));
 export const usePlayerMpvInstallState = () => useStore(PlayerConnectionStore, (view) => installView(view.snapshot));
-export const useQueueManagerState = () => useStore(queueManager.store, (state) => state);
+export const useQueueManagerState = () => useStore(appStates.queue, (state) => state);

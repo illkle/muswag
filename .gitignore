@@ -17,4 +17,7 @@ coverage
 dev.db
 dev.db-shm
 dev.db-wal
+dev-library.db
+dev-library.db-shm
+dev-library.db-wal
 .claude

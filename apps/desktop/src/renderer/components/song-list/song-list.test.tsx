@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import type { Song } from "@muswag/shared";
+import { songRow, type Song } from "@muswag/shared";
 
 vi.mock("@tanstack/react-router", () => ({
   useElementScrollRestoration: () => undefined,
@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 function song(id: string, title: string): Song {
-  return { id, title, isDir: false };
+  return songRow({ id, title });
 }
 
 /** A playlist holding the same track three times, which is legal and must stay independently addressable. */

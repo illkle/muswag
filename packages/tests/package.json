@@ -12,11 +12,8 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
+    "@muswag/core": "workspace:*",
     "@muswag/shared": "workspace:*",
-    "@tanstack/db": "catalog:",
-    "@tanstack/node-db-sqlite-persistence": "catalog:",
-    "@types/better-sqlite3": "catalog:",
-    "better-sqlite3-test": "catalog:",
     "effect": "catalog:",
     "testcontainers": "^12.2.0",
     "vitest": "catalog:"

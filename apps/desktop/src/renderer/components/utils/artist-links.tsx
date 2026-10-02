@@ -30,10 +30,10 @@ type Artist = {
 };
 
 type ArtistFields = {
-  displayArtist?: string | undefined;
-  artistId?: string | undefined;
-  artists?: readonly Artist[] | undefined;
-  artist?: string | undefined;
+  displayArtist?: string | null | undefined;
+  artistId?: string | null | undefined;
+  artists?: readonly Artist[] | null | undefined;
+  artist?: string | null | undefined;
 };
 
 export type ArtistCredit = {

@@ -1,10 +1,9 @@
 import { createStore } from "@tanstack/react-store";
-import type { SessionCredentials } from "@muswag/shared";
 import { Context, Data, type Duration, Effect, Layer, ManagedRuntime, Queue, Schedule, Schema } from "effect";
-import type { ApplyMpvQueueInput, MpvInstallMethod, PlayerRuntimeState } from "#shared/player";
+import type { MpvInstallMethod } from "#shared/player";
 import { CommandResult, initialSnapshot, PlayerSnapshot, type InstallOutput, type PlayerCommand, type PlayerIssue } from "#shared/player-contract";
+import { acceptSnapshot, binaryView } from "#shared/player-snapshot";
 import { mainIpc, rendererIpc } from "#/lib/ipc";
-import { acceptSnapshot, binaryView, runtimeView } from "./snapshot";
 
 const REQUEST_TIMEOUT = "5 seconds";
 const COMMAND_TIMEOUT = "45 seconds";
@@ -33,7 +32,6 @@ export class PlayerConnection extends Context.Service<
     readonly dispatch: (command: PlayerCommand) => Effect.Effect<PlayerSnapshot, CommandFailed | Disconnected>;
     /** Resends the command behind `issueId` if it was the latest failure, otherwise just plays. */
     readonly retry: (issueId: string) => Effect.Effect<PlayerSnapshot, CommandFailed | Disconnected>;
-    readonly setCredentials: (credentials: SessionCredentials | null) => Effect.Effect<PlayerSnapshot, CommandFailed | Disconnected>;
     /** Lets the user pick an mpv binary; resolves with the current snapshot when they cancel. */
     readonly locate: Effect.Effect<PlayerSnapshot, CommandFailed | Disconnected>;
     readonly fetchSnapshot: Effect.Effect<PlayerSnapshot, Disconnected>;
@@ -136,9 +134,6 @@ export const PlayerConnectionLive = Layer.effect(
     return {
       dispatch,
       retry: (issueId) => dispatch(failedCommand?.issueId === issueId ? failedCommand.command : { _tag: "Play" }),
-      setCredentials: Effect.fn("PlayerConnection.setCredentials")(function* (credentials: SessionCredentials | null) {
-        return yield* acceptResult(yield* request(CommandResult, () => mainIpc.invoke("player:setCredentials", credentials), COMMAND_TIMEOUT));
-      }),
       // No timeout: this waits on a file dialog.
       locate: Effect.gen(function* () {
         const result = yield* request(Schema.NullOr(CommandResult), () => mainIpc.invoke("player:locate"), null);
@@ -149,7 +144,7 @@ export const PlayerConnectionLive = Layer.effect(
   }),
 );
 
-// ---- Promise facades for React components and the queue manager ----
+// ---- Promise facades for React components ----
 
 const runtime = ManagedRuntime.make(PlayerConnectionLive);
 const run = <A, E>(use: (connection: typeof PlayerConnection.Service) => Effect.Effect<A, E>) => runtime.runPromise(PlayerConnection.use(use));
@@ -191,32 +186,17 @@ export const MpvIPC = {
   },
 };
 
+/** Transport controls. The queue itself is main's; see `QueueIPC`. */
 export const PlayerIPC = {
-  applyQueue: ({ snapshot, select }: ApplyMpvQueueInput) => execute({ _tag: "ApplyQueue", items: snapshot.items, select: select ? { ...select, positionSeconds: select.positionSeconds ?? 0 } : null }),
-  getRuntimeState: async () => runtimeView(await run((connection) => connection.fetchSnapshot)),
   pause: () => execute({ _tag: "Pause" }),
   play: () => execute({ _tag: "Play" }),
-  restartCurrent: () => execute({ _tag: "Restart" }),
-  stop: () => execute({ _tag: "Stop" }),
   toggle: () => execute({ _tag: "Toggle" }),
   seek: (seconds: number) => execute({ _tag: "Seek", seconds }),
   setVolume: (percent: number) => execute({ _tag: "SetVolume", percent }),
   setMuted: (muted: boolean) => execute({ _tag: "SetMuted", muted }),
-  setCredentials: (credentials: SessionCredentials | null) => run((connection) => Effect.asVoid(connection.setCredentials(credentials))),
   retryIssue: (issueId: string) => run((connection) => Effect.asVoid(connection.retry(issueId))),
   dismissIssue: async (issueId: string) => {
     await execute({ _tag: "DismissIssue", issueId });
     PlayerConnectionStore.setState((state) => ({ ...state, issue: state.issue?.id === issueId ? null : state.issue }));
-  },
-  /** Notifies `listener` whenever the authoritative snapshot changes. */
-  subscribeRuntime: (listener: (state: PlayerRuntimeState) => void) => {
-    let previous = PlayerConnectionStore.state.snapshot;
-    const subscription = PlayerConnectionStore.subscribe(() => {
-      const { snapshot } = PlayerConnectionStore.state;
-      if (snapshot === previous) return;
-      previous = snapshot;
-      listener(runtimeView(snapshot));
-    });
-    return () => subscription.unsubscribe();
   },
 };

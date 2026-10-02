@@ -1,17 +1,15 @@
 import { defineConfig } from "vitest/config";
-import { resolve } from "node:path";
+
+const conditions = ["source", "module", "node", "development|production"];
 
 export default defineConfig({
-  root: resolve(import.meta.dirname, "../.."),
-  resolve: {
-    alias: [
-      { find: "better-sqlite3", replacement: "better-sqlite3-test" },
-      { find: "@muswag/shared", replacement: resolve(import.meta.dirname, "../shared/src/index.ts") },
-    ],
-  },
+  // Workspace packages are transformed from source rather than loaded from their builds.
+  resolve: { conditions },
+  ssr: { resolve: { conditions, externalConditions: ["source"] } },
   test: {
-    include: ["packages/tests/test/benchmark/**/*.test.ts"],
+    server: { deps: { inline: [/@muswag\//] } },
+    include: ["test/benchmark/**/*.test.ts"],
     environment: "node",
-    testTimeout: 30_000,
+    testTimeout: 60_000,
   },
 });

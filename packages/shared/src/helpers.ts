@@ -1,4 +1,4 @@
-import type { SessionCredentials } from "./credentialsManager.js";
+import type { SessionCredentials } from "./contract.js";
 
 const SUBSONIC_API_VERSION = "1.16.1";
 const HEX = "0123456789abcdef";

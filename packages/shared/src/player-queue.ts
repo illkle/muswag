@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { Song } from "./db/database.js";
+import type { Song } from "./db/schema.js";
 
 /** A single playback occurrence. Keys, unlike song ids, are unique in a queue. */
 export type PlaybackItem = {
