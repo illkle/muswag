@@ -172,7 +172,9 @@ describe("Effect player", () => {
       const player = yield* Player;
       yield* login(player);
       yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
-      yield* TestClock.adjust("20 seconds");
+      yield* TestClock.adjust("1 minute");
+      expect((yield* player.snapshot).playback._tag).toBe("Loading");
+      yield* TestClock.adjust("1 minute");
       const failed = yield* until(player, (state) => state.playback._tag === "Failed");
       expect(failed.issues.at(-1)).toMatchObject({ code: "PlaybackFailed", operation: "load" });
       yield* player.shutdown;

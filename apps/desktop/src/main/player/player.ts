@@ -42,7 +42,12 @@ const MAILBOX_CAPACITY = 512;
 const MAX_PENDING_COMMANDS = 32;
 /** Stop and logout may exceed the command limit, so the user can always get out of a stuck state. */
 const PREEMPTING_RESERVE = 2;
-const LOAD_TIMEOUT = "20 seconds";
+/**
+ * A backstop for loads that never finish. mpv itself gives up on a connection that stops sending data, so
+ * this must outlast slow but progressing loads: a large tag at the start of a long file (embedded cover
+ * art, say) can take a minute to download from a slow server before the first audio frame.
+ */
+const LOAD_TIMEOUT = "2 minutes";
 const QUEUE_TIMEOUT = "15 seconds";
 const POSITION_INTERVAL = "500 millis";
 
