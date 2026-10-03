@@ -8,6 +8,7 @@ import { MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
 import React from "react";
 import { NavButtons } from "#/components/shell/nav-buttons";
 import { SidebarPlaylists } from "#/components/shell/sidebar-playlists";
+import { QueuePanel } from "#/components/queue-panel";
 
 export function AppSidebar() {
   const r = useMatchRoute();
@@ -54,9 +55,11 @@ export const AppSidebarWrapper = ({ children }: { children: React.ReactNode }) =
     <SidebarProvider open={true}>
       <AppSidebar />
 
-      <SidebarInset className="grid h-(--main-height) grid-rows-[minmax(0,1fr)_auto]">
+      <SidebarInset className="grid h-(--main-height) min-w-0 grid-rows-[minmax(0,1fr)_auto]">
         <AppContentSizeProvider>{children}</AppContentSizeProvider>
       </SidebarInset>
+
+      <QueuePanel />
     </SidebarProvider>
   );
 };

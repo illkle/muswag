@@ -25,6 +25,7 @@ import {
 import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
+import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
 import { useHotkey } from "@tanstack/react-hotkeys";
@@ -362,7 +363,10 @@ export function PlayerPanel() {
       <section className="grid h-full grid-cols-9 flex-col justify-between gap-1 overflow-hidden rounded-lg border border-muted/20 bg-background/90 p-2 px-2 backdrop-blur-sm">
         <CurrentTrack className="col-span-3 row-start-1" />
         <PlayerButtonControls className="col-span-3 row-start-1" />
-        <PlayerVolume className="col-span-3 row-start-1" />
+        <div className="col-span-3 row-start-1 flex min-w-0 items-center justify-end gap-1">
+          <PlayerVolume className="flex-1" />
+          <QueuePanelToggle />
+        </div>
         <PlayerSeek className="col-span-9 row-start-2 row-end-2" />
       </section>
     </div>

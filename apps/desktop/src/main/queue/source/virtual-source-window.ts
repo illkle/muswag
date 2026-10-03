@@ -25,7 +25,7 @@ export class VirtualSourceWindow {
     this.ahead = options.ahead;
     this.controller = options.controller;
     this.onChange = options.onChange;
-    this.state = { revision: options.revision, cursor: options.cursor, previous: [], current: null, next: [] };
+    this.state = { revision: options.revision, cursor: options.cursor, previous: [], current: null, next: [], hasMore: false };
   }
 
   static async create(options: {
@@ -181,14 +181,18 @@ export class VirtualSourceWindow {
     const next: SourceItem[] = [];
     let aheadStart = cursor.type === "gap" ? cursor.offset : cursor.offset + 1;
     let isEnd = false;
+    let hasMore = false;
     while (next.length < this.ahead && !isEnd) {
       const page = await read(aheadStart, aheadStart + Math.max(PAGE_SIZE, this.ahead));
-      next.push(...page.items.slice(0, this.ahead - next.length));
+      const room = this.ahead - next.length;
+      next.push(...page.items.slice(0, room));
+      // What is left may turn out to hold nothing playable; that is only known once it is read.
+      hasMore = page.items.length > room || !page.isEnd;
       isEnd = page.isEnd;
       aheadStart = page.nextOffset;
     }
 
-    const window: SourceWindow = { revision, cursor: { ...cursor }, previous, current, next };
+    const window: SourceWindow = { revision, cursor: { ...cursor }, previous, current, next, hasMore };
     const items = sourceWindowItems(window);
     if (new Set(items.map(({ key }) => key)).size !== items.length) throw new Error("Source occurrence keys must be unique across a filled window.");
     return window;
