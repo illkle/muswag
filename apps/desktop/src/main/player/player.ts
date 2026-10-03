@@ -32,7 +32,7 @@ import {
   type PlayerError,
 } from "./errors";
 import { currentMedia, isCurrentEvent, isFiniteNonNegative, isSettled, withDuration, withIssue, withPosition } from "./model";
-import { applyQueue, retainsCurrent, type Correlation } from "./queue";
+import { applyQueue, currentEntry, retainsCurrent, type Correlation } from "./queue";
 import { booleanProperty, command, numberProperty, type MpvCommand } from "./mpv/protocol";
 import { MpvSession, type SessionEvent, type SessionHandle } from "./mpv/session";
 import { defaultSettings, makeSettingsWriter, SettingsStore, type Settings } from "./settings";
@@ -83,6 +83,11 @@ interface Engine {
   readonly session: SessionHandle;
   readonly scope: Scope.Closeable;
   correlation: Correlation | null;
+  /**
+   * The entry a selection told mpv to start. Until its start-file arrives, what mpv reports about entries
+   * is about the one it is leaving, so it is ignored.
+   */
+  awaiting: number | null;
   /** Property observations up to this sequence predate a value we set and read back, so they are stale. */
   propertyFence: number;
   /** mpv is restarting playback after a seek or load, or paused itself to refill its cache: unpaused, it is silent. */
@@ -260,7 +265,7 @@ export const PlayerLive = Layer.effect(
         ),
         Effect.forkIn(scope),
       );
-      const opened: Engine = { session, scope, correlation: null, propertyFence: 0, seeking: false, pausedForCache: false };
+      const opened: Engine = { session, scope, correlation: null, awaiting: null, propertyFence: 0, seeking: false, pausedForCache: false };
       engine = opened;
       yield* session.execute(command("set_property", "volume", settings.volumePercent));
       yield* session.execute(command("set_property", "mute", settings.muted));
@@ -277,6 +282,11 @@ export const PlayerLive = Layer.effect(
 
     // ---- Queue and playback ----
 
+    /** The media of occurrence `key` while mpv has it open, loading or loaded. */
+    const openMedia = (key: string): Media | null => {
+      const media = state.playback._tag === "Loading" || isSettled(state.playback) ? state.playback.media : null;
+      return media?.item.key === key ? media : null;
+    };
     const stop = Effect.fn("Player.stop")(function* () {
       yield* closeEngine();
       items = [];
@@ -285,31 +295,48 @@ export const PlayerLive = Layer.effect(
       yield* publish({ ...state, playback: { _tag: "Idle" }, queue: { revision: state.queue.revision + 1, keys: [], sync: "empty" }, audio: { ...state.audio, applied: false } });
     });
     /**
-     * Mirrors `next` into mpv. A selection loads that occurrence in a fresh session, so events from the old
-     * session are unambiguous; without one, the currently playing occurrence must be retained and keeps playing.
+     * Mirrors `next` into mpv, in the session that is running. A selection has mpv start that occurrence,
+     * unless mpv already has it open, in which case playback only moves within it. Without a selection the
+     * current occurrence must be retained and keeps playing.
      */
     const apply = Effect.fn("Player.apply")(function* (next: readonly PlaybackItem[], selection: Selection | null) {
       if (!next.length) return yield* stop();
+      const correlation = engine?.correlation ?? null;
       if (!selection) {
-        if (!engine?.correlation) return yield* new InvalidCommand({ operation: "queue", message: "Select a track to start playback." });
-        if (!retainsCurrent(engine.correlation, next)) return yield* new InvalidCommand({ operation: "queue", message: "Select a track when replacing the current occurrence." });
+        if (!correlation) return yield* new InvalidCommand({ operation: "queue", message: "Select a track to start playback." });
+        if (!retainsCurrent(correlation, next)) return yield* new InvalidCommand({ operation: "queue", message: "Select a track when replacing the current occurrence." });
       }
       const urls = yield* resolveStreamUrls(credentials, streamSalt, next);
       items = next;
       yield* publish({ ...state, queue: { ...state.queue, sync: "applying" } });
-      if (selection) {
+      const item = selection && next.find((item) => item.key === selection.key)!;
+      /** The selected occurrence as mpv already has it open, loading or loaded; `null` when mpv has to start it. */
+      const opened = selection && correlation && currentEntry(correlation)?.key === selection.key && retainsCurrent(correlation, next) ? openMedia(selection.key) : null;
+      const loaded = opened !== null && isSettled(state.playback);
+      if (selection && item) {
         target = selection;
-        const item = next.find((item) => item.key === selection.key)!;
-        yield* publish({ ...state, playback: { _tag: "Loading", media: { item, positionSeconds: selection.positionSeconds, durationSeconds: null }, targetPaused: !selection.play } });
-        yield* closeEngine();
+        if (!loaded) {
+          const media = { item, positionSeconds: selection.positionSeconds, durationSeconds: opened?.durationSeconds ?? null };
+          yield* publish({ ...state, playback: { _tag: "Loading", media, targetPaused: !selection.play } });
+        }
       }
       const active = yield* ensureEngine();
-      if (selection) yield* active.session.execute(command("set_property", "pause", !selection.play));
-      active.correlation = yield* applyQueue(active.session, active.correlation, next, selection, urls).pipe(
+      // A load stays paused until its position is restored, so nothing before it is heard.
+      if (selection && !loaded) yield* active.session.execute(command("set_property", "pause", !selection.play || selection.positionSeconds > 0));
+      active.correlation = yield* applyQueue(active.session, active.correlation, next, opened ? null : selection, urls).pipe(
         Effect.timeoutOrElse({ duration: QUEUE_TIMEOUT, orElse: () => Effect.fail(new EngineError({ reason: "timeout", operation: "queue", uncertain: true })) }),
       );
       yield* publish({ ...state, queue: { revision: state.queue.revision + 1, keys: next.map((item) => item.key), sync: "synced" } });
-      if (selection) yield* armLoadDeadline;
+      if (!selection || !item) return;
+      if (!opened) {
+        active.awaiting = active.correlation.currentId;
+        yield* armLoadDeadline;
+      } else if (loaded) {
+        const position = yield* writeAndConfirm(active, command("seek", Math.min(selection.positionSeconds, opened.durationSeconds ?? Infinity), "absolute+exact"), numberProperty("time-pos"));
+        const paused = yield* writeAndConfirm(active, command("set_property", "pause", !selection.play), booleanProperty("pause"));
+        target = { ...selection, play: !paused, positionSeconds: 0 };
+        yield* publish(withPosition({ ...state, playback: settled(paused, { ...opened, item }) }, position));
+      }
     });
     const reload = (media: Media, positionSeconds: number, play: boolean) => apply(items, { key: media.item.key, positionSeconds, play });
 
@@ -327,7 +354,6 @@ export const PlayerLive = Layer.effect(
       const media = currentMedia(state);
       if (!media) return yield* new InvalidCommand({ operation: "play", message: "Select a track first." });
       retried = false;
-      yield* closeEngine();
       yield* reload(media, 0, true);
     });
     const restart = Effect.fn("Player.restart")(function* () {
@@ -424,8 +450,6 @@ export const PlayerLive = Layer.effect(
     const onStartFile = Effect.fn("Player.onStartFile")(function* (active: Engine, correlation: Correlation, entryId: number) {
       const entry = correlation.entries.find((entry) => entry.entryId === entryId);
       if (!entry) return;
-      // While recovering, only the reloaded occurrence may start.
-      if (state.playback._tag === "Recovering" && target?.key !== entry.key) return;
       active.correlation = { ...correlation, currentId: entry.entryId };
       if (currentMedia(state)?.item.key !== entry.key) {
         // mpv advanced by itself: follow it from the start, keeping the play/pause intent.
@@ -476,7 +500,11 @@ export const PlayerLive = Layer.effect(
       if (!active || !correlation || message.generation !== active.session.generation) return;
       const { event } = message;
       const fresh = message.sequence > active.propertyFence;
-      if (event.type === "start-file") return yield* onStartFile(active, correlation, event.entryId);
+      if (event.type === "start-file") {
+        if (active.awaiting !== null && active.awaiting !== event.entryId) return;
+        active.awaiting = null;
+        return yield* onStartFile(active, correlation, event.entryId);
+      }
       // Audio preferences belong to the session, not to the current entry.
       if (event.type === "property" && (event.name === "volume" || event.name === "mute")) {
         if (!fresh) return;
@@ -491,7 +519,7 @@ export const PlayerLive = Layer.effect(
         if (state.playback._tag === "Playing" && state.playback.buffering !== isBuffering()) yield* publish({ ...state, playback: settled(false, state.playback.media) });
         return;
       }
-      if (!isCurrentEvent(message, active.session.generation, correlation.currentId)) return;
+      if (active.awaiting !== null || !isCurrentEvent(message, active.session.generation, correlation.currentId)) return;
       if (event.type === "file-loaded") yield* onFileLoaded(active);
       else if (event.type === "end-file") yield* onEndFile(correlation, event.entryId, event.reason);
       else if (event.type === "property") yield* onPropertyChange(event.name, event.data, fresh);

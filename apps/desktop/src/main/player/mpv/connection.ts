@@ -19,6 +19,9 @@ const failure = (reason: EngineError["reason"]) => new EngineError({ reason, ope
  * target, which over a slow stream means minutes of silent downloading before a seek deep into a long
  * mix lands. With it, ffmpeg jumps to the position the bitrate implies: exact for constant-bitrate files,
  * a few seconds off at worst for variable-bitrate ones.
+ *
+ * `ytdl=no`: otherwise mpv hands every URL that fails to open to yt-dlp, when that is installed. That puts
+ * the signed stream URL on another process's command line and delays the failure by seconds.
  */
 const MPV_ARGS = [
   "--no-config",
@@ -29,9 +32,12 @@ const MPV_ARGS = [
   "--terminal=no",
   "--gapless-audio=weak",
   "--prefetch-playlist=yes",
+  "--ytdl=no",
   "--demuxer-lavf-o-add=fflags=+fastseek",
 ];
 const MAX_BUFFERED_BYTES = 1024 * 1024;
+/** How often to look for the socket mpv creates once it has started. */
+const CONNECT_INTERVAL = "10 millis";
 
 export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
   Layer.effect(
@@ -88,7 +94,7 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
               }
             }).pipe(
               Effect.scoped,
-              Effect.retry({ schedule: Schedule.spaced("100 millis"), while: (error) => !connected && error._tag === "SocketError" && error.reason._tag === "SocketOpenError" }),
+              Effect.retry({ schedule: Schedule.spaced(CONNECT_INTERVAL), while: (error) => !connected && error._tag === "SocketError" && error.reason._tag === "SocketOpenError" }),
               Effect.mapError((error) => (error instanceof EngineError ? error : failure(connected ? (buffer.trim() ? "protocol" : "closed") : "connect"))),
               Effect.catch(fail),
             );

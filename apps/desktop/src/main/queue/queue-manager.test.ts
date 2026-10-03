@@ -245,6 +245,24 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("keeps saving the resume position while playback goes on", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    const manager = new QueueManager({ player, sources: factory, storage });
+    await manager.playSource({ type: "album", albumId: "album" }, "a");
+    player.start({ key: "a", track: song("a") }, 1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The player reports its position twice a second.
+    for (let tick = 1; tick <= 24; tick++) {
+      player.start({ key: "a", track: song("a") }, 1 + tick, tick / 2);
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    expect(storage.saved?.resumePositionSeconds).toBeGreaterThanOrEqual(10);
+    manager.dispose();
+  });
   it("cancels a pending telemetry save when clearing", async () => {
     vi.useFakeTimers();
     const player = new FakePlayer();

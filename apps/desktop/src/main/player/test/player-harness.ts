@@ -59,7 +59,9 @@ export function fixture() {
               if (name === "loadfile") {
                 const entry = { id: ++nextId, current: mode === "replace" };
                 if (mode === "replace") {
+                  const leaving = playlist.find((entry) => entry.current);
                   playlist = [entry];
+                  if (leaving) deliver({ type: "end-file", entryId: leaving.id, reason: "stop" }, leaving.id);
                   deliver({ type: "start-file", entryId: entry.id }, entry.id);
                 } else playlist.splice(index as number, 0, entry);
                 result = { playlist_entry_id: entry.id };
@@ -70,7 +72,15 @@ export function fixture() {
               else if (name === "get_property" && arg === "mute") result = false;
               else if (name === "set_property" && arg === "pause") paused = mode as boolean;
               else if (name === "seek") position = arg as number;
-              else if (name === "playlist-clear") playlist = playlist.filter((entry) => entry.current);
+              else if (name === "playlist-remove") playlist.splice(arg as number, 1);
+              else if (name === "playlist-play-index") {
+                // mpv leaves the entry it is on, then starts the selected one.
+                const leaving = playlist.find((entry) => entry.current);
+                const entry = playlist[arg as number]!;
+                playlist = playlist.map((other) => ({ ...other, current: other === entry }));
+                if (leaving) deliver({ type: "end-file", entryId: leaving.id, reason: "stop" }, leaving.id);
+                deliver({ type: "start-file", entryId: entry.id }, entry.id);
+              }
               return yield* input.decode(result);
             }),
         };

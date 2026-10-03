@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
-import { Deferred, Effect, Fiber, Redacted } from "effect";
+import { Deferred, Effect, Fiber, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import { EngineError } from "./errors";
@@ -69,7 +69,9 @@ describe("Effect player", () => {
       expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player_position"]);
       expect(yield* mirror.get(playerPosition, "player")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null });
 
-      const failed = yield* player.execute("restart", { _tag: "Restart" }).pipe(Effect.andThen(player.execute("seek-while-loading", { _tag: "Seek", seconds: 5 })), Effect.flip, Effect.option);
+      const failed = yield* player
+        .execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "b", play: true, positionSeconds: 0 } })
+        .pipe(Effect.andThen(player.execute("seek-while-loading", { _tag: "Seek", seconds: 5 })), Effect.flip, Effect.option);
       expect(failed._tag).toBe("Some");
       const issues = yield* mirror.rows(playerIssues);
       expect(issues.map(({ code, order }) => [code, order])).toEqual([["InvalidCommand", 0]]);
@@ -118,6 +120,64 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
+  it.effect("selects another occurrence in the running session, ignoring what mpv still reports about the one it leaves", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      const [a, b] = [test.currentId, test.currentId + 1];
+      const seen: string[] = [];
+      yield* Stream.runForEach(player.changes, (state) => Effect.sync(() => seen.push(state.playback._tag === "Idle" ? "" : (state.playback.media?.item.key ?? "")))).pipe(Effect.forkChild);
+
+      // mpv advanced to "b" by itself just as the selection reached it: neither that start nor its load is the selected one.
+      test.override((command) => {
+        if (command.name !== "playlist-play-index") return undefined;
+        test.emit({ type: "end-file", entryId: a, reason: "eof" }, a);
+        test.emit({ type: "start-file", entryId: b }, b);
+        test.emit({ type: "file-loaded" }, b);
+        return undefined;
+      });
+      yield* player.execute("next", { _tag: "ApplyQueue", items: tracks, select: { key: "c", play: true, positionSeconds: 0 } });
+      yield* player.execute("barrier", { _tag: "SetVolume", percent: 10 });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "c" } } });
+      test.emit({ type: "file-loaded" });
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { item: { key: "c" } } });
+      expect(seen).not.toContain("b");
+      expect(test.commands.filter((command) => command[0] === "loadfile")).toHaveLength(3);
+      expect(test.generation).toBe(1);
+      expect(test.closes).toBe(0);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("restarts the loaded track by seeking, and replays an ended one without a new session", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "c", play: true, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      yield* player.execute("seek", { _tag: "Seek", seconds: 40 });
+      const before = test.commands.length;
+
+      yield* player.execute("restart", { _tag: "Restart" });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Playing", media: { positionSeconds: 0 } });
+      expect(test.commands.slice(before).map((command) => command[0])).not.toContain("loadfile");
+      expect(test.commands.slice(before)).toContainEqual(["seek", 0, "absolute+exact"]);
+
+      test.emit({ type: "end-file", entryId: test.currentId, reason: "eof" });
+      yield* until(player, (state) => state.playback._tag === "Ended");
+      yield* player.execute("play", { _tag: "Play" });
+      expect(test.commands.at(-2)).toEqual(["playlist-play-index", 2]);
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      expect(test.generation).toBe(1);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("retries media once with a new session and ignores stale generation events", () => {
     const test = fixture();
     return Effect.gen(function* () {
@@ -159,13 +219,13 @@ describe("Effect player", () => {
     return Effect.gen(function* () {
       const player = yield* Player;
       yield* login(player);
-      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks.slice(0, 2), select: { key: "a", play: true, positionSeconds: 0 } });
       test.emit({ type: "file-loaded" });
       yield* until(player, (state) => state.playback._tag === "Playing");
-      yield* player.execute("edit", { _tag: "ApplyQueue", items: tracks.slice(0, 2), select: null });
-      // The fixture's occurrences all play one track: three loads for the selection, one for the edit.
+      yield* player.execute("edit", { _tag: "ApplyQueue", items: tracks, select: null });
+      // The fixture's occurrences all play one track: two loads for the selection, one for the edit.
       const urls = test.commands.filter((command) => command[0] === "loadfile").map((command) => Redacted.value(command[1] as Redacted.Redacted<string>));
-      expect(urls).toHaveLength(4);
+      expect(urls).toHaveLength(3);
       expect(new Set(urls).size).toBe(1);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));

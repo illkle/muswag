@@ -279,8 +279,9 @@ export class QueueManager {
     void this.persist(() => this.storage.save(published, null));
   }
 
+  /** Saves where playback has got to, once per delay: the player reports its position twice a second, so a save put off by every report would never run. */
   private scheduleTelemetrySave(): void {
-    this.cancelTelemetrySave();
+    if (this.telemetryTimer) return;
     this.telemetryTimer = setTimeout(() => {
       this.telemetryTimer = null;
       this.saveLogicalState();
