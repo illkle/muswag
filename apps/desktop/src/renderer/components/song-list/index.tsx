@@ -212,7 +212,7 @@ export type SongVisualProps = {
 
 type SongComponent = (v: SongVisualProps) => JSX.Element;
 
-const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
+export const SongListCoverLoader = ({ albumID }: { albumID: string }) => {
   const cover = useLiveQuery((q) =>
     q
       .from({ album: db.albums })
@@ -312,7 +312,7 @@ export function SongRenderPlaylist({ song, index, isPlaying, isSelected, status,
   );
 }
 
-function formatDuration(totalSeconds: number | null | undefined): string {
+export function formatDuration(totalSeconds: number | null | undefined): string {
   if (totalSeconds === null || totalSeconds === undefined) {
     return "-";
   }
