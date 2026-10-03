@@ -56,16 +56,16 @@ export const usePlayerError = () => {
   return rejected?.message ?? failure?.message ?? latest?.message ?? null;
 };
 
-/** Controls wait while main is still working on a command. */
+/** Play and pause wait while main is still working on a command. */
 export const usePlayerCanPlay = () => {
   const row = usePlayerRow();
   return row !== undefined && !row.pending && itemOf(row.playback) !== null && statusOf(row.playback) !== "loading";
 };
+/** Seeking does not wait: main runs commands in order, and disabling the slider for every one of them made it flicker. */
 export const usePlayerCanSeek = () => {
-  const row = usePlayerRow();
+  const status = usePlayerStatus();
   const duration = usePlayerDuration();
-  const status = statusOf(row?.playback);
-  return row !== undefined && !row.pending && (status === "playing" || status === "paused") && (duration ?? 0) > 0;
+  return (status === "playing" || status === "paused") && (duration ?? 0) > 0;
 };
 
 export function usePlayerCanGoForward() {
