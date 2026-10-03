@@ -71,6 +71,24 @@ describe("VirtualSourceWindow", () => {
     window.dispose();
   });
 
+  it("reports whether the source goes on past the window", async () => {
+    const source = new FakeSource(Array.from({ length: 10 }, (_, offset) => sourceItem(offset)));
+    const window = await VirtualSourceWindow.create({ source, start: { key: "item:0" }, ahead: 5 });
+
+    expect(window.snapshot.next.map(({ offset }) => offset)).toEqual([1, 2, 3, 4, 5]);
+    expect(window.snapshot.hasMore).toBe(true);
+
+    await window.moveTo("item:4");
+    expect(window.snapshot.next.map(({ offset }) => offset)).toEqual([5, 6, 7, 8, 9]);
+    expect(window.snapshot.hasMore).toBe(false);
+    window.dispose();
+
+    const long = await VirtualSourceWindow.create({ source: new FakeSource(Array.from({ length: 100 }, (_, offset) => sourceItem(offset))), start: { key: "item:0" } });
+    expect(long.snapshot.next).toHaveLength(30);
+    expect(long.snapshot.hasMore).toBe(true);
+    long.dispose();
+  });
+
   it("relocates a moved cursor and restores a deleted cursor as a gap", async () => {
     const source = new FakeSource([sourceItem(0), sourceItem(1), sourceItem(2)], 3);
     const window = await VirtualSourceWindow.create({ source, start: { key: "item:1" }, behind: 10, ahead: 30 });

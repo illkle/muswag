@@ -13,7 +13,7 @@ import { cn } from "#/lib/utils";
 import { useQueueManagerState } from "#/queue/queue";
 
 const STORAGE_KEY = "muswag-queue-panel-open";
-const HEADING_HEIGHT = 32;
+const TEXT_HEIGHT = 32;
 const ITEM_HEIGHT = 48;
 
 /** Whether the panel is showing. A preference of this window rather than app state, so it stays in the renderer. */
@@ -24,7 +24,7 @@ function togglePanel() {
   localStorage.setItem(STORAGE_KEY, String(panelOpen.state));
 }
 
-type Row = { type: "heading"; key: string; label: string } | { type: "item"; key: string; item: PlaybackItem; isPlaying: boolean };
+type Row = { type: "heading" | "note"; key: string; label: string } | { type: "item"; key: string; item: PlaybackItem; isPlaying: boolean };
 
 /** The name of the album or playlist the queue is playing through. */
 function useSourceName(ref: QueueSourceRef | null): string | null {
@@ -70,8 +70,9 @@ function useQueueRows(): Row[] {
 
     section("now", "Now playing", queue.nowPlaying ? [queue.nowPlaying] : [], true);
     section("user", "Next in queue", queue.userQueue);
-    // Main keeps only a window of the source loaded, so this is the next stretch of it, not all of it.
     section("source", sourceName ? `Next from ${sourceName}` : "Next up", queue.source?.window.next ?? []);
+    // Main keeps only a window of the source loaded and moves it along with playback.
+    if (queue.source?.window.hasMore) rows.push({ type: "note", key: "source-more", label: "More tracks load as playback continues." });
     return rows;
   }, [queue, sourceName]);
 }
@@ -115,7 +116,7 @@ function QueuePanelContent() {
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (rows[index]?.type === "heading" ? HEADING_HEIGHT : ITEM_HEIGHT),
+    estimateSize: (index) => (rows[index]?.type === "item" ? ITEM_HEIGHT : TEXT_HEIGHT),
     getItemKey: (index) => rows[index]?.key ?? index,
     overscan: 10,
     paddingEnd: 8,
@@ -134,12 +135,12 @@ function QueuePanelContent() {
 
             return (
               <div key={row.key} style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }} className="absolute top-0 left-0 flex w-full">
-                {row.type === "heading" ? (
-                  <div className="flex h-8 w-full items-center px-4 text-xs font-medium text-sidebar-foreground/70">
+                {row.type === "item" ? (
+                  <QueueItem item={row.item} isPlaying={row.isPlaying} />
+                ) : (
+                  <div className={cn("flex h-8 w-full items-center px-4 text-xs", row.type === "heading" ? "font-medium text-sidebar-foreground/70" : "text-sidebar-foreground/50")}>
                     <span className="truncate">{row.label}</span>
                   </div>
-                ) : (
-                  <QueueItem item={row.item} isPlaying={row.isPlaying} />
                 )}
               </div>
             );

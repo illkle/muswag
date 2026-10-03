@@ -14,6 +14,8 @@ export type SourceWindow = {
   previous: readonly SourceItem[];
   current: SourceItem | null;
   next: readonly SourceItem[];
+  /** Whether the source goes on past `next`. Main loads what follows as the cursor advances. */
+  hasMore: boolean;
 };
 
 /** Everything the window has materialised, in playback order. */
@@ -73,7 +75,7 @@ export function queueStateRow(state: QueueManagerState, resumePositionSeconds: n
     id: 1,
     nowPlayingKey: state.nowPlaying?.key ?? null,
     nowPlayingOrigin: state.nowPlaying?.origin ?? null,
-    source: source ? { ref: source.ref, cursor: source.window.cursor, revision: source.window.revision } : null,
+    source: source ? { ref: source.ref, cursor: source.window.cursor, revision: source.window.revision, hasMore: source.window.hasMore } : null,
     resumePositionSeconds,
   };
 }
@@ -91,7 +93,7 @@ export function queueStateFromRows(state: QueueStateRow | null | undefined, item
 }
 
 function windowFromRows(source: NonNullable<QueueStateRow["source"]>, ordered: readonly QueueItemRow[]): SourceWindow {
-  const { cursor, revision } = source;
+  const { cursor, revision, hasMore } = source;
   const items = ordered.filter(({ list }) => list === "source").map(({ key, track, position }): SourceItem => ({ key, track, offset: position }));
   // A gap cursor has no current occurrence; what follows it starts at its offset.
   const current = cursor.type === "item" ? (items.find(({ key }) => key === cursor.key) ?? null) : null;
@@ -101,5 +103,6 @@ function windowFromRows(source: NonNullable<QueueStateRow["source"]>, ordered: r
     previous: items.filter(({ offset }) => offset < cursor.offset),
     current,
     next: items.filter(({ offset }) => (cursor.type === "item" ? offset > cursor.offset : offset >= cursor.offset)),
+    hasMore,
   };
 }
