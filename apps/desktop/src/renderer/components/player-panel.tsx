@@ -252,25 +252,84 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   );
 };
 
-const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
+/** Volume changes reach main at most this often while the slider moves. */
+const VOLUME_SEND_INTERVAL_MS = 100;
+
+export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const muted = usePlayerMuted();
   const volumePercent = usePlayerVolumePercent();
+  /** What the slider shows while the user moves it, and until main has caught up after they let go. */
   const [draftVolumePercent, setDraftVolumePercent] = useState<number | null>(null);
+  const interactingRef = useRef(false);
+  const unsentVolumeRef = useRef<number | null>(null);
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentAtRef = useRef(-Infinity);
+  const sendsInFlightRef = useRef(0);
   const visibleVolumePercent = draftVolumePercent ?? volumePercent;
   const VolumeIcon = muted || visibleVolumePercent === 0 ? SpeakerXIcon : visibleVolumePercent < 50 ? SpeakerLowIcon : SpeakerHighIcon;
 
-  useEffect(() => {
-    setDraftVolumePercent(null);
-  }, [volumePercent]);
+  useEffect(
+    () => () => {
+      if (sendTimerRef.current !== null) clearTimeout(sendTimerRef.current);
+    },
+    [],
+  );
 
-  const commitVolume = (nextVolumePercent: number) => {
+  /** Main's volume takes over only once the user has let go and every change sent has been answered. */
+  const releaseDraft = () => {
+    if (!interactingRef.current && unsentVolumeRef.current === null && sendsInFlightRef.current === 0) {
+      setDraftVolumePercent(null);
+    }
+  };
+
+  const sendVolume = () => {
+    if (sendTimerRef.current !== null) {
+      clearTimeout(sendTimerRef.current);
+      sendTimerRef.current = null;
+    }
+
+    const nextVolumePercent = unsentVolumeRef.current;
+    if (nextVolumePercent === null) {
+      return;
+    }
+
+    unsentVolumeRef.current = null;
+    lastSentAtRef.current = performance.now();
+    sendsInFlightRef.current++;
+    void PlayerIPC.setVolume(nextVolumePercent)
+      .catch(() => {})
+      .finally(() => {
+        sendsInFlightRef.current--;
+        releaseDraft();
+      });
+  };
+
+  const changeVolume = (nextVolumePercent: number) => {
     const boundedVolumePercent = Math.min(100, Math.max(0, Math.round(nextVolumePercent)));
 
     setDraftVolumePercent(boundedVolumePercent);
     if (muted && boundedVolumePercent > 0) {
       void PlayerIPC.setMuted(false).catch(() => {});
     }
-    void PlayerIPC.setVolume(boundedVolumePercent).catch(() => {});
+
+    // Only the latest value is kept between sends.
+    unsentVolumeRef.current = boundedVolumePercent;
+    if (sendTimerRef.current !== null) {
+      return;
+    }
+
+    const waitMs = lastSentAtRef.current + VOLUME_SEND_INTERVAL_MS - performance.now();
+    if (waitMs <= 0) {
+      sendVolume();
+    } else {
+      sendTimerRef.current = setTimeout(sendVolume, waitMs);
+    }
+  };
+
+  const endInteraction = () => {
+    interactingRef.current = false;
+    sendVolume();
+    releaseDraft();
   };
 
   return (
@@ -293,8 +352,37 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
         max={100}
         step={1}
         value={visibleVolumePercent}
+        onPointerDown={(event) => {
+          interactingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
         onChange={(event) => {
-          commitVolume(Number(event.target.value));
+          changeVolume(Number(event.target.value));
+        }}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+
+          endInteraction();
+        }}
+        onPointerCancel={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+
+          endInteraction();
+        }}
+        onBlur={endInteraction}
+        onKeyDown={(event) => {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+            interactingRef.current = true;
+          }
+        }}
+        onKeyUp={(event) => {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+            endInteraction();
+          }
         }}
         aria-label="Playback volume"
         className={cn("h-1.5 w-full max-w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
