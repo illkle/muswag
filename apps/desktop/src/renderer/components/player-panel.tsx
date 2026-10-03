@@ -308,7 +308,7 @@ export function PlayerPanel() {
   const issue = usePlayerIssue();
   const error = usePlayerError();
   return (
-    <div className="absolute bottom-0 left-1/2 z-100 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
+    <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
       {error ? (
         <div role="alert" className="absolute bottom-full mb-2 flex max-w-full items-center gap-2 rounded border bg-background p-2 text-sm">
           <span>{error}</span>
