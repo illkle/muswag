@@ -36,7 +36,7 @@ import { applyQueue, retainsCurrent, type Correlation } from "./queue";
 import { booleanProperty, command, numberProperty, type MpvCommand } from "./mpv/protocol";
 import { MpvSession, type SessionEvent, type SessionHandle } from "./mpv/session";
 import { defaultSettings, makeSettingsWriter, SettingsStore, type Settings } from "./settings";
-import { resolveStreamUrls } from "./stream-source";
+import { makeStreamSalt, resolveStreamUrls } from "./stream-source";
 
 const MAILBOX_CAPACITY = 512;
 const MAX_PENDING_COMMANDS = 32;
@@ -122,6 +122,8 @@ export const PlayerLive = Layer.effect(
       }),
     );
     let credentials: PlayerCredentials | null = null;
+    /** Signs stream URLs while `credentials` last, so a track keeps the URL mpv may already have prefetched. */
+    let streamSalt = makeStreamSalt();
     /** The queue window mirrored into mpv. */
     let items: readonly PlaybackItem[] = [];
     /** The occurrence playback should settle on: whether it should play, and where it should start. */
@@ -292,7 +294,7 @@ export const PlayerLive = Layer.effect(
         if (!engine?.correlation) return yield* new InvalidCommand({ operation: "queue", message: "Select a track to start playback." });
         if (!retainsCurrent(engine.correlation, next)) return yield* new InvalidCommand({ operation: "queue", message: "Select a track when replacing the current occurrence." });
       }
-      const urls = yield* resolveStreamUrls(credentials, next);
+      const urls = yield* resolveStreamUrls(credentials, streamSalt, next);
       items = next;
       yield* publish({ ...state, queue: { ...state.queue, sync: "applying" } });
       if (selection) {
@@ -372,6 +374,7 @@ export const PlayerLive = Layer.effect(
       const media = currentMedia(state);
       const play = state.playback._tag === "Playing";
       credentials = next;
+      streamSalt = makeStreamSalt();
       // Stream URLs embed credentials, so a session built with the old ones must not survive.
       yield* closeEngine();
       if (!credentials) yield* stop();

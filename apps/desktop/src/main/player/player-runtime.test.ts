@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
-import { Deferred, Effect, Fiber } from "effect";
+import { Deferred, Effect, Fiber, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import { EngineError } from "./errors";
@@ -151,6 +151,22 @@ describe("Effect player", () => {
       expect((yield* player.snapshot).playback._tag).toBe("Playing");
       expect(test.commands.length).toBe(before);
       expect(test.closes).toBe(0);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("keeps a track's stream URL across queue edits, so mpv's prefetch of it stays valid", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      yield* player.execute("edit", { _tag: "ApplyQueue", items: tracks.slice(0, 2), select: null });
+      // The fixture's occurrences all play one track: three loads for the selection, one for the edit.
+      const urls = test.commands.filter((command) => command[0] === "loadfile").map((command) => Redacted.value(command[1] as Redacted.Redacted<string>));
+      expect(urls).toHaveLength(4);
+      expect(new Set(urls).size).toBe(1);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
