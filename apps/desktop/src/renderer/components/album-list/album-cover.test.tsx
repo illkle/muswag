@@ -18,6 +18,14 @@ afterEach(() => {
 });
 
 describe("AlbumCover", () => {
+  it("asks for the scaled-down cover only when shown as a thumbnail", () => {
+    const { rerender } = render(<AlbumCover coverArtPath="/covers/a.jpg" instantLoad thumbnail />);
+    expect(screen.getByAltText("cover art").getAttribute("src")).toContain("thumbnail=1");
+
+    rerender(<AlbumCover coverArtPath="/covers/a.jpg" instantLoad />);
+    expect(screen.getByAltText("cover art").getAttribute("src")).not.toContain("thumbnail");
+  });
+
   it("repairs a failed cached image and retries with the replacement path", async () => {
     libraryActions.repairCover.mockResolvedValue("/covers/repaired.jpg");
     render(<AlbumCover coverArtPath="/covers/missing.jpg" instantLoad target={{ type: "album", id: "album-1", coverArtId: "cover-1" }} />);

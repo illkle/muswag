@@ -6,11 +6,14 @@ import { startTransition, useEffect, useRef, useState } from "react";
 export function AlbumCover({
   coverArtPath,
   instantLoad = false,
+  thumbnail = false,
   target,
   className,
 }: {
   coverArtPath: string | null | undefined;
   instantLoad?: boolean | undefined;
+  /** Loads a scaled-down copy, for covers shown small. */
+  thumbnail?: boolean | undefined;
   target?: CoverTarget | undefined;
   className?: string | undefined;
 }) {
@@ -22,7 +25,7 @@ export function AlbumCover({
   const currentTargetKey = useRef(targetKey);
   currentTargetKey.current = targetKey;
   const effectiveCoverArtPath = repairedPath ?? coverArtPath;
-  const coverSrc = effectiveCoverArtPath ? toCoverArtUrl(effectiveCoverArtPath, retryRevision) : null;
+  const coverSrc = effectiveCoverArtPath ? toCoverArtUrl(effectiveCoverArtPath, retryRevision, thumbnail) : null;
 
   const [loadImage, setLoadImage] = useState(instantLoad);
 
@@ -96,6 +99,6 @@ export function AlbumCover({
   );
 }
 
-function toCoverArtUrl(coverArtPath: string, revision: number): string {
-  return `muswag-cover://local?path=${encodeURIComponent(coverArtPath)}&revision=${revision}`;
+function toCoverArtUrl(coverArtPath: string, revision: number, thumbnail: boolean): string {
+  return `muswag-cover://local?path=${encodeURIComponent(coverArtPath)}&revision=${revision}${thumbnail ? "&thumbnail=1" : ""}`;
 }

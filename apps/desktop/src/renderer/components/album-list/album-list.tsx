@@ -56,6 +56,7 @@ const AlbumItem = ({
       <AlbumCover
         coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
+        thumbnail
         target={{
           type: "album",
           id: album.id,

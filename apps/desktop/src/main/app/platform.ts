@@ -5,6 +5,8 @@ import { FileSystemError, MiniFs, type CredentialsCipher } from "@muswag/backend
 import { Effect, Layer } from "effect";
 import { safeStorage } from "electron";
 
+import { thumbnailPathOf } from "../cover-thumbnails";
+
 /** Resolves `requested` inside `base`, refusing paths that escape it. */
 export function resolveInside(base: string, requested: string): string {
   const absoluteBase = resolve(base);
@@ -29,7 +31,10 @@ export const MiniFsLive = (base: string) =>
       }),
     remove: (path) =>
       Effect.tryPromise({
-        try: () => rm(resolveInside(base, path), { force: true }),
+        try: async () => {
+          const target = resolveInside(base, path);
+          await Promise.all([rm(target, { force: true }), rm(thumbnailPathOf(target), { force: true })]);
+        },
         catch: (cause) => new FileSystemError({ cause: String(cause), message: `Failed to remove ${path}` }),
       }),
   });
