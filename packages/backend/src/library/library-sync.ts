@@ -1,4 +1,18 @@
-import { albums, artists, IDLE_LIBRARY_SYNC, songs, syncState, toRow, type AlbumID3, type Child, type IndexArtist, type LibrarySyncStatus, type RefreshStatTarget, type SyncMode } from "@muswag/model";
+import {
+  albums,
+  artists,
+  IDLE_LIBRARY_SYNC,
+  songs,
+  syncState,
+  toRow,
+  toSongRow,
+  type AlbumID3,
+  type Child,
+  type IndexArtist,
+  type LibrarySyncStatus,
+  type RefreshStatTarget,
+  type SyncMode,
+} from "@muswag/model";
 import { eq, inArray } from "drizzle-orm";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
@@ -222,7 +236,7 @@ const syncAlbum = (incoming: AlbumID3, mode: SyncMode) =>
       return yield* new AlbumWithoutSongs({ id: incoming.id, expectedSongCount: incoming.songCount });
     }
 
-    const incomingSongs = (album.song ?? []).map((song) => toRow(songs, song));
+    const incomingSongs = (album.song ?? []).map(toSongRow);
     yield* write(
       Effect.gen(function* () {
         yield* db

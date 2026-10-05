@@ -1,5 +1,5 @@
-import type { PlaylistRecord, QueueSourceRef, Song } from "@muswag/model";
-import { albumOccurrenceKey, playlistOccurrenceKey } from "@muswag/model";
+import type { LibrarySort, PlaylistRecord, QueueSourceRef, Song } from "@muswag/model";
+import { albumOccurrenceKey, libraryOccurrenceKey, playlistOccurrenceKey } from "@muswag/model";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 
 import type { SourceRevision } from "#shared/queue-state";
@@ -11,6 +11,12 @@ export interface SourceDb {
   songsByIds(ids: readonly string[]): Promise<Song[]>;
   /** The album's songs in playback order. */
   albumSongs(albumId: string): Promise<Song[]>;
+  /** How many songs the library has. */
+  librarySize(): Promise<number>;
+  /** The songs at `start` up to `end` of the library in the given order, and the size of the library they were read from. */
+  librarySongs(sort: LibrarySort, start: number, end: number): Promise<{ size: number; songs: Song[] }>;
+  /** Where a song is in the library in the given order, or `null` when it is not in the library. */
+  libraryOffset(sort: LibrarySort, songId: string): Promise<{ size: number; offset: number | null }>;
   /** Committed library changes, as the mirror server broadcasts them. */
   subscribe(listener: (batch: MirrorChangeBatch) => void): () => void;
 }
@@ -170,6 +176,61 @@ export class AlbumSource implements QueueSource {
   }
 }
 
+/**
+ * Every song of the library in one of its orders. Unlike an album, the library is too large to load
+ * to read a page of it, so the database does the ordering and the paging.
+ *
+ * Its revision is the number of songs it has, which follows songs joining and leaving. A song that
+ * only moves, by being renamed, goes unnoticed until playback next moves and locates its place anew.
+ */
+export class LibrarySource implements QueueSource {
+  readonly ref: Extract<QueueSourceRef, { type: "library" }>;
+  private readonly db: SourceDb;
+
+  constructor(options: { sort: LibrarySort; db: SourceDb }) {
+    this.db = options.db;
+    this.ref = { type: "library", sort: options.sort };
+  }
+
+  async read({ start, end, signal }: { start: number; end: number; signal: AbortSignal }): Promise<SourcePage> {
+    validateRange(start, end);
+    signal.throwIfAborted();
+    const { size, songs } = await this.db.librarySongs(this.ref.sort, start, end);
+    signal.throwIfAborted();
+    return {
+      revision: this.revision(size),
+      items: songs.map((track, index) => ({ key: libraryOccurrenceKey(track.id), offset: start + index, track })),
+      nextOffset: Math.max(start, Math.min(end, size)),
+      isEnd: end >= size,
+    };
+  }
+
+  async locate({ key, signal }: { key: string; signal: AbortSignal }): Promise<SourceLocation | null> {
+    signal.throwIfAborted();
+    const prefix = libraryOccurrenceKey("");
+    if (!key.startsWith(prefix)) return null;
+    const { size, offset } = await this.db.libraryOffset(this.ref.sort, key.slice(prefix.length));
+    signal.throwIfAborted();
+    return offset === null ? null : { offset, revision: this.revision(size) };
+  }
+
+  /** Reports a change when songs join or leave the library. */
+  subscribe(listener: (revision: SourceRevision) => void): () => void {
+    return watchSignature(this.db, {
+      relevant: (batch) => changesTo(batch, "songs").length > 0,
+      read: async () => {
+        const revision = this.revision(await this.db.librarySize());
+        return { signature: revision, revision };
+      },
+      onChange: listener,
+    });
+  }
+
+  private revision(size: number): SourceRevision {
+    return `${this.ref.sort}:${size}`;
+  }
+}
+
 export function createQueueSourceFactory(db: SourceDb): QueueSourceFactory {
   return {
     open(ref) {
@@ -178,6 +239,8 @@ export function createQueueSourceFactory(db: SourceDb): QueueSourceFactory {
           return new PlaylistSource({ db, playlistId: ref.playlistId });
         case "album":
           return new AlbumSource({ albumId: ref.albumId, db });
+        case "library":
+          return new LibrarySource({ sort: ref.sort, db });
       }
     },
   };

@@ -67,6 +67,8 @@ export const songs = sqliteTable(
   {
     id: text().primaryKey(),
     title: text().notNull(),
+    /** What the alphabetical order of the library sorts by, made from the title by `titleSortKey`. */
+    titleSortKey: text().notNull().default(""),
     isDir: integer({ mode: "boolean" }).notNull(),
     album: text(),
     albumId: text(),
@@ -112,7 +114,7 @@ export const songs = sqliteTable(
     replayGain: json<ReplayGain>(),
     explicitStatus: text(),
   },
-  (table) => [index("songs_album_id").on(table.albumId)],
+  (table) => [index("songs_album_id").on(table.albumId), index("songs_title_sort").on(table.titleSortKey, table.id)],
 );
 
 /**

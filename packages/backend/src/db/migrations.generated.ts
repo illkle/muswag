@@ -31,5 +31,15 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1790948438000,
     "hash": "a5bafe9fac853212a246a21f97c93f0db6e5d655194d5e90c465bddb9ab64dc0",
     "name": "20261002134038_queue_tables"
+  },
+  {
+    "sql": [
+      "ALTER TABLE `songs` ADD `titleSortKey` text DEFAULT '' NOT NULL;",
+      "\nCREATE INDEX `songs_title_sort` ON `songs` (`titleSortKey`,`id`);"
+    ],
+    "bps": true,
+    "folderMillis": 1791231005000,
+    "hash": "c5fc5232691042e9551871e71949b5ab22ad21568adc1bd88860d24b557f1f39",
+    "name": "20261005201005_song_title_sort_key"
   }
 ];

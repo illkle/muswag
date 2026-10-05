@@ -1,4 +1,4 @@
-import { albums, artists, playlists, songs, toRow, type AlbumID3, type Child, type PlaylistRecord, type PlaylistWithSongs } from "@muswag/model";
+import { albums, artists, playlists, songs, toRow, toSongRow, type AlbumID3, type Child, type PlaylistRecord, type PlaylistWithSongs } from "@muswag/model";
 import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 
@@ -67,7 +67,7 @@ export const seed = (data: { albums?: AlbumID3[]; artists?: Array<{ id: string; 
       Effect.gen(function* () {
         if (data.albums?.length) yield* db.insert(albums).values(data.albums.map((album) => toRow(albums, album)));
         if (data.artists?.length) yield* db.insert(artists).values(data.artists.map((artist) => toRow(artists, artist)));
-        if (data.songs?.length) yield* db.insert(songs).values(data.songs.map((song) => toRow(songs, song)));
+        if (data.songs?.length) yield* db.insert(songs).values(data.songs.map(toSongRow));
         if (data.playlists?.length) yield* db.insert(playlists).values(data.playlists);
       }),
     );

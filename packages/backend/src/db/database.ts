@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/sqlite-core/effect";
 import { Context, Effect, Layer } from "effect";
 
 import { migrations } from "./migrations.generated.js";
+import { fillSortKeys } from "./sort-keys.js";
 
 export type Database = EffectSQLiteNodeDatabase;
 
@@ -20,6 +21,7 @@ const DbLive = Layer.effect(
     // migration would require an unknown context instead of the one the database already has.
     const session = (db as unknown as { readonly session: Parameters<typeof migrate>[1] }).session;
     yield* migrate(migrations, session) as Effect.Effect<undefined, Effect.Error<ReturnType<typeof migrate>>>;
+    yield* fillSortKeys(db);
     return db;
   }),
 );

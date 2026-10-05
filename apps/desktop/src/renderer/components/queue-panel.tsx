@@ -23,7 +23,7 @@ function togglePanel() {
   localStorage.setItem(STORAGE_KEY, String(panelOpen.state));
 }
 
-/** The name of the album or playlist the queue is playing through. */
+/** What to call the album, playlist or library the queue is playing through. */
 function useSourceName(ref: QueueSourceRef | null): string | null {
   const albumId = ref?.type === "album" ? ref.albumId : null;
   const playlistId = ref?.type === "playlist" ? ref.playlistId : null;
@@ -49,6 +49,7 @@ function useSourceName(ref: QueueSourceRef | null): string | null {
     [playlistId],
   ).data;
 
+  if (ref?.type === "library") return "your library";
   return album?.name ?? playlist?.local?.name ?? null;
 }
 

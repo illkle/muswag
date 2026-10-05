@@ -42,6 +42,9 @@ const makeApp = (options: AppOptions) =>
       playlist: (playlistId) => run(LibraryQueries.playlist(playlistId)),
       songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)),
       albumSongs: (albumId) => run(LibraryQueries.albumSongs(albumId)),
+      librarySize: () => run(LibraryQueries.librarySize),
+      librarySongs: (sort, start, end) => run(LibraryQueries.librarySongs(sort, start, end)),
+      libraryOffset: (sort, songId) => run(LibraryQueries.libraryOffset(sort, songId)),
       subscribe: (listener) => mirror.subscribe(listener),
     };
     const queue = yield* Effect.acquireRelease(

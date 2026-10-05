@@ -2,6 +2,7 @@ import { Schema } from "effect";
 
 import { Id } from "./contract.js";
 import type { Song } from "./db/schema.js";
+import { LibrarySort } from "./library-order.js";
 
 /** A single playback occurrence. Keys, unlike song ids, are unique in a queue. */
 export type PlaybackItem = {
@@ -15,7 +16,12 @@ export type NowPlaying = PlaybackItem & {
 
 export type SourceCursor = { type: "item"; key: string; offset: number } | { type: "gap"; offset: number };
 
-export const QueueSourceRef = Schema.Union([Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }), Schema.Struct({ type: Schema.Literal("album"), albumId: Id })]);
+export const QueueSourceRef = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }),
+  Schema.Struct({ type: Schema.Literal("album"), albumId: Id }),
+  /** Every song of the library, in the given order. */
+  Schema.Struct({ type: Schema.Literal("library"), sort: LibrarySort }),
+]);
 export type QueueSourceRef = typeof QueueSourceRef.Type;
 
 export function playlistOccurrenceKey(playlistId: string, entryId: string): string {
@@ -24,6 +30,11 @@ export function playlistOccurrenceKey(playlistId: string, entryId: string): stri
 
 export function albumOccurrenceKey(albumId: string, songId: string): string {
   return `album:${albumId}:${songId}`;
+}
+
+/** The same for every order of the library, so an occurrence keeps its key when the order changes. */
+export function libraryOccurrenceKey(songId: string): string {
+  return `library:${songId}`;
 }
 
 export function createUserPlaybackItem(track: Song): PlaybackItem {
