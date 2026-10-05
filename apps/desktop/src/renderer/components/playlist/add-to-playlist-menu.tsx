@@ -3,9 +3,10 @@ import { usePlaylists } from "#/playlists/queries";
 import { useMutation } from "@tanstack/react-query";
 import { PlusIcon } from "@phosphor-icons/react";
 
+import { openNewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "#/components/ui/context-menu";
 
-export function AddToPlaylistMenu({ songIds, setCreateOpen }: { songIds: readonly string[]; setCreateOpen: (v: boolean) => void }) {
+export function AddToPlaylistMenu({ songIds }: { songIds: readonly string[] }) {
   const { playlists } = usePlaylists();
 
   const addMutation = useMutation({
@@ -13,6 +14,7 @@ export function AddToPlaylistMenu({ songIds, setCreateOpen }: { songIds: readonl
   });
 
   const writable = playlists.filter(({ readonly }) => !readonly);
+  const nothingToAdd = songIds.length === 0;
 
   return (
     <>
@@ -25,7 +27,7 @@ export function AddToPlaylistMenu({ songIds, setCreateOpen }: { songIds: readonl
           <ContextMenuItem disabled>No editable playlists</ContextMenuItem>
         ) : (
           writable.map((playlist) => (
-            <ContextMenuItem key={playlist.id} onClick={() => addMutation.mutate(playlist.id)}>
+            <ContextMenuItem key={playlist.id} disabled={nothingToAdd} onClick={() => addMutation.mutate(playlist.id)}>
               <span className="truncate">{playlist.name}</span>
             </ContextMenuItem>
           ))
@@ -33,7 +35,7 @@ export function AddToPlaylistMenu({ songIds, setCreateOpen }: { songIds: readonl
       </ContextMenuGroup>
 
       <ContextMenuSeparator />
-      <ContextMenuItem onClick={() => setCreateOpen(true)}>
+      <ContextMenuItem disabled={nothingToAdd} onClick={() => openNewPlaylistDialog(songIds)}>
         <PlusIcon className="size-4" />
         New playlist...
       </ContextMenuItem>

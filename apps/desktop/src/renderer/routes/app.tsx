@@ -2,6 +2,7 @@ import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
 import { TopBar } from "#/components/shell/top-bar";
 import { AppSidebarWrapper } from "#/components/shell/app-sidebar";
 import { PlayerPanel } from "#/components/player-panel";
+import { NewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { useUser } from "#/session/session";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 import { IconContext } from "@phosphor-icons/react";
@@ -37,6 +38,7 @@ function RouteComponent() {
           <Outlet />
           <PlayerPanel />
         </AppSidebarWrapper>
+        <NewPlaylistDialog />
       </IconContext.Provider>
     </div>
   );

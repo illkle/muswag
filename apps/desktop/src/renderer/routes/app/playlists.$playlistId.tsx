@@ -7,59 +7,53 @@ import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader, DetailHeaderPl
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
-import { usePlayerStatus } from "#/player/hooks";
 import { PlaylistActions } from "#/playlists/actions";
 import { totalDuration } from "#/playlists/rows";
 import { usePlaylist } from "#/playlists/queries";
 import { usePlaylistSongStatsRefresh } from "#/library/stats-refresh";
-import { SongListRoot, SongRenderPlaylist } from "#/components/song-list";
+import { libraryColumns } from "#/components/track-list/columns";
+import { TrackList } from "#/components/track-list/track-list";
+import { TrackMenuAddItems } from "#/components/track-list/track-menu";
+import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
+import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { getErrorMessage } from "#/lib/err";
-import { songRow, playlistOccurrenceKey, type Song } from "@muswag/model";
+import { formatDuration, formatMetaLine } from "#/lib/format";
+import { songRow, playlistOccurrenceKey } from "@muswag/model";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
   component: RouteComponent,
 });
 
-function formatDuration(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatMetaLine(parts: Array<string | null | undefined>): string {
-  return parts.filter((part): part is string => Boolean(part)).join(" • ");
-}
-
 function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const navigate = useNavigate();
   const { record, state, rows, isLoading, isError } = usePlaylist(playlistId);
   usePlaylistSongStatsRefresh(record?.serverId ?? null);
-  const playerStatus = usePlayerStatus();
   const queueState = useQueueManagerState();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const firstPlayableEntryId = useMemo(() => rows.find(({ song }) => song)?.entryId ?? null, [rows]);
 
-  const playingRowKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
+  const playingKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
-  const removeEntryMutation = useMutation({
-    mutationFn: (entryId: string) => PlaylistActions.removeEntry(playlistId, entryId),
+  const removeEntriesMutation = useMutation({
+    mutationFn: async (entryIds: readonly string[]) => {
+      for (const entryId of entryIds) await PlaylistActions.removeEntry(playlistId, entryId);
+    },
   });
-  const songs = useMemo(
-    // Unavailable entries still need a row, so stand in a minimal song carrying the raw id.
-    (): Song[] => rows.map(({ songId, song }) => song ?? songRow({ id: songId, title: songId })),
-    [rows],
+  const items = useMemo(
+    (): TrackListItem[] =>
+      rows.map(({ entryId, songId, song }) => ({
+        type: "track",
+        key: playlistOccurrenceKey(playlistId, entryId),
+        // Unavailable entries still need a row, so stand in a minimal song carrying the raw id.
+        song: song ?? songRow({ id: songId, title: songId }),
+        unavailable: !song,
+      })),
+    [playlistId, rows],
   );
-  const rowKeys = useMemo(() => rows.map(({ entryId }) => playlistOccurrenceKey(playlistId, entryId)), [playlistId, rows]);
-  const unavailableRowKeys = useMemo(() => new Set(rows.flatMap(({ entryId, song }) => (song ? [] : [playlistOccurrenceKey(playlistId, entryId)]))), [playlistId, rows]);
 
   if (isLoading) {
     return (
@@ -98,7 +92,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     );
   }
 
-  const missingCount = unavailableRowKeys.size;
+  const missingCount = rows.filter(({ song }) => !song).length;
   const canEdit = !state.readonly;
   const playlistMeta = formatMetaLine([
     `${rows.length} song${rows.length === 1 ? "" : "s"}`,
@@ -109,23 +103,34 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
 
   const playFrom = (entryId: string) => void QueueActions.playSource({ type: "playlist", playlistId }, playlistOccurrenceKey(playlistId, entryId));
 
-  const onPlay = (_song: Song, index: number) => {
-    const row = rows[index];
-    if (row?.song) playFrom(row.entryId);
+  const removeSelected = (selection: TrackSelection) => {
+    const keys = new Set(selection.items.map(({ key }) => key));
+    removeEntriesMutation.mutate(rows.flatMap(({ entryId }) => (keys.has(playlistOccurrenceKey(playlistId, entryId)) ? [entryId] : [])));
   };
 
   return (
     <section className="flex h-full w-full flex-col">
       <div className="min-h-0 flex-1">
-        <SongListRoot
-          songs={songs}
-          rowKeys={rowKeys}
-          unavailableRowKeys={unavailableRowKeys}
-          playingRowKey={playingRowKey}
-          onSongPlay={onPlay}
-          currentTrackID={null}
-          playerStatus={playerStatus}
-          SongComponent={SongRenderPlaylist}
+        <TrackList
+          items={items}
+          columns={libraryColumns}
+          playingKey={playingKey}
+          onActivate={(item) => {
+            if (!item.unavailable) void QueueActions.playSource({ type: "playlist", playlistId }, item.key);
+          }}
+          menu={(selection) => (
+            <>
+              <TrackMenuAddItems selection={selection} />
+              {canEdit ? (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem variant="destructive" onClick={() => removeSelected(selection)}>
+                    Remove from playlist
+                  </ContextMenuItem>
+                </>
+              ) : null}
+            </>
+          )}
           scrollId={"playlist-" + playlistId}
           topPadding={DETAIL_TOP_PADDING}
           bottomPadding={DETAIL_BOTTOM_PADDING}
@@ -139,7 +144,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                   {missingCount} {missingCount === 1 ? "song is" : "songs are"} not in your synced library and will be skipped.
                 </p>
               ) : null}
-              {removeEntryMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntryMutation.error, "The song could not be removed.")}</p> : null}
+              {removeEntriesMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntriesMutation.error, "The song could not be removed.")}</p> : null}
 
               <div className="mt-2 flex items-center gap-1">
                 <Button size="sm" disabled={!firstPlayableEntryId} onClick={() => firstPlayableEntryId && playFrom(firstPlayableEntryId)}>

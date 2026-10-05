@@ -4,16 +4,13 @@ import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/compo
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { db } from "#/data/library";
+import { formatMetaLine } from "#/lib/format";
 import { eq, not, useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app/artists/$artistId")({
   component: RouteComponent,
 });
-
-function formatMetaLine(parts: Array<string | null | undefined>): string {
-  return parts.filter((part): part is string => Boolean(part)).join(" • ");
-}
 
 function RouteComponent() {
   const { artistId } = Route.useParams();

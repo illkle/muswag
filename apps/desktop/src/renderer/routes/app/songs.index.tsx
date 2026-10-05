@@ -4,8 +4,12 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { useUser } from "#/session/session";
 import { db } from "#/data/library";
 import { useLiveQuery } from "@tanstack/react-db";
-import { SongListRoot, SongRenderSongsList } from "#/components/song-list";
+import { libraryColumns } from "#/components/track-list/columns";
+import { TrackList } from "#/components/track-list/track-list";
+import { TrackMenuAddItems } from "#/components/track-list/track-menu";
+import type { TrackListItem } from "#/components/track-list/types";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
@@ -13,6 +17,7 @@ export const Route = createFileRoute("/app/songs/")({
 
 function LibraryScreen() {
   const songsQuery = useLiveQuery((q) => q.from({ songs: db.songs }));
+  const items = useMemo((): TrackListItem[] => (songsQuery.data ?? []).map((song) => ({ type: "track", key: song.id, song })), [songsQuery.data]);
 
   return (
     <section className="flex h-full w-full flex-col">
@@ -37,13 +42,11 @@ function LibraryScreen() {
       ) : null}
 
       {!songsQuery.isLoading && !songsQuery.isError && (songsQuery.data?.length ?? 0) > 0 ? (
-        <SongListRoot
-          currentTrackID={""}
-          playerStatus={null}
-          songs={songsQuery.data ?? []}
+        <TrackList
+          items={items}
+          columns={libraryColumns}
+          menu={(selection) => <TrackMenuAddItems selection={selection} />}
           scrollId="library-screen-songs"
-          onSongPlay={() => null}
-          SongComponent={SongRenderSongsList}
           topPadding={TOP_HEIGHT}
           bottomPadding={PLAYER_HEIGHT}
         />

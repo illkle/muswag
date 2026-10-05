@@ -3,40 +3,24 @@ import { DiscIcon } from "@phosphor-icons/react";
 
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
-import { usePlayerStatus } from "#/player/hooks";
 import { db } from "#/data/library";
+import { formatDuration, formatMetaLine } from "#/lib/format";
 import { useAlbumStatsRefresh } from "#/library/stats-refresh";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
-import { SongListRoot } from "#/components/song-list";
-import { albumOccurrenceKey, type Song } from "@muswag/model";
+import { albumColumns } from "#/components/track-list/columns";
+import { TrackList } from "#/components/track-list/track-list";
+import { TrackMenuAddItems } from "#/components/track-list/track-menu";
+import type { TrackListItem } from "#/components/track-list/types";
+import { albumOccurrenceKey } from "@muswag/model";
+import { useMemo } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
 });
-
-function formatDuration(totalSeconds: number | null | undefined): string {
-  if (totalSeconds === null || totalSeconds === undefined) {
-    return "-";
-  }
-
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatMetaLine(parts: Array<string | null | undefined>): string {
-  return parts.filter((part): part is string => Boolean(part)).join(" • ");
-}
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
@@ -57,7 +41,20 @@ function RouteComponent() {
   );
 
   const queueState = useQueueManagerState();
-  const playerStatus = usePlayerStatus();
+
+  const discTitles = albumQuery.data?.discTitles;
+  const items = useMemo((): TrackListItem[] => {
+    const showDiscs = (discTitles?.length ?? 0) > 1;
+
+    return (songsQuery.data ?? []).flatMap((song, index, songs): TrackListItem[] => {
+      const track: TrackListItem = { type: "track", key: albumOccurrenceKey(albumId, song.id), song };
+      const disc = song.discNumber;
+      if (!showDiscs || !disc || songs[index - 1]?.discNumber === disc) return [track];
+
+      const title = discTitles?.find((entry) => entry.disc === disc)?.title;
+      return [{ type: "heading", key: `disc:${disc}`, title: `Disc ${disc}`, ...(title ? { subtitle: title } : {}) }, track];
+    });
+  }, [albumId, discTitles, songsQuery.data]);
 
   if (albumQuery.isLoading || songsQuery.isLoading) {
     return (
@@ -98,27 +95,19 @@ function RouteComponent() {
 
   const album = albumQuery.data;
   const { genres } = album;
-  const songs = songsQuery.data;
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
-  const onPlay = (song: Song) => {
-    void QueueActions.playSource({ type: "album", albumId }, albumOccurrenceKey(albumId, song.id));
-  };
-
-  const rowKeys = songs.map((song) => albumOccurrenceKey(albumId, song.id));
-  const playingRowKey = queueState.source?.ref.type === "album" && queueState.source.ref.albumId === albumId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
+  const playingKey = queueState.source?.ref.type === "album" && queueState.source.ref.albumId === albumId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
   return (
     <>
-      <SongListRoot
-        songs={songs}
-        rowKeys={rowKeys}
-        playingRowKey={playingRowKey}
-        discTitles={album.discTitles}
-        onSongPlay={onPlay}
-        currentTrackID={null}
-        playerStatus={playerStatus}
+      <TrackList
+        items={items}
+        columns={albumColumns}
+        playingKey={playingKey}
+        onActivate={(item) => void QueueActions.playSource({ type: "album", albumId }, item.key)}
+        menu={(selection) => <TrackMenuAddItems selection={selection} />}
         scrollId={"album-" + album.id}
         topPadding={DETAIL_TOP_PADDING}
         bottomPadding={DETAIL_BOTTOM_PADDING}
