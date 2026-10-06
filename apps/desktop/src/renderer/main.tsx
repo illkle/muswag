@@ -1,3 +1,5 @@
+// Stays first: the modules below read `window.electron` as they load.
+import "#/data/dev-bridge";
 import { createHashHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { QueryClient } from "@tanstack/react-query";

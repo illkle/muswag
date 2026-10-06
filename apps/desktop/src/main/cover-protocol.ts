@@ -42,12 +42,12 @@ const resizeCover: ResizeCover = (cover) => {
 /**
  * Serves cached cover files, which are relative to `userDataPath` and may not leave it.
  * With `thumbnail` in the query, the cover is served scaled down to `THUMBNAIL_SIZE`.
+ * Returns the function that answers a cover request's query.
  */
-export function handleCoverProtocol(userDataPath: string): void {
+export function handleCoverProtocol(userDataPath: string): (query: URLSearchParams) => Promise<Response> {
   const thumbnailOf = makeThumbnails(resizeCover);
 
-  protocol.handle(SCHEME, async (request) => {
-    const query = new URL(request.url).searchParams;
+  const serveCover = async (query: URLSearchParams): Promise<Response> => {
     const requestedPath = query.get("path");
     if (!requestedPath) {
       return new Response("Missing path", { status: 400 });
@@ -69,5 +69,8 @@ export function handleCoverProtocol(userDataPath: string): void {
     }
 
     return net.fetch(pathToFileURL(absolutePath).toString());
-  });
+  };
+
+  protocol.handle(SCHEME, (request) => serveCover(new URL(request.url).searchParams));
+  return serveCover;
 }

@@ -1,3 +1,4 @@
+import { viaDevBridge } from "#/data/dev-bridge";
 import { cn } from "#/lib/utils";
 import { LibraryActions } from "#/library/actions";
 import type { CoverTarget } from "@muswag/model";
@@ -99,6 +100,9 @@ export function AlbumCover({
   );
 }
 
+/** A browser cannot load `muswag-cover:`, so there main's dev bridge serves covers. */
+const COVER_URL = viaDevBridge ? "/__bridge/cover" : "muswag-cover://local";
+
 function toCoverArtUrl(coverArtPath: string, revision: number, thumbnail: boolean): string {
-  return `muswag-cover://local?path=${encodeURIComponent(coverArtPath)}&revision=${revision}${thumbnail ? "&thumbnail=1" : ""}`;
+  return `${COVER_URL}?path=${encodeURIComponent(coverArtPath)}&revision=${revision}${thumbnail ? "&thumbnail=1" : ""}`;
 }

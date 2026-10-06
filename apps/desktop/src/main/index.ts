@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
-import { electronApp, optimizer } from "@electron-toolkit/utils";
+import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
 import { getDefaultMpvIpcPath } from "./player";
 import { registerPlayerIpc, type PlayerHandle } from "./player/ipc";
@@ -10,6 +10,7 @@ import { startStateMirror } from "./state-mirror";
 import { startApp } from "./app";
 import { initializeAutoUpdater, registerAppUpdateIpc } from "./app-updater";
 import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
+import { startDevBridge } from "./dev-bridge";
 import { createWindow } from "./window";
 
 import { Effect } from "effect";
@@ -31,7 +32,10 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  handleCoverProtocol(app.getPath("userData"));
+  const serveCover = handleCoverProtocol(app.getPath("userData"));
+  // Before any handler is registered: the bridge only knows the handlers registered after it starts.
+  const devBridgePort = Number(process.env.MUSWAG_DEV_BRIDGE_PORT);
+  if (is.dev && devBridgePort) startDevBridge({ ipcMain, port: devBridgePort, serveCover });
   unsubscribeAppUpdateState = registerAppUpdateIpc(mainIpc, rendererIpc);
 
   stateMirror = await startStateMirror(ipcMain);
