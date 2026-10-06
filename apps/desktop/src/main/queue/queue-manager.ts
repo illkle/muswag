@@ -105,12 +105,7 @@ export class QueueManager {
         const target = candidate.window.current;
         if (!target || target.key !== key) throw new Error(`Source occurrence ${key} is not playable.`);
         this.pendingSelection = { candidate, generation, key };
-        const prospective: QueueManagerState = {
-          nowPlaying: { ...clonePlaybackItem(target), origin: "source" },
-          userQueue: this.store.state.userQueue,
-          source: publicSource(candidate),
-        };
-        await this.player.applyQueue({ items: composeMpvQueue(prospective), select: { key, play: true } });
+        await this.player.applyQueue({ items: composeMpvQueue(this.mirrorState()), select: { key, play: true } });
       } catch (cause) {
         if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
         candidate?.window.dispose();
@@ -144,15 +139,18 @@ export class QueueManager {
 
   next(): Promise<void> {
     return this.serial.run(async () => {
-      const target = nextTarget(this.store.state);
+      const target = this.neighbour(1);
       if (target) await this.select(target.key);
     });
   }
 
   previous(): Promise<void> {
     return this.serial.run(async () => {
-      if (!this.store.state.nowPlaying) return;
-      const target = (this.runtime?.positionSeconds ?? 0) > RESTART_INSTEAD_OF_PREVIOUS_SECONDS ? null : previousTarget(this.store.state);
+      // A selection that has not started has no position to restart from: Previous steps back from it.
+      const pending = this.pendingSelection !== null;
+      if (!pending && !this.store.state.nowPlaying) return;
+      const restarts = !pending && (this.runtime?.positionSeconds ?? 0) > RESTART_INSTEAD_OF_PREVIOUS_SECONDS;
+      const target = restarts ? undefined : this.neighbour(-1);
       if (target) await this.select(target.key);
       else await this.player.restartCurrent();
     });
@@ -207,15 +205,49 @@ export class QueueManager {
     await this.applyMirror();
   }
 
+  /**
+   * `state` as mpv holds it. A source that was asked for is in mpv before it starts playing, and is
+   * what Next and Previous step through until it does.
+   */
+  private mirrorState(state: QueueManagerState = this.store.state): QueueManagerState {
+    const candidate = this.pendingSelection?.candidate;
+    const current = candidate?.window.current;
+    if (!candidate || !current) return state;
+    return { nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, userQueue: state.userQueue, source: publicSource(candidate) };
+  }
+
+  /**
+   * The occurrence one step from the one playing. While a selection is still loading the step is
+   * taken from it instead, so pressing Next again moves on rather than selecting the same track.
+   */
+  private neighbour(direction: 1 | -1): PlaybackItem | undefined {
+    const state = this.mirrorState();
+    const pending = this.pendingSelection;
+    if (pending) {
+      const items = composeMpvQueue(state);
+      const index = items.findIndex((item) => item.key === pending.key);
+      if (index >= 0) return items[index + direction];
+    }
+    return direction === 1 ? nextTarget(state) : previousTarget(state);
+  }
+
   private async select(key: string): Promise<void> {
     const generation = ++this.selectionGeneration;
-    this.pendingSelection = { candidate: null, generation, key };
+    const candidate = this.pendingSelection?.candidate ?? null;
+    // Queued tracks skipped on the way to `key` leave the queue, as they do when stepped through one at a time.
+    const keys = composeMpvQueue(this.mirrorState()).map((item) => item.key);
+    const passed = new Set(keys.slice(0, Math.max(0, keys.indexOf(key))));
+    const state = this.store.state;
+    const next = { ...state, userQueue: state.userQueue.filter((item) => !passed.has(item.key)) };
+    this.pendingSelection = { candidate, generation, key };
     try {
-      await this.player.applyQueue({ items: composeMpvQueue(this.store.state), select: { key, play: !(this.runtime?.paused ?? false) } });
+      await this.player.applyQueue({ items: composeMpvQueue(this.mirrorState(next)), select: { key, play: !(this.runtime?.paused ?? false) } });
     } catch (cause) {
       if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
+      candidate?.window.dispose();
       throw cause;
     }
+    if (next.userQueue.length !== state.userQueue.length) this.publish(next);
   }
 
   private acceptRuntime(runtime: PlayerRuntimeState): void {
@@ -227,13 +259,17 @@ export class QueueManager {
   private async commitRuntime(runtime: PlayerRuntimeState): Promise<void> {
     if (runtime.status === "loading" || runtime.status === "error" || runtime.status === "idle") return;
     const key = runtime.current?.key;
+    // Playback has got to what was selected. A selection it has not got to stays, for Next and Previous to step on from.
+    const pending = this.pendingSelection?.key === key ? this.pendingSelection : null;
+    if (pending) this.pendingSelection = null;
     let logicalChanged = false;
-    if (key && key !== this.store.state.nowPlaying?.key) {
+    // A source asked for at the occurrence already playing still has to become the active one.
+    if (key && (key !== this.store.state.nowPlaying?.key || pending?.candidate)) {
       const firstUser = this.store.state.userQueue[0];
-      const pending = this.pendingSelection?.key === key ? this.pendingSelection : null;
       if (firstUser?.key === key) {
-        this.pendingSelection = null;
-        this.publish({ ...this.store.state, nowPlaying: { ...clonePlaybackItem(firstUser), origin: "user" }, userQueue: this.store.state.userQueue.slice(1) });
+        if (pending?.candidate) this.activate(pending.candidate);
+        const source = pending?.candidate ? publicSource(pending.candidate) : this.store.state.source;
+        this.publish({ nowPlaying: { ...clonePlaybackItem(firstUser), origin: "user" }, userQueue: this.store.state.userQueue.slice(1), source });
         logicalChanged = true;
       } else {
         const source = pending?.candidate ?? (this.activeSource?.window.has(key) ? this.activeSource : null);
@@ -254,20 +290,26 @@ export class QueueManager {
 
   private async commitSourceTransition(source: ActiveSource, key: string, current: PlaybackItem): Promise<void> {
     await source.window.moveTo(key);
+    this.activate(source);
+    this.publish({ ...this.store.state, nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, source: publicSource(source) });
+  }
+
+  /** Makes `source` the one playback reads from. */
+  private activate(source: ActiveSource): void {
     const previous = this.activeSource;
     this.activeSource = source;
-    this.pendingSelection = null;
-    this.publish({ ...this.store.state, nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, source: publicSource(source) });
     if (previous !== source) previous?.window.dispose();
   }
 
   private applyMirror(): Promise<void> {
-    if (!this.store.state.nowPlaying) return Promise.resolve();
-    return this.player.applyQueue({ items: composeMpvQueue(this.store.state) });
+    const mirror = this.mirrorState();
+    if (!mirror.nowPlaying) return Promise.resolve();
+    return this.player.applyQueue({ items: composeMpvQueue(mirror) });
   }
 
   private async commitQueueEdit(next: QueueManagerState): Promise<void> {
-    if (next.nowPlaying) await this.player.applyQueue({ items: composeMpvQueue(next) });
+    const mirror = this.mirrorState(next);
+    if (mirror.nowPlaying) await this.player.applyQueue({ items: composeMpvQueue(mirror) });
     this.publish(next);
     this.saveLogicalState();
   }

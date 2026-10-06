@@ -152,6 +152,26 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
+  it.effect("selects another occurrence while the one selected before it is still loading", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      const a = test.currentId;
+      yield* player.execute("next", { _tag: "ApplyQueue", items: tracks, select: { key: "b", play: true, positionSeconds: 0 } });
+      yield* player.execute("next", { _tag: "ApplyQueue", items: tracks, select: { key: "c", play: true, positionSeconds: 0 } });
+      // "a" finishing its load late is not "c" starting.
+      test.emit({ type: "file-loaded" }, a);
+      yield* player.execute("barrier", { _tag: "SetVolume", percent: 10 });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "c" } } });
+      test.emit({ type: "file-loaded" });
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { item: { key: "c" } } });
+      expect(test.commands.filter((command) => command[0] === "loadfile")).toHaveLength(3);
+      expect(test.generation).toBe(1);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("restarts the loaded track by seeking, and replays an ended one without a new session", () => {
     const test = fixture();
     return Effect.gen(function* () {
