@@ -5,6 +5,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { getErrorMessage } from "#/lib/err";
 import { useUser, Session } from "#/session/session";
+import { TOP_HEIGHT } from "#/styles";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
@@ -31,6 +32,9 @@ const defaultCredentials: CredentialsForm = import.meta.env.DEV
     }
   : { url: "", username: "", password: "" };
 
+/** The window has no title bar on macOS, so a screen without the app's top bar brings its own strip to drag it by. */
+const DragStrip = () => <div className="app-drag-region fixed inset-x-0 top-0" style={{ height: TOP_HEIGHT }} />;
+
 /** `expired` is the account of a session that ended because the server no longer accepts its password. */
 function LoginScreen({ expired }: { expired: Pick<CredentialsForm, "url" | "username"> | undefined }) {
   const loginMutation = useMutation({
@@ -52,6 +56,7 @@ function LoginScreen({ expired }: { expired: Pick<CredentialsForm, "url" | "user
 
   return (
     <main className="flex min-h-screen items-center justify-center px-6 py-12">
+      <DragStrip />
       <Card className="w-full max-w-md border-0 bg-card/95 shadow-2xl shadow-primary/5 backdrop-blur">
         <CardHeader className="gap-3">
           <div className="flex items-center gap-3">
@@ -160,6 +165,7 @@ function App() {
   if (userStateQuery.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6">
+        <DragStrip />
         <div className="text-sm text-muted-foreground">Loading application state...</div>
       </main>
     );
