@@ -21,6 +21,8 @@ const router = createTanStackRouter({
   context: { queryClient },
   defaultNotFoundComponent: () => <div>not found</div>,
   scrollRestoration: true,
+  // A page for another album, artist or playlist starts over: its queries, scroll position and dialogs are its own.
+  defaultRemountDeps: ({ params }) => params,
   defaultPreload: "intent",
   defaultPreloadStaleTime: 0,
   history: createHashHistory(),

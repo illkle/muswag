@@ -95,6 +95,11 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
 const TIME_LABEL = "min-w-9 shrink-0 text-xs text-muted-foreground tabular-nums";
 /** Stands in for both times while nothing is loaded. */
 const NO_TIME = "–:––";
+/** How far an arrow key seeks. */
+const SEEK_KEY_STEP_SECONDS = 5;
+const SEEK_KEY_DIRECTIONS: Record<string, 1 | -1 | undefined> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
+/** Every key that moves the seek slider. */
+const SEEK_KEYS = new Set([...Object.keys(SEEK_KEY_DIRECTIONS), "Home", "End", "PageUp", "PageDown"]);
 
 const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const ds = usePlayerDuration();
@@ -192,6 +197,8 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           if (seekInteractionRef.current === "pointer") {
             void commitSeek(Number(event.currentTarget.value));
           }
+          // A slider that kept the focus would swallow Space and the arrow keys.
+          event.currentTarget.blur();
         }}
         onPointerCancel={(event) => {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -211,13 +218,21 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           setDraft(null);
         }}
         onKeyDown={(event) => {
-          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+          const direction = event.metaKey || event.ctrlKey || event.altKey ? undefined : SEEK_KEY_DIRECTIONS[event.key];
+          if (direction !== undefined) {
+            // The slider's own step is a hundredth of a second, which is right for dragging only.
+            event.preventDefault();
+            seekInteractionRef.current = "keyboard";
+            // From the draft as it stands: a held key repeats faster than the slider is rendered again.
+            setDraft(Math.min(Math.max((draftPositionRef.current ?? sliderValue) + direction * SEEK_KEY_STEP_SECONDS, 0), durationSeconds));
+          } else if (SEEK_KEYS.has(event.key)) {
             seekInteractionRef.current = "keyboard";
           }
         }}
         onKeyUp={(event) => {
-          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
-            void commitSeek(Number(event.currentTarget.value));
+          // Letting go of the key that moved the slider, not of a modifier held with it.
+          if (seekInteractionRef.current === "keyboard" && SEEK_KEYS.has(event.key)) {
+            void commitSeek(draftPositionRef.current ?? Number(event.currentTarget.value));
           }
         }}
         aria-label="Playback position"
@@ -397,6 +412,7 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
           }
 
           endInteraction();
+          event.currentTarget.blur();
         }}
         onPointerCancel={(event) => {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
