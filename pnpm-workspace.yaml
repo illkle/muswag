@@ -39,7 +39,6 @@ catalog:
   electron: ^44.5.0
   electron-builder: ^26.15.3
   electron-to-chromium: ^1.5.442
-  electron-updater: ^6.8.9
   effect: 4.0.0
   fuse.js: ^7.5.0
   oxfmt: ^0.71.0
