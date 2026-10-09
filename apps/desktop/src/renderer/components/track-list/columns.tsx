@@ -1,4 +1,4 @@
-import { PauseIcon, PlayIcon, SpinnerGapIcon } from "@phosphor-icons/react";
+import { PauseIcon, PlayIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -9,6 +9,7 @@ import { db } from "#/data/library";
 import { formatDuration } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { usePlayerStatus } from "#/player/hooks";
+import { useSongIsUnplayable } from "#/queue/unplayable";
 
 import type { TrackItem } from "#/components/track-list/types";
 
@@ -86,11 +87,20 @@ function NumberCell({ number, isPlaying, onPlay, tabIndex }: { number: ReactNode
   );
 }
 
+/** Stands in for the number of a track that could not be played when the queue last started it. */
+const UnplayableMark = () => <WarningIcon weight="fill" role="img" aria-label="Could not be played" className="size-3.5 text-destructive" />;
+
 /** The song's number on its album. */
-const TrackNumberCell = ({ item, isPlaying, onPlay, tabIndex }: TrackCellProps) => <NumberCell number={item.song.track ?? "•"} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
+const TrackNumberCell = ({ item, isPlaying, onPlay, tabIndex }: TrackCellProps) => {
+  const unplayable = useSongIsUnplayable(item.song.id);
+  return <NumberCell number={unplayable ? <UnplayableMark /> : (item.song.track ?? "•")} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
+};
 
 /** The row's number in this list. */
-const PositionCell = ({ position, isPlaying, onPlay, tabIndex }: TrackCellProps) => <NumberCell number={position + 1} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
+const PositionCell = ({ item, position, isPlaying, onPlay, tabIndex }: TrackCellProps) => {
+  const unplayable = useSongIsUnplayable(item.song.id);
+  return <NumberCell number={unplayable ? <UnplayableMark /> : position + 1} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
+};
 
 export const TrackCover = ({ albumId, className }: { albumId: string; className?: string }) => {
   const cover = useLiveQuery((q) =>

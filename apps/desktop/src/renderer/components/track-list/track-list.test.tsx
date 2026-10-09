@@ -13,6 +13,9 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("#/data/library", () => ({ db: {} }));
 const player = vi.hoisted(() => ({ status: "playing" }));
 vi.mock("#/player/hooks", () => ({ usePlayerStatus: () => player.status }));
+// The songs main could not play, by id.
+const unplayable = vi.hoisted(() => new Set<string>());
+vi.mock("#/queue/unplayable", () => ({ useSongIsUnplayable: (id: string) => unplayable.has(id) }));
 
 vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: undefined }),
@@ -43,6 +46,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   player.status = "playing";
+  unplayable.clear();
 });
 
 const columns: TrackColumn[] = [
@@ -119,6 +123,15 @@ describe("TrackList", () => {
     render(<TrackList items={duplicates} columns={columns} playingKey="entry-3" />);
 
     expect([...document.querySelectorAll<HTMLElement>("[data-playing]")].map((element) => element.dataset.trackKey)).toEqual(["entry-3"]);
+  });
+
+  it("marks a track that could not be played in place of its number", () => {
+    unplayable.add("song-b");
+    render(<TrackList items={[track("one", "song-a", "Fine"), track("two", "song-b", "Broken")]} columns={libraryColumns.filter(({ id }) => id === "position" || id === "duration")} />);
+
+    expect(row("one").querySelector('[aria-label="Could not be played"]')).toBeNull();
+    expect(row("one").textContent).toContain("1");
+    expect(row("two").querySelector('[aria-label="Could not be played"]')).not.toBeNull();
   });
 
   it("activates the double-clicked row, so callers can tell which duplicate it was", () => {

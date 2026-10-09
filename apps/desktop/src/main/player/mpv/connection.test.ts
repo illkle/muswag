@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect, Layer, Stream } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { describe, expect } from "vitest";
-import { MpvConnection, MpvConnectionLive } from "./connection";
+import { MpvConnection, MpvConnectionLive, windowsGuard } from "./connection";
 
 // A fake mpv: a node process that listens on the IPC socket and answers every request with split UTF-8 lines.
 const fakeMpv = `const net = require('node:net'); const server = net.createServer(socket => { socket.on('data', () => { const bytes = Buffer.from('héllo\\r\\nsecond\\n'); socket.write(bytes.subarray(0, 2)); setImmediate(() => socket.write(bytes.subarray(2))); }); }); server.listen(process.argv[1]);`;
@@ -20,6 +20,19 @@ const spawnFakeMpv = (path: string, script = fakeMpv) =>
       return ChildProcessSpawner.make(() => native.spawn(ChildProcess.make(process.execPath, ["-e", script, path], { forceKillAfter: "100 millis" })));
     }),
   ).pipe(Layer.provide(NodeServices.layer));
+
+describe("the guard that ends mpv on Windows", () => {
+  it.effect("waits for the app's process, then ends that process only if it is an mpv", () =>
+    Effect.sync(() => {
+      const guard = windowsGuard(1234, 5678);
+      expect(guard).toMatchObject({ command: "powershell.exe" });
+      const script = (guard as unknown as { args: readonly string[] }).args.at(-1);
+      expect(script).toBe(
+        "try { Wait-Process -Id 1234 -ErrorAction Stop } catch {}; Get-Process -Id 5678 -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'mpv*' } | Stop-Process -Force",
+      );
+    }),
+  );
+});
 
 describe.runIf(process.platform !== "win32")("local process/socket adapter", () => {
   it.live("frames split UTF-8 lines and removes the owned socket after reaping the child", () =>

@@ -13,6 +13,7 @@ import type { IpcMain } from "electron";
 import type { PlayerHandle } from "../player/ipc";
 import { createQueue } from "../queue";
 import type { SourceDb } from "../queue/source";
+import { unplayableTracks } from "#shared/state/queue";
 import { serveAppCommands } from "./commands";
 import { COVER_DIRECTORY, MiniFsLive, safeStorageCipher } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
@@ -52,6 +53,7 @@ const makeApp = (options: AppOptions) =>
             write: (change) => run(LibraryQueries.writeQueue(change)),
             clear: () => run(LibraryQueries.clearQueue),
           },
+          onUnplayable: (tracks) => void Effect.runPromise(options.stateMirror.replace(unplayableTracks, tracks)).catch((cause) => console.error("[queue] failed to publish unplayable tracks", cause)),
         }),
       ),
       (manager) => Effect.sync(() => manager.dispose()),

@@ -39,10 +39,29 @@ const MPV_ARGS = [
  * On POSIX mpv is also given one end of a socket pair, as an IPC client it never hears from. mpv quits
  * when that connection closes, which the system does when the app's process ends, however it ends:
  * without it, an mpv whose app crashed would play on with nothing to stop it. mpv has no such option on
- * Windows.
+ * Windows, where a guard stands in for it (`windowsGuard`).
  */
 const LIFELINE_FD = 3;
 const hasLifeline = process.platform !== "win32";
+
+/**
+ * What stands in for the lifeline on Windows, which neither ends a process's children with it nor
+ * lets mpv notice that its app is gone: a PowerShell process that waits for the app's process to end,
+ * however it ends, and then ends mpv. It is started with every session and stopped with it, so it
+ * only ever acts when the app did not get to close mpv itself. It ends a process only if that is
+ * still an mpv, since by then the id may be another program's.
+ */
+export const windowsGuard = (appPid: number, mpvPid: number) =>
+  ChildProcess.make(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `try { Wait-Process -Id ${appPid} -ErrorAction Stop } catch {}; Get-Process -Id ${mpvPid} -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'mpv*' } | Stop-Process -Force`,
+    ],
+    { stdin: "ignore", stdout: "ignore", stderr: "ignore", forceKillAfter: "1 second" },
+  );
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 /** How often to look for the socket mpv creates once it has started. */
 const CONNECT_INTERVAL = "10 millis";
@@ -73,6 +92,8 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
               .pipe(Effect.mapError(() => failure("spawn")));
             // mpv reports its events to the lifeline as to any client; read away, they cannot fill it up.
             if (hasLifeline) yield* child.getOutputFd(LIFELINE_FD).pipe(Stream.runDrain, Effect.ignore, Effect.forkScoped);
+            // Playback does not depend on the guard: without PowerShell there is only none.
+            else yield* spawner.spawn(windowsGuard(process.pid, child.pid)).pipe(Effect.ignore);
             const opened = yield* Deferred.make<void, EngineError>();
             const failed = yield* Deferred.make<never, EngineError>();
             const fail = (error: EngineError) =>

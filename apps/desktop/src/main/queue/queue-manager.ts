@@ -7,6 +7,7 @@ import { SerialQueue } from "./serial-queue";
 import type { QueueStorage } from "./db-queue-storage";
 import type { PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import type { QueueSources, SourceAnchor } from "./source";
+import type { UnplayableTrack } from "#shared/state/queue";
 
 const TELEMETRY_SAVE_DELAY_MS = 5_000;
 /** A library sync changes the library in bursts; the source playing is read again at most this often. */
@@ -47,6 +48,11 @@ export class QueueManager {
   private skipsLeft = UNPLAYABLE_SKIPS;
   /** The occurrence that was started and has not played yet, and when. A restored one is not started: it was playing before. */
   private started: { key: string; at: number } | null = null;
+  /** Which way the user last stepped. An unplayable track is passed in that direction, so Previous does not bounce back off one. */
+  private direction: 1 | -1 = 1;
+  /** The songs that could not be played, by song id, for the lists to mark until they do play. */
+  private readonly unplayable = new Map<string, UnplayableTrack>();
+  private readonly onUnplayable: ((tracks: readonly UnplayableTrack[]) => void) | undefined;
   /** Counts the sources asked for and the times the queue was cleared: either replaces a request to play a source that has not run yet. */
   private sourceGeneration = 0;
   private telemetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -54,7 +60,8 @@ export class QueueManager {
   private saveChain = Promise.resolve();
   private disposed = false;
 
-  constructor(options: { player: QueuePlayerPort; sources: QueueSources; storage: QueueStorage }) {
+  constructor(options: { player: QueuePlayerPort; sources: QueueSources; storage: QueueStorage; onUnplayable?: (tracks: readonly UnplayableTrack[]) => void }) {
+    this.onUnplayable = options.onUnplayable;
     this.player = options.player;
     this.sources = options.sources;
     this.storage = options.storage;
@@ -117,6 +124,7 @@ export class QueueManager {
         if (generation !== this.sourceGeneration) return;
         if (window?.current?.key !== key) throw new Error(`Source occurrence ${key} is not playable.`);
         this.skipsLeft = UNPLAYABLE_SKIPS;
+        this.direction = 1;
         await this.playQueue({ nowPlaying: { ...clonePlaybackItem(window.current), origin: "source" }, userQueue: this.store.state.userQueue, source: { ref: { ...ref }, window } }, true);
       } catch (cause) {
         if (generation === this.sourceGeneration) throw cause;
@@ -128,6 +136,7 @@ export class QueueManager {
   select(key: string): Promise<void> {
     return this.serial.run(() => {
       this.skipsLeft = UNPLAYABLE_SKIPS;
+      this.direction = 1;
       return this.moveTo(key, true);
     });
   }
@@ -141,6 +150,7 @@ export class QueueManager {
     return this.serial.run(async () => {
       if (this.runtime?.current) return;
       this.skipsLeft = UNPLAYABLE_SKIPS;
+      this.direction = 1;
       const target = startTarget(this.store.state);
       if (target) await this.moveTo(target.key, true);
     });
@@ -165,6 +175,7 @@ export class QueueManager {
   next(): Promise<void> {
     return this.serial.run(async () => {
       this.skipsLeft = UNPLAYABLE_SKIPS;
+      this.direction = 1;
       const target = nextTarget(this.store.state);
       if (target) await this.moveTo(target.key);
     });
@@ -177,6 +188,7 @@ export class QueueManager {
       // A track that is still loading is at its start, so Previous steps back from it.
       const restarts = this.positionIn(this.store.state) > RESTART_INSTEAD_OF_PREVIOUS_SECONDS;
       const target = restarts ? undefined : previousTarget(this.store.state);
+      this.direction = target ? -1 : 1;
       if (target) await this.moveTo(target.key);
       else await this.player.restartCurrent();
     });
@@ -189,6 +201,8 @@ export class QueueManager {
       this.cancelTelemetrySave();
       // The queue goes first, so that nothing of it is left here or stored when the player refuses to stop.
       this.store.setState(() => emptyQueueState());
+      this.unplayable.clear();
+      this.onUnplayable?.([]);
       try {
         await this.clearPersistedState();
       } finally {
@@ -291,8 +305,11 @@ export class QueueManager {
     if (runtime.status === "playing" || runtime.status === "paused") {
       this.skipsLeft = UNPLAYABLE_SKIPS;
       this.started = null;
+      // From a track that plays, playback goes on forwards, whichever way the user got to it.
+      this.direction = 1;
+      if (this.unplayable.delete(runtime.current.track.id)) this.onUnplayable?.([...this.unplayable.values()]);
     } else if (runtime.trackFailed && this.started?.key === runtime.current.key && Date.now() - this.started.at <= UNPLAYABLE_WITHIN_MS) {
-      await this.skipUnplayable();
+      await this.skipUnplayable(runtime.current);
     }
   }
 
@@ -313,13 +330,18 @@ export class QueueManager {
   }
 
   /**
-   * Moves past a track that cannot be played, as Next would. At the end of the queue, and once too
-   * many in a row have failed, the queue stays where it is, with the player's failure showing.
+   * Moves past `failed`, a track that cannot be played, the way the user was going: as Next would, or as
+   * Previous would after a step back. At either end of the queue, and once too many in a row have
+   * failed, the queue stays where it is, with the player's failure showing. Either way the track is
+   * marked for the lists.
    */
-  private async skipUnplayable(): Promise<void> {
-    const target = this.skipsLeft > 0 ? nextTarget(this.store.state) : undefined;
+  private async skipUnplayable(failed: PlaybackItem): Promise<void> {
+    const state = this.store.state;
+    const target = this.skipsLeft > 0 ? (this.direction === 1 ? nextTarget(state) : previousTarget(state)) : undefined;
     // Having given up, the queue stays until the user moves it: a track queued later does not start by itself.
     this.skipsLeft = target ? this.skipsLeft - 1 : 0;
+    this.unplayable.set(failed.track.id, { id: failed.track.id, title: failed.track.title, skipped: target !== undefined, at: Date.now() });
+    this.onUnplayable?.([...this.unplayable.values()]);
     if (target) await this.moveTo(target.key);
   }
 

@@ -655,6 +655,51 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("passes an unplayable track the way the user was going, and marks it until it plays", async () => {
+    const player = new FakePlayer();
+    const marked: string[][] = [];
+    const manager = new QueueManager({
+      player,
+      sources: new FakeSources({ album: ["a", "b", "c", "d"] }),
+      storage: new MemoryStorage(),
+      onUnplayable: (tracks) => marked.push(tracks.map(({ id, skipped }) => `${id}:${skipped ? "skipped" : "stayed"}`)),
+    });
+    await manager.playSource(album, "d");
+    player.start(occurrence("d"), 1);
+    await flush();
+
+    // Previous lands on a track that cannot be played: the queue goes on backwards, not back to "d".
+    await manager.previous();
+    player.fail(occurrence("c"), 2);
+    await flush();
+    expect(selections(player)).toEqual(["d", "c", "b"]);
+    expect(marked.at(-1)).toEqual(["c:skipped"]);
+
+    // From a track that plays, playback goes forwards again: the next failure is passed that way.
+    player.start(occurrence("b"), 3);
+    await flush();
+    player.fail(occurrence("c"), 4);
+    await flush();
+    expect(selections(player)).toEqual(["d", "c", "b", "d"]);
+
+    // At the start of the queue there is nothing before it to go on to: it stays, and is marked as such.
+    player.start(occurrence("b"), 5);
+    await flush();
+    await manager.previous();
+    player.fail(occurrence("a"), 6);
+    await flush();
+    expect(manager.store.state.nowPlaying?.key).toBe("a");
+    expect(marked.at(-1)).toEqual(["c:skipped", "a:stayed"]);
+
+    // A marked track that plays after all is no longer marked, and clearing the queue clears the rest.
+    player.start(occurrence("a"), 7);
+    await flush();
+    expect(marked.at(-1)).toEqual(["c:skipped"]);
+    await manager.clear();
+    expect(marked.at(-1)).toEqual([]);
+    manager.dispose();
+  });
+
   it("stays on a failure at the end of the queue, also when a track is queued afterwards", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b"] }), storage: new MemoryStorage() });
