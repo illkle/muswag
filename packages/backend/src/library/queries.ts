@@ -1,10 +1,12 @@
 import {
+  ALBUM_ORDER,
   albumOccurrenceKey,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
   playlistOccurrenceKey,
   playlists,
   queueItems,
+  queueResume,
   queueState,
   songs,
   type LibrarySort,
@@ -31,13 +33,13 @@ const orderColumns = (sort: LibrarySort) => LIBRARY_ORDERS[sort].map((key) => so
 type Reads = Pick<Database, "select" | "$count">;
 const found = (index: number) => (index < 0 ? null : index);
 
-/** An album's songs in playback order. Albums are small, so the whole album is read. */
+/** An album's songs in `ALBUM_ORDER`, which is how the album page lists them. Albums are small, so the whole album is read. */
 const openAlbum = (db: Reads, albumId: string, key: string | null) =>
   db
     .select()
     .from(songs)
     .where(eq(songs.albumId, albumId))
-    .orderBy(asc(songs.discNumber), asc(songs.track), asc(songs.id))
+    .orderBy(...ALBUM_ORDER.map((column) => asc(songs[column])))
     .pipe(
       Effect.map((rows) => {
         const items = rows.map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
@@ -172,7 +174,7 @@ export const LibraryQueries = {
       ),
     ),
 
-  /** The playback queue as stored: its single state row, if any, and its occurrences. */
+  /** The playback queue as stored: its single state row, if any, its occurrences, and where playback resumes. */
   loadQueue: Db.use((db) =>
     Effect.all({
       state: db
@@ -181,11 +183,20 @@ export const LibraryQueries = {
         .where(eq(queueState.id, 1))
         .pipe(Effect.map((rows) => rows[0] ?? null)),
       items: db.select().from(queueItems),
+      resumePositionSeconds: db
+        .select()
+        .from(queueResume)
+        .where(eq(queueResume.id, 1))
+        .pipe(Effect.map((rows) => rows[0]?.positionSeconds ?? 0)),
     }),
   ),
 
-  /** Applies a change to the stored queue in one write, and returns the position renderers can await. */
-  writeQueue: (change: { readonly upsert: ReadonlyArray<QueueItemRow>; readonly remove: ReadonlyArray<string>; readonly state: QueueStateRow | null }) =>
+  /**
+   * Applies a change to the stored queue in one write; `null` leaves the state row or the resume
+   * position as it is. The resume position is in a table renderers do not mirror, so a change of it
+   * alone sends them nothing.
+   */
+  writeQueue: (change: { readonly upsert: ReadonlyArray<QueueItemRow>; readonly remove: ReadonlyArray<string>; readonly state: QueueStateRow | null; readonly resumePositionSeconds: number | null }) =>
     write(
       Db.use((db) =>
         Effect.gen(function* () {
@@ -197,9 +208,11 @@ export const LibraryQueries = {
               .onConflictDoUpdate({ target: queueItems.key, set: { list: row.list, position: row.position, track: row.track } });
           }
           if (change.state) yield* db.insert(queueState).values(change.state).onConflictDoUpdate({ target: queueState.id, set: change.state });
+          const positionSeconds = change.resumePositionSeconds;
+          if (positionSeconds !== null) yield* db.insert(queueResume).values({ id: 1, positionSeconds }).onConflictDoUpdate({ target: queueResume.id, set: { positionSeconds } });
         }),
       ).pipe(Effect.andThen(position)),
     ),
 
-  clearQueue: write(Db.use((db) => Effect.all([db.delete(queueItems), db.delete(queueState)], { discard: true }))),
+  clearQueue: write(Db.use((db) => Effect.all([db.delete(queueItems), db.delete(queueState), db.delete(queueResume)], { discard: true }))),
 };

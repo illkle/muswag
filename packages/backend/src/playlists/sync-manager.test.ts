@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { it as effectIt } from "@effect/vitest";
 import {
   playlists,
+  SubsonicApiError,
   type CreatePlaylistArgs,
   type CreatePlaylistInput,
   type DeletePlaylistArgs,
@@ -14,7 +15,7 @@ import {
 import { Clock, Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
+import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
 import { Db, write } from "../db/database.js";
 import { rowOf, seed, TestDatabase } from "../test/index.js";
 import { PlaylistCommands, PlaylistEdits } from "./commands.js";
@@ -56,7 +57,14 @@ class FakePlaylistApi {
   getPlaylistStarted: (() => void) | undefined;
   getPlaylistGate: Promise<void> | undefined;
   getPlaylistHook: ((id: string, callNumber: number) => void) | undefined;
+  /** The Subsonic error code the server answers a change to the playlist of this name with. */
+  readonly refusals = new Map<string, number>();
   nextId = 1;
+
+  private refusal(method: string, name: string | undefined) {
+    const code = name === undefined ? undefined : this.refusals.get(name);
+    return code === undefined ? undefined : new SubsonicApiError({ method, code, message: `server said ${code}` });
+  }
 
   getPlaylists = Clock.currentTimeMillis.pipe(
     Effect.flatMap((now) => {
@@ -84,6 +92,8 @@ class FakePlaylistApi {
   }
 
   createPlaylist(args: CreatePlaylistArgs) {
+    const refusal = this.refusal("createPlaylist", args.name);
+    if (refusal) return Effect.fail(refusal);
     return Effect.promise(async () => {
       if (this.createError) throw this.createError;
       this.createPlaylistStarted?.();
@@ -102,6 +112,8 @@ class FakePlaylistApi {
   }
 
   updatePlaylist(args: UpdatePlaylistArgs) {
+    const refusal = this.refusal("updatePlaylist", args.name);
+    if (refusal) return Effect.fail(refusal);
     return Effect.sync(() => {
       this.updatePlaylistCalls.push(args);
       const playlist = this.playlists.get(args.playlistId);
@@ -118,6 +130,8 @@ class FakePlaylistApi {
   }
 
   deletePlaylist({ id }: DeletePlaylistArgs) {
+    const refusal = this.refusal("deletePlaylist", this.playlists.get(id)?.name);
+    if (refusal) return Effect.fail(refusal);
     return Effect.sync(() => {
       this.playlists.delete(id);
       return { status: "ok" as const, version: "1.16.1" };
@@ -284,6 +298,125 @@ describe("playlist sync manager", () => {
     expect(await db.get(playlist.id)).toMatchObject({ serverId: null, base: null });
     expect((await db.get(playlist.id))?.local?.name).toBe("Still local");
     expect(manager.getStatus().error).toBe("create failed");
+    manager.destroy();
+  });
+
+  it("undoes a change the server refuses, tells the user, and still pushes the playlists after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Theirs", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Mine", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    // Mutations run in the order of the local ids, so the refused one comes first.
+    await db.rename("server-1", "Not allowed");
+    await db.rename("server-2", "Mine, renamed");
+    api.refusals.set("Not allowed", 50);
+    const status = await manager.sync();
+    await settle();
+
+    expect(api.playlists.get("server-2")?.name).toBe("Mine, renamed");
+    expect(await db.get("server-1")).toMatchObject({ local: { name: "Theirs" }, base: { name: "Theirs" } });
+    expect(status).toMatchObject({ state: "idle", error: 'The server refused the changes to the playlist "Not allowed", which were undone (server said 50)' });
+    // Nothing is left to push, so nothing is retried.
+    expect(manager.getStatus().state).toBe("idle");
+
+    api.updatePlaylistCalls.length = 0;
+    expect((await manager.sync()).error).toBeNull();
+    expect(api.updatePlaylistCalls).toEqual([]);
+    manager.destroy();
+  });
+
+  it("keeps an edit made while the server was refusing the one before it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Theirs", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-1", "Not allowed");
+    api.refusals.set("Not allowed", 50);
+    // The user goes on editing while the rename is with the server, which refuses it this once.
+    const refuse = api.updatePlaylist.bind(api);
+    api.updatePlaylist = ((args) => {
+      api.updatePlaylist = refuse;
+      return Effect.promise(() => db.addEntry("server-1", "song-b")).pipe(Effect.andThen(refuse(args)), Effect.ensuring(Effect.sync(() => api.refusals.clear())));
+    }) as typeof api.updatePlaylist;
+    await manager.sync();
+    await waitForCompletedSync(manager);
+    await settle();
+
+    // What was refused was no longer what the playlist held, so it was not undone with the edit
+    // made meanwhile: both were asked about again, and went through.
+    expect((await db.get("server-1"))?.local).toMatchObject({ name: "Not allowed", entries: [{ songId: "song-a" }, { songId: "song-b" }] });
+    expect(api.playlists.get("server-1")).toMatchObject({ name: "Not allowed", songIds: ["song-a", "song-b"] });
+    manager.destroy();
+  });
+
+  it("keeps a new playlist the server made, when it refuses what is sent after", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const created = await db.create({ name: "Mix", songIds: ["song-a"] });
+    api.updatePlaylist = ((args) => Effect.fail(new SubsonicApiError({ method: "updatePlaylist", code: 50, message: `server said 50 to ${args.playlistId}` }))) as typeof api.updatePlaylist;
+    const status = await manager.sync();
+    await settle();
+
+    // The server has the playlist, so it is not removed here, and not reported as removed.
+    expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Mix"]);
+    expect(status.error ?? "").not.toContain("removed");
+    expect(await db.get(created.id)).toMatchObject({ serverId: "server-1", local: { name: "Mix" } });
+    manager.destroy();
+  });
+
+  it("removes a new playlist the server refuses to create, and creates the one after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    api.refusals.set("Not allowed", 50);
+    const [refused, accepted] = [await db.create({ name: "Not allowed", songIds: ["song-a"] }), await db.create({ name: "Allowed" })].sort((left, right) => left.id.localeCompare(right.id));
+    // Whichever of the two is pushed first, the other is pushed too.
+    const [first, second] = refused!.local!.name === "Not allowed" ? [refused!, accepted!] : [accepted!, refused!];
+    const status = await manager.sync();
+
+    expect(await db.get(first.id)).toBeUndefined();
+    expect((await db.get(second.id))?.serverId).toBe("server-1");
+    expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Allowed"]);
+    expect(status.error).toBe('The server refused the new playlist "Not allowed", which was removed (server said 50)');
+    manager.destroy();
+  });
+
+  it("keeps a change the server failed on, retries it, and still pushes the playlists after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: [] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-1", "One, renamed");
+    await db.rename("server-2", "Two, renamed");
+    // A generic error: the server failed, which says nothing about the change.
+    api.refusals.set("One, renamed", 0);
+    const failed = await manager.sync();
+
+    expect(failed).toMatchObject({ state: "error", error: "server said 0" });
+    expect(api.playlists.get("server-2")?.name).toBe("Two, renamed");
+    expect((await db.get("server-1"))?.local?.name).toBe("One, renamed");
+
+    api.refusals.clear();
+    expect((await manager.sync()).error).toBeNull();
+    expect(api.playlists.get("server-1")?.name).toBe("One, renamed");
     manager.destroy();
   });
 
@@ -614,6 +747,72 @@ describe("playlist sync manager", () => {
       Effect.provide(
         PlaylistSyncManagerLive({ intervalMs: 0, debounceMs: 10_000, retryMs: 20_000, maxRetryMs: 60_000 }).pipe(
           Layer.provide(Layer.mergeAll(databaseLayer(), Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService))),
+        ),
+      ),
+    );
+  });
+
+  effectIt.effect("runs one more pass at once after a stale mutation, and slows down when the passes stay stale", () => {
+    // Answers at once, so that a pass runs to its end within the instant the test clock stands at.
+    const api = new (class extends FakePlaylistApi {
+      override getPlaylist({ id }: GetPlaylistArgs) {
+        return Effect.sync(() => {
+          this.getPlaylistCalls.push(id);
+          this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
+          return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(this.playlists.get(id)!) };
+        });
+      }
+    })();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+
+    return Effect.gen(function* () {
+      const manager = yield* PlaylistSyncManager;
+      const commands = yield* PlaylistCommands;
+      yield* manager.sync;
+      yield* commands.addEntries("server-1", ["song-local"]);
+      api.getPlaylistCalls.length = 0;
+      api.getPlaylistsCallTimes.length = 0;
+      // A pass reads the playlist three times: to merge, just before replacing it, and to verify.
+      // Someone else adds a song before every second read, so every pass finds its replacement stale.
+      api.getPlaylistHook = (id, callNumber) => {
+        if (callNumber % 3 === 2) api.playlists.get(id)!.songIds.push(`song-remote-${callNumber}`);
+      };
+
+      // Waits, in real time, for the pass that makes it `lists` listings and for what the manager does next.
+      const turn = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      const passed = (lists: number, state: PlaylistSyncStatus["state"]) =>
+        Effect.gen(function* () {
+          while (api.getPlaylistsCallTimes.length < lists || (yield* manager.status).state !== state) yield* turn;
+        });
+
+      yield* manager.sync;
+      yield* passed(4, "scheduled");
+      // The pass and the one it asked for, each listing the playlists twice. The third has to wait.
+      expect(api.getPlaylistsCallTimes).toEqual([0, 0, 0, 0]);
+
+      yield* TestClock.adjust(20_000);
+      yield* passed(6, "scheduled");
+      yield* TestClock.adjust(40_000);
+      yield* passed(8, "scheduled");
+      yield* TestClock.adjust(60_000);
+      yield* passed(10, "scheduled");
+      expect([...new Set(api.getPlaylistsCallTimes)]).toEqual([0, 20_000, 60_000, 120_000]);
+      expect(api.getPlaylistsCallTimes).toHaveLength(10);
+      expect(api.updatePlaylistCalls).toEqual([]);
+
+      // Once the playlist is left alone the change goes through, and the passes stop.
+      api.getPlaylistHook = undefined;
+      yield* TestClock.adjust(60_000);
+      yield* passed(12, "idle");
+      expect(api.playlists.get("server-1")?.songIds.at(-1)).toBe("song-local");
+      yield* TestClock.adjust(600_000);
+      yield* turn;
+      expect(api.getPlaylistsCallTimes).toHaveLength(12);
+    }).pipe(
+      Effect.provide(
+        PlaylistSyncManagerLive({ intervalMs: 0, debounceMs: 0, retryMs: 20_000, maxRetryMs: 60_000 }).pipe(
+          Layer.provideMerge(databaseLayer()),
+          Layer.provide(Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService)),
         ),
       ),
     );

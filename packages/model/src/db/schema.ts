@@ -19,48 +19,42 @@ export const artists = sqliteTable("artists", {
   averageRating: real(),
   coverArt: text(),
   artistImageUrl: text(),
-  /** Cached cover file, relative to the app data directory. */
+  /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
   coverArtPath: text(),
-  coverArtSourceId: text(),
 });
 
-export const albums = sqliteTable(
-  "albums",
-  {
-    id: text().primaryKey(),
-    name: text().notNull(),
-    artist: text(),
-    artistId: text(),
-    coverArt: text(),
-    created: text().notNull(),
-    duration: real().notNull(),
-    genre: text(),
-    playCount: real(),
-    songCount: integer().notNull(),
-    starred: text(),
-    year: integer(),
-    version: text(),
-    played: text(),
-    userRating: real(),
-    recordLabels: json<ReadonlyArray<RecordLabel>>(),
-    musicBrainzId: text(),
-    genres: json<ReadonlyArray<ItemGenre>>(),
-    artists: json<ReadonlyArray<ArtistID3>>(),
-    displayArtist: text(),
-    releaseTypes: json<ReadonlyArray<string>>(),
-    moods: json<ReadonlyArray<string>>(),
-    sortName: text(),
-    originalReleaseDate: json<ItemDate>(),
-    releaseDate: json<ItemDate>(),
-    isCompilation: integer({ mode: "boolean" }),
-    explicitStatus: text(),
-    discTitles: json<ReadonlyArray<DiscTitle>>(),
-    /** Cached cover file, relative to the app data directory. */
-    coverArtPath: text(),
-    coverArtSourceId: text(),
-  },
-  (table) => [index("albums_artist_id").on(table.artistId)],
-);
+export const albums = sqliteTable("albums", {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  artist: text(),
+  artistId: text(),
+  coverArt: text(),
+  created: text().notNull(),
+  duration: real().notNull(),
+  genre: text(),
+  playCount: real(),
+  songCount: integer().notNull(),
+  starred: text(),
+  year: integer(),
+  version: text(),
+  played: text(),
+  userRating: real(),
+  recordLabels: json<ReadonlyArray<RecordLabel>>(),
+  musicBrainzId: text(),
+  genres: json<ReadonlyArray<ItemGenre>>(),
+  artists: json<ReadonlyArray<ArtistID3>>(),
+  displayArtist: text(),
+  releaseTypes: json<ReadonlyArray<string>>(),
+  moods: json<ReadonlyArray<string>>(),
+  sortName: text(),
+  originalReleaseDate: json<ItemDate>(),
+  releaseDate: json<ItemDate>(),
+  isCompilation: integer({ mode: "boolean" }),
+  explicitStatus: text(),
+  discTitles: json<ReadonlyArray<DiscTitle>>(),
+  /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
+  coverArtPath: text(),
+});
 
 export const songs = sqliteTable(
   "songs",
@@ -121,17 +115,13 @@ export const songs = sqliteTable(
  * A playlist as the user sees it (`local`) and as it was last synced with the server (`base`).
  * `local: null` is a tombstone for a playlist awaiting deletion on the server.
  */
-export const playlists = sqliteTable(
-  "playlists",
-  {
-    id: text().primaryKey(),
-    serverId: text(),
-    base: json<PlaylistState>(),
-    local: json<PlaylistState>(),
-    revision: integer().notNull(),
-  },
-  (table) => [index("playlists_server_id").on(table.serverId)],
-);
+export const playlists = sqliteTable("playlists", {
+  id: text().primaryKey(),
+  serverId: text(),
+  base: json<PlaylistState>(),
+  local: json<PlaylistState>(),
+  revision: integer().notNull(),
+});
 
 // ---- The playback queue ----
 
@@ -148,17 +138,25 @@ export const queueItems = sqliteTable("queue_items", {
   track: json<Song>().notNull(),
 });
 
-/** The queue's single row (`id` 1): what is playing, the source it plays from, and where to resume. */
+/** The queue's single row (`id` 1): what is playing and the source it plays from. */
 export const queueState = sqliteTable("queue_state", {
   id: integer().primaryKey(),
   nowPlayingKey: text(),
   nowPlayingOrigin: text({ enum: ["source", "user"] }).$type<NowPlaying["origin"]>(),
   source: json<{ ref: QueueSourceRef; cursor: SourceCursor; hasMore: boolean }>(),
-  /** Where playback resumes after a restart. Restores always start paused, so play state is not kept. */
-  resumePositionSeconds: real().notNull(),
 });
 
 // ---- Main-only tables ----
+
+/**
+ * Where playback resumes after a restart, in a single row (`id` 1). It is written every few seconds
+ * while a track plays, so it is kept out of the tables renderers mirror. Restores always start paused,
+ * so play state is not kept.
+ */
+export const queueResume = sqliteTable("queue_resume", {
+  id: integer().primaryKey(),
+  positionSeconds: real().notNull(),
+});
 
 export const syncState = sqliteTable("sync_state", {
   id: integer().primaryKey(),
@@ -167,17 +165,11 @@ export const syncState = sqliteTable("sync_state", {
   lastQuickSyncAt: text(),
 });
 
-/** Cover files on disk, keyed by the image they hold. */
-export const covers = sqliteTable("covers", {
-  key: text().primaryKey(),
-  fileName: text().notNull(),
-});
-
 export const credentials = sqliteTable("credentials", {
   id: integer().primaryKey(),
   url: text().notNull(),
   username: text().notNull(),
-  /** Encrypted with the OS keychain when `encrypted`, otherwise plain text. */
+  /** Encrypted with the OS keychain when `encrypted`, otherwise plain text. Empty once the server has refused it. */
   password: text().notNull(),
   encrypted: integer({ mode: "boolean" }).notNull(),
 });
@@ -189,7 +181,5 @@ export type Album = typeof albums.$inferSelect;
 export type Artist = typeof artists.$inferSelect;
 export type Song = typeof songs.$inferSelect;
 export type PlaylistRow = typeof playlists.$inferSelect;
-export type SyncStateRow = typeof syncState.$inferSelect;
 export type QueueItemRow = typeof queueItems.$inferSelect;
 export type QueueStateRow = typeof queueState.$inferSelect;
-export type CoverRow = typeof covers.$inferSelect;

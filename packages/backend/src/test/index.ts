@@ -2,18 +2,21 @@ import { albums, artists, playlists, songs, toRow, toSongRow, type AlbumID3, typ
 import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 
-import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
+import { makeSubsonicAPI, SubsonicAPI, type SubsonicApiConfig, type SubsonicApiService } from "../api/subsonic-api.js";
+import { MiniFs } from "../covers/cover-manager.js";
 import { DatabaseLive, Db, write } from "../db/database.js";
 
 /** A migrated in-memory database with its mirror server. */
 export const TestDatabase = () => DatabaseLive(":memory:");
+
+/** Cover files that are never written: for tests that sync a library and do not look at covers. */
+export const NoCoverFiles = Layer.succeed(MiniFs, { writeFile: () => Effect.void, remove: () => Effect.void, exists: () => Effect.succeed(false) });
 
 const unexpected = (method: string): Effect.Effect<never> => Effect.die(new Error(`Unexpected ${method} call`));
 
 /** An API whose every method dies unless overridden. */
 export function makeApi(overrides: Partial<SubsonicApiService> = {}): SubsonicApiService {
   return {
-    baseUrl: new URL("https://music.example/rest/"),
     username: "alice",
     ping: unexpected("ping"),
     getAlbum: () => unexpected("getAlbum"),
@@ -30,6 +33,9 @@ export function makeApi(overrides: Partial<SubsonicApiService> = {}): SubsonicAp
 }
 
 export const apiLayer = (overrides: Partial<SubsonicApiService> = {}) => Layer.succeed(SubsonicAPI, makeApi(overrides));
+
+/** The real client against the server of `config`, without a session around it. */
+export const SubsonicAPILive = (config: SubsonicApiConfig) => Layer.effect(SubsonicAPI, makeSubsonicAPI(config));
 
 export const apiAlbum = (id: string, overrides: Partial<AlbumID3> = {}): AlbumID3 => ({
   id,

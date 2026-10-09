@@ -296,6 +296,8 @@ export class SubsonicConfigError extends Data.TaggedError("SubsonicConfigError")
 export class SubsonicHttpError extends Data.TaggedError("SubsonicHttpError")<{
   readonly method: string;
   readonly status: number;
+  /** Where a redirect points. */
+  readonly location?: string;
   readonly message: string;
 }> {}
 

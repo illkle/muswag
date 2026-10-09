@@ -13,11 +13,12 @@ import {
   type RefreshStatTarget,
   type SyncMode,
 } from "@muswag/model";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Layer, SubscriptionRef } from "effect";
 
-import SubsonicAPI from "../api/subsonic-api.js";
+import { SubsonicAPI } from "../api/subsonic-api.js";
+import { MiniFs, removeCoverFiles } from "../covers/cover-manager.js";
 import { Db, write } from "../db/database.js";
 import { chunks, excludedSet, STATEMENT_IDS, STATEMENT_ROWS } from "../db/upsert.js";
 
@@ -35,7 +36,7 @@ export class SyncAlreadyRunning extends Data.TaggedError("SyncAlreadyRunning")<{
 /** Downloads the library from the server into the database and keeps play statistics fresh. */
 export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend/LibrarySync", {
   make: Effect.gen(function* () {
-    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror>();
+    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror | MiniFs>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
     const status = yield* SubscriptionRef.make<LibrarySyncStatus>(IDLE_LIBRARY_SYNC);
@@ -100,8 +101,11 @@ const failureMessage = (cause: Cause.Cause<unknown>) => {
 
 const ALBUM_STAT_FIELDS = ["playCount", "played", "starred", "userRating"] as const;
 const SONG_STAT_FIELDS = ["playCount", "played", "starred", "userRating", "averageRating", "bookmarkPosition"] as const;
-/** Cover fields are maintained by the cover manager, not the server. */
-const COVER_FIELDS = ["coverArtPath", "coverArtSourceId"] as const;
+/**
+ * The cover file is the cover manager's. An update keeps it for as long as the server names the same
+ * image, and forgets it when the image is another one, so that it is downloaded again.
+ */
+const keptCoverPath = (table: typeof albums | typeof artists) => sql`CASE WHEN excluded.${sql.identifier(table.coverArt.name)} IS ${table.coverArt} THEN ${table.coverArtPath} END`;
 
 const statFields = <K extends string>(source: object, fields: ReadonlyArray<K>) => {
   const values = source as Record<string, unknown>;
@@ -170,11 +174,16 @@ const syncArtistsFromIndexes = (ifModifiedSince: number) =>
             yield* db
               .insert(artists)
               .values([...rows])
-              .onConflictDoUpdate({ target: artists.id, set: excludedSet(artists, COVER_FIELDS) });
+              .onConflictDoUpdate({ target: artists.id, set: { ...excludedSet(artists), coverArtPath: keptCoverPath(artists) } });
           }
-          for (const ids of chunks(stale, STATEMENT_IDS)) yield* db.delete(artists).where(inArray(artists.id, [...ids]));
+          return yield* Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) =>
+            db
+              .delete(artists)
+              .where(inArray(artists.id, [...ids]))
+              .returning({ cover: artists.coverArtPath }),
+          );
         }),
-      );
+      ).pipe(Effect.flatMap((removed) => removeCoverFiles(removed.flat().map(({ cover }) => cover))));
     }
 
     yield* db
@@ -206,16 +215,17 @@ const syncAlbumList = (mode: SyncMode) =>
     const removed = [...missing];
     if (removed.length === 0) return;
     yield* write(
-      Effect.forEach(
-        chunks(removed, STATEMENT_IDS),
-        (ids) =>
-          Effect.gen(function* () {
-            yield* db.delete(albums).where(inArray(albums.id, [...ids]));
-            yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
-          }),
-        { discard: true },
+      Effect.forEach(chunks(removed, STATEMENT_IDS), (ids) =>
+        Effect.gen(function* () {
+          const gone = yield* db
+            .delete(albums)
+            .where(inArray(albums.id, [...ids]))
+            .returning({ cover: albums.coverArtPath });
+          yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
+          return gone;
+        }),
       ),
-    );
+    ).pipe(Effect.flatMap((gone) => removeCoverFiles(gone.flat().map(({ cover }) => cover))));
   });
 
 const syncAlbum = (incoming: AlbumID3, mode: SyncMode) =>
@@ -254,7 +264,7 @@ const syncAlbum = (incoming: AlbumID3, mode: SyncMode) =>
         yield* db
           .insert(albums)
           .values(row)
-          .onConflictDoUpdate({ target: albums.id, set: excludedSet(albums, COVER_FIELDS) });
+          .onConflictDoUpdate({ target: albums.id, set: { ...excludedSet(albums), coverArtPath: keptCoverPath(albums) } });
         // Songs the album no longer lists are gone; the rest are updated in place.
         const keep = new Set(incomingSongs.map(({ id }) => id));
         const stale = (yield* db.select({ id: songs.id }).from(songs).where(eq(songs.albumId, incoming.id))).map(({ id }) => id).filter((id) => !keep.has(id));

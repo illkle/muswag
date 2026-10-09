@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Db, LibrarySync } from "@muswag/backend";
+import { NoCoverFiles } from "@muswag/backend/testing";
 import { albums, songs } from "@muswag/model";
 import { Effect, Layer, ManagedRuntime } from "effect";
 
@@ -48,7 +49,7 @@ async function withNavidromeLibrary(
       connection,
       sync: async (mode) => {
         // Library replacement starts a new container with a new port.
-        const runtime = ManagedRuntime.make(LibrarySync.layer.pipe(Layer.provide(Layer.mergeAll(db.layer, subsonicLayerFor(connection)))));
+        const runtime = ManagedRuntime.make(LibrarySync.layer.pipe(Layer.provide(Layer.mergeAll(db.layer, subsonicLayerFor(connection), NoCoverFiles))));
         try {
           await runtime.runPromise(LibrarySync.use((library) => library.sync(mode)));
         } finally {

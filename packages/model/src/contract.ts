@@ -16,7 +16,8 @@ export type SessionCredentials = typeof SessionCredentials.Type;
 
 export const AuthSnapshot = Schema.Union([
   Schema.TaggedStruct("Initializing", {}),
-  Schema.TaggedStruct("LoggedOut", {}),
+  // `expired` names the account of a session the server ended by refusing its password.
+  Schema.TaggedStruct("LoggedOut", { expired: Schema.optional(Schema.Struct({ url: Schema.String, username: Schema.String })) }),
   Schema.TaggedStruct("LoggedIn", { url: Schema.String, username: Schema.String }),
 ]);
 export type AuthSnapshot = typeof AuthSnapshot.Type;
@@ -35,6 +36,7 @@ export const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, error: null
 
 export const PlaylistSyncStatus = Schema.Struct({
   state: Schema.Literals(["idle", "scheduled", "syncing", "error"]),
+  /** What the last pass has to say: why it failed, or which local changes the server refused and it undid. */
   error: Schema.NullOr(Schema.String),
   lastSyncedAt: Schema.NullOr(Schema.String),
 });
@@ -44,8 +46,8 @@ export const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: nu
 export const RefreshStatTarget = Schema.Struct({ type: Schema.Literals(["album", "playlist"]), id: Id });
 export type RefreshStatTarget = typeof RefreshStatTarget.Type;
 
-export const CoverTarget = Schema.Struct({ type: Schema.Literals(["album", "artist"]), id: Id, coverArtId: Schema.NullOr(Id) });
-export type CoverTarget = typeof CoverTarget.Type;
+/** What a cover is of. `coverArtId` is the server's name for the image (`coverArt` on the row), which changes when the image does. */
+export type CoverTarget = { readonly type: "album" | "artist"; readonly id: string; readonly coverArtId: string | null };
 
 export const CreatePlaylistInput = Schema.Struct({ name: Text, comment: Schema.optional(Text), public: Schema.optional(Schema.Boolean), songIds: Schema.optional(Ids) });
 export type CreatePlaylistInput = typeof CreatePlaylistInput.Type;

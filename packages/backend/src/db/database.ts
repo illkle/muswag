@@ -6,11 +6,10 @@ import { migrate } from "drizzle-orm/sqlite-core/effect";
 import { Context, Effect, Layer } from "effect";
 
 import { migrations } from "./migrations.generated.js";
-import { fillSortKeys } from "./sort-keys.js";
 
 export type Database = EffectSQLiteNodeDatabase;
 
-/** The library database, through Drizzle. Writes to mirrored tables go through `Library.write`. */
+/** The library database, through Drizzle. Writes to mirrored tables go through `write`, below. */
 export class Db extends Context.Service<Db, Database>()("@muswag/backend/Db") {}
 
 const DbLive = Layer.effect(
@@ -21,7 +20,6 @@ const DbLive = Layer.effect(
     // migration would require an unknown context instead of the one the database already has.
     const session = (db as unknown as { readonly session: Parameters<typeof migrate>[1] }).session;
     yield* migrate(migrations, session) as Effect.Effect<undefined, Effect.Error<ReturnType<typeof migrate>>>;
-    yield* fillSortKeys(db);
     return db;
   }),
 );
@@ -32,11 +30,8 @@ const DbLive = Layer.effect(
  */
 const MirrorLive = Layer.effect(SqliteMirror, SqliteMirror.make({ tables: MIRRORED_TABLES, autoFlushInterval: "2 seconds", readOnly: true })).pipe(Layer.provide(DbLive));
 
-/** The migrated database and its mirror server, on top of a SQLite client. */
-export const DatabaseFromClient = Layer.merge(DbLive, MirrorLive);
-
-/** Opens (or creates) the database at `filename` and migrates it. */
-export const DatabaseLive = (filename: string) => DatabaseFromClient.pipe(Layer.provideMerge(SqliteClient.layer({ filename })));
+/** Opens (or creates) the database at `filename`, migrates it and starts its mirror server. */
+export const DatabaseLive = (filename: string) => Layer.merge(DbLive, MirrorLive).pipe(Layer.provideMerge(SqliteClient.layer({ filename })));
 
 /**
  * Commits `effect` in one transaction and pushes the resulting changes to renderers. Every write to a

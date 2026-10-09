@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 
 import { LibrarySync } from "@muswag/backend";
-import { apiAlbum, apiLayer, apiSong, idsOf, TestDatabase } from "@muswag/backend/testing";
+import { apiAlbum, apiLayer, apiSong, idsOf, NoCoverFiles, TestDatabase } from "@muswag/backend/testing";
 import { albums, songs } from "@muswag/model";
 import { Effect, Layer } from "effect";
 
@@ -21,7 +21,7 @@ describe("sync storage benchmark", () => {
       Effect.gen(function* () {
         yield* LibrarySync.use((library) => library.sync("full"));
         return { albums: yield* idsOf(albums), songs: yield* idsOf(songs) };
-      }).pipe(Effect.provide(LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), api))))),
+      }).pipe(Effect.provide(LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), api, NoCoverFiles))))),
     );
     const elapsedMs = performance.now() - startedAt;
 

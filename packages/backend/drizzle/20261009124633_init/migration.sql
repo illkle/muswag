@@ -27,8 +27,7 @@ CREATE TABLE `albums` (
 	`isCompilation` integer,
 	`explicitStatus` text,
 	`discTitles` text,
-	`coverArtPath` text,
-	`coverArtSourceId` text
+	`coverArtPath` text
 );
 --> statement-breakpoint
 CREATE TABLE `artists` (
@@ -39,13 +38,7 @@ CREATE TABLE `artists` (
 	`averageRating` real,
 	`coverArt` text,
 	`artistImageUrl` text,
-	`coverArtPath` text,
-	`coverArtSourceId` text
-);
---> statement-breakpoint
-CREATE TABLE `covers` (
-	`key` text PRIMARY KEY,
-	`fileName` text NOT NULL
+	`coverArtPath` text
 );
 --> statement-breakpoint
 CREATE TABLE `credentials` (
@@ -56,11 +49,6 @@ CREATE TABLE `credentials` (
 	`encrypted` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `player_queue` (
-	`id` integer PRIMARY KEY,
-	`snapshot` text NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE `playlists` (
 	`id` text PRIMARY KEY,
 	`serverId` text,
@@ -69,9 +57,29 @@ CREATE TABLE `playlists` (
 	`revision` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `queue_items` (
+	`key` text PRIMARY KEY,
+	`list` text NOT NULL,
+	`position` integer NOT NULL,
+	`track` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `queue_resume` (
+	`id` integer PRIMARY KEY,
+	`positionSeconds` real NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `queue_state` (
+	`id` integer PRIMARY KEY,
+	`nowPlayingKey` text,
+	`nowPlayingOrigin` text,
+	`source` text
+);
+--> statement-breakpoint
 CREATE TABLE `songs` (
 	`id` text PRIMARY KEY,
 	`title` text NOT NULL,
+	`titleSortKey` text DEFAULT '' NOT NULL,
 	`isDir` integer NOT NULL,
 	`album` text,
 	`albumId` text,
@@ -125,6 +133,5 @@ CREATE TABLE `sync_state` (
 	`lastQuickSyncAt` text
 );
 --> statement-breakpoint
-CREATE INDEX `albums_artist_id` ON `albums` (`artistId`);--> statement-breakpoint
-CREATE INDEX `playlists_server_id` ON `playlists` (`serverId`);--> statement-breakpoint
-CREATE INDEX `songs_album_id` ON `songs` (`albumId`);
+CREATE INDEX `songs_album_id` ON `songs` (`albumId`);--> statement-breakpoint
+CREATE INDEX `songs_title_sort` ON `songs` (`titleSortKey`,`id`);

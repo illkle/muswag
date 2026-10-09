@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
-import { albumOccurrenceKey, LIBRARY_ORDERS, libraryOccurrenceKey, playlistOccurrenceKey, titleSortKey, type QueueSourceRef, type SourceWindow } from "@muswag/model";
+import { ALBUM_ORDER, albumOccurrenceKey, LIBRARY_ORDERS, libraryOccurrenceKey, playlistOccurrenceKey, songRow, titleSortKey, type QueueSourceRef, type SourceWindow } from "@muswag/model";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { describe, expect } from "vitest";
@@ -32,6 +33,42 @@ describe("LibraryQueries.sourceWindow", () => {
       expect(window.next[0]).toMatchObject({ key: albumOccurrenceKey("album", "c"), offset: 2 });
       expect(window.hasMore).toBe(false);
       expect(yield* LibraryQueries.sourceWindow(ref, { key: albumOccurrenceKey("album", "x"), offset: null }, SIZE)).toBeNull();
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("orders an album as the album page does: no number before any number, and by id where the numbers tie", () =>
+    Effect.gen(function* () {
+      // Without disc or track numbers, with some of them, and with the same ones twice.
+      const numbered: Array<[id: string, discNumber: number | null, track: number | null]> = [
+        ["m", 1, 2],
+        ["b", 2, 1],
+        ["z", null, null],
+        ["k", 1, 2],
+        ["c", 1, null],
+        ["a", 2, null],
+        ["y", null, 3],
+        ["d", 1, 1],
+        ["e", null, null],
+        ["B", 1, 2],
+        ["x", null, 1],
+      ];
+      yield* seed({ songs: numbered.map(([id, discNumber, track]) => apiSong(id, "album", { ...(discNumber !== null && { discNumber }), ...(track !== null && { track }) })) });
+
+      const window = yield* LibraryQueries.sourceWindow({ type: "album", albumId: "album" }, { key: null, offset: 0 }, { behind: 0, ahead: numbered.length });
+
+      // TanStack DB's comparison with `nulls: "first"` and `stringSort: "lexical"`, which the album page asks for.
+      const expected = [...window!.next].sort((left, right) => {
+        for (const column of ALBUM_ORDER) {
+          const [a, b] = [left.track[column], right.track[column]];
+          if (a === b) continue;
+          if (a === null) return -1;
+          if (b === null) return 1;
+          return a < b ? -1 : 1;
+        }
+        return 0;
+      });
+      expect(idsOf(window!.next)).toEqual(idsOf(expected));
+      expect(idsOf(window!.next)).toEqual(["e", "z", "x", "y", "c", "d", "B", "k", "m", "a", "b"]);
     }).pipe(Effect.provide(layer)),
   );
 
@@ -173,6 +210,40 @@ describe("LibraryQueries.sourceWindow", () => {
       const renamed = yield* LibraryQueries.sourceWindow(ref, { key, offset: 21 }, SIZE);
       expect(renamed).toMatchObject({ cursor: { type: "item", offset: 60 }, next: [], hasMore: false });
       expect(renamed?.previous).toHaveLength(10);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+describe("LibraryQueries queue storage", () => {
+  it.effect("keeps the resume position out of the mirrored rows, so saving it alone sends renderers nothing", () =>
+    Effect.gen(function* () {
+      const mirror = yield* SqliteMirror;
+      const mirrored: string[] = [];
+      mirror.subscribe((batch) => mirrored.push(...batch.changes.map(({ table }) => table)));
+      const track = songRow({ id: "a", title: "A" });
+
+      yield* LibraryQueries.writeQueue({
+        upsert: [{ key: "now", list: "now", position: 0, track }],
+        remove: [],
+        state: { id: 1, nowPlayingKey: "now", nowPlayingOrigin: "user", source: null },
+        resumePositionSeconds: 12,
+      });
+      expect(mirrored.sort()).toEqual(["queue_items", "queue_state"]);
+      expect(yield* LibraryQueries.loadQueue).toMatchObject({ state: { nowPlayingKey: "now" }, items: [{ key: "now" }], resumePositionSeconds: 12 });
+
+      mirrored.length = 0;
+      yield* LibraryQueries.writeQueue({ upsert: [], remove: [], state: null, resumePositionSeconds: 30.5 });
+      yield* mirror.flush;
+      expect(mirrored).toEqual([]);
+      expect((yield* LibraryQueries.loadQueue).resumePositionSeconds).toBe(30.5);
+
+      // A change of the queue alone leaves the position where it was.
+      yield* LibraryQueries.writeQueue({ upsert: [{ key: "next", list: "user", position: 0, track }], remove: [], state: null, resumePositionSeconds: null });
+      const stored = yield* LibraryQueries.loadQueue;
+      expect([stored.items.map(({ key }) => key).sort(), stored.resumePositionSeconds]).toEqual([["next", "now"], 30.5]);
+
+      yield* LibraryQueries.clearQueue;
+      expect(yield* LibraryQueries.loadQueue).toEqual({ state: null, items: [], resumePositionSeconds: 0 });
     }).pipe(Effect.provide(layer)),
   );
 });

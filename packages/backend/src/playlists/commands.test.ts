@@ -97,6 +97,31 @@ describe("PlaylistCommands", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("moves an entry before another one or to the end, as one revision each", () =>
+    Effect.gen(function* () {
+      const commands = yield* PlaylistCommands;
+      const playlist = yield* commands.create({ name: "Ordered", songIds: ["song-a", "song-b", "song-c", "song-a"] });
+      const [first, second, third, last] = playlist.local!.entries.map(({ id }) => id) as [string, string, string, string];
+      const order = saved(playlist.id).pipe(Effect.map((row) => row.local!.entries.map(({ id }) => id)));
+
+      yield* commands.moveEntry(playlist.id, third, first);
+      expect(yield* order).toEqual([third, first, second, last]);
+
+      yield* commands.moveEntry(playlist.id, third, null);
+      expect(yield* order).toEqual([first, second, last, third]);
+
+      // Before the entry that follows it already: the order stays, and it is still an edit.
+      yield* commands.moveEntry(playlist.id, first, second);
+      expect(yield* order).toEqual([first, second, last, third]);
+
+      // The two entries of one song are told apart by their ids.
+      yield* commands.moveEntry(playlist.id, last, first);
+      const row = yield* saved(playlist.id);
+      expect(row.local!.entries).toEqual([last, first, second, third].map((id) => playlist.local!.entries.find((entry) => entry.id === id)));
+      expect(row.revision).toBe(4);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("does not mint entry ids that collide across revisions", () =>
     Effect.gen(function* () {
       const commands = yield* PlaylistCommands;
@@ -116,9 +141,14 @@ describe("PlaylistCommands", () => {
       const commands = yield* PlaylistCommands;
       const playlist = yield* commands.create({ name: "Intact", songIds: ["song-a", "song-b"] });
 
-      const errors = yield* Effect.all([Effect.flip(commands.removeEntry(playlist.id, "nope")), Effect.flip(commands.addEntries(playlist.id, ["song-c"], "nope"))]);
+      const errors = yield* Effect.all([
+        Effect.flip(commands.removeEntry(playlist.id, "nope")),
+        Effect.flip(commands.moveEntry(playlist.id, "nope", null)),
+        Effect.flip(commands.moveEntry(playlist.id, playlist.local!.entries[0]!.id, "nope")),
+        Effect.flip(commands.addEntries(playlist.id, ["song-c"], "nope")),
+      ]);
 
-      expect(errors.map(({ message }) => message)).toEqual(Array(2).fill("Playlist entry not found: nope"));
+      expect(errors.map(({ message }) => message)).toEqual(Array(4).fill("Playlist entry not found: nope"));
       expect(yield* saved(playlist.id)).toEqual(playlist);
     }).pipe(Effect.provide(layer)),
   );
@@ -129,6 +159,7 @@ describe("PlaylistCommands", () => {
       const commands = yield* PlaylistCommands;
 
       expect((yield* Effect.flip(commands.rename("smart", "Changed"))).message).toBe("Playlist is read-only: smart");
+      expect((yield* Effect.flip(commands.moveEntry("smart", "a", null))).message).toBe("Playlist is read-only: smart");
       expect((yield* Effect.flip(commands.rename("smart", "  "))).message).toBe("Playlist name cannot be empty");
       expect((yield* Effect.flip(commands.create({ name: "" }))).message).toBe("Playlist name cannot be empty");
       expect((yield* Effect.flip(commands.setComment("missing", "x"))).message).toBe("Playlist not found: missing");
@@ -145,6 +176,8 @@ describe("PlaylistCommands", () => {
       const playlist = yield* commands.create({ name: "Announced" });
       yield* Effect.flip(commands.rename(playlist.id, ""));
       yield* commands.addEntries(playlist.id, []);
+      // An entry moved before itself stays where it is, which is no edit.
+      yield* commands.moveEntry(playlist.id, "same", "same");
       yield* commands.rename(playlist.id, "Renamed");
       yield* commands.delete(playlist.id);
 

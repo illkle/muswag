@@ -52,3 +52,15 @@ When the worktree is done with, stop the dev app and remove its mapping: `tailsc
   and runs any command for whoever reaches it, so share it only inside the tailnet: `tailscale serve`, never
   `tailscale funnel`.
 - The code is in `apps/desktop/src/main/dev-bridge.ts` and `apps/desktop/src/renderer/data/dev-bridge.ts`.
+
+## Changing the database schema
+
+The schema is `packages/model/src/db/schema.ts`. After changing it, run `pnpm db:generate` in
+`packages/backend`: it writes a drizzle-kit migration to `drizzle/` and embeds the migrations into
+`src/db/migrations.generated.ts`, which the app runs at start-up. A test fails when the two disagree.
+
+Writes to a table in `MIRRORED_TABLES` go through `write` in `packages/backend/src/db/database.ts`, which
+commits them in one transaction and then sends the changes to renderers.
+
+Backend tests get an in-memory database (`TestDatabase`), an API stub (`makeApi`) and Subsonic fixtures from
+`@muswag/backend/testing`.

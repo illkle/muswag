@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "481389e6-fe5c-4cba-b1d3-78eeefadc01d",
+  "id": "957c6c14-741e-4640-895c-699815091393",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -15,19 +15,23 @@
       "entityType": "tables"
     },
     {
-      "name": "covers",
-      "entityType": "tables"
-    },
-    {
       "name": "credentials",
       "entityType": "tables"
     },
     {
-      "name": "player_queue",
+      "name": "playlists",
       "entityType": "tables"
     },
     {
-      "name": "playlists",
+      "name": "queue_items",
+      "entityType": "tables"
+    },
+    {
+      "name": "queue_resume",
+      "entityType": "tables"
+    },
+    {
+      "name": "queue_state",
       "entityType": "tables"
     },
     {
@@ -334,16 +338,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "coverArtSourceId",
-      "entityType": "columns",
-      "table": "albums"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "artists"
@@ -419,36 +413,6 @@
       "table": "artists"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "coverArtSourceId",
-      "entityType": "columns",
-      "table": "artists"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "key",
-      "entityType": "columns",
-      "table": "covers"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "fileName",
-      "entityType": "columns",
-      "table": "covers"
-    },
-    {
       "type": "integer",
       "notNull": false,
       "autoincrement": false,
@@ -497,26 +461,6 @@
       "name": "encrypted",
       "entityType": "columns",
       "table": "credentials"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "player_queue"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "snapshot",
-      "entityType": "columns",
-      "table": "player_queue"
     },
     {
       "type": "text",
@@ -574,6 +518,106 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "queue_items"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "list",
+      "entityType": "columns",
+      "table": "queue_items"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "queue_items"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "track",
+      "entityType": "columns",
+      "table": "queue_items"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "queue_resume"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "positionSeconds",
+      "entityType": "columns",
+      "table": "queue_resume"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "queue_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nowPlayingKey",
+      "entityType": "columns",
+      "table": "queue_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nowPlayingOrigin",
+      "entityType": "columns",
+      "table": "queue_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "queue_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "songs"
@@ -585,6 +629,16 @@
       "default": null,
       "generated": null,
       "name": "title",
+      "entityType": "columns",
+      "table": "songs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "titleSortKey",
       "entityType": "columns",
       "table": "songs"
     },
@@ -1088,15 +1142,6 @@
     },
     {
       "columns": [
-        "key"
-      ],
-      "nameExplicit": false,
-      "name": "covers_pk",
-      "table": "covers",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -1109,8 +1154,17 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "player_queue_pk",
-      "table": "player_queue",
+      "name": "playlists_pk",
+      "table": "playlists",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "key"
+      ],
+      "nameExplicit": false,
+      "name": "queue_items_pk",
+      "table": "queue_items",
       "entityType": "pks"
     },
     {
@@ -1118,8 +1172,17 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "playlists_pk",
-      "table": "playlists",
+      "name": "queue_resume_pk",
+      "table": "queue_resume",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "queue_state_pk",
+      "table": "queue_state",
       "entityType": "pks"
     },
     {
@@ -1143,34 +1206,6 @@
     {
       "columns": [
         {
-          "value": "artistId",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "albums_artist_id",
-      "entityType": "indexes",
-      "table": "albums"
-    },
-    {
-      "columns": [
-        {
-          "value": "serverId",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "playlists_server_id",
-      "entityType": "indexes",
-      "table": "playlists"
-    },
-    {
-      "columns": [
-        {
           "value": "albumId",
           "isExpression": false
         }
@@ -1179,6 +1214,24 @@
       "where": null,
       "origin": "manual",
       "name": "songs_album_id",
+      "entityType": "indexes",
+      "table": "songs"
+    },
+    {
+      "columns": [
+        {
+          "value": "titleSortKey",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "songs_title_sort",
       "entityType": "indexes",
       "table": "songs"
     }

@@ -1,7 +1,7 @@
 import { md5 } from "@noble/hashes/legacy.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import { Context, Crypto, Effect, Layer, PlatformError, Schema } from "effect";
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { Context, Crypto, Effect, PlatformError, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 import {
   type AlbumList2,
   type AlbumWithSongsID3,
@@ -28,26 +28,42 @@ import {
   getIndexesResponseSchema,
   getPlaylistResponseSchema,
   getPlaylistsResponseSchema,
+  normalizeServerUrl,
   pingResponseSchema,
   responseEnvelopeSchema,
+  subsonicRestUrl,
 } from "@muswag/model";
 const API_VERSION = "1.16.1";
 const CLIENT_NAME = "muswag";
+/**
+ * How long the server has to start answering. Headers normally arrive within a second and a server
+ * that first wakes its disks needs ten to fifteen, so half a minute means it is not answering.
+ * `fetch` on its own would give the headers five minutes.
+ */
+const RESPONSE_TIMEOUT_SECONDS = 30;
+/** Further attempts at a request that only reads, after a transport error. */
+const READ_RETRIES = 2;
+/** Redirects followed while looking for the server at login. */
+const MAX_REDIRECTS = 5;
+/** Subsonic's code for a wrong username or password. */
+export const WRONG_CREDENTIALS = 40;
 
 type RequestParams = Record<string, string | number | boolean | Array<string | number | boolean> | null | undefined>;
 
 export type SubsonicClientError = HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
 
 export interface SubsonicApiConfig {
+  /** The server's address as `normalizeServerUrl` gives it. */
   readonly url: string;
   readonly auth: {
     readonly username: string;
     readonly password: string;
   };
+  /** Runs when the server answers a request with "wrong username or password". */
+  readonly onCredentialsRejected?: Effect.Effect<void>;
 }
 
 export interface SubsonicApiService {
-  readonly baseUrl: URL;
   readonly username: string;
   readonly ping: Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
   readonly getAlbum: (args: GetAlbumArgs) => Effect.Effect<SubsonicBaseResponse & { album: AlbumWithSongsID3 }, SubsonicClientError>;
@@ -63,23 +79,13 @@ export interface SubsonicApiService {
 
 export class SubsonicAPI extends Context.Service<SubsonicAPI, SubsonicApiService>()("@muswag/backend/SubsonicAPI") {}
 
-export default SubsonicAPI;
-
-function normalizeRestUrl(rawUrl: string): URL {
-  let value = rawUrl;
-  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
-  if (!value.endsWith("/")) value += "/";
-  if (!value.endsWith("rest/")) value += "rest/";
-  return new URL(value);
-}
-
 function validateConfig(config: SubsonicApiConfig): URL {
   if (!config) throw new Error("no config provided");
   if (!config.url) throw new Error("no url provided");
   if (!config.auth) throw new Error("no auth provided");
   if (!config.auth.username) throw new Error("no username provided");
   if (!config.auth.password) throw new Error("no password provided");
-  return normalizeRestUrl(config.url);
+  return new URL(subsonicRestUrl(config.url));
 }
 
 const setSearchParams = (url: URL, map: Record<string, unknown>) => {
@@ -118,7 +124,6 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
           ...params,
         });
 
-        //  maybe later   url.searchParams.set("apiKey", config.auth.apiKey);
         const s = bytesToHex(yield* crypto.randomBytes(16));
         setSearchParams(url, {
           u: config.auth.username,
@@ -129,45 +134,98 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
         return url;
       });
 
-    const request = (method: string, params: RequestParams) =>
+    /**
+     * Sends a request and answers once the response's headers are in. A request that changes
+     * something gets `retries` 0: the server may have applied it although its answer was lost, and
+     * sending it again would create a second playlist or remove entries twice.
+     */
+    const request = (method: string, params: RequestParams, retries: number) =>
       Effect.gen(function* () {
         const url = yield* requestUrl(method, params);
         const outgoing = HttpClientRequest.post(new URL(url.pathname, url.origin)).pipe(HttpClientRequest.bodyUrlParams(url.searchParams));
 
-        const response = yield* Effect.retry(httpClient.execute(outgoing), { times: 2 });
+        // The time limit covers every attempt, and ends with the headers: a cover or a long album
+        // list streams after them for as long as it takes.
+        const response = yield* Effect.retry(httpClient.execute(outgoing), { times: retries }).pipe(
+          Effect.timeoutOrElse({
+            duration: `${RESPONSE_TIMEOUT_SECONDS} seconds`,
+            orElse: () =>
+              Effect.fail(
+                new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request: outgoing, description: `no answer within ${RESPONSE_TIMEOUT_SECONDS} seconds` }) }),
+              ),
+          }),
+        );
         if (response.status < 200 || response.status >= 300) {
-          return yield* new SubsonicHttpError({ method, status: response.status, message: `${method} failed: HTTP ${response.status}` });
+          const location = response.headers["location"];
+          return yield* new SubsonicHttpError({ method, status: response.status, message: `${method} failed: HTTP ${response.status}`, ...(location !== undefined && { location }) });
         }
         return response;
       });
 
-    const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) =>
+    const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T, retries: number) =>
       Effect.gen(function* () {
-        const response = yield* request(method, params);
+        const response = yield* request(method, params, retries);
         const payload = yield* response.json;
         return yield* parseResponse(method, schema, payload);
-      }).pipe(Effect.withSpan(`SubsonicAPI.${method}`));
+      }).pipe(
+        // The one place every decoded answer passes, so the one place a refused password is noticed.
+        Effect.tapError((error) => (error._tag === "SubsonicApiError" && error.code === WRONG_CREDENTIALS ? (config.onCredentialsRejected ?? Effect.void) : Effect.void)),
+        Effect.withSpan(`SubsonicAPI.${method}`),
+      );
 
-    const ping = json("ping", {}, pingResponseSchema);
-    // yield* ping;
+    const read = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) => json(method, params, schema, READ_RETRIES);
+    const change = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) => json(method, params, schema, 0);
 
     return {
-      baseUrl,
       username: config.auth.username,
-      ping,
-      getAlbum: (args) => json("getAlbum", args, getAlbumResponseSchema),
-      getAlbumList2: (args) => json("getAlbumList2", args, getAlbumList2ResponseSchema),
-      getIndexes: (args = {}) => json("getIndexes", args, getIndexesResponseSchema),
-      getCoverArt: (args) => request("getCoverArt", args).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
-      getPlaylists: json("getPlaylists", {}, getPlaylistsResponseSchema),
-      getPlaylist: (args) => json("getPlaylist", args, getPlaylistResponseSchema),
-      createPlaylist: (args) => json("createPlaylist", args, createPlaylistResponseSchema),
-      updatePlaylist: (args) => json("updatePlaylist", args, pingResponseSchema),
-      deletePlaylist: (args) => json("deletePlaylist", args, pingResponseSchema),
+      ping: read("ping", {}, pingResponseSchema),
+      getAlbum: (args) => read("getAlbum", args, getAlbumResponseSchema),
+      getAlbumList2: (args) => read("getAlbumList2", args, getAlbumList2ResponseSchema),
+      getIndexes: (args = {}) => read("getIndexes", args, getIndexesResponseSchema),
+      getCoverArt: (args) => request("getCoverArt", args, READ_RETRIES).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
+      getPlaylists: read("getPlaylists", {}, getPlaylistsResponseSchema),
+      getPlaylist: (args) => read("getPlaylist", args, getPlaylistResponseSchema),
+      createPlaylist: (args) => change("createPlaylist", args, createPlaylistResponseSchema),
+      updatePlaylist: (args) => change("updatePlaylist", args, pingResponseSchema),
+      deletePlaylist: (args) => change("deletePlaylist", args, pingResponseSchema),
     } satisfies SubsonicApiService;
   });
 
-export const SubsonicAPILive = (config: SubsonicApiConfig) => Layer.effect(SubsonicAPI, makeSubsonicAPI(config));
+/**
+ * Checks the credentials against the server at `config.url` and answers with the address the server is
+ * really at, which is another one when the server redirects there, as from http to https.
+ *
+ * `fetch` follows a 301 or 302 by turning the POST into a GET without its body, so behind such a
+ * redirect the server would never see the request's parameters. The redirect is followed here, by
+ * asking again at the address it names, and later requests go to that address directly.
+ */
+export const locateSubsonicServer = (config: SubsonicApiConfig) =>
+  Effect.gen(function* () {
+    let url = config.url;
+    for (let redirects = 0; ; redirects += 1) {
+      const api = yield* makeSubsonicAPI({ ...config, url });
+      const redirect = yield* api.ping.pipe(
+        Effect.as(null),
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+        Effect.catchTag("SubsonicHttpError", (error) => {
+          const moved = redirectedServer(url, error.location);
+          // The request carries the login. It follows to another scheme, port or folder of the host
+          // the user named, and to no other host: the error names it, for the user to enter if they trust it.
+          const followed = moved !== null && moved !== url && new URL(moved).hostname === new URL(url).hostname && redirects < MAX_REDIRECTS;
+          return followed ? Effect.succeed(moved) : Effect.fail(error);
+        }),
+      );
+      if (redirect === null) return url;
+      url = redirect;
+    }
+  });
+
+/** The server a redirect of `ping.view` points to: `location` names where the request went, inside that server's `rest` folder. */
+function redirectedServer(from: string, location: string | undefined): string | null {
+  const requested = `${subsonicRestUrl(from)}ping.view`;
+  if (location === undefined || !URL.canParse(location, requested)) return null;
+  return normalizeServerUrl(new URL(".", new URL(location, requested)).href);
+}
 
 function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
   method: string,

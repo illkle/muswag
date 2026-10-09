@@ -1,13 +1,19 @@
 import { describe, expect, it } from "@effect/vitest";
 import { albums, artists, songs, syncState, type AlbumWithSongsID3 } from "@muswag/model";
+import { eq } from "drizzle-orm";
 import { Effect, Fiber, Layer } from "effect";
 
 import type { SubsonicApiService } from "../api/subsonic-api.js";
+import { MiniFs } from "../covers/cover-manager.js";
 import { Db } from "../db/database.js";
 import { apiAlbum as album, apiLayer, apiPlaylist as playlist, apiSong as song, idsOf, rowOf, seed, TestDatabase } from "../test/index.js";
 import { LibrarySync } from "./library-sync.js";
 
-const layer = (api: Partial<SubsonicApiService>) => LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), apiLayer(api))));
+/** `removed` collects the cover files the sync removes. */
+const layer = (api: Partial<SubsonicApiService>, removed: string[] = []) => {
+  const fs = Layer.succeed(MiniFs, { writeFile: () => Effect.void, remove: (path) => Effect.sync(() => void removed.push(path)), exists: () => Effect.succeed(true) });
+  return LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), apiLayer(api), fs)));
+};
 
 const indexes =
   (lastModified = 1) =>
@@ -156,8 +162,8 @@ describe("LibrarySync.sync", () => {
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("keeps cover fields and clears server fields the album no longer has", () => {
-    const listed = album("covered", { songCount: 0 });
+  it.effect("keeps the cover file of an unchanged cover and clears server fields the album no longer has", () => {
+    const listed = album("covered", { songCount: 0, coverArt: "c1" });
     const api: Partial<SubsonicApiService> = {
       getIndexes: indexes(),
       getAlbumList2: () => Effect.succeed({ status: "ok", version: "1.16.1", albumList2: { album: [listed] } }),
@@ -167,12 +173,80 @@ describe("LibrarySync.sync", () => {
     return Effect.gen(function* () {
       yield* seed({ albums: [{ ...listed, starred: "2026-01-01" }] });
       const db = yield* Db;
-      yield* db.update(albums).set({ coverArtPath: "covers/a.jpg", coverArtSourceId: "c1" });
+      yield* db.update(albums).set({ coverArtPath: "covers/a" });
 
       yield* (yield* LibrarySync).sync("full");
 
-      expect(yield* rowOf(albums, listed.id)).toMatchObject({ starred: null, coverArtPath: "covers/a.jpg", coverArtSourceId: "c1" });
+      expect(yield* rowOf(albums, listed.id)).toMatchObject({ starred: null, coverArt: "c1", coverArtPath: "covers/a" });
     }).pipe(Effect.provide(layer(api)));
+  });
+
+  it.effect("forgets the cover file of an album or artist whose cover is another one on the server", () => {
+    const changed = album("changed", { songCount: 0, coverArt: "c2" });
+    const coverless = album("coverless", { songCount: 0 });
+    const api: Partial<SubsonicApiService> = {
+      getIndexes: () =>
+        Effect.succeed({
+          status: "ok",
+          version: "1.16.1",
+          indexes: {
+            lastModified: 1,
+            index: [
+              {
+                name: "A",
+                artist: [
+                  { id: "artist-changed", name: "Changed", coverArt: "ar-2" },
+                  { id: "artist-same", name: "Same", coverArt: "ar-1" },
+                ],
+              },
+            ],
+          },
+        }),
+      getAlbumList2: () => Effect.succeed({ status: "ok", version: "1.16.1", albumList2: { album: [changed, coverless] } }),
+      getAlbum: ({ id }) => Effect.succeed({ status: "ok", version: "1.16.1", album: id === changed.id ? changed : coverless }),
+    };
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [{ ...changed, coverArt: "c1" }, coverless] });
+      const db = yield* Db;
+      yield* db.update(albums).set({ coverArtPath: "covers/a" });
+      yield* db.insert(artists).values([
+        { id: "artist-changed", name: "Changed", coverArt: "ar-1", coverArtPath: "covers/changed" },
+        { id: "artist-same", name: "Same", coverArt: "ar-1", coverArtPath: "covers/same" },
+      ]);
+
+      yield* (yield* LibrarySync).sync("full");
+
+      expect(yield* rowOf(albums, changed.id)).toMatchObject({ coverArt: "c2", coverArtPath: null });
+      // No cover before and none now is no change either.
+      expect(yield* rowOf(albums, coverless.id)).toMatchObject({ coverArt: null, coverArtPath: "covers/a" });
+      expect(yield* rowOf(artists, "artist-changed")).toMatchObject({ coverArt: "ar-2", coverArtPath: null });
+      expect(yield* rowOf(artists, "artist-same")).toMatchObject({ coverArt: "ar-1", coverArtPath: "covers/same" });
+    }).pipe(Effect.provide(layer(api)));
+  });
+
+  it.effect("removes the cover files of the albums and artists it deletes", () => {
+    const kept = album("kept", { songCount: 0 });
+    const removed: string[] = [];
+    const api: Partial<SubsonicApiService> = {
+      getIndexes: () => Effect.succeed({ status: "ok", version: "1.16.1", indexes: { lastModified: 1, index: [{ name: "A", artist: [{ id: "artist-kept", name: "Kept" }] }] } }),
+      getAlbumList2: () => Effect.succeed({ status: "ok", version: "1.16.1", albumList2: { album: [kept] } }),
+      getAlbum: () => Effect.succeed({ status: "ok", version: "1.16.1", album: kept }),
+    };
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [kept, album("gone"), album("gone-without-cover")], artists: [{ id: "artist-kept", name: "Kept" }] });
+      const db = yield* Db;
+      yield* db.update(albums).set({ coverArtPath: "covers/album-kept" }).where(eq(albums.id, kept.id));
+      yield* db.update(albums).set({ coverArtPath: "covers/album-gone" }).where(eq(albums.id, "gone"));
+      yield* db.insert(artists).values({ id: "artist-gone", name: "Gone", coverArtPath: "covers/artist-gone" });
+
+      yield* (yield* LibrarySync).sync("full");
+
+      expect(yield* idsOf(albums)).toEqual(["kept"]);
+      expect(yield* idsOf(artists)).toEqual(["artist-kept"]);
+      expect(removed.sort()).toEqual(["covers/album-gone", "covers/artist-gone"]);
+    }).pipe(Effect.provide(layer(api, removed)));
   });
 
   it.effect("keeps artists when indexes are omitted while clearing an empty remote library", () => {

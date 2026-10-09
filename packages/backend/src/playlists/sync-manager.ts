@@ -7,11 +7,12 @@ import {
   type PlaylistWithSongs,
   type RemotePlaylist,
   type RemotePlaylistMutation,
+  type SubsonicApiError,
 } from "@muswag/model";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Stream, SubscriptionRef } from "effect";
 
-import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
+import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
 import { Db, type Database, write } from "../db/database.js";
 import { PlaylistEdits } from "./commands.js";
 import { hasPendingLocalChanges, mergePlaylists } from "./merge.js";
@@ -21,6 +22,12 @@ const DEFAULT_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_RETRY_MS = 5_000;
 const DEFAULT_MAX_RETRY_MS = 5 * 60_000;
 const DEFAULT_FETCH_CONCURRENCY = 5;
+/**
+ * Subsonic's codes for a request the server will not take however often it is sent: a parameter is
+ * missing, the user may not do this, the playlist or a song is not there. Its other codes say the
+ * server failed or the session is not accepted, which the next pass may find changed.
+ */
+const REFUSAL_CODES: ReadonlyArray<number | undefined> = [10, 50, 70];
 
 type PlaylistApi = Pick<SubsonicApiService, "getPlaylists" | "getPlaylist" | "createPlaylist" | "updatePlaylist" | "deletePlaylist">;
 /** A pass to run after `delayMs`, and the `sync` callers waiting for its outcome. */
@@ -247,6 +254,38 @@ function executeRemoteMutation(db: Database, api: PlaylistApi, mutation: RemoteP
   });
 }
 
+/**
+ * Gives up on the change behind a mutation the server refused, so it is not pushed again: the playlist
+ * goes back to what the server last had, and one the server never had is removed. Answers with what
+ * to tell the user, or `null` when nothing was given up.
+ */
+function discardLocalChange(db: Database, mutation: RemotePlaylistMutation, error: SubsonicApiError) {
+  return write(
+    Effect.gen(function* () {
+      const [record] = yield* db.select().from(playlists).where(eq(playlists.id, mutation.localId));
+      // Edited again while the server was asked: what it refused is no longer what the playlist
+      // holds, and the next pass asks about that.
+      const pushed = mutation.type === "delete" ? null : mutation.state;
+      if (!record || JSON.stringify(record.local) !== JSON.stringify(pushed)) return null;
+      if (record.base) yield* db.update(playlists).set({ local: record.base }).where(eq(playlists.id, mutation.localId));
+      else if (record.serverId === null) yield* db.delete(playlists).where(eq(playlists.id, mutation.localId));
+      // The server made the playlist and refused what was sent after: it has it, so it stays, and the
+      // next pass takes what the server holds as its base.
+      else return null;
+
+      const name = (mutation.type === "delete" ? record?.base?.name : mutation.state.name) ?? "";
+      switch (mutation.type) {
+        case "create":
+          return `The server refused the new playlist "${name}", which was removed (${error.message})`;
+        case "replace":
+          return `The server refused the changes to the playlist "${name}", which were undone (${error.message})`;
+        case "delete":
+          return `The server refused to delete the playlist "${name}" (${error.message})`;
+      }
+    }),
+  );
+}
+
 /** One pass for both requests: full if either asked for that, after the wait the later one asked for. */
 const joinRequests = (earlier: SyncRequest, later: SyncRequest): SyncRequest => ({
   full: earlier.full || later.full,
@@ -267,6 +306,8 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
     const requests = yield* Queue.unbounded<SyncRequest>();
     const status = yield* SubscriptionRef.make<PlaylistSyncStatus>(IDLE_PLAYLIST_SYNC);
     let retryDelay = retryMs;
+    /** Passes in a row that each asked for another. */
+    let reruns = 0;
 
     const request = (full: boolean, delayMs: number) => Queue.offer(requests, { full, delayMs, waiters: [] }).pipe(Effect.asVoid);
 
@@ -297,9 +338,20 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         let merged = yield* mergeAndApply(remote);
 
         const mutatedServerIds = new Set<string>();
+        const refused: string[] = [];
+        let failure: SubsonicApiError | undefined;
         for (const mutation of merged.remote) {
-          const result = yield* executeRemoteMutation(db, api, mutation, api.username);
+          // The server answered, so the playlists after this one are still pushed. No answer at all
+          // fails the pass here: the next request would fare no better.
+          const result = yield* executeRemoteMutation(db, api, mutation, api.username).pipe(Effect.catchTag("SubsonicApiError", (error) => Effect.succeed(error)));
           if (result === "stale") needsRerun = true;
+          else if (result !== "applied") {
+            if (REFUSAL_CODES.includes(result.code)) {
+              const message = yield* discardLocalChange(db, mutation, result);
+              if (message !== null) refused.push(message);
+              yield* Effect.logWarning(message ?? `The server refused a change to a playlist (${result.message})`);
+            } else failure ??= result;
+          }
           if (mutation.type === "create") {
             const [record] = yield* db.select({ serverId: playlists.serverId }).from(playlists).where(eq(playlists.id, mutation.localId));
             if (record?.serverId) mutatedServerIds.add(record.serverId);
@@ -316,7 +368,9 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
           if (merged.remote.length > 0) needsRerun = true;
         }
 
-        return needsRerun;
+        // A change the server failed on stays pending, and the pass is retried as a failed one is.
+        if (failure) return yield* Effect.fail(failure);
+        return { needsRerun, refused };
       });
 
     // With nothing asked for, the interval starts a pass that picks up what changed on the server.
@@ -338,9 +392,18 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
       yield* SubscriptionRef.update(status, (previous) => ({ ...previous, state: "syncing" as const, error: null }));
       const exit = yield* Effect.exit(runPass(next.full));
       if (Exit.isSuccess(exit)) {
-        retryDelay = retryMs;
-        yield* SubscriptionRef.set(status, { state: "idle", error: null, lastSyncedAt: new Date().toISOString() });
-        if (exit.value) yield* request(false, 0);
+        const { needsRerun, refused } = exit.value;
+        yield* SubscriptionRef.set(status, { state: "idle", error: refused.length > 0 ? refused.join(" ") : null, lastSyncedAt: new Date().toISOString() });
+        if (!needsRerun) {
+          reruns = 0;
+          retryDelay = retryMs;
+        } else {
+          // One more pass at once settles a change that crossed with one on the server. A pass that
+          // keeps asking for another is slowed down as a failing one is, so it cannot hammer the server.
+          yield* request(false, reruns === 0 ? 0 : retryDelay);
+          if (reruns > 0) retryDelay = Math.min(retryDelay * 2, maxRetryMs);
+          reruns += 1;
+        }
       } else {
         const error = Cause.squash(exit.cause);
         yield* SubscriptionRef.update(status, (previous) => ({ ...previous, state: "error" as const, error: error instanceof Error ? error.message : String(error) }));

@@ -17,6 +17,14 @@ export const LIBRARY_ORDERS = {
 } as const satisfies Record<LibrarySort, ReadonlyArray<keyof Song>>;
 
 /**
+ * The song columns an album is listed and played by, all ascending: main reads the album in this
+ * order to play it and the album page lists it in the same one. A song without a disc or track
+ * number comes before those that have one, which is what both databases do with a null. It ends
+ * with the id for the same reason the library's orders do: track numbers can be missing or repeat.
+ */
+export const ALBUM_ORDER = ["discNumber", "track", "id"] as const satisfies ReadonlyArray<keyof Song>;
+
+/**
  * What a song is sorted by in the alphabetical order: its title without case or accents.
  *
  * SQLite compares text by UTF-8 bytes, which is code point order, and JavaScript by UTF-16 code
