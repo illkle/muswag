@@ -3,7 +3,7 @@ import { EngineError } from "../errors";
 import { MpvConnection } from "./connection";
 import { command, parseMessage, type MpvCommand, type MpvEvent } from "./protocol";
 
-const OBSERVED_PROPERTIES = ["pause", "time-pos", "duration", "volume", "mute"] as const;
+const OBSERVED_PROPERTIES = ["pause", "time-pos", "duration", "seeking", "paused-for-cache"] as const;
 const REQUEST_TIMEOUT = "5 seconds";
 
 /**

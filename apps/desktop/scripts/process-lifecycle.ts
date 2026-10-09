@@ -1,5 +1,5 @@
 import { Effect, FileSystem } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
 
 import { RunnerError } from "./runner-error.ts";
 

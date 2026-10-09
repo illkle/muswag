@@ -1,0 +1,948 @@
+import { describe, expect, it } from "vitest";
+import { it as effectIt } from "@effect/vitest";
+import {
+  playlists,
+  SubsonicApiError,
+  type CreatePlaylistArgs,
+  type CreatePlaylistInput,
+  type DeletePlaylistArgs,
+  type GetPlaylistArgs,
+  type PlaylistRecord,
+  type PlaylistSyncStatus,
+  type PlaylistWithSongs,
+  type UpdatePlaylistArgs,
+} from "@muswag/model";
+import { Clock, Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { TestClock } from "effect/testing";
+
+import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
+import { Db, write } from "../db/database.js";
+import { rowOf, seed, TestDatabase } from "../test/index.js";
+import { PlaylistCommands, PlaylistEdits } from "./commands.js";
+import { PlaylistSyncManager, PlaylistSyncManagerLive, type PlaylistSyncManagerOptions } from "./sync-manager.js";
+
+type FakePlaylist = {
+  id: string;
+  name: string;
+  comment: string;
+  public: boolean;
+  songIds: string[];
+  owner?: string;
+  changed?: string;
+};
+
+function apiPlaylist(playlist: FakePlaylist): PlaylistWithSongs {
+  const { changed, ...rest } = playlist;
+  return {
+    ...rest,
+    songCount: playlist.songIds.length,
+    duration: playlist.songIds.length * 60,
+    created: "2026-07-10T00:00:00.000Z",
+    changed: changed ?? "2026-07-10T00:00:00.000Z",
+    entry: playlist.songIds.map((id) => ({ id, title: id, isDir: false })),
+  };
+}
+
+class FakePlaylistApi {
+  readonly username = "alice";
+  readonly playlists = new Map<string, FakePlaylist>();
+  readonly getPlaylistCalls: string[] = [];
+  readonly updatePlaylistCalls: UpdatePlaylistArgs[] = [];
+  getPlaylistsCalls = 0;
+  readonly getPlaylistsCallTimes: number[] = [];
+  createError: Error | undefined;
+  createPlaylistStarted: (() => void) | undefined;
+  createPlaylistGate: Promise<void> | undefined;
+  listError: Error | undefined;
+  getPlaylistStarted: (() => void) | undefined;
+  getPlaylistGate: Promise<void> | undefined;
+  getPlaylistHook: ((id: string, callNumber: number) => void) | undefined;
+  /** The Subsonic error code the server answers a change to the playlist of this name with. */
+  readonly refusals = new Map<string, number>();
+  nextId = 1;
+
+  private refusal(method: string, name: string | undefined) {
+    const code = name === undefined ? undefined : this.refusals.get(name);
+    return code === undefined ? undefined : new SubsonicApiError({ method, code, message: `server said ${code}` });
+  }
+
+  getPlaylists = Clock.currentTimeMillis.pipe(
+    Effect.flatMap((now) => {
+      this.getPlaylistsCalls += 1;
+      this.getPlaylistsCallTimes.push(now);
+      if (this.listError) return Effect.fail(this.listError);
+      return Effect.succeed({
+        status: "ok" as const,
+        version: "1.16.1",
+        playlists: { playlist: [...this.playlists.values()].map((playlist) => apiPlaylist(playlist)) },
+      });
+    }),
+  );
+
+  getPlaylist({ id }: GetPlaylistArgs) {
+    return Effect.promise(async () => {
+      this.getPlaylistCalls.push(id);
+      this.getPlaylistStarted?.();
+      await this.getPlaylistGate;
+      this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
+      const playlist = this.playlists.get(id);
+      if (!playlist) throw new Error(`Missing playlist: ${id}`);
+      return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(playlist) };
+    });
+  }
+
+  createPlaylist(args: CreatePlaylistArgs) {
+    const refusal = this.refusal("createPlaylist", args.name);
+    if (refusal) return Effect.fail(refusal);
+    return Effect.promise(async () => {
+      if (this.createError) throw this.createError;
+      this.createPlaylistStarted?.();
+      await this.createPlaylistGate;
+      const id = `server-${this.nextId++}`;
+      const playlist = {
+        id,
+        name: args.name ?? "Untitled",
+        comment: "",
+        public: false,
+        songIds: args.songId ?? [],
+      };
+      this.playlists.set(id, playlist);
+      return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(playlist) };
+    });
+  }
+
+  updatePlaylist(args: UpdatePlaylistArgs) {
+    const refusal = this.refusal("updatePlaylist", args.name);
+    if (refusal) return Effect.fail(refusal);
+    return Effect.sync(() => {
+      this.updatePlaylistCalls.push(args);
+      const playlist = this.playlists.get(args.playlistId);
+      if (!playlist) throw new Error(`Missing playlist: ${args.playlistId}`);
+      for (const index of args.songIndexToRemove ?? []) {
+        playlist.songIds.splice(index, 1);
+      }
+      playlist.songIds.push(...(args.songIdToAdd ?? []));
+      if (args.name !== undefined) playlist.name = args.name;
+      if (args.comment !== undefined) playlist.comment = args.comment;
+      if (args.public !== undefined) playlist.public = args.public;
+      return { status: "ok" as const, version: "1.16.1" };
+    });
+  }
+
+  deletePlaylist({ id }: DeletePlaylistArgs) {
+    const refusal = this.refusal("deletePlaylist", this.playlists.get(id)?.name);
+    if (refusal) return Effect.fail(refusal);
+    return Effect.sync(() => {
+      this.playlists.delete(id);
+      return { status: "ok" as const, version: "1.16.1" };
+    });
+  }
+}
+
+const databaseLayer = () => PlaylistCommands.layer.pipe(Layer.provideMerge(PlaylistEdits.layer), Layer.provideMerge(TestDatabase()));
+
+/** The database and playlist commands, which outlive any one manager like they outlive a session. */
+async function createDb(records: PlaylistRecord[] = []) {
+  const runtime = ManagedRuntime.make(databaseLayer());
+  const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<ReturnType<typeof databaseLayer>>>) => runtime.runPromise(effect);
+  const commands = await run(PlaylistCommands);
+  if (records.length > 0) await run(seed({ playlists: records }));
+  return {
+    runtime,
+    create: (input: CreatePlaylistInput) => run(commands.create(input)),
+    rename: (id: string, name: string) => run(commands.rename(id, name)),
+    addEntry: (id: string, songId: string) => run(commands.addEntries(id, [songId])).then(([entry]) => entry!),
+    removeEntry: (id: string, entryId: string) => run(commands.removeEntry(id, entryId)),
+    delete: (id: string) => run(commands.delete(id)),
+    get: (id: string) => run(rowOf(playlists, id)),
+    all: () => run(Db.use((db) => db.select().from(playlists))),
+    clear: () => run(Db.use((db) => write(db.delete(playlists)))),
+  };
+}
+
+type TestDb = Awaited<ReturnType<typeof createDb>>;
+
+function managerLayer(db: TestDb, api: FakePlaylistApi, options: PlaylistSyncManagerOptions = {}) {
+  return PlaylistSyncManagerLive({
+    intervalMs: 0,
+    debounceMs: 10_000,
+    retryMs: 10_000,
+    ...options,
+  }).pipe(Layer.provide(Layer.mergeAll(Layer.effectContext(db.runtime.contextEffect), Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService))));
+}
+
+function createManager(db: TestDb, api: FakePlaylistApi, options: PlaylistSyncManagerOptions = {}) {
+  const runtime = ManagedRuntime.make(managerLayer(db, api, options));
+  const service = runtime.runSync(PlaylistSyncManager);
+
+  return {
+    getStatus: () => runtime.runSync(service.status),
+    /** The statuses `select` lets through, starting with the current one. Fails if they take over a second. */
+    statuses: (select: (changes: Stream.Stream<PlaylistSyncStatus>) => Stream.Stream<PlaylistSyncStatus>) =>
+      runtime.runPromise(
+        Stream.runCollect(select(service.changes)).pipe(
+          Effect.timeoutOrElse({
+            duration: 1_000,
+            orElse: () => Effect.flatMap(service.status, (status) => Effect.die(new Error(`Timed out waiting for playlist sync: ${JSON.stringify(status)}`))),
+          }),
+        ),
+      ),
+    // Callers outlive the session in the app; inside this runtime, disposing it would interrupt them.
+    sync: () => Effect.runPromise(service.sync),
+    destroy: () => runtime.dispose(),
+  };
+}
+
+async function waitForCompletedSync(manager: ReturnType<typeof createManager>): Promise<void> {
+  await manager.statuses((changes) =>
+    changes.pipe(
+      Stream.filter((status) => status.lastSyncedAt !== null),
+      Stream.take(1),
+    ),
+  );
+}
+
+/** The status is published before the pass chain finishes unwinding; this waits for the rest. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Resolves once a pass that started after this call has finished, successfully or not. */
+async function waitForSyncCycle(manager: ReturnType<typeof createManager>): Promise<void> {
+  await manager.statuses((changes) =>
+    changes.pipe(
+      Stream.drop(1),
+      Stream.dropWhile((status) => status.state !== "syncing"),
+      Stream.takeUntil((status) => status.state !== "syncing"),
+    ),
+  );
+}
+
+describe("playlist sync manager", () => {
+  it("pulls full remote state on startup", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", {
+      id: "server-1",
+      name: "Remote mix",
+      comment: "",
+      public: false,
+      songIds: ["song-a", "song-b"],
+    });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+
+    expect((await db.get("server-1"))?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b"]);
+    expect((await db.get("server-1"))?.base).toEqual((await db.get("server-1"))?.local);
+    manager.destroy();
+  });
+
+  it("pushes and verifies an offline create", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const playlist = await db.create({ name: "Offline", songIds: ["song-a", "song-a"] });
+    const manager = createManager(db, api);
+
+    await manager.sync();
+
+    expect([...api.playlists.values()][0]).toMatchObject({ name: "Offline", songIds: ["song-a", "song-a"] });
+    expect((await db.get(playlist.id))?.serverId).toBe("server-1");
+    expect((await db.get(playlist.id))?.base).toEqual((await db.get(playlist.id))?.local);
+    manager.destroy();
+  });
+
+  it("reads local state after the remote request finishes", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", {
+      id: "server-1",
+      name: "Original",
+      comment: "",
+      public: false,
+      songIds: [],
+    });
+    const state = { name: "Original", comment: "", public: false, readonly: false, entries: [] };
+    await db.runtime.runPromise(seed({ playlists: [{ id: "server-1", serverId: "server-1", base: state, local: state, revision: 0 }] }));
+
+    let release!: () => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    api.getPlaylistStarted = started;
+    api.getPlaylistGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const manager = createManager(db, api);
+
+    const syncing = manager.sync();
+    await startedPromise;
+    await db.rename("server-1", "Edited while fetching");
+    release();
+    await syncing;
+
+    expect(api.playlists.get("server-1")?.name).toBe("Edited while fetching");
+    manager.destroy();
+  });
+
+  it("keeps a failed create pending for retry", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.createError = new Error("create failed");
+    const playlist = await db.create({ name: "Still local" });
+    const manager = createManager(db, api);
+
+    await manager.sync();
+
+    expect(await db.get(playlist.id)).toMatchObject({ serverId: null, base: null });
+    expect((await db.get(playlist.id))?.local?.name).toBe("Still local");
+    expect(manager.getStatus().error).toBe("create failed");
+    manager.destroy();
+  });
+
+  it("undoes a change the server refuses, tells the user, and still pushes the playlists after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Theirs", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Mine", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    // Mutations run in the order of the local ids, so the refused one comes first.
+    await db.rename("server-1", "Not allowed");
+    await db.rename("server-2", "Mine, renamed");
+    api.refusals.set("Not allowed", 50);
+    const status = await manager.sync();
+    await settle();
+
+    expect(api.playlists.get("server-2")?.name).toBe("Mine, renamed");
+    expect(await db.get("server-1")).toMatchObject({ local: { name: "Theirs" }, base: { name: "Theirs" } });
+    expect(status).toMatchObject({ state: "idle", error: 'The server refused the changes to the playlist "Not allowed", which were undone (server said 50)' });
+    // Nothing is left to push, so nothing is retried.
+    expect(manager.getStatus().state).toBe("idle");
+
+    api.updatePlaylistCalls.length = 0;
+    expect((await manager.sync()).error).toBeNull();
+    expect(api.updatePlaylistCalls).toEqual([]);
+    manager.destroy();
+  });
+
+  it("keeps an edit made while the server was refusing the one before it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Theirs", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-1", "Not allowed");
+    api.refusals.set("Not allowed", 50);
+    // The user goes on editing while the rename is with the server, which refuses it this once.
+    const refuse = api.updatePlaylist.bind(api);
+    api.updatePlaylist = ((args) => {
+      api.updatePlaylist = refuse;
+      return Effect.promise(() => db.addEntry("server-1", "song-b")).pipe(Effect.andThen(refuse(args)), Effect.ensuring(Effect.sync(() => api.refusals.clear())));
+    }) as typeof api.updatePlaylist;
+    await manager.sync();
+    await waitForCompletedSync(manager);
+    await settle();
+
+    // What was refused was no longer what the playlist held, so it was not undone with the edit
+    // made meanwhile: both were asked about again, and went through.
+    expect((await db.get("server-1"))?.local).toMatchObject({ name: "Not allowed", entries: [{ songId: "song-a" }, { songId: "song-b" }] });
+    expect(api.playlists.get("server-1")).toMatchObject({ name: "Not allowed", songIds: ["song-a", "song-b"] });
+    manager.destroy();
+  });
+
+  it("keeps a new playlist the server made, when it refuses what is sent after", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const created = await db.create({ name: "Mix", songIds: ["song-a"] });
+    api.updatePlaylist = ((args) => Effect.fail(new SubsonicApiError({ method: "updatePlaylist", code: 50, message: `server said 50 to ${args.playlistId}` }))) as typeof api.updatePlaylist;
+    const status = await manager.sync();
+    await settle();
+
+    // The server has the playlist, so it is not removed here, and not reported as removed.
+    expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Mix"]);
+    expect(status.error ?? "").not.toContain("removed");
+    expect(await db.get(created.id)).toMatchObject({ serverId: "server-1", local: { name: "Mix" } });
+    manager.destroy();
+  });
+
+  it("removes a new playlist the server refuses to create, and creates the one after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    api.refusals.set("Not allowed", 50);
+    const [refused, accepted] = [await db.create({ name: "Not allowed", songIds: ["song-a"] }), await db.create({ name: "Allowed" })].sort((left, right) => left.id.localeCompare(right.id));
+    // Whichever of the two is pushed first, the other is pushed too.
+    const [first, second] = refused!.local!.name === "Not allowed" ? [refused!, accepted!] : [accepted!, refused!];
+    const status = await manager.sync();
+
+    expect(await db.get(first.id)).toBeUndefined();
+    expect((await db.get(second.id))?.serverId).toBe("server-1");
+    expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Allowed"]);
+    expect(status.error).toBe('The server refused the new playlist "Not allowed", which was removed (server said 50)');
+    manager.destroy();
+  });
+
+  it("keeps a change the server failed on, retries it, and still pushes the playlists after it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: [] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-1", "One, renamed");
+    await db.rename("server-2", "Two, renamed");
+    // A generic error: the server failed, which says nothing about the change.
+    api.refusals.set("One, renamed", 0);
+    const failed = await manager.sync();
+
+    expect(failed).toMatchObject({ state: "error", error: "server said 0" });
+    expect(api.playlists.get("server-2")?.name).toBe("Two, renamed");
+    expect((await db.get("server-1"))?.local?.name).toBe("One, renamed");
+
+    api.refusals.clear();
+    expect((await manager.sync()).error).toBeNull();
+    expect(api.playlists.get("server-1")?.name).toBe("One, renamed");
+    manager.destroy();
+  });
+
+  it("deletes a playlist that is removed while its create request is in flight", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    let releaseCreate!: () => void;
+    let createStarted!: () => void;
+    const createStartedPromise = new Promise<void>((resolve) => {
+      createStarted = resolve;
+    });
+    api.createPlaylistStarted = createStarted;
+    api.createPlaylistGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+
+    const playlist = await db.create({ name: "Delete me", songIds: ["song-a"] });
+    const firstPass = manager.sync();
+    await createStartedPromise;
+    await db.delete(playlist.id);
+    releaseCreate();
+    await firstPass;
+    await settle();
+    await manager.sync();
+
+    expect(api.playlists.size).toBe(0);
+    expect(await db.get(playlist.id)).toBeUndefined();
+    manager.destroy();
+  });
+
+  it("does not rewrite entries for a metadata-only edit", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    await db.rename("server-1", "Renamed");
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toEqual([
+      expect.objectContaining({
+        playlistId: "server-1",
+        name: "Renamed",
+      }),
+    ]);
+    expect(api.updatePlaylistCalls[0]?.songIndexToRemove).toBeUndefined();
+    expect(api.updatePlaylistCalls[0]?.songIdToAdd).toBeUndefined();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a"]);
+    manager.destroy();
+  });
+
+  it("re-merges instead of replacing from a stale remote snapshot", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.getPlaylistCalls.length = 0;
+    api.updatePlaylistCalls.length = 0;
+
+    await db.addEntry("server-1", "song-local");
+    api.getPlaylistHook = (id, callNumber) => {
+      if (id === "server-1" && callNumber === 2) {
+        api.playlists.get(id)!.songIds.push("song-remote");
+        api.getPlaylistHook = undefined;
+      }
+    };
+
+    await manager.sync();
+    await settle();
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-remote", "song-local"]);
+    expect((await db.get("server-1"))?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-remote", "song-local"]);
+    manager.destroy();
+  });
+
+  it("runs another pass by itself after a stale mutation", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.getPlaylistCalls.length = 0;
+    api.updatePlaylistCalls.length = 0;
+
+    await db.addEntry("server-1", "song-local");
+    // The second request of the pass is the re-read just before the replacement.
+    api.getPlaylistHook = (id, callNumber) => {
+      if (id === "server-1" && callNumber === 2) {
+        api.playlists.get(id)!.songIds.push("song-remote");
+        api.getPlaylistHook = undefined;
+      }
+    };
+
+    const twoPasses = manager.statuses((changes) =>
+      changes.pipe(
+        Stream.drop(1),
+        Stream.filter((status) => status.state === "idle"),
+        Stream.take(2),
+      ),
+    );
+    await manager.sync();
+    await twoPasses;
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-remote", "song-local"]);
+    manager.destroy();
+  });
+
+  it("reuses unchanged playlists instead of refetching them on an edit-triggered pass", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+
+    await waitForCompletedSync(manager);
+    expect(api.getPlaylistCalls).toEqual(["server-1", "server-2"]);
+    api.getPlaylistCalls.length = 0;
+
+    const cycle = waitForSyncCycle(manager);
+    await db.rename("server-1", "One edited");
+    await cycle;
+
+    expect(api.getPlaylistCalls).toContain("server-1");
+    expect(api.getPlaylistCalls).not.toContain("server-2");
+    expect(api.playlists.get("server-1")?.name).toBe("One edited");
+    manager.destroy();
+  });
+
+  it("refetches a playlist whose changed timestamp moved", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+
+    await waitForCompletedSync(manager);
+    api.getPlaylistCalls.length = 0;
+
+    const remote = api.playlists.get("server-2")!;
+    remote.name = "Two renamed elsewhere";
+    remote.changed = "2026-07-11T00:00:00.000Z";
+
+    const cycle = waitForSyncCycle(manager);
+    await db.rename("server-1", "One edited");
+    await cycle;
+
+    expect(api.getPlaylistCalls).toContain("server-2");
+    expect((await db.get("server-2"))?.local?.name).toBe("Two renamed elsewhere");
+    manager.destroy();
+  });
+
+  it("refetches everything on a manual sync", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+    api.getPlaylistCalls.length = 0;
+
+    await manager.sync();
+
+    expect(api.getPlaylistCalls).toEqual(["server-1", "server-2"]);
+    manager.destroy();
+  });
+
+  it("reuses unchanged playlists on an interval pass", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      intervalMs: 20,
+    });
+
+    await waitForCompletedSync(manager);
+    api.getPlaylistCalls.length = 0;
+
+    const remote = api.playlists.get("server-2")!;
+    remote.name = "Two renamed elsewhere";
+    remote.changed = "2026-07-11T00:00:00.000Z";
+    await waitForSyncCycle(manager);
+
+    expect(api.getPlaylistCalls).toEqual(["server-2"]);
+    expect((await db.get("server-2"))?.local?.name).toBe("Two renamed elsewhere");
+    manager.destroy();
+  });
+
+  it("keeps a pending retry full when an edit joins it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+    await waitForCompletedSync(manager);
+    await settle();
+
+    api.listError = new Error("offline");
+    await manager.sync();
+    api.listError = undefined;
+    api.getPlaylistCalls.length = 0;
+
+    const cycle = waitForSyncCycle(manager);
+    await db.rename("server-1", "One edited");
+    await cycle;
+
+    // An edit-triggered pass on its own would have reused "server-2".
+    expect(api.getPlaylistCalls).toContain("server-2");
+    manager.destroy();
+  });
+
+  it("reports an edit as scheduled, then syncing, then idle", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const statuses = manager.statuses((changes) =>
+      changes.pipe(
+        Stream.drop(1),
+        Stream.takeUntil((status) => status.state === "idle"),
+      ),
+    );
+    await db.rename("server-1", "One edited");
+
+    expect((await statuses).map(({ state }) => state)).toEqual(["scheduled", "syncing", "idle"]);
+    manager.destroy();
+  });
+
+  it("serializes concurrent manual syncs", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+
+    let release!: () => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    api.getPlaylistStarted = started;
+    api.getPlaylistGate = new Promise<void>((resolve) => (release = resolve));
+    const previousCalls = api.getPlaylistCalls.length;
+
+    const first = manager.sync();
+    await startedPromise;
+    const second = manager.sync();
+    await settle();
+    expect(api.getPlaylistCalls).toHaveLength(previousCalls + 1);
+
+    release();
+    await Promise.all([first, second]);
+    expect(api.getPlaylistCalls).toHaveLength(previousCalls + 2);
+    manager.destroy();
+  });
+
+  it("treats playlists owned by another user as read-only", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("mine", { id: "mine", name: "Mine", comment: "", public: false, songIds: [], owner: "Alice" });
+    api.playlists.set("theirs", { id: "theirs", name: "Theirs", comment: "", public: true, songIds: [], owner: "bob" });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+
+    expect((await db.get("mine"))?.local?.readonly).toBe(false);
+    expect((await db.get("theirs"))?.local?.readonly).toBe(true);
+    await expect(db.rename("theirs", "Hijacked")).rejects.toThrow("Playlist is read-only");
+    manager.destroy();
+  });
+
+  it("resolves sync() with the status of the pass", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+
+    const ok = await manager.sync();
+    expect(ok.state).toBe("idle");
+    expect(ok.error).toBeNull();
+    expect(ok.lastSyncedAt).not.toBeNull();
+
+    api.listError = new Error("server unreachable");
+    const failed = await manager.sync();
+    expect(failed.state).toBe("error");
+    expect(failed.error).toBe("server unreachable");
+    manager.destroy();
+  });
+
+  effectIt.effect("backs off between consecutive failures", () => {
+    const api = new FakePlaylistApi();
+    api.listError = new Error("offline");
+
+    return Effect.gen(function* () {
+      const manager = yield* PlaylistSyncManager;
+      yield* manager.sync;
+      yield* TestClock.adjust(20_000);
+      yield* TestClock.adjust(40_000);
+      yield* TestClock.adjust(60_000);
+      yield* Effect.yieldNow;
+
+      const callTimes = [...new Set(api.getPlaylistsCallTimes)];
+      expect(callTimes.slice(-4)).toEqual([0, 20_000, 60_000, 120_000]);
+    }).pipe(
+      Effect.provide(
+        PlaylistSyncManagerLive({ intervalMs: 0, debounceMs: 10_000, retryMs: 20_000, maxRetryMs: 60_000 }).pipe(
+          Layer.provide(Layer.mergeAll(databaseLayer(), Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService))),
+        ),
+      ),
+    );
+  });
+
+  effectIt.effect("runs one more pass at once after a stale mutation, and slows down when the passes stay stale", () => {
+    // Answers at once, so that a pass runs to its end within the instant the test clock stands at.
+    const api = new (class extends FakePlaylistApi {
+      override getPlaylist({ id }: GetPlaylistArgs) {
+        return Effect.sync(() => {
+          this.getPlaylistCalls.push(id);
+          this.getPlaylistHook?.(id, this.getPlaylistCalls.length);
+          return { status: "ok" as const, version: "1.16.1", playlist: apiPlaylist(this.playlists.get(id)!) };
+        });
+      }
+    })();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+
+    return Effect.gen(function* () {
+      const manager = yield* PlaylistSyncManager;
+      const commands = yield* PlaylistCommands;
+      yield* manager.sync;
+      yield* commands.addEntries("server-1", ["song-local"]);
+      api.getPlaylistCalls.length = 0;
+      api.getPlaylistsCallTimes.length = 0;
+      // A pass reads the playlist three times: to merge, just before replacing it, and to verify.
+      // Someone else adds a song before every second read, so every pass finds its replacement stale.
+      api.getPlaylistHook = (id, callNumber) => {
+        if (callNumber % 3 === 2) api.playlists.get(id)!.songIds.push(`song-remote-${callNumber}`);
+      };
+
+      // Waits, in real time, for the pass that makes it `lists` listings and for what the manager does next.
+      const turn = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      const passed = (lists: number, state: PlaylistSyncStatus["state"]) =>
+        Effect.gen(function* () {
+          while (api.getPlaylistsCallTimes.length < lists || (yield* manager.status).state !== state) yield* turn;
+        });
+
+      yield* manager.sync;
+      yield* passed(4, "scheduled");
+      // The pass and the one it asked for, each listing the playlists twice. The third has to wait.
+      expect(api.getPlaylistsCallTimes).toEqual([0, 0, 0, 0]);
+
+      yield* TestClock.adjust(20_000);
+      yield* passed(6, "scheduled");
+      yield* TestClock.adjust(40_000);
+      yield* passed(8, "scheduled");
+      yield* TestClock.adjust(60_000);
+      yield* passed(10, "scheduled");
+      expect([...new Set(api.getPlaylistsCallTimes)]).toEqual([0, 20_000, 60_000, 120_000]);
+      expect(api.getPlaylistsCallTimes).toHaveLength(10);
+      expect(api.updatePlaylistCalls).toEqual([]);
+
+      // Once the playlist is left alone the change goes through, and the passes stop.
+      api.getPlaylistHook = undefined;
+      yield* TestClock.adjust(60_000);
+      yield* passed(12, "idle");
+      expect(api.playlists.get("server-1")?.songIds.at(-1)).toBe("song-local");
+      yield* TestClock.adjust(600_000);
+      yield* turn;
+      expect(api.getPlaylistsCallTimes).toHaveLength(12);
+    }).pipe(
+      Effect.provide(
+        PlaylistSyncManagerLive({ intervalMs: 0, debounceMs: 0, retryMs: 20_000, maxRetryMs: 60_000 }).pipe(
+          Layer.provideMerge(databaseLayer()),
+          Layer.provide(Layer.succeed(SubsonicAPI, api as unknown as SubsonicApiService)),
+        ),
+      ),
+    );
+  });
+
+  it("pushes playlists written before the manager started", async () => {
+    const db = await createDb();
+    const created = await db.create({ name: "Written offline", songIds: ["song-a"] });
+
+    // A fresh session starts syncing against what an earlier one left in the database.
+    const api = new FakePlaylistApi();
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+
+    expect([...api.playlists.values()].map(({ name }) => name)).toEqual(["Written offline"]);
+    expect((await db.get(created.id))?.serverId).toBe("server-1");
+    manager.destroy();
+  });
+
+  it("does not re-add an entry pushed to an already-synced playlist", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.addEntry("server-1", "song-b");
+    await manager.sync();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b"]);
+
+    // The song used to come back as a remote addition on every verification pass, so the playlist
+    // grew by one copy per sync.
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b"]);
+    expect((await db.get("server-1"))?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-b"]);
+    manager.destroy();
+  });
+
+  it("settles with nothing left to push after an edit", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.addEntry("server-1", "song-b");
+    await manager.sync();
+    await settle();
+
+    const record = (await db.get("server-1"))!;
+    expect(record.base).toEqual(record.local);
+    // A converged pass must not leave another one queued.
+    expect(manager.getStatus().state).toBe("idle");
+    manager.destroy();
+  });
+
+  it("keeps duplicates the user added on purpose", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.addEntry("server-1", "song-a");
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-a"]);
+    manager.destroy();
+  });
+
+  it("pushes a removal without the entry reappearing", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b"] });
+    const manager = createManager(db, api);
+
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const entries = (await db.get("server-1"))!.local!.entries;
+    await db.removeEntry("server-1", entries[0]!.id);
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-b"]);
+    manager.destroy();
+  });
+
+  it("aborts an in-flight pass when its session scope closes", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", {
+      id: "server-1",
+      name: "Remote",
+      comment: "",
+      public: false,
+      songIds: [],
+    });
+    await db.create({ name: "Pending" });
+    let release!: () => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    api.getPlaylistStarted = started;
+    api.getPlaylistGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const manager = createManager(db, api);
+
+    const syncing = manager.sync();
+    await startedPromise;
+    await db.clear();
+    const destroying = manager.destroy();
+    release();
+    const interrupted = await syncing;
+    await destroying;
+
+    expect(interrupted.state).toBe("idle");
+    expect(interrupted.lastSyncedAt).toBeNull();
+    expect(await db.all()).toEqual([]);
+  });
+});

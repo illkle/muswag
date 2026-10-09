@@ -19,6 +19,9 @@ if (!chromiumVersion) {
   throw new Error(`No Chromium target found for Electron ${electronVersion}`);
 }
 
+// Set to let a browser on another machine run the renderer; see src/main/dev-bridge.ts.
+const devBridgePort = process.env.MUSWAG_DEV_BRIDGE_PORT;
+
 export const rendererConfig = defineConfig({
   clearScreen: false,
   root: resolve(import.meta.dirname, "src/renderer"),
@@ -26,8 +29,23 @@ export const rendererConfig = defineConfig({
   base: "./",
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    // A second checkout running at the same time needs a port of its own.
+    port: Number(process.env.MUSWAG_DEV_PORT) || 5173,
     strictPort: true,
+    ...(devBridgePort
+      ? {
+          allowedHosts: [".ts.net"],
+          proxy: {
+            "/__bridge": {
+              target: `http://127.0.0.1:${devBridgePort}`,
+              // The bridge answers only to its own name, whatever name the browser reached this server by.
+              changeOrigin: true,
+              // The proxy leaves a response open when main dies in the middle of it, and the browser must see its event stream end.
+              configure: (proxy) => proxy.on("proxyRes", (proxyResponse, _request, response) => proxyResponse.on("close", () => proxyResponse.complete || response.destroy())),
+            },
+          },
+        }
+      : {}),
   },
   resolve: {
     conditions: ["source", "module", "browser", "development|production"],

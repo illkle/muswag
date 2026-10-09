@@ -4,16 +4,18 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AppUpdateState } from "#shared/ipc";
+import type { AppUpdateState } from "#shared/state/app-update";
 
 const mocks = vi.hoisted(() => ({
   check: vi.fn(),
-  getState: vi.fn(),
   install: vi.fn(),
-  subscribe: vi.fn(() => () => undefined),
 }));
 
-vi.mock("#/lib/ipc", () => ({
+// The update state is read from main's mirror, which a test has no main for.
+vi.mock("#/data/state", () => ({ appState: {} }));
+
+vi.mock("#/updates/app-update", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#/updates/app-update")>()),
   AppUpdateIPC: mocks,
 }));
 
@@ -45,7 +47,7 @@ describe("AppUpdateDialog", () => {
   });
 
   beforeEach(() => {
-    mocks.check.mockReset().mockResolvedValue(upToDate);
+    mocks.check.mockReset().mockResolvedValue(undefined);
     mocks.install.mockReset().mockResolvedValue(undefined);
   });
 

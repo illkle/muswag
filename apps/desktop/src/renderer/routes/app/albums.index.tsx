@@ -1,53 +1,25 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
+import { createFileRoute } from "@tanstack/react-router";
+import { VinylRecordIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { AlbumList } from "#/components/album-list/album-list";
-import { useUser } from "#/lib/queries";
+import { PageState } from "#/components/page-state";
+import { db } from "#/data/library";
 import { useLiveQuery } from "@tanstack/react-db";
-import { db } from "#/lib/db-renderer";
 
 export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
 });
 
-function LibraryScreen() {
-  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc" }));
-
-  return (
-    <section className="flex h-full w-full flex-col">
-      {albumsQuery.isLoading ? <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div> : null}
-
-      {albumsQuery.isError ? (
-        <div className="m-6">
-          <Alert variant="destructive">
-            <AlertTitle>Albums unavailable</AlertTitle>
-            <AlertDescription>{"The local album list could not be read."}</AlertDescription>
-          </Alert>
-        </div>
-      ) : null}
-
-      {!albumsQuery.isLoading && !albumsQuery.isError && (albumsQuery.data?.length ?? 0) === 0 ? (
-        <div className="mx-auto mt-(--top-height) flex max-w-md flex-col items-center justify-center gap-3 rounded-2xl py-10">
-          <div className="space-y-1">
-            <p className="font-medium">No albums in the local database yet.</p>
-            <p className="text-sm text-muted-foreground">Use the server control in the sidebar to fetch your server library.</p>
-          </div>
-        </div>
-      ) : null}
-
-      {!albumsQuery.isLoading && !albumsQuery.isError && (albumsQuery.data?.length ?? 0) > 0 ? (
-        <AlbumList albums={albumsQuery.data ?? []} scrollId="library-screen-albums" className="min-h-0 flex-1" />
-      ) : null}
-    </section>
-  );
-}
-
 function RouteComponent() {
-  const userStateQuery = useUser();
+  // Albums with no year go after the dated ones rather than ahead of the newest.
+  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc", nulls: "last" }));
+  const albums = albumsQuery.data ?? [];
 
-  if (!userStateQuery.data) {
-    return <Navigate to="/" />;
+  if (albumsQuery.isLoading) return <PageState tone="quiet" title="Loading albums…" />;
+  if (albumsQuery.isError) return <PageState tone="error" icon={<WarningIcon />} title="Albums unavailable" description="The local album list could not be read." />;
+  if (albums.length === 0) {
+    return <PageState icon={<VinylRecordIcon />} title="No albums yet" description="Use the server control in the sidebar to fetch your server library." />;
   }
 
-  return <LibraryScreen />;
+  return <AlbumList albums={albums} scrollId="library-screen-albums" rememberScroll className="h-full" />;
 }

@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MpvInstallState, MpvState } from "#shared/player";
+import type { BinaryState, InstallState, MpvInstallOption } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
   cancelInstall: vi.fn(async () => {}),
@@ -14,28 +14,28 @@ const mocks = vi.hoisted(() => ({
   locate: vi.fn(),
   playerState: {
     error: null as string | null,
-    installState: { status: "idle" } as MpvInstallState,
-    mpvState: { status: "checking" } as MpvState,
+    install: { _tag: "Idle" } as InstallState,
+    binary: { _tag: "Checking" } as BinaryState,
   },
   recheck: vi.fn(),
-  subscribeInstallOutput: vi.fn((_listener: (output: { line: string; stream: "stdout" | "stderr" }) => void) => () => undefined),
+  installOutput: [] as string[],
 }));
 
-vi.mock("#/player/connection", () => ({
+vi.mock("#/player/commands", () => ({
   MpvIPC: {
     cancelInstall: mocks.cancelInstall,
     clearManualPath: mocks.clearManualPath,
     install: mocks.install,
     locate: mocks.locate,
     recheck: mocks.recheck,
-    subscribeInstallOutput: mocks.subscribeInstallOutput,
   },
 }));
 
-vi.mock("#/components/player-provider", () => ({
-  usePlayerError: () => mocks.playerState.error,
-  usePlayerMpvInstallState: () => mocks.playerState.installState,
-  usePlayerMpvState: () => mocks.playerState.mpvState,
+vi.mock("#/player/hooks", () => ({
+  usePlayerError: () => (mocks.playerState.error ? { message: mocks.playerState.error, fix: null } : null),
+  usePlayerInstallOutput: () => mocks.installOutput,
+  usePlayerMpvBinary: () => mocks.playerState.binary,
+  usePlayerMpvInstall: () => mocks.playerState.install,
   usePlayerStatus: () => "idle",
 }));
 
@@ -55,13 +55,11 @@ function MpvInfoDialogHarness({ initialOpen = false }: { initialOpen?: boolean }
   return <MpvInfoDialog onOpenChange={setOpen} open={open} />;
 }
 
-const readyState: MpvState = { binaryPath: "/opt/homebrew/bin/mpv", source: "well-known", status: "ready", version: "0.40.0" };
+const readyState: BinaryState = { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" };
 
-const missingState: MpvState = {
-  checkedPaths: ["mpv", "/opt/homebrew/bin/mpv"],
-  installOptions: [{ automatic: true, command: "brew install mpv", method: "brew", note: null, url: null }],
-  status: "missing",
-};
+const unavailable = (message: string, options: readonly MpvInstallOption[] = []): BinaryState => ({ _tag: "Unavailable", message, options });
+
+const missingState = unavailable("mpv was not found. Install it, or select its executable.", [{ automatic: true, command: "brew install mpv", method: "brew", note: null, url: null }]);
 
 describe("MpvInfoDialog", () => {
   // Vitest globals are disabled in this project, so React Testing Library cannot auto-clean.
@@ -75,14 +73,14 @@ describe("MpvInfoDialog", () => {
     mocks.install.mockReset().mockResolvedValue(readyState);
     mocks.locate.mockReset().mockResolvedValue(readyState);
     mocks.recheck.mockReset().mockResolvedValue(readyState);
-    mocks.subscribeInstallOutput.mockClear();
+    mocks.installOutput = [];
     mocks.playerState.error = null;
-    mocks.playerState.installState = { status: "idle" };
-    mocks.playerState.mpvState = { status: "checking" };
+    mocks.playerState.install = { _tag: "Idle" };
+    mocks.playerState.binary = { _tag: "Checking" };
   });
 
   it("shows the resolved binary once mpv is available", async () => {
-    mocks.playerState.mpvState = readyState;
+    mocks.playerState.binary = readyState;
 
     render(<MpvInfoDialogHarness initialOpen />);
 
@@ -92,7 +90,7 @@ describe("MpvInfoDialog", () => {
   });
 
   it("opens itself and offers a one-click install when mpv is missing", async () => {
-    mocks.playerState.mpvState = missingState;
+    mocks.playerState.binary = missingState;
 
     render(<MpvInfoDialogHarness />);
 
@@ -105,33 +103,31 @@ describe("MpvInfoDialog", () => {
   });
 
   it("explains an unusable binary and lets the user pick another one", async () => {
-    mocks.playerState.mpvState = {
-      binaryPath: "/Users/tester/mpv",
-      installOptions: [],
-      reason: "The file is not executable.",
-      source: "manual",
-      status: "invalid",
-    };
+    mocks.playerState.binary = unavailable("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.");
 
     render(<MpvInfoDialogHarness />);
 
-    expect(await screen.findByText(/could not be run: The file is not executable\./)).toBeTruthy();
+    expect(await screen.findByText("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Locate mpv/ }));
     await waitFor(() => expect(mocks.locate).toHaveBeenCalledOnce());
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset to automatic" }));
+  it("lets the user go back to automatic discovery from a binary they picked", async () => {
+    mocks.playerState.binary = { ...readyState, source: "manual" };
+
+    render(<MpvInfoDialogHarness initialOpen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reset to automatic" }));
     await waitFor(() => expect(mocks.clearManualPath).toHaveBeenCalledOnce());
   });
 
   it("copies commands that have to be run in a terminal", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    mocks.playerState.mpvState = {
-      checkedPaths: [],
-      installOptions: [{ automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null }],
-      status: "missing",
-    };
+    mocks.playerState.binary = unavailable("mpv was not found. Install it, or select its executable.", [
+      { automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null },
+    ]);
 
     render(<MpvInfoDialogHarness />);
 
@@ -141,15 +137,25 @@ describe("MpvInfoDialog", () => {
     expect(mocks.install).not.toHaveBeenCalled();
   });
 
-  it("streams install output and can cancel a running install", async () => {
-    mocks.playerState.mpvState = missingState;
-    mocks.playerState.installState = { method: "brew", status: "running" };
+  it("says what went wrong with playback last, and why an installation failed", async () => {
+    mocks.playerState.binary = readyState;
+    mocks.playerState.error = "The track could not be played after retrying.";
+    mocks.playerState.install = { _tag: "Failed", jobId: "job", method: "brew", message: "Package manager exited unsuccessfully. See installation output." };
+
+    render(<MpvInfoDialogHarness initialOpen />);
+
+    expect(await screen.findByText("The track could not be played after retrying.")).toBeTruthy();
+    expect(screen.getByText("Package manager exited unsuccessfully. See installation output.")).toBeTruthy();
+  });
+
+  it("shows install output and can cancel a running install", async () => {
+    mocks.playerState.binary = missingState;
+    mocks.playerState.install = { _tag: "Running", jobId: "job", method: "brew" };
+
+    mocks.installOutput = ["==> Fetching mpv"];
 
     render(<MpvInfoDialogHarness />);
     await screen.findByText("Unavailable");
-
-    const emit = mocks.subscribeInstallOutput.mock.calls[0]?.[0];
-    emit?.({ line: "==> Fetching mpv", stream: "stdout" });
 
     expect(await screen.findByText(/==> Fetching mpv/)).toBeTruthy();
 

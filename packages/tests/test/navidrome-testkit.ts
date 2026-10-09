@@ -3,11 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import BetterSqlite3 from "better-sqlite3-test"; // eslint-disable-line
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
-import { createNodeSQLitePersistence } from "@tanstack/node-db-sqlite-persistence";
 
-import { createMuswagDb, type MuswagDb } from "@muswag/shared";
 import type { AlbumFixture } from "./fixtures/library-sets.js";
 
 export interface NavidromeConnection {
@@ -37,12 +34,6 @@ export interface GenerateFakeMp3LibraryOptions {
 
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "adminpass";
-
-export function createInMemoryDb(): MuswagDb {
-  const sqlite = new BetterSqlite3(":memory:");
-  const per = createNodeSQLitePersistence({ database: sqlite });
-  return createMuswagDb(per);
-}
 
 export function checkNavidromeDependencies(): NavidromeDependencyStatus {
   const dockerAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
@@ -186,36 +177,10 @@ function logAlbumCompletion(album: AlbumFixture, albumStartedAt: number, logPerA
   });
 }
 
-async function createTaggedTemplateMp3Library(
-  rootDir: string,
-  albums: AlbumFixture[],
-  logPerAlbum: boolean,
-  artworkBuffer: Buffer,
-): Promise<void> {
+async function createTaggedTemplateMp3Library(rootDir: string, albums: AlbumFixture[], logPerAlbum: boolean, artworkBuffer: Buffer): Promise<void> {
   const templatePath = path.join(rootDir, ".template.mp3");
   runFfmpeg(
-    [
-      "-loglevel",
-      "error",
-      "-y",
-      "-f",
-      "lavfi",
-      "-i",
-      "anullsrc=r=44100:cl=stereo",
-      "-t",
-      "1",
-      "-ac",
-      "2",
-      "-ar",
-      "44100",
-      "-codec:a",
-      "libmp3lame",
-      "-q:a",
-      "4",
-      "-map_metadata",
-      "-1",
-      templatePath,
-    ],
+    ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "1", "-ac", "2", "-ar", "44100", "-codec:a", "libmp3lame", "-q:a", "4", "-map_metadata", "-1", templatePath],
     { log: false },
   );
 
@@ -309,11 +274,7 @@ async function countScannedAlbums(connection: NavidromeConnection): Promise<numb
   }
 }
 
-export async function generateFakeMp3Library(
-  rootDir: string,
-  albums: AlbumFixture[],
-  options: GenerateFakeMp3LibraryOptions = {},
-): Promise<void> {
+export async function generateFakeMp3Library(rootDir: string, albums: AlbumFixture[], options: GenerateFakeMp3LibraryOptions = {}): Promise<void> {
   const { mode = "ffmpeg", logPerTrack = true, logPerAlbum = true } = options;
   const generationStartedAt = Date.now();
   const artworkBuffer = await createAlbumArtworkTemplate(rootDir);
@@ -535,10 +496,7 @@ export interface NavidromeTestConnection extends NavidromeConnection {
   cleanup(): Promise<void>;
 }
 
-export async function createNavidromeTestConnection(
-  albums: AlbumFixture[],
-  options: NavidromeLibraryOptions = {},
-): Promise<NavidromeTestConnection> {
+export async function createNavidromeTestConnection(albums: AlbumFixture[], options: NavidromeLibraryOptions = {}): Promise<NavidromeTestConnection> {
   let container: StartedTestContainer | undefined;
   let hostRoot: string | undefined;
 

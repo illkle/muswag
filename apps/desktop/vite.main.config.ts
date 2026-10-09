@@ -3,7 +3,7 @@ import { builtinModules } from "node:module";
 import { defineConfig } from "vite";
 
 const nodeBuiltins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
-const runtimePackages = ["better-sqlite3", "effect", "electron-updater"];
+const runtimePackages = ["effect", "electron-updater"];
 
 function isExternal(id: string): boolean {
   if (id === "electron" || id.startsWith("electron/")) return true;

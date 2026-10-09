@@ -1,48 +1,55 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
-const appClient = vi.hoisted(() => ({
-  ensureCover: vi.fn(),
-  repairCover: vi.fn(),
-}));
+import { AlbumCover } from "#/components/album-list/album-cover";
 
-vi.mock("#/core/client", () => ({ AppClient: appClient }));
+afterEach(cleanup);
 
-const { AlbumCover } = await import("#/components/album-list/album-cover");
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-});
+const album = { type: "album", id: "album 1", coverArtId: "cover-1" } as const;
+const src = () => screen.getByAltText("cover art").getAttribute("src");
 
 describe("AlbumCover", () => {
-  it("repairs a failed cached image and retries with the replacement path", async () => {
-    appClient.repairCover.mockResolvedValue("/covers/repaired.jpg");
-    render(<AlbumCover coverArtPath="/covers/missing.jpg" instantLoad target={{ type: "album", id: "album-1", coverArtId: "cover-1" }} />);
+  it("addresses the cover by what it is of", () => {
+    render(<AlbumCover instantLoad target={album} />);
+    expect(src()).toBe("muswag-cover://album/album%201?v=cover-1");
 
-    const failedImage = screen.getByAltText("cover art");
-    expect(failedImage.getAttribute("src")).toContain(encodeURIComponent("/covers/missing.jpg"));
-    fireEvent.error(failedImage);
-
-    expect(appClient.repairCover).toHaveBeenCalledWith({ type: "album", id: "album-1", coverArtId: "cover-1" }, "/covers/missing.jpg");
-    await waitFor(() => {
-      const repairedImage = screen.getByAltText("cover art");
-      expect(repairedImage.getAttribute("src")).toContain(encodeURIComponent("/covers/repaired.jpg"));
-      expect(repairedImage.getAttribute("src")).toContain("revision=1");
-    });
+    cleanup();
+    render(<AlbumCover instantLoad target={{ ...album, type: "artist" }} />);
+    expect(src()).toBe("muswag-cover://artist/album%201?v=cover-1");
   });
 
-  it("does not enter an automatic repair loop when the replacement also fails", async () => {
-    appClient.repairCover.mockResolvedValue("/covers/still-broken.jpg");
-    render(<AlbumCover coverArtPath="/covers/missing.jpg" instantLoad target={{ type: "album", id: "album-1", coverArtId: "cover-1" }} />);
+  it("asks for the scaled-down cover only when shown as a thumbnail", () => {
+    const { rerender } = render(<AlbumCover instantLoad thumbnail target={album} />);
+    expect(src()).toContain("thumbnail");
 
-    fireEvent.error(screen.getByAltText("cover art"));
-    await waitFor(() => expect(screen.getByAltText("cover art").getAttribute("src")).toContain("still-broken.jpg"));
-    fireEvent.error(screen.getByAltText("cover art"));
+    rerender(<AlbumCover instantLoad target={album} />);
+    expect(src()).not.toContain("thumbnail");
+  });
 
-    expect(appClient.repairCover).toHaveBeenCalledTimes(1);
+  it("asks for nothing when there is no cover", () => {
+    const { rerender } = render(<AlbumCover instantLoad target={{ ...album, coverArtId: null }} />);
     expect(screen.queryByAltText("cover art")).toBeNull();
+
+    rerender(<AlbumCover instantLoad />);
+    expect(screen.queryByAltText("cover art")).toBeNull();
+  });
+
+  it("shows the placeholder for a cover that did not load, and does not ask again", () => {
+    const { rerender } = render(<AlbumCover instantLoad target={album} />);
+    fireEvent.error(screen.getByAltText("cover art"));
+    expect(screen.queryByAltText("cover art")).toBeNull();
+
+    rerender(<AlbumCover instantLoad target={{ ...album }} />);
+    expect(screen.queryByAltText("cover art")).toBeNull();
+  });
+
+  it("loads again when the cover is another one", () => {
+    const { rerender } = render(<AlbumCover instantLoad target={album} />);
+    fireEvent.error(screen.getByAltText("cover art"));
+
+    rerender(<AlbumCover instantLoad target={{ ...album, coverArtId: "cover-2" }} />);
+    expect(src()).toBe("muswag-cover://album/album%201?v=cover-2");
   });
 });

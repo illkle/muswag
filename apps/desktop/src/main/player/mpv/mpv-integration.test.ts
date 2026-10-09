@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { songRow } from "@muswag/model";
 import type { EngineError } from "../errors";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,9 +11,9 @@ import { MpvSession, MpvSessionLive, type SessionEvent } from "./session";
 import { booleanProperty, command, numberProperty } from "./protocol";
 import { applyQueue } from "../queue";
 
-// Explicitly opt in; CI's mpv job should set this and provide mpv >= 0.41.
+// Explicitly opt in; CI's mpv job should set this and provide an mpv of at least `MINIMUM_MPV_VERSION`.
 describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", () => {
-  it("loads exact duplicate-media occurrences, pauses/seeks, advances and closes", async () => {
+  it("loads exact duplicate-media occurrences, pauses/seeks, selects in place, edits, advances and closes", async () => {
     const root = await mkdtemp(join(tmpdir(), "muswag-effect-mpv-"));
     try {
       const file = join(root, "audio.wav");
@@ -43,13 +44,22 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
               Effect.forkScoped,
             );
             yield* session.execute(command("set_property", "pause", true));
-            const items = ["a", "b", "c"].map((key) => ({ key, track: { id: "same", title: key, isDir: false } }));
-            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, new Map(items.map((item) => [item.key, Redacted.make(file)])));
+            const [a, b, c, d] = ["a", "b", "c", "d"].map((key) => ({ key, track: songRow({ id: "same", title: key }) }));
+            const items = [a!, b!, c!];
+            const urls = new Map([...items, d!].map((item) => [item.key, Redacted.make(file)]));
+            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, urls);
             expect(mirrored.entries.map((entry) => entry.key)).toEqual(["a", "b", "c"]);
             yield* Deferred.await(loaded);
             expect(yield* session.execute(booleanProperty("pause"))).toBe(true);
             yield* session.execute(command("seek", 0.2, "absolute+exact"));
             expect(yield* session.execute(numberProperty("time-pos"))).toBeGreaterThanOrEqual(0);
+            // mpv starts an occurrence it already holds without a new playlist, and an edit only sends its difference.
+            const selected = yield* applyQueue(session, mirrored, items, { key: "c", play: false, positionSeconds: 0 }, urls);
+            expect(selected.entries).toEqual(mirrored.entries);
+            expect(selected.currentId).toBe(mirrored.entries[2]!.entryId);
+            const edited = yield* applyQueue(session, selected, [b!, c!, d!], null, urls);
+            expect(edited.entries.slice(0, 2)).toEqual(mirrored.entries.slice(1));
+            expect(edited.entries.map((entry) => entry.key)).toEqual(["b", "c", "d"]);
             yield* session.execute(command("set_property", "pause", false));
             yield* Deferred.await(ended);
             expect(new Set(starts).size).toBe(3);

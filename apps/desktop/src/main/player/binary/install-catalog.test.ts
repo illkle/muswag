@@ -28,11 +28,11 @@ describe("install catalog", () => {
     }),
   );
 
-  it.effect("lists only installed Linux managers and uses the Flathub app id", () =>
+  it.effect("lists only installed Linux managers, and never Flatpak", () =>
     Effect.gen(function* () {
-      const candidates = yield* detectInstallCandidates(deps({ fileExists: (path) => Effect.succeed(path === "/usr/bin/flatpak") }));
+      const candidates = yield* detectInstallCandidates(deps({ fileExists: (path) => Effect.succeed(path === "/usr/bin/flatpak" || path === "/usr/bin/dnf") }));
       expect(candidates).toHaveLength(1);
-      expect(candidates[0]).toMatchObject({ args: ["install", "--user", "flathub", "io.mpv.Mpv"], option: { automatic: false, method: "flatpak" } });
+      expect(candidates[0]).toMatchObject({ args: ["install", "mpv"], option: { automatic: false, command: "sudo dnf install mpv", method: "dnf" } });
     }),
   );
 

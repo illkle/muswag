@@ -1,14 +1,18 @@
 import electronUpdater from "electron-updater";
-import { app, dialog } from "electron";
+import { app } from "electron";
+import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
+import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
+import { Effect } from "effect";
 
-import type { AppUpdateState } from "#shared/ipc";
+import type { MuswagMainIpc } from "#shared/ipc";
+import { appUpdate, type AppUpdateState } from "#shared/state/app-update";
 
 const { autoUpdater } = electronUpdater;
 
-let updateDialogShown = false;
 let initialized = false;
-let pendingCheck: Promise<AppUpdateState> | null = null;
-const stateListeners = new Set<(state: AppUpdateState) => void>();
+let pendingCheck: Promise<void> | null = null;
+/** Shows renderers the state; set by `registerAppUpdater`. */
+let publish: (state: AppUpdateState) => void = () => {};
 let updateState: AppUpdateState = {
   canCheck: app.isPackaged,
   currentVersion: app.getVersion(),
@@ -21,27 +25,16 @@ let updateState: AppUpdateState = {
 
 function setUpdateState(patch: Partial<AppUpdateState>): void {
   updateState = { ...updateState, ...patch };
-  for (const listener of stateListeners) {
-    listener(getAppUpdateState());
-  }
+  publish(updateState);
 }
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function getAppUpdateState(): AppUpdateState {
-  return { ...updateState };
-}
-
-export function subscribeToAppUpdateState(listener: (state: AppUpdateState) => void): () => void {
-  stateListeners.add(listener);
-  return () => stateListeners.delete(listener);
-}
-
-export function checkForAppUpdates(): Promise<AppUpdateState> {
+function checkForAppUpdates(): Promise<void> {
   if (!app.isPackaged) {
-    return Promise.resolve(getAppUpdateState());
+    return Promise.resolve();
   }
 
   if (pendingCheck) {
@@ -57,11 +50,10 @@ export function checkForAppUpdates(): Promise<AppUpdateState> {
 
   pendingCheck = autoUpdater
     .checkForUpdates()
-    .then(() => getAppUpdateState())
+    .then(() => undefined)
     .catch((error: unknown) => {
       console.error("Muswag auto-update check failed", error);
       setUpdateState({ error: getErrorMessage(error), status: "error" });
-      return getAppUpdateState();
     })
     .finally(() => {
       pendingCheck = null;
@@ -70,7 +62,7 @@ export function checkForAppUpdates(): Promise<AppUpdateState> {
   return pendingCheck;
 }
 
-export function installAppUpdate(): void {
+function installAppUpdate(): void {
   if (updateState.status !== "ready") {
     return;
   }
@@ -106,27 +98,6 @@ export function initializeAutoUpdater(): void {
 
   autoUpdater.on("update-downloaded", (info) => {
     setUpdateState({ latestVersion: info.version, progressPercent: 100, status: "ready" });
-
-    if (updateDialogShown) {
-      return;
-    }
-
-    updateDialogShown = true;
-    void dialog
-      .showMessageBox({
-        type: "info",
-        title: "Muswag update ready",
-        message: "A new version of Muswag has been downloaded.",
-        detail: "Restart Muswag now to install the update.",
-        buttons: ["Restart and install", "Later"],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 0) {
-          autoUpdater.quitAndInstall();
-        }
-      });
   });
 
   autoUpdater.on("error", (error) => {
@@ -135,4 +106,17 @@ export function initializeAutoUpdater(): void {
   });
 
   void checkForAppUpdates();
+}
+
+/**
+ * Shows renderers the update state in `state`, which must mirror `appUpdate`, and answers their
+ * requests to check and to install.
+ */
+export function registerAppUpdater(mainIpc: IpcListener<MuswagMainIpc>, state: MemoryMirrorService): void {
+  publish = (value) => void Effect.runFork(state.upsert(appUpdate, { id: "app_update", value }));
+  publish(updateState);
+  mainIpc.handle("appUpdate:check", () => checkForAppUpdates());
+  mainIpc.handle("appUpdate:install", async () => {
+    installAppUpdate();
+  });
 }

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { NodeServices } from "@effect/platform-node";
 import { Cause, Deferred, Effect, Exit, FileSystem, Queue } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { build, createServer, type ViteDevServer } from "vite";
 
 import { loadEnvironmentFile, signalExitCode, stopChildProcess, waitForTerminationSignal } from "./process-lifecycle.ts";

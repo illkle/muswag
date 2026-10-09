@@ -1,20 +1,20 @@
-import { PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon } from "@phosphor-icons/react";
+import { MusicNotesIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
-import { Button } from "#/components/ui/button";
-import { MpvIPC, PlayerIPC } from "#/player/connection";
-import { db } from "#/lib/db-renderer";
-import { cn } from "#/lib/utils";
-
+import { Button, buttonVariants } from "#/components/ui/button";
+import { Slider } from "#/components/ui-custom/slider";
+import { MpvIPC, PlayerIPC } from "#/player/commands";
+import { db } from "#/data/library";
+import { QueueActions } from "#/queue/queue";
 import {
-  queueManager,
   usePlayerCanGoBack,
   usePlayerCanGoForward,
   usePlayerCanPlay,
-  usePlayerIssue,
+  usePlayerConnected,
   usePlayerError,
   usePlayerCanSeek,
+  usePlayerBuffering,
   usePlayerCurrentTrackId,
   usePlayerCurrentTrack,
   usePlayerDuration,
@@ -22,17 +22,37 @@ import {
   usePlayerPositionSeconds,
   usePlayerStatus,
   usePlayerVolumePercent,
-} from "./player-provider";
+} from "#/player/hooks";
+import { formatDuration } from "#/lib/format";
+import { failureNotice } from "#/lib/notify";
+import { cn } from "#/lib/utils";
+
 import { AlbumCover } from "#/components/album-list/album-cover";
+import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
 import { useHotkey } from "@tanstack/react-hotkeys";
+
+/**
+ * Whether Space is for the element that has the focus rather than for playback: a field to type in, a
+ * control the user reached with the keyboard, or anything in a dialog or a menu, which own the keyboard
+ * while they are open. A button that only kept the focus from a click is not one of them, and neither is
+ * a slider, which does nothing with Space.
+ */
+function takesSpace(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.closest("[role=dialog], [role=alertdialog], [role=menu], [role=listbox]")) return true;
+  if (element instanceof HTMLInputElement) return element.type !== "range";
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || element.isContentEditable) return true;
+  return element.matches("button, summary, [role=button]") && element.matches(":focus-visible");
+}
 
 const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canGoBack = usePlayerCanGoBack();
   const canGoForward = usePlayerCanGoForward();
   const canPlay = usePlayerCanPlay();
   const status = usePlayerStatus();
+  const buffering = usePlayerBuffering();
 
   const togglePlay = () => {
     if (!canPlay) return;
@@ -41,122 +61,123 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
       return;
     }
 
-    void PlayerIPC.play().catch(() => {});
+    // With no track in the player, Play starts the queue. What the player fails at is in its banner; what the queue fails at has no place but a notice.
+    if (status === "idle") void QueueActions.play().catch(failureNotice("The queue could not be started."));
+    else void PlayerIPC.play().catch(() => {});
   };
 
-  useHotkey("Space", () => togglePlay());
+  // The library would skip every input, sliders included, and would take Space from a focused button
+  // without asking: so it is told to do neither, and the press is only claimed when it is playback's.
+  useHotkey(
+    "Space",
+    (event) => {
+      if (takesSpace(document.activeElement)) return;
+      event.preventDefault();
+      togglePlay();
+    },
+    { ignoreInputs: false, preventDefault: false, stopPropagation: false },
+  );
 
   return (
-    <div {...props} className={cn("flex items-center justify-center gap-2", props.className)}>
+    <div {...props} className={cn("flex items-center justify-center gap-1", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.previous().catch(() => {});
+          void QueueActions.previous().catch(failureNotice("The previous track could not be played."));
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
+        title="Previous"
       >
-        <SkipBackIcon className="size-4" />
+        <SkipBackIcon weight="fill" className="size-4" />
       </Button>
 
-      <Button size="icon" className="h-7 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
-        {status === "playing" ? <PauseIcon className="size-3" /> : status === "loading" ? <SpinnerGapIcon className="size-3 animate-spin" /> : <PlayIcon className="size-3" />}
+      <Button size="icon-sm" className="mx-1 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+        {status === "loading" || buffering ? (
+          <SpinnerGapIcon className="size-4 animate-spin" />
+        ) : status === "playing" ? (
+          <PauseIcon weight="fill" className="size-4" />
+        ) : (
+          <PlayIcon weight="fill" className="size-4" />
+        )}
       </Button>
 
       <Button
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void queueManager.next().catch(() => {});
+          void QueueActions.next().catch(failureNotice("The next track could not be played."));
         }}
         disabled={!canGoForward}
         aria-label="Next track"
+        title="Next"
       >
-        <SkipForwardIcon className="size-4" />
+        <SkipForwardIcon weight="fill" className="size-4" />
       </Button>
     </div>
   );
 };
 
+/** Wide enough for the times of most tracks, so the slider between them keeps its length as they change. */
+const TIME_LABEL = "min-w-9 shrink-0 text-xs text-muted-foreground tabular-nums";
+/** Stands in for both times while nothing is loaded. */
+const NO_TIME = "–:––";
+/** How far an arrow key seeks. */
+const SEEK_KEY_STEP_SECONDS = 5;
+const SEEK_KEY_DIRECTIONS: Record<string, 1 | -1 | undefined> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
+/** Every key that moves the seek slider. */
+const SEEK_KEYS = new Set([...Object.keys(SEEK_KEY_DIRECTIONS), "Home", "End", "PageUp", "PageDown"]);
+
 const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
-  const ds = usePlayerDuration();
+  const durationSeconds = usePlayerDuration() ?? 0;
   const canSeek = usePlayerCanSeek();
   const currentTrackId = usePlayerCurrentTrackId();
-  const status = usePlayerStatus();
   const positionSeconds = usePlayerPositionSeconds();
 
-  const durationSeconds = ds ?? 0;
+  /** Where the user is dragging or stepping to. Nothing is sent before they let go. */
   const [draftPosition, setDraftPosition] = useState<number | null>(null);
-  const [optimisticPosition, setOptimisticPosition] = useState<number | null>(null);
+  /** The position that was sent, shown until main has answered: by then the state holds where mpv went. */
+  const [sentPosition, setSentPosition] = useState<number | null>(null);
   const draftPositionRef = useRef<number | null>(null);
-  const optimisticSeekRef = useRef<{ from: number; target: number } | null>(null);
   const seekInteractionRef = useRef<"pointer" | "keyboard" | null>(null);
+  /** Counts the seeks sent, so that only the answer to the last one ends `sentPosition`. */
+  const seeksSentRef = useRef(0);
 
   const setDraft = (nextDraft: number | null) => {
     draftPositionRef.current = nextDraft;
     setDraftPosition(nextDraft);
   };
 
+  // A position the user was moving to belongs to the track it was in.
   useEffect(() => {
     setDraft(null);
-    setOptimisticPosition(null);
-    optimisticSeekRef.current = null;
+    setSentPosition(null);
     seekInteractionRef.current = null;
-  }, [currentTrackId, status]);
+  }, [currentTrackId]);
 
-  useEffect(() => {
-    if (optimisticPosition === null) {
-      return;
-    }
+  const sliderValue = draftPosition ?? sentPosition ?? positionSeconds;
 
-    const optimisticSeek = optimisticSeekRef.current;
-    if (!optimisticSeek) {
-      setOptimisticPosition(null);
-      return;
-    }
-
-    const isForwardSeek = optimisticSeek.target >= optimisticSeek.from;
-    const reachedTarget = isForwardSeek ? positionSeconds >= optimisticSeek.target - 0.25 : positionSeconds <= optimisticSeek.target + 0.25;
-
-    if (Math.abs(positionSeconds - optimisticPosition) < 0.5 || reachedTarget) {
-      optimisticSeekRef.current = null;
-      setOptimisticPosition(null);
-    }
-  }, [optimisticPosition, positionSeconds]);
-
-  const sliderValue = draftPosition ?? optimisticPosition ?? positionSeconds;
-
-  const commitSeek = async (nextValue: number) => {
-    if (!canSeek) {
-      seekInteractionRef.current = null;
-      setDraft(null);
-      setOptimisticPosition(null);
-      return;
-    }
+  const commitSeek = (nextValue: number) => {
+    seekInteractionRef.current = null;
+    setDraft(null);
+    if (!canSeek) return;
 
     const nextPosition = Math.min(Math.max(nextValue, 0), durationSeconds);
-
-    seekInteractionRef.current = null;
-    setDraft(null);
-    optimisticSeekRef.current = { from: positionSeconds, target: nextPosition };
-    setOptimisticPosition(nextPosition);
-
-    try {
-      await PlayerIPC.seek(nextPosition);
-    } catch (cause) {
-      console.error(cause);
-      optimisticSeekRef.current = null;
-      setOptimisticPosition(null);
-    }
+    const seek = ++seeksSentRef.current;
+    setSentPosition(nextPosition);
+    void PlayerIPC.seek(nextPosition)
+      // Why it failed is the player's error, which the banner shows.
+      .catch(() => {})
+      .finally(() => {
+        if (seeksSentRef.current === seek) setSentPosition(null);
+      });
   };
 
   return (
-    <div {...props} className={cn("flex w-full items-center gap-1", props.className)}>
-      <span className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatDuration(positionSeconds)}</span>
-      <input
-        type="range"
-        min={0}
+    <div {...props} className={cn("flex w-full items-center gap-2", props.className)}>
+      <span className={TIME_LABEL}>{currentTrackId ? formatDuration(sliderValue) : NO_TIME}</span>
+      <Slider
         max={Math.max(durationSeconds, 1)}
         step={0.01}
         value={Math.min(sliderValue, Math.max(durationSeconds, 1))}
@@ -175,8 +196,10 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           }
 
           if (seekInteractionRef.current === "pointer") {
-            void commitSeek(Number(event.currentTarget.value));
+            commitSeek(Number(event.currentTarget.value));
           }
+          // A slider that kept the focus after a drag would take the arrow keys.
+          event.currentTarget.blur();
         }}
         onPointerCancel={(event) => {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -188,7 +211,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
         }}
         onBlur={(event) => {
           if (seekInteractionRef.current !== null) {
-            void commitSeek(Number(event.currentTarget.value));
+            commitSeek(draftPositionRef.current ?? Number(event.currentTarget.value));
             return;
           }
 
@@ -196,82 +219,174 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           setDraft(null);
         }}
         onKeyDown={(event) => {
-          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+          const direction = event.metaKey || event.ctrlKey || event.altKey ? undefined : SEEK_KEY_DIRECTIONS[event.key];
+          if (direction !== undefined) {
+            // The slider's own step is a hundredth of a second, which is right for dragging only.
+            event.preventDefault();
+            // From the draft as it stands: a held key repeats faster than the slider is rendered again.
+            const nextDraft = (draftPositionRef.current ?? sliderValue) + direction * SEEK_KEY_STEP_SECONDS;
+            // The end of a track is the start of the next one, so a step that would reach it is not taken.
+            if (nextDraft >= durationSeconds) return;
+            seekInteractionRef.current = "keyboard";
+            setDraft(Math.max(nextDraft, 0));
+          } else if (SEEK_KEYS.has(event.key)) {
             seekInteractionRef.current = "keyboard";
           }
         }}
         onKeyUp={(event) => {
-          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
-            void commitSeek(Number(event.currentTarget.value));
+          // Letting go of the key that moved the slider, not of a modifier held with it.
+          if (seekInteractionRef.current === "keyboard" && SEEK_KEYS.has(event.key)) {
+            // End and Page Up reach for the end of the track, which would start the next one: a key stops just short of it.
+            commitSeek(Math.min(draftPositionRef.current ?? Number(event.currentTarget.value), Math.max(durationSeconds - SEEK_KEY_STEP_SECONDS, 0)));
           }
         }}
-        className={cn("h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
+        aria-label="Playback position"
+        className="w-full"
       />
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{formatDuration(durationSeconds)}</span>
+      <span className={cn(TIME_LABEL, "text-right")}>{currentTrackId ? formatDuration(durationSeconds) : NO_TIME}</span>
     </div>
   );
 };
 
 const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const currentTrack = usePlayerCurrentTrack();
-  const albumQuery = useLiveQuery(
-    (q) =>
-      currentTrack?.albumId
-        ? q
-            .from({ album: db.albums })
-            .where(({ album }) => eq(album.id, currentTrack.albumId))
-            .findOne()
-        : null,
-    [currentTrack?.albumId],
+  const albumQuery = useLiveQuery((q) =>
+    currentTrack?.albumId
+      ? q
+          .from({ album: db.albums })
+          .where(({ album }) => eq(album.id, currentTrack.albumId))
+          .findOne()
+      : null,
   );
 
   const alb = albumQuery.data;
 
-  return (
-    <div {...props} className={cn("flex h-full w-full items-center gap-2 overflow-hidden", !currentTrack && "opacity-0", props.className)}>
-      <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />
+  if (!currentTrack) {
+    return (
+      <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
+        <div className="flex size-10 shrink-0 items-center justify-center rounded border border-border bg-muted text-muted-foreground/50">
+          <MusicNotesIcon className="size-4" />
+        </div>
+        <span className="truncate text-sm text-muted-foreground">Nothing playing</span>
+      </div>
+    );
+  }
 
-      {currentTrack && (
-        <div className="flex w-full max-w-[calc(100%-48px)] flex-col">
-          <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="line-clamp-1 block truncate text-xs font-semibold">
+  const cover = <AlbumCover thumbnail className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />;
+
+  return (
+    <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
+      {currentTrack.albumId ? (
+        // The title next to it is the same link, so this one stays out of the tab order.
+        <Link to="/app/albums/$albumId" params={{ albumId: currentTrack.albumId }} tabIndex={-1} aria-hidden className="shrink-0">
+          {cover}
+        </Link>
+      ) : (
+        cover
+      )}
+
+      <div className="flex min-w-0 flex-col">
+        {currentTrack.albumId ? (
+          <Link to="/app/albums/$albumId" params={{ albumId: currentTrack.albumId }} className="truncate text-sm font-medium hover:underline">
             {currentTrack.title}
           </Link>
-          <ArtistLinks
-            artist={currentTrack.artist}
-            artistId={currentTrack.artistId}
-            artists={currentTrack.artists}
-            className="block truncate text-xs text-muted-foreground"
-            linkClassName="hover:text-foreground hover:underline"
-          />
-        </div>
-      )}
+        ) : (
+          <span className="truncate text-sm font-medium">{currentTrack.title}</span>
+        )}
+        <ArtistLinks
+          artist={currentTrack.artist}
+          artistId={currentTrack.artistId}
+          artists={currentTrack.artists}
+          className="block truncate text-xs text-muted-foreground"
+          linkClassName="hover:text-foreground hover:underline"
+        />
+      </div>
     </div>
   );
 };
 
-const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
+/** Volume changes reach main at most this often while the slider moves. */
+const VOLUME_SEND_INTERVAL_MS = 100;
+
+export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const muted = usePlayerMuted();
   const volumePercent = usePlayerVolumePercent();
+  /** What the slider shows while the user moves it, and until main has caught up after they let go. */
   const [draftVolumePercent, setDraftVolumePercent] = useState<number | null>(null);
+  const interactingRef = useRef(false);
+  const unsentVolumeRef = useRef<number | null>(null);
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentAtRef = useRef(-Infinity);
+  const sendsInFlightRef = useRef(0);
   const visibleVolumePercent = draftVolumePercent ?? volumePercent;
   const VolumeIcon = muted || visibleVolumePercent === 0 ? SpeakerXIcon : visibleVolumePercent < 50 ? SpeakerLowIcon : SpeakerHighIcon;
 
-  useEffect(() => {
-    setDraftVolumePercent(null);
-  }, [volumePercent]);
+  useEffect(
+    () => () => {
+      if (sendTimerRef.current !== null) clearTimeout(sendTimerRef.current);
+    },
+    [],
+  );
 
-  const commitVolume = (nextVolumePercent: number) => {
+  /** Main's volume takes over only once the user has let go and every change sent has been answered. */
+  const releaseDraft = () => {
+    if (!interactingRef.current && unsentVolumeRef.current === null && sendsInFlightRef.current === 0) {
+      setDraftVolumePercent(null);
+    }
+  };
+
+  const sendVolume = () => {
+    if (sendTimerRef.current !== null) {
+      clearTimeout(sendTimerRef.current);
+      sendTimerRef.current = null;
+    }
+
+    const nextVolumePercent = unsentVolumeRef.current;
+    if (nextVolumePercent === null) {
+      return;
+    }
+
+    unsentVolumeRef.current = null;
+    lastSentAtRef.current = performance.now();
+    sendsInFlightRef.current++;
+    void PlayerIPC.setVolume(nextVolumePercent)
+      .catch(() => {})
+      .finally(() => {
+        sendsInFlightRef.current--;
+        releaseDraft();
+      });
+  };
+
+  const changeVolume = (nextVolumePercent: number) => {
     const boundedVolumePercent = Math.min(100, Math.max(0, Math.round(nextVolumePercent)));
 
     setDraftVolumePercent(boundedVolumePercent);
     if (muted && boundedVolumePercent > 0) {
       void PlayerIPC.setMuted(false).catch(() => {});
     }
-    void PlayerIPC.setVolume(boundedVolumePercent).catch(() => {});
+
+    // Only the latest value is kept between sends.
+    unsentVolumeRef.current = boundedVolumePercent;
+    if (sendTimerRef.current !== null) {
+      return;
+    }
+
+    const waitMs = lastSentAtRef.current + VOLUME_SEND_INTERVAL_MS - performance.now();
+    if (waitMs <= 0) {
+      sendVolume();
+    } else {
+      sendTimerRef.current = setTimeout(sendVolume, waitMs);
+    }
+  };
+
+  const endInteraction = () => {
+    interactingRef.current = false;
+    sendVolume();
+    releaseDraft();
   };
 
   return (
-    <div {...props} className={cn("flex h-full min-w-0 items-center justify-end", props.className)}>
+    <div {...props} className={cn("flex min-w-0 items-center justify-end gap-1", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -281,20 +396,47 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
         aria-label={muted ? "Unmute playback" : "Mute playback"}
         title={muted ? "Unmute" : "Mute"}
       >
-        <VolumeIcon className="size-4" />
+        <VolumeIcon weight="fill" className="size-4" />
       </Button>
 
-      <input
-        type="range"
-        min={0}
-        max={100}
+      <Slider
         step={1}
         value={visibleVolumePercent}
+        onPointerDown={(event) => {
+          interactingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
         onChange={(event) => {
-          commitVolume(Number(event.target.value));
+          changeVolume(Number(event.target.value));
+        }}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+
+          endInteraction();
+          event.currentTarget.blur();
+        }}
+        onPointerCancel={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+
+          endInteraction();
+        }}
+        onBlur={endInteraction}
+        onKeyDown={(event) => {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+            interactingRef.current = true;
+          }
+        }}
+        onKeyUp={(event) => {
+          if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+            endInteraction();
+          }
         }}
         aria-label="Playback volume"
-        className={cn("h-1.5 w-full max-w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
+        className="w-full max-w-28"
       />
     </div>
   );
@@ -302,84 +444,87 @@ const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
 //
 
-export function PlayerPanel() {
-  const issue = usePlayerIssue();
+/** What went wrong with playback and what can be done about it, floating above the player bar. */
+function PlayerErrorBanner() {
+  const connected = usePlayerConnected();
   const error = usePlayerError();
+
+  if (!error) return null;
+
   return (
-    <div className="absolute bottom-0 left-1/2 z-100 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
-      {error ? (
-        <div role="alert" className="absolute bottom-full mb-2 flex max-w-full items-center gap-2 rounded border bg-background p-2 text-sm">
-          <span>{error}</span>
-          {issue?.actions.includes("retry") ? (
+    <div role="alert" className="absolute bottom-full left-1/2 mb-2 flex w-max max-w-full -translate-x-1/2 items-center gap-3 rounded-lg surface-raised px-3 py-1.5 text-sm">
+      <WarningIcon weight="fill" className="size-4 shrink-0 text-destructive" />
+      <span className="line-clamp-2 min-w-0 py-1.5">{error.message}</span>
+
+      {connected ? (
+        <div className="-mr-1.5 flex shrink-0 items-center gap-1">
+          {error.fix === "retry" ? (
             <Button
               size="sm"
               variant="outline"
               onClick={() => {
-                void PlayerIPC.retryIssue(issue.id).catch(() => {});
+                void PlayerIPC.play().catch(() => {});
               }}
             >
               Retry
             </Button>
           ) : null}
-          {issue?.actions.includes("configureMpv") ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void MpvIPC.locate().catch(() => {});
-              }}
-            >
-              Locate mpv
-            </Button>
+          {error.fix === "mpv" ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void MpvIPC.locate().catch(() => {});
+                }}
+              >
+                Locate mpv
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void MpvIPC.recheck().catch(() => {});
+                }}
+              >
+                Recheck
+              </Button>
+            </>
           ) : null}
-          {issue?.actions.includes("refreshMpv") ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void MpvIPC.recheck().catch(() => {});
-              }}
-            >
-              Recheck
-            </Button>
+          {error.fix === "login" ? (
+            <Link to="/" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Log in
+            </Link>
           ) : null}
-          {issue?.actions.includes("login") ? <Link to="/">Log in</Link> : null}
-          {issue?.actions.includes("dismiss") ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                void PlayerIPC.dismissIssue(issue.id).catch(() => {});
-              }}
-            >
-              Dismiss
-            </Button>
-          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void PlayerIPC.dismissError().catch(() => {});
+            }}
+          >
+            Dismiss
+          </Button>
         </div>
       ) : null}
-      <section className="grid h-full grid-cols-9 flex-col justify-between gap-1 overflow-hidden rounded-lg border border-muted/20 bg-background/90 p-2 px-2 backdrop-blur-sm">
-        <CurrentTrack className="col-span-3 row-start-1" />
-        <PlayerButtonControls className="col-span-3 row-start-1" />
-        <PlayerVolume className="col-span-3 row-start-1" />
-        <PlayerSeek className="col-span-9 row-start-2 row-end-2" />
-      </section>
     </div>
   );
 }
 
-function formatDuration(totalSeconds: number | null | undefined): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds === null || totalSeconds === undefined) {
-    return "0:00";
-  }
-
-  const roundedSeconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(roundedSeconds / 3600);
-  const minutes = Math.floor((roundedSeconds % 3600) / 60);
-  const seconds = roundedSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+export function PlayerPanel() {
+  return (
+    // As wide as the list above it, up to a width past which the bar would only gain empty space.
+    <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-[min(calc(100%-2rem),60rem)] -translate-x-1/2 pb-1.5">
+      <PlayerErrorBanner />
+      <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
+        <CurrentTrack />
+        <PlayerButtonControls />
+        <div className="flex min-w-0 items-center justify-end gap-1">
+          <PlayerVolume className="flex-1" />
+          <QueuePanelToggle />
+        </div>
+        <PlayerSeek className="col-span-3" />
+      </section>
+    </div>
+  );
 }

@@ -4,12 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/com
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { getErrorMessage } from "#/lib/err";
-import { useUser } from "#/lib/queries";
-import { AppClient } from "#/core/client";
+import { useUser, Session } from "#/session/session";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { ShieldCheckIcon } from "@phosphor-icons/react";
+import { VinylRecordIcon } from "@phosphor-icons/react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/")({
   component: App,
@@ -21,23 +21,32 @@ type CredentialsForm = {
   password: string;
 };
 
-const defaultCredentials = {
-  url: import.meta.env.VITE_DEFAULT_SUBSONIC_URL ?? "",
-  username: import.meta.env.VITE_DEFAULT_SUBSONIC_USERNAME ?? "",
-  password: import.meta.env.VITE_DEFAULT_SUBSONIC_PASSWORD ?? "",
-} satisfies CredentialsForm;
+// Read in development only. A production build replaces `import.meta.env.DEV` by `false` and drops
+// the branch with it, so a filled `.env` cannot put a password into the bundle.
+const defaultCredentials: CredentialsForm = import.meta.env.DEV
+  ? {
+      url: import.meta.env.VITE_DEFAULT_SUBSONIC_URL ?? "",
+      username: import.meta.env.VITE_DEFAULT_SUBSONIC_USERNAME ?? "",
+      password: import.meta.env.VITE_DEFAULT_SUBSONIC_PASSWORD ?? "",
+    }
+  : { url: "", username: "", password: "" };
 
-function LoginScreen() {
+/** `expired` is the account of a session that ended because the server no longer accepts its password. */
+function LoginScreen({ expired }: { expired: Pick<CredentialsForm, "url" | "username"> | undefined }) {
   const loginMutation = useMutation({
     mutationFn: async (values: CredentialsForm) => {
-      await AppClient.login(values);
+      await Session.login(values);
     },
   });
 
+  // The library of an expired session is kept for a login to the same server as the same user. Taken
+  // once: the form must not start over when the session's state is published again.
+  const [defaultValues] = useState<CredentialsForm>(() => (expired ? { url: expired.url, username: expired.username, password: "" } : defaultCredentials));
   const form = useForm({
-    defaultValues: defaultCredentials,
+    defaultValues,
     onSubmit: async ({ value }) => {
-      await loginMutation.mutateAsync(value);
+      // A failed login is shown from the mutation's state; the form only waits for it.
+      await loginMutation.mutateAsync(value).catch(() => undefined);
     },
   });
 
@@ -47,16 +56,23 @@ function LoginScreen() {
         <CardHeader className="gap-3">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <ShieldCheckIcon className="size-5" />
+              <VinylRecordIcon weight="fill" className="size-6" />
             </div>
             <div>
-              <CardTitle>Connect your Subsonic server</CardTitle>
-              <CardDescription>Store credentials locally and unlock sync.</CardDescription>
+              <CardTitle>Muswag</CardTitle>
+              <CardDescription>Connect to your Subsonic server.</CardDescription>
             </div>
           </div>
         </CardHeader>
 
         <CardContent>
+          {expired && !loginMutation.isError ? (
+            <Alert className="mb-4">
+              <AlertTitle>Log in again</AlertTitle>
+              <AlertDescription>The server no longer accepts the password of {expired.username}. Your library is kept for when you are back.</AlertDescription>
+            </Alert>
+          ) : null}
+
           <form
             className="space-y-4"
             onSubmit={(event) => {
@@ -122,14 +138,14 @@ function LoginScreen() {
             </form.Field>
 
             <Button className="w-full" type="submit" disabled={loginMutation.isPending}>
-              {loginMutation.isPending ? "Connecting..." : "Login"}
+              {loginMutation.isPending ? "Connecting…" : "Connect"}
             </Button>
           </form>
 
           {loginMutation.isError ? (
             <Alert variant="destructive" className="mt-4">
-              <AlertTitle>Login failed</AlertTitle>
-              <AlertDescription>{getErrorMessage(loginMutation.error, "Check your credentials and try again.")}</AlertDescription>
+              <AlertTitle>Could not log in</AlertTitle>
+              <AlertDescription>{getErrorMessage(loginMutation.error, "Check the address, the username and the password, and try again.")}</AlertDescription>
             </Alert>
           ) : null}
         </CardContent>
@@ -150,7 +166,7 @@ function App() {
   }
 
   if (!userStateQuery.data) {
-    return <LoginScreen />;
+    return <LoginScreen expired={userStateQuery.expired} />;
   }
 
   return <Navigate to="/app/albums" replace />;

@@ -1,3 +1,5 @@
+// Stays first: the modules below read `window.electron` as they load.
+import "#/data/dev-bridge";
 import { createHashHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { QueryClient } from "@tanstack/react-query";
@@ -7,7 +9,7 @@ import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { ThemeProvider } from "#/components/utils/theme-provider";
-import { AppClient } from "#/core/client";
+import { Session } from "#/session/session";
 if (import.meta.env.DEV) {
   void import("react-scan").then(({ scan }) => scan({ enabled: true }));
 }
@@ -19,8 +21,8 @@ const router = createTanStackRouter({
   context: { queryClient },
   defaultNotFoundComponent: () => <div>not found</div>,
   scrollRestoration: true,
-  defaultPreload: "intent",
-  defaultPreloadStaleTime: 0,
+  // A page for another album, artist or playlist starts over: its queries, scroll position and dialogs are its own.
+  defaultRemountDeps: ({ params }) => params,
   history: createHashHistory(),
 });
 
@@ -29,19 +31,16 @@ setupRouterSsrQueryIntegration({
   queryClient,
 });
 
-const rootElement = document.getElementById("root")!;
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement);
-  void AppClient.start().then(() => {
-    root.render(
-      <StrictMode>
-        <ThemeProvider>
-          <RouterProvider router={router} />
-        </ThemeProvider>
-      </StrictMode>,
-    );
-  });
-}
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+void Session.start().then(() => {
+  root.render(
+    <StrictMode>
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </StrictMode>,
+  );
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

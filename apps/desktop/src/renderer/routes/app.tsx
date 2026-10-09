@@ -2,9 +2,11 @@ import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
 import { TopBar } from "#/components/shell/top-bar";
 import { AppSidebarWrapper } from "#/components/shell/app-sidebar";
 import { PlayerPanel } from "#/components/player-panel";
-import { useUser } from "#/lib/queries";
+import { Notices } from "#/components/notices";
+import { useSkippedTrackNotices } from "#/queue/unplayable";
+import { NewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
+import { useUser } from "#/session/session";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
-import { IconContext } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/app")({
   component: RouteComponent,
@@ -12,6 +14,7 @@ export const Route = createFileRoute("/app")({
 
 function RouteComponent() {
   const userStateQuery = useUser();
+  useSkippedTrackNotices();
 
   if (userStateQuery.isLoading) {
     return null;
@@ -31,13 +34,13 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
-      <IconContext.Provider value={{ weight: "fill" }}>
-        <AppSidebarWrapper>
-          <TopBar />
-          <Outlet />
-          <PlayerPanel />
-        </AppSidebarWrapper>
-      </IconContext.Provider>
+      <AppSidebarWrapper>
+        <TopBar />
+        <Outlet />
+        <PlayerPanel />
+        <Notices />
+      </AppSidebarWrapper>
+      <NewPlaylistDialog />
     </div>
   );
 }
