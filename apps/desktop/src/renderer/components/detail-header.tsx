@@ -30,7 +30,8 @@ export function DetailHeader({
 }) {
   return (
     <header
-      className={cn("absolute grid h-(--header-height) gap-5 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]", className)}
+      // The artwork stays beside the text however narrow the page is: stacked, it would fill the width and push the text out of the header.
+      className={cn("absolute grid h-(--header-height) grid-cols-[var(--header-height)_minmax(0,1fr)] gap-5 px-4", className)}
       style={{ top: TOP_HEIGHT + HEADER_GAP, "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}
     >
       {art}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { songRow } from "@muswag/model";
@@ -11,7 +11,8 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("#/data/library", () => ({ db: {} }));
-vi.mock("#/player/hooks", () => ({ usePlayerStatus: () => "playing" }));
+const player = vi.hoisted(() => ({ status: "playing" }));
+vi.mock("#/player/hooks", () => ({ usePlayerStatus: () => player.status }));
 
 vi.mock("@tanstack/react-db", () => ({
   useLiveQuery: () => ({ data: undefined }),
@@ -41,6 +42,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  player.status = "playing";
 });
 
 const columns: TrackColumn[] = [
@@ -183,6 +185,196 @@ describe("TrackList", () => {
   });
 });
 
+describe("TrackList with the keyboard", () => {
+  const letters = [track("a", "a", "A"), track("b", "b", "B"), track("c", "c", "C"), track("d", "d", "D")];
+
+  const renderList = (items: TrackListItem[] = letters, props: Partial<React.ComponentProps<typeof TrackList>> = {}) => {
+    const { container } = render(<TrackList items={items} columns={columns} {...props} />);
+    return container.firstElementChild as HTMLElement;
+  };
+  const press = (list: HTMLElement, key: string, modifiers: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {}) => fireEvent.keyDown(list, { key, ...modifiers });
+  /** The row the list says the keyboard is on. */
+  const cursor = (list: HTMLElement) => document.getElementById(list.getAttribute("aria-activedescendant") ?? "")?.dataset.trackKey;
+
+  it("is on the first track when the focus arrives by keyboard, with nothing selected yet", () => {
+    const list = renderList([{ type: "heading", key: "disc:1", title: "Disc 1" }, ...letters]);
+
+    // jsdom does not tell a focus that came by keyboard from one that came by mouse.
+    vi.spyOn(list, "matches").mockImplementation((selector) => selector === ":focus-visible");
+    act(() => list.focus());
+
+    expect(cursor(list)).toBe("a");
+    expect(selectedKeys()).toEqual([]);
+  });
+
+  it("waits for a key when the focus arrives by mouse", () => {
+    const list = renderList();
+
+    vi.spyOn(list, "matches").mockReturnValue(false);
+    act(() => list.focus());
+
+    expect(cursor(list)).toBeUndefined();
+  });
+
+  it("moves through the tracks with the arrows, selecting the one it is on and passing over headings", () => {
+    const list = renderList([track("a", "a", "A"), { type: "heading", key: "disc:2", title: "Disc 2" }, track("b", "b", "B"), track("c", "c", "C")]);
+
+    press(list, "ArrowDown");
+    expect(cursor(list)).toBe("a");
+    expect(selectedKeys()).toEqual(["a"]);
+
+    press(list, "ArrowDown");
+    expect(cursor(list)).toBe("b");
+    expect(selectedKeys()).toEqual(["b"]);
+
+    press(list, "ArrowUp");
+    press(list, "ArrowUp");
+    expect(cursor(list)).toBe("a");
+    expect(selectedKeys()).toEqual(["a"]);
+  });
+
+  it("goes on from a row that was clicked", () => {
+    const list = renderList();
+
+    fireEvent.click(row("c"));
+    press(list, "ArrowUp");
+
+    expect(cursor(list)).toBe("b");
+    expect(selectedKeys()).toEqual(["b"]);
+  });
+
+  it("goes to the ends with Home and End", () => {
+    const list = renderList();
+
+    press(list, "End");
+    expect(selectedKeys()).toEqual(["d"]);
+
+    press(list, "Home");
+    expect(selectedKeys()).toEqual(["a"]);
+  });
+
+  it("extends the selection from the anchor with Shift, as a Shift-click does", () => {
+    const list = renderList();
+
+    fireEvent.click(row("b"));
+    press(list, "ArrowDown", { shiftKey: true });
+    press(list, "ArrowDown", { shiftKey: true });
+    expect(selectedKeys()).toEqual(["b", "c", "d"]);
+
+    press(list, "ArrowUp", { shiftKey: true });
+    expect(selectedKeys()).toEqual(["b", "c"]);
+
+    press(list, "Home", { shiftKey: true });
+    expect(selectedKeys()).toEqual(["a", "b"]);
+  });
+
+  it("moves without selecting with Cmd or Ctrl, and toggles the row it is on with Enter, as a Cmd-click does", () => {
+    const onActivate = vi.fn();
+    const list = renderList(letters, { onActivate });
+
+    fireEvent.click(row("a"));
+    press(list, "ArrowDown", { metaKey: true });
+    press(list, "ArrowDown", { ctrlKey: true });
+    expect(cursor(list)).toBe("c");
+    expect(selectedKeys()).toEqual(["a"]);
+
+    press(list, "Enter", { metaKey: true });
+    expect(selectedKeys()).toEqual(["a", "c"]);
+
+    press(list, "Enter", { ctrlKey: true });
+    expect(selectedKeys()).toEqual(["a"]);
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("activates the row it is on with Enter, whatever else is selected", () => {
+    const onActivate = vi.fn();
+    const list = renderList(letters, { onActivate });
+
+    fireEvent.click(row("a"));
+    press(list, "ArrowDown", { shiftKey: true });
+    press(list, "Enter");
+
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(letters[1]);
+  });
+
+  it("leaves Space to whatever plays and pauses", () => {
+    const onActivate = vi.fn();
+    const list = renderList(letters, { onActivate });
+
+    fireEvent.click(row("b"));
+    // `fireEvent` answers whether the key was left with its default action.
+    expect(press(list, " ")).toBe(true);
+
+    expect(onActivate).not.toHaveBeenCalled();
+    expect(selectedKeys()).toEqual(["b"]);
+  });
+
+  it("reaches tracks that are not drawn, scrolling to them", () => {
+    const many = Array.from({ length: 500 }, (_, number) => track(`key-${number}`, `song-${number}`, `Song ${number}`));
+    const onActivate = vi.fn();
+    const scrollTo = vi.fn();
+    const list = renderList(many, { onActivate });
+    list.scrollTo = scrollTo;
+    expect(document.querySelector('[data-track-key="key-499"]')).toBeNull();
+
+    press(list, "End");
+    press(list, "Enter");
+
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(many[499]);
+    expect(scrollTo).toHaveBeenCalled();
+    // jsdom does not scroll, so the row is still not drawn and there is nothing for the list to point at.
+    expect(list.hasAttribute("aria-activedescendant")).toBe(false);
+  });
+
+  it("moves by what fits in the list with Page Down and Page Up", () => {
+    const many = Array.from({ length: 100 }, (_, number) => track(`key-${number}`, `song-${number}`, `Song ${number}`));
+    const list = renderList(many);
+
+    fireEvent.click(row("key-0"));
+    press(list, "PageDown");
+    // Twelve rows fit in the 600 pixels the list is given here, and a page keeps one of them in view.
+    expect(selectedKeys()).toEqual(["key-11"]);
+
+    press(list, "PageUp");
+    press(list, "PageUp");
+    expect(selectedKeys()).toEqual(["key-0"]);
+  });
+
+  it.each([
+    ["the Menu key", { key: "ContextMenu" }],
+    ["Shift+F10", { key: "F10", shiftKey: true }],
+  ])("opens the menu of the row it is on with %s", async (_name, key) => {
+    const { container } = render(<TrackList items={letters} columns={columns} menu={(selection) => <div data-testid="menu">{selection.items.map((item) => item.key).join(",")}</div>} />);
+    const list = container.firstElementChild as HTMLElement;
+
+    fireEvent.click(row("a"));
+    press(list, "ArrowDown", { metaKey: true });
+    fireEvent.keyDown(list, key);
+
+    // The row was not part of the selection, so the menu is for it alone, as after a right-click.
+    expect((await screen.findByTestId("menu")).textContent).toBe("b");
+  });
+
+  it("lets Tab into the controls of the row it is on only", () => {
+    const onActivate = vi.fn();
+    const song = (id: string) => songRow({ id, title: id, artist: "Someone", artistId: "artist", album: "Somewhere", albumId: "album" });
+    const items: TrackListItem[] = [
+      { type: "track", key: "a", song: song("a") },
+      { type: "track", key: "b", song: song("b") },
+    ];
+    render(<TrackList items={items} columns={albumColumns} onActivate={onActivate} />);
+    const tabStops = (key: string) => [...row(key).querySelectorAll<HTMLElement>("button")].map((element) => element.tabIndex);
+
+    fireEvent.click(row("b"));
+
+    expect(tabStops("a")).toEqual([-1]);
+    expect(tabStops("b")).toEqual([0]);
+
+    fireEvent.click(row("b").querySelector("button")!);
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(items[1]);
+  });
+});
+
 describe("track list columns", () => {
   const song = songRow({ id: "song-a", title: "Here", artist: "Someone", album: "Somewhere", albumId: "album-a", track: 7, duration: 185 });
   const items: TrackListItem[] = [
@@ -213,6 +405,15 @@ describe("track list columns", () => {
     render(<TrackList items={items} columns={albumColumns} playingKey="a" />);
 
     expect(row("a").querySelector(".playing-indicator")).toBeTruthy();
+    expect(row("a").textContent).not.toContain("7");
+  });
+
+  it.each(["paused", "ended", "stopped", "error"])("does not animate the indicator of a track that is %s", (status) => {
+    player.status = status;
+    render(<TrackList items={items} columns={albumColumns} playingKey="a" />);
+
+    expect(row("a").querySelector(".playing-indicator")).toBeNull();
+    expect(row("a").querySelector("svg")).toBeTruthy();
     expect(row("a").textContent).not.toContain("7");
   });
 });

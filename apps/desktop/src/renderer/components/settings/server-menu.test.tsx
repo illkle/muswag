@@ -32,9 +32,12 @@ vi.mock("#/library/queries", () => ({
 }));
 
 vi.mock("#/player/hooks", () => ({
-  usePlayerError: () => mocks.playerError,
+  usePlayerError: () => (mocks.playerError ? { message: mocks.playerError, fix: null } : null),
   usePlayerMpvBinary: () => mocks.binary,
 }));
+
+// The update state is read from main's mirror, which a test has no main for.
+vi.mock("#/data/state", () => ({ appState: {} }));
 
 vi.mock("#/updates/app-update", async (importOriginal) => ({
   ...(await importOriginal<typeof import("#/updates/app-update")>()),
@@ -141,12 +144,7 @@ describe("ServerMenu", () => {
   });
 
   it("raises an alert on the button and the mpv row when playback is unavailable", () => {
-    mocks.binary = {
-      _tag: "Unavailable",
-      reason: "missing",
-      issue: { actions: [], code: "BinaryUnavailable", id: "binary", message: "Install mpv or select its executable.", occurrenceKey: null, operation: "discovery" },
-      options: [],
-    };
+    mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [] };
 
     renderServerMenu();
 
@@ -156,6 +154,15 @@ describe("ServerMenu", () => {
     const mpvRow = screen.getByText("Playback engine").closest("button");
     expect(mpvRow?.className).toContain("bg-destructive/10");
     expect(screen.getByText("Not installed")).toBeTruthy();
+  });
+
+  it("raises the same alert for an error of playback while mpv itself is fine", () => {
+    mocks.playerError = "The track could not be played after retrying.";
+
+    renderServerMenu();
+
+    expect(screen.getByRole("button", { name: "music.example.com, server and app settings, playback engine unavailable" })).toBeTruthy();
+    expect(screen.getByText("Error")).toBeTruthy();
   });
 
   it("logs out", async () => {

@@ -1,9 +1,8 @@
 import { ArrowsClockwiseIcon, PlaylistIcon, PlusIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
 
-import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
+import { openNewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { Button } from "#/components/ui/button";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "#/components/ui/sidebar";
 import { getErrorMessage } from "#/lib/err";
@@ -16,7 +15,6 @@ export function SidebarPlaylists() {
   const navigate = useNavigate();
   const { playlists, isLoading, isError } = usePlaylists();
   const syncStatus = usePlaylistSyncStatus();
-  const [createOpen, setCreateOpen] = useState(false);
 
   const syncMutation = useMutation({
     mutationFn: () => PlaylistActions.syncNow(),
@@ -33,7 +31,7 @@ export function SidebarPlaylists() {
         <Button variant="ghost" size="icon-xs" aria-label={syncing ? "Syncing playlists" : "Sync playlists"} disabled={syncing} onClick={() => syncMutation.mutate()}>
           {syncing ? <SpinnerGapIcon className="animate-spin" /> : <ArrowsClockwiseIcon />}
         </Button>
-        <Button variant="ghost" size="icon-xs" aria-label="New playlist" onClick={() => setCreateOpen(true)}>
+        <Button variant="ghost" size="icon-xs" aria-label="New playlist" onClick={() => openNewPlaylistDialog()}>
           <PlusIcon />
         </Button>
       </div>
@@ -60,17 +58,6 @@ export function SidebarPlaylists() {
           })}
         </SidebarMenu>
       </SidebarGroupContent>
-
-      <PlaylistFormDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        title="New playlist"
-        submitLabel="Create"
-        onSubmit={async (details) => {
-          const created = await PlaylistActions.create(details);
-          await navigate({ to: "/app/playlists/$playlistId", params: { playlistId: created.id } });
-        }}
-      />
     </SidebarGroup>
   );
 }

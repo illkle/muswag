@@ -1,64 +1,50 @@
 import { useLiveQuery } from "@tanstack/react-db";
-import { useStore } from "@tanstack/react-store";
 import { useMemo } from "react";
 
 import { playerState } from "#/data/state";
-import { commandIssue } from "#/player/commands";
 import { useQueueManagerState } from "#/queue/queue";
-import type { BinaryState, InstallState } from "#shared/commands/player";
-import { getQueueCanGoNext, getQueueCanGoPrevious } from "#shared/queue-state";
-import { playerStatus, type PlaybackState, type PlayerStatus } from "#shared/state/player";
+import type { BinaryState, InstallState, PlayerError } from "#shared/commands/player";
+import { getQueueCanGoNext, getQueueCanGoPrevious, getQueueCanStart } from "#shared/queue-state";
 
 // ---- Rows ----
-// Each player table has one row, keyed "player", except issues and install output.
+// Each player table has one row, keyed "player", except the install output.
 
 /** `undefined` until the state mirror has loaded. */
 const usePlayerRow = () => useLiveQuery((q) => q.from({ player: playerState.player }).findOne()).data;
 const usePositionRow = () => useLiveQuery((q) => q.from({ position: playerState.position }).findOne()).data;
-const useLatestIssue = () =>
-  useLiveQuery((q) =>
-    q
-      .from({ issue: playerState.issues })
-      .orderBy(({ issue }) => issue.order, "desc")
-      .findOne(),
-  ).data;
-
-const statusOf = (playback: PlaybackState | undefined): PlayerStatus => (playback ? playerStatus(playback) : "idle");
-const itemOf = (playback: PlaybackState | undefined) => (playback && playback._tag !== "Idle" ? playback.item : null);
 
 // ---- Player ----
 
 export const usePlayerConnected = () => usePlayerRow() !== undefined;
-export const usePlayerCurrentTrackId = () => itemOf(usePlayerRow()?.playback)?.track.id ?? null;
-export const usePlayerCurrentTrack = () => itemOf(usePlayerRow()?.playback)?.track ?? null;
-export const usePlayerStatus = () => statusOf(usePlayerRow()?.playback);
-export const usePlayerBuffering = () => {
-  const playback = usePlayerRow()?.playback;
-  return playback?._tag === "Playing" && playback.buffering;
-};
+export const usePlayerCurrentTrackId = () => usePlayerRow()?.item?.track.id ?? null;
+export const usePlayerCurrentTrack = () => usePlayerRow()?.item?.track ?? null;
+export const usePlayerStatus = () => usePlayerRow()?.status ?? "idle";
+export const usePlayerBuffering = () => usePlayerRow()?.buffering ?? false;
 export const usePlayerDuration = () => usePositionRow()?.durationSeconds ?? null;
 export const usePlayerPositionSeconds = () => usePositionRow()?.positionSeconds ?? 0;
 export const usePlayerMuted = () => usePlayerRow()?.muted ?? false;
 export const usePlayerVolumePercent = () => usePlayerRow()?.volumePercent ?? 100;
 
-/** The issue to show: a rejected command's, or else the latest the player recorded. */
-export const usePlayerIssue = () => {
-  const rejected = useStore(commandIssue);
-  const latest = useLatestIssue();
-  return rejected ?? latest ?? null;
-};
-/** What that issue says. A failure of playback is among the player's issues, so dismissing it clears this as well. */
-export const usePlayerError = () => {
-  const connected = usePlayerConnected();
-  const issue = usePlayerIssue();
-  if (!connected) return "Playback disconnected. Reconnecting…";
-  return issue?.message ?? null;
+const DISCONNECTED: PlayerError = { message: "Playback disconnected. Reconnecting…", fix: null };
+/**
+ * What went wrong last with playback, and what the user can do about it. Main keeps it, and takes it
+ * back when a track loads, when what it asks for is done, or when the user dismisses it.
+ */
+export const usePlayerError = (): PlayerError | null => {
+  const row = usePlayerRow();
+  return row === undefined ? DISCONNECTED : row.error;
 };
 
-/** Play and pause wait while main is still working on a command. */
+/**
+ * Play waits only for a track to load: commands are run in order by main, so one in flight is no reason to hold it back.
+ * With no track in the player it starts the queue, when the queue has one to start with.
+ */
 export const usePlayerCanPlay = () => {
   const row = usePlayerRow();
-  return row !== undefined && !row.pending && itemOf(row.playback) !== null && statusOf(row.playback) !== "loading";
+  const queue = useQueueManagerState();
+  if (row === undefined) return false;
+  if (row.item === null) return getQueueCanStart(queue);
+  return row.status !== "loading";
 };
 /** Seeking does not wait: main runs commands in order, and disabling the slider for every one of them made it flicker. */
 export const usePlayerCanSeek = () => {
@@ -84,7 +70,6 @@ export function usePlayerCanGoBack() {
 const CHECKING: BinaryState = { _tag: "Checking" };
 const INSTALL_IDLE: InstallState = { _tag: "Idle" };
 
-export const usePlayerMpvAvailable = () => usePlayerRow()?.binary._tag === "Ready";
 export const usePlayerMpvBinary = (): BinaryState => usePlayerRow()?.binary ?? CHECKING;
 export const usePlayerMpvInstall = (): InstallState => usePlayerRow()?.install ?? INSTALL_IDLE;
 /** The output of the running or last mpv installation, oldest line first. */

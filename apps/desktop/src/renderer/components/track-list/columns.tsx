@@ -19,6 +19,8 @@ export type TrackCellProps = {
   isPlaying: boolean;
   /** Plays the track from this list. Absent where a row cannot be played. */
   onPlay?: (() => void) | undefined;
+  /** For the links and buttons of the cell: 0 in the row the keyboard is on, the one row whose controls Tab stops at. */
+  tabIndex: 0 | -1;
 };
 
 /** One column of a track list. A list's columns decide both its grid and what each row shows. */
@@ -42,7 +44,8 @@ function PlayingIndicator() {
     return <SpinnerGapIcon className="size-4 animate-spin text-primary" />;
   }
 
-  if (status === "paused") {
+  // Paused, ended, stopped or failed: the track is the current one, and nothing is heard.
+  if (status !== "playing") {
     return <PauseIcon weight="fill" className="size-4 text-primary" />;
   }
 
@@ -56,18 +59,19 @@ function PlayingIndicator() {
   );
 }
 
-/** A row's number, which gives way to a play button while the pointer is over the row. */
-function NumberCell({ number, isPlaying, onPlay }: { number: ReactNode; isPlaying: boolean; onPlay: TrackCellProps["onPlay"] }) {
+/** A row's number, which gives way to a play button while the pointer is over the row or the keyboard is on it. */
+function NumberCell({ number, isPlaying, onPlay, tabIndex }: { number: ReactNode } & Pick<TrackCellProps, "isPlaying" | "onPlay" | "tabIndex">) {
   if (isPlaying) return <PlayingIndicator />;
   if (!onPlay) return number;
 
   return (
     <>
-      <span className="group-hover/row:hidden">{number}</span>
       <button
         type="button"
         aria-label="Play"
-        className="hidden size-4 items-center justify-center text-foreground group-hover/row:flex"
+        tabIndex={tabIndex}
+        // Shown for the row the keyboard is on while the list has the focus, and kept once Tab has moved the focus onto it.
+        className="peer hidden size-4 items-center justify-center text-foreground group-hover/row:flex group-data-cursor/row:group-focus-visible/list:flex focus-visible:flex focus-visible:text-brand"
         // Playing the row is not a click on it, so it leaves the selection alone.
         onClick={(event) => {
           event.stopPropagation();
@@ -77,15 +81,16 @@ function NumberCell({ number, isPlaying, onPlay }: { number: ReactNode; isPlayin
       >
         <PlayIcon weight="fill" className="size-3.5" />
       </button>
+      <span className="group-hover/row:hidden group-data-cursor/row:group-focus-visible/list:hidden peer-focus-visible:hidden">{number}</span>
     </>
   );
 }
 
 /** The song's number on its album. */
-const TrackNumberCell = ({ item, isPlaying, onPlay }: TrackCellProps) => <NumberCell number={item.song.track ?? "•"} isPlaying={isPlaying} onPlay={onPlay} />;
+const TrackNumberCell = ({ item, isPlaying, onPlay, tabIndex }: TrackCellProps) => <NumberCell number={item.song.track ?? "•"} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
 
 /** The row's number in this list. */
-const PositionCell = ({ position, isPlaying, onPlay }: TrackCellProps) => <NumberCell number={position + 1} isPlaying={isPlaying} onPlay={onPlay} />;
+const PositionCell = ({ position, isPlaying, onPlay, tabIndex }: TrackCellProps) => <NumberCell number={position + 1} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
 
 export const TrackCover = ({ albumId, className }: { albumId: string; className?: string }) => {
   const cover = useLiveQuery((q) =>
@@ -94,20 +99,12 @@ export const TrackCover = ({ albumId, className }: { albumId: string; className?
       .where((a) => eq(a.album.id, albumId))
       .findOne()
       .select((v) => ({
-        cover: v.album.coverArtPath,
         coverArtId: v.album.coverArt,
         albumId: v.album.id,
       })),
   );
 
-  return (
-    <AlbumCover
-      coverArtPath={cover.data?.cover}
-      thumbnail
-      className={className}
-      target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined}
-    />
-  );
+  return <AlbumCover thumbnail className={className} target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined} />;
 };
 
 const CoverCell = ({ item }: TrackCellProps) => (
@@ -116,12 +113,22 @@ const CoverCell = ({ item }: TrackCellProps) => (
 
 const TitleCell = ({ item, isPlaying }: TrackCellProps) => <p className={cn("truncate text-sm", isPlaying && "text-brand")}>{item.song.title}</p>;
 
-const ArtistCell = ({ item: { song } }: TrackCellProps) => (
-  <ArtistLinks artist={song.artist} artistId={song.artistId} artists={song.artists} className="line-clamp-1 text-sm text-muted-foreground" linkClassName="hover:text-foreground hover:underline" />
+/** A link in a row. The cells clip what they hold, the outline of a focused link with it, so the focus underlines it as well. */
+const LINK = "hover:underline focus-visible:underline";
+
+const ArtistCell = ({ item: { song }, tabIndex }: TrackCellProps) => (
+  <ArtistLinks
+    artist={song.artist}
+    artistId={song.artistId}
+    artists={song.artists}
+    className="line-clamp-1 text-sm text-muted-foreground"
+    linkClassName={cn(LINK, "hover:text-foreground focus-visible:text-foreground")}
+    tabIndex={tabIndex}
+  />
 );
 
 /** The title over the artists, for lists that also show a cover. */
-const TitleArtistCell = ({ item, isPlaying }: TrackCellProps) => {
+const TitleArtistCell = ({ item, isPlaying, tabIndex }: TrackCellProps) => {
   const { song } = item;
 
   if (item.unavailable) {
@@ -136,19 +143,33 @@ const TitleArtistCell = ({ item, isPlaying }: TrackCellProps) => {
   return (
     <div className="flex flex-col overflow-hidden">
       <div className={cn("truncate text-sm", isPlaying && "text-brand")}>{song.title}</div>
-      <ArtistLinks artist={song.artist} artistId={song.artistId} artists={song.artists} className="truncate text-xs text-muted-foreground" linkClassName="hover:text-foreground hover:underline" />
+      <ArtistLinks
+        artist={song.artist}
+        artistId={song.artistId}
+        artists={song.artists}
+        className="truncate text-xs text-muted-foreground"
+        linkClassName={cn(LINK, "hover:text-foreground focus-visible:text-foreground")}
+        tabIndex={tabIndex}
+      />
     </div>
   );
 };
 
-const AlbumCell = ({ item }: TrackCellProps) => {
+const AlbumCell = ({ item, tabIndex }: TrackCellProps) => {
   const { song } = item;
   if (item.unavailable) return null;
   if (!song.albumId) return song.album;
 
   return (
     // Following the link is not a click on the row.
-    <Link to="/app/albums/$albumId" params={{ albumId: song.albumId }} className="hover:underline" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
+    <Link
+      to="/app/albums/$albumId"
+      params={{ albumId: song.albumId }}
+      tabIndex={tabIndex}
+      className={LINK}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
       {song.album}
     </Link>
   );

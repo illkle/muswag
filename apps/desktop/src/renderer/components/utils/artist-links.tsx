@@ -2,7 +2,17 @@ import { Fragment } from "react";
 
 import { Link } from "@tanstack/react-router";
 
-export function ArtistLink({ artistId, children, className }: { artistId: string | null | undefined; children: React.ReactNode; className?: string | undefined }) {
+export function ArtistLink({
+  artistId,
+  children,
+  className,
+  tabIndex,
+}: {
+  artistId: string | null | undefined;
+  children: React.ReactNode;
+  className?: string | undefined;
+  tabIndex?: number | undefined;
+}) {
   if (!artistId) {
     return <span className={className}>{children}</span>;
   }
@@ -12,6 +22,7 @@ export function ArtistLink({ artistId, children, className }: { artistId: string
       to="/app/artists/$artistId"
       params={{ artistId }}
       className={className}
+      tabIndex={tabIndex}
       onClick={(event) => {
         event.stopPropagation();
       }}
@@ -95,9 +106,12 @@ export function ArtistLinks({
   displayArtist,
   className,
   linkClassName,
+  tabIndex,
 }: ArtistFields & {
   className?: string | undefined;
   linkClassName?: string | undefined;
+  /** For each link, where a list decides which of its rows Tab stops at. */
+  tabIndex?: number | undefined;
 }) {
   const credits = getArtistCredits({
     artist,
@@ -111,7 +125,7 @@ export function ArtistLinks({
       {credits.map((credit, index) => (
         <Fragment key={credit.id ?? `${credit.name}-${index}`}>
           {index > 0 ? ", " : null}
-          <ArtistLink artistId={credit.id} className={linkClassName}>
+          <ArtistLink artistId={credit.id} className={linkClassName} tabIndex={tabIndex}>
             {credit.name}
           </ArtistLink>
         </Fragment>

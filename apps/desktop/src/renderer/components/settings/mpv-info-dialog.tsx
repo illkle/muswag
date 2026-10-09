@@ -15,6 +15,7 @@ const playerStatusLabels: Record<PlayerStatus, string> = {
   playing: "Playing",
   paused: "Paused",
   ended: "Ended",
+  stopped: "Stopped",
   error: "Error",
 };
 
@@ -85,7 +86,7 @@ function InstallOptionRow({ busy, onInstall, option }: { busy: boolean; onInstal
 export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) => void; open: boolean }) {
   const binary = usePlayerMpvBinary();
   const install = usePlayerMpvInstall();
-  const playerError = usePlayerError();
+  const playerError = usePlayerError()?.message ?? null;
   const playerStatus = usePlayerStatus();
   const installLog = usePlayerInstallOutput().slice(-100);
   const [busy, setBusy] = useState(false);
@@ -164,7 +165,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
                 <WarningCircleIcon className="size-4" />
                 mpv cannot be used
               </div>
-              <p className="mt-2 break-words text-destructive/90">{binary.issue.message}</p>
+              <p className="mt-2 break-words text-destructive/90">{binary.message}</p>
             </div>
           ) : null}
 
@@ -178,7 +179,7 @@ export function MpvInfoDialog({ onOpenChange, open }: { onOpenChange: (open: boo
           ) : null}
 
           {install._tag === "Cancelled" ? <p className="text-sm text-muted-foreground">Installation cancelled.</p> : null}
-          {install._tag === "Failed" ? <p className="text-sm break-words text-destructive">{install.issue.message}</p> : null}
+          {install._tag === "Failed" ? <p className="text-sm break-words text-destructive">{install.message}</p> : null}
 
           {installLog.length > 0 ? (
             <div className="max-h-48 overflow-auto rounded-lg border bg-muted/40 p-2">

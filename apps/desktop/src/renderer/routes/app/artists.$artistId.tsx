@@ -30,35 +30,32 @@ function RouteComponent() {
       .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" }),
   );
 
-  const appearsOnQuery = useLiveQuery((q) =>
-    q
-      .from({ album: db.albums })
-      .where((v) => not(eq(v.album.artistId, artistId)))
-      .innerJoin({ song: db.songs }, ({ album, song }) => eq(album.id, song.albumId))
-      .fn.where(({ song }) => song.artists?.some((artist) => artist.id === artistId))
-      .select(({ album }) => album)
-      .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" })
-      .distinct(),
-  );
+  // Every song of the other artists' albums is looked at for a credit of this one, which TanStack DB
+  // cannot see into: the key tells it which artist the query is for.
+  const appearsOnQuery = useLiveQuery({
+    queryKey: ["artist-appears-on", artistId],
+    query: (q) =>
+      q
+        .from({ album: db.albums })
+        .where((v) => not(eq(v.album.artistId, artistId)))
+        .innerJoin({ song: db.songs }, ({ album, song }) => eq(album.id, song.albumId))
+        .fn.where(({ song }) => song.artists?.some((artist) => artist.id === artistId))
+        // With the song's credits: an artist credited only on tracks has no row of its own, and is named there.
+        .select(({ album, song }) => ({ album, credits: song.artists }))
+        .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" }),
+  });
 
-  const matchingSongQuery = useLiveQuery((q) =>
-    q
-      .from({ song: db.songs })
-      .fn.where(({ song }) => getArtistCredits(song).some((artist) => artist.id === artistId))
-      .findOne(),
-  );
-
-  const embeddedCredit = [...(albumsQuery.data ?? []), ...(appearsOnQuery.data ?? [])].flatMap((album) => getArtistCredits(album)).find((credit) => credit.id === artistId);
-  const songCredit = matchingSongQuery.data ? getArtistCredits(matchingSongQuery.data).find((credit) => credit.id === artistId) : undefined;
-  const artistName = artistQuery.data?.name ?? embeddedCredit?.name ?? songCredit?.name ?? artistId;
-
-  if (artistQuery.isLoading || albumsQuery.isLoading || appearsOnQuery.isLoading || matchingSongQuery.isLoading) return <PageState tone="quiet" title="Loading artist…" />;
-  if (artistQuery.isError || albumsQuery.isError || appearsOnQuery.isError || matchingSongQuery.isError) {
+  if (artistQuery.isLoading || albumsQuery.isLoading || appearsOnQuery.isLoading) return <PageState tone="quiet" title="Loading artist…" />;
+  if (artistQuery.isError || albumsQuery.isError || appearsOnQuery.isError) {
     return <PageState tone="error" icon={<WarningIcon />} title="Artist unavailable" description="The artist could not be read from the local database." />;
   }
 
   const albums = albumsQuery.data;
-  const appearsOn = appearsOnQuery.data;
+  // One row for each song the artist is on, so an album comes once for each of them.
+  const appearsOn = [...new Map(appearsOnQuery.data.map(({ album }) => [album.id, album])).values()];
+  // An artist may have no row of its own, and is then named as an album or a song credits it.
+  const credits = [...[...albums, ...appearsOn].flatMap((album) => getArtistCredits(album)), ...appearsOnQuery.data.flatMap((song) => song.credits ?? [])];
+  const artistName = artistQuery.data?.name ?? credits.find((credit) => credit.id === artistId)?.name ?? artistId;
   const artistMeta = formatMetaLine([
     albums.length > 0 ? `${albums.length} album${albums.length === 1 ? "" : "s"}` : null,
     appearsOn.length > 0 ? `${appearsOn.length} appearance${appearsOn.length === 1 ? "" : "s"}` : null,
@@ -82,7 +79,6 @@ function RouteComponent() {
             title={artistName}
             art={
               <AlbumCover
-                coverArtPath={artistQuery.data?.coverArtPath}
                 className="w-full"
                 instantLoad
                 target={{

@@ -39,6 +39,8 @@ export const useUser = () => {
   const session = useLiveQuery((q) => q.from({ auth: appState.auth }).findOne()).data?.value;
   return {
     data: session?._tag === "LoggedIn" ? { url: session.url, username: session.username } : undefined,
+    /** The account of a session main ended because the server no longer accepts its password. */
+    expired: session?._tag === "LoggedOut" ? session.expired : undefined,
     isLoading: !session || session._tag === "Initializing",
   };
 };

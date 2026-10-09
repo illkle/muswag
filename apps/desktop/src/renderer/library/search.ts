@@ -1,160 +1,49 @@
 import type { Album, Artist, Song } from "@muswag/model";
+import type { Collection } from "@tanstack/react-db";
 import Fuse from "fuse.js";
 
-import { db, type LibraryCollections } from "#/data/library";
+/** Something a search found: the row itself. What the row does not hold, such as the cover of a song's album, is read where the result is shown. */
+export type SearchResult = { type: "song"; id: string; song: Song } | { type: "album"; id: string; album: Album } | { type: "artist"; id: string; artist: Artist };
 
-export type SearchResultSong = {
-  type: "song";
-  id: string;
-  song: {
-    coverArt: Album["coverArt"];
-    coverArtPath: Album["coverArtPath"];
-  } & Pick<Song, "id" | "albumId" | "artist" | "artistId" | "album" | "year" | "title">;
-};
+type Rows<Row extends object> = Pick<Collection<Row, string, any>, "subscribeChanges" | "toArray">;
 
-export type SearchResultAlbum = {
-  type: "album";
-  id: string;
-  album: Pick<Album, "id" | "artist" | "artistId" | "coverArt" | "coverArtPath" | "year" | "name">;
-};
-
-export type SearchResultArtist = {
-  type: "artist";
-  id: string;
-  artist: Pick<Artist, "id" | "name" | "coverArt" | "coverArtPath">;
-};
-
-export type SearchResult = SearchResultSong | SearchResultAlbum | SearchResultArtist;
-
-const toAlbum = ({ id, artistId, artist, coverArt, coverArtPath, year, name }: Album): SearchResult => ({
-  type: "album",
-  id,
-  album: {
-    id,
-    artist,
-    artistId,
-    coverArt,
-    coverArtPath,
-    year,
-    name,
-  },
-});
-
-const toSong = ({ id, artistId, artist, year, title, albumId, album }: Song, albumData: Album): SearchResult => ({
-  type: "song",
-  id,
-  song: {
-    id,
-    artist,
-    artistId,
-    year,
-    title,
-    album,
-    albumId,
-    coverArt: albumData.coverArt,
-    coverArtPath: albumData.coverArtPath,
-  },
-});
-
-const toArtist = ({ id, name, coverArt, coverArtPath }: Artist): SearchResult => ({
-  type: "artist",
-  id,
-  artist: {
-    id,
-    name,
-    coverArt,
-    coverArtPath,
-  },
-});
-
-export function CreateFuse(db: Pick<LibraryCollections, "albums" | "artists" | "songs">) {
-  const f = new Fuse([] as SearchResult[], {
-    keys: ["song.artist", "song.album", "song.title", "song.year", "song.name", "album.artist", { name: "album.name", weight: 3 }, "album.year", { name: "artist.name", weight: 2 }],
+/**
+ * Fuzzy search over the albums, artists and songs of the library.
+ *
+ * The index does not follow the collections row by row. A change only marks it stale, and the next
+ * search builds it again from what the collections hold then: a fraction of a second for a large
+ * library, where keeping up with a sync or a logout one row at a time took far longer than that.
+ */
+export function createSearchIndex(library: { albums: Rows<Album>; artists: Rows<Artist>; songs: Rows<Song> }) {
+  const fuse = new Fuse<SearchResult>([], {
+    keys: ["song.artist", "song.album", "song.title", "song.year", "album.artist", { name: "album.name", weight: 3 }, "album.year", { name: "artist.name", weight: 2 }],
     shouldSort: true,
     ignoreLocation: true,
     findAllMatches: true,
     threshold: 0.2,
-    minMatchCharLength: 2,
   });
 
-  db.albums.subscribeChanges(
-    (v) => {
-      for (const c of v) {
-        switch (c.type) {
-          case "delete": {
-            f.remove((v) => v.type === "album" && v.id === c.value.id);
-            break;
-          }
-          case "update": {
-            f.remove((v) => v.type === "album" && v.id === c.value.id);
-            f.add(toAlbum(c.value));
-            break;
-          }
-          case "insert": {
-            f.add(toAlbum(c.value));
-            break;
-          }
-        }
+  let stale = true;
+  const markStale = () => {
+    stale = true;
+  };
+  library.albums.subscribeChanges(markStale);
+  library.artists.subscribeChanges(markStale);
+  library.songs.subscribeChanges(markStale);
+
+  return {
+    /** The best matches for `query`, best first. */
+    search(query: string, limit: number): SearchResult[] {
+      if (stale) {
+        stale = false;
+        fuse.setCollection([
+          ...library.albums.toArray.map((album): SearchResult => ({ type: "album", id: album.id, album })),
+          ...library.artists.toArray.map((artist): SearchResult => ({ type: "artist", id: artist.id, artist })),
+          ...library.songs.toArray.map((song): SearchResult => ({ type: "song", id: song.id, song })),
+        ]);
       }
+
+      return fuse.search(query, { limit }).map(({ item }) => item);
     },
-    { includeInitialState: true },
-  );
-
-  const albumOf = (song: Song) => (song.albumId ? db.albums.get(song.albumId) : undefined);
-
-  db.songs.subscribeChanges(
-    (v) => {
-      for (const c of v) {
-        switch (c.type) {
-          case "delete": {
-            f.remove((v) => v.type === "song" && v.id === c.value.id);
-            break;
-          }
-          case "update": {
-            const alb = albumOf(c.value);
-            if (!alb) continue;
-
-            f.remove((v) => v.type === "song" && v.id === c.value.id);
-            f.add(toSong(c.value, alb));
-            break;
-          }
-          case "insert": {
-            const alb = albumOf(c.value);
-            if (!alb) continue;
-
-            f.add(toSong(c.value, alb));
-            break;
-          }
-        }
-      }
-    },
-    { includeInitialState: true },
-  );
-
-  db.artists.subscribeChanges(
-    (v) => {
-      for (const c of v) {
-        switch (c.type) {
-          case "delete": {
-            f.remove((v) => v.type === "artist" && v.id === c.value.id);
-            break;
-          }
-          case "update": {
-            f.remove((v) => v.type === "artist" && v.id === c.value.id);
-            f.add(toArtist(c.value));
-            break;
-          }
-          case "insert": {
-            f.add(toArtist(c.value));
-            break;
-          }
-        }
-      }
-    },
-    { includeInitialState: true },
-  );
-
-  return f;
+  };
 }
-
-export const FuzeSearch = CreateFuse(db);

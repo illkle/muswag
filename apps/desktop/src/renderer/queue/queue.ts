@@ -9,6 +9,10 @@ import { queueStateFromRows, type QueueManagerState } from "#shared/queue-state"
 /** The playback queue lives in main; these send it commands. */
 export const QueueActions = {
   playSource: (ref: QueueSourceRef, key: string) => appCommand("queue:playSource", ref, key),
+  /** Plays an occurrence the queue holds: a queued track, or one of those next in its source. */
+  select: (key: string) => appCommand("queue:select", key),
+  /** Starts the queue when the player holds nothing. */
+  play: () => appCommand("queue:play"),
   enqueue: (tracks: readonly Pick<Song, "id">[]) =>
     appCommand(
       "queue:enqueue",

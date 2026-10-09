@@ -1,20 +1,23 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { FuzeSearch, type SearchResult, type SearchResultAlbum, type SearchResultArtist, type SearchResultSong } from "#/library/search";
-import type { CoverTarget } from "@muswag/model";
+import { TrackCover } from "#/components/track-list/columns";
+import { db } from "#/data/library";
+import { createSearchIndex, type SearchResult } from "#/library/search";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";
-import type { FuseResult } from "fuse.js";
-import { useRef, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+
+const searchIndex = createSearchIndex(db);
+
+type Found<Type extends SearchResult["type"]> = Extract<SearchResult, { type: Type }>;
 
 const InnerResult = ({
   kind,
   title,
   subtitle,
-  coverPath,
-  target,
+  cover,
   className,
   ...props
 }: React.ComponentProps<"div"> & {
@@ -22,14 +25,11 @@ const InnerResult = ({
   kind: string;
   title?: string;
   subtitle?: string | null | undefined;
-  coverPath?: string | null | undefined;
-  target?: CoverTarget | undefined;
+  cover: ReactNode;
 }) => {
   return (
     <div className={cn("flex h-12 items-center gap-2.5 rounded-sm px-2 data-highlighted:bg-accent", className)} {...props}>
-      <div className="w-10 shrink-0">
-        <AlbumCover key={coverPath} coverArtPath={coverPath} thumbnail target={target} className={target?.type === "artist" ? "rounded-full" : undefined} />
-      </div>
+      <div className="w-10 shrink-0">{cover}</div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{title}</div>
         <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
@@ -39,25 +39,12 @@ const InnerResult = ({
   );
 };
 
-const ArtistResult = ({ artist }: { artist: SearchResultArtist["artist"] }) => {
+const ArtistResult = ({ artist }: { artist: Found<"artist">["artist"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
       render={
-        <InnerResult
-          kind="Artist"
-          title={artist.name}
-          coverPath={artist.coverArtPath}
-          target={
-            artist.id
-              ? {
-                  type: "artist",
-                  id: artist.id,
-                  coverArtId: artist.coverArt ?? null,
-                }
-              : undefined
-          }
-        />
+        <InnerResult kind="Artist" title={artist.name} cover={<AlbumCover thumbnail className="rounded-full" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />} />
       }
       onClick={() =>
         n({
@@ -70,27 +57,12 @@ const ArtistResult = ({ artist }: { artist: SearchResultArtist["artist"] }) => {
   );
 };
 
-const SongResult = ({ song }: { song: SearchResultSong["song"] }) => {
+const SongResult = ({ song }: { song: Found<"song">["song"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={
-        <InnerResult
-          kind="Song"
-          title={song.title}
-          subtitle={song.artist}
-          coverPath={song.coverArtPath}
-          target={
-            song.albumId
-              ? {
-                  type: "album",
-                  id: song.albumId,
-                  coverArtId: song.coverArt ?? null,
-                }
-              : undefined
-          }
-        />
-      }
+      // The cover is the album's, which is read here rather than kept with every song of the index.
+      render={<InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={song.albumId ? <TrackCover albumId={song.albumId} /> : <AlbumCover thumbnail />} />}
       onClick={() =>
         n({
           to: "/app/albums/$albumId",
@@ -102,23 +74,11 @@ const SongResult = ({ song }: { song: SearchResultSong["song"] }) => {
   );
 };
 
-const AlbumResult = ({ album }: { album: SearchResultAlbum["album"] }) => {
+const AlbumResult = ({ album }: { album: Found<"album">["album"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={
-        <InnerResult
-          kind="Album"
-          title={album.name}
-          subtitle={album.artist}
-          coverPath={album.coverArtPath}
-          target={{
-            type: "album",
-            id: album.id,
-            coverArtId: album.coverArt ?? null,
-          }}
-        />
-      }
+      render={<InnerResult kind="Album" title={album.name} subtitle={album.artist} cover={<AlbumCover thumbnail target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />} />}
       onClick={() =>
         n({
           to: "/app/albums/$albumId",
@@ -135,24 +95,15 @@ const SEARCH_SHORTCUT = navigator.userAgent.includes("Mac") ? "⌘F" : "Ctrl F";
 
 export function MiniSearch() {
   const [searchValue, setSearchValue] = useState("");
-  const [searchResults, setSearchResults] = useState<FuseResult<SearchResult>[]>([]);
-  /** Whether a search has answered since the field was last empty, so "no results" is not shown ahead of the first one. */
-  const [hasSearched, setHasSearched] = useState(false);
-
-  const [isPending, startTransition] = useTransition();
-
-  const abortControllerRef = useRef<AbortController | null>(null);
+  // The search runs behind the typing: the field shows each key at once and the results follow.
+  const query = useDeferredValue(searchValue);
+  const results = useMemo(() => (query ? searchIndex.search(query, 20) : []), [query]);
 
   const [open, setOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const clear = () => {
-    abortControllerRef.current?.abort();
-    setSearchValue("");
-    setSearchResults([]);
-    setHasSearched(false);
-  };
+  const clear = () => setSearchValue("");
 
   useHotkey("Mod+F", () => inputRef.current?.focus());
   useHotkey(
@@ -166,9 +117,10 @@ export function MiniSearch() {
 
   return (
     <Autocomplete.Root
-      open={open && hasSearched}
+      // Closed until there are results for what is in the field, so "no results" is not shown ahead of them.
+      open={open && searchValue !== "" && query !== ""}
       onOpenChange={setOpen}
-      items={searchResults}
+      items={results}
       value={searchValue}
       openOnInputClick
       onValueChange={(nextSearchValue, { reason }) => {
@@ -179,32 +131,9 @@ export function MiniSearch() {
           return;
         }
 
-        if (nextSearchValue === "") {
-          clear();
-          return;
-        }
-
         setSearchValue(nextSearchValue);
-
-        const controller = new AbortController();
-        abortControllerRef.current?.abort();
-        abortControllerRef.current = controller;
-
-        startTransition(async () => {
-          const result = await FuzeSearch.search(nextSearchValue, {
-            limit: 20,
-          });
-          if (controller.signal.aborted) {
-            return;
-          }
-
-          startTransition(() => {
-            setSearchResults(result);
-            setHasSearched(true);
-          });
-        });
       }}
-      itemToStringValue={(item) => item.item.id}
+      itemToStringValue={(item) => item.id}
       filter={null}
     >
       <div className="relative">
@@ -234,15 +163,15 @@ export function MiniSearch() {
 
       <Autocomplete.Portal>
         <Autocomplete.Positioner className="z-20 outline-hidden" sideOffset={4} align="start">
-          <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-lg surface-raised p-1" aria-busy={isPending || undefined}>
+          <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-lg surface-raised p-1" aria-busy={query !== searchValue || undefined}>
             <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain">
-              <Autocomplete.Empty className="px-2 py-3 text-center text-sm text-muted-foreground empty:hidden">No results for “{searchValue}”</Autocomplete.Empty>
+              <Autocomplete.Empty className="px-2 py-3 text-center text-sm text-muted-foreground empty:hidden">No results for “{query}”</Autocomplete.Empty>
               <Autocomplete.List>
-                {(v: FuseResult<SearchResult>) => {
-                  if (v.item.type === "song") return <SongResult key={v.item.id} song={v.item.song} />;
-                  if (v.item.type === "album") return <AlbumResult key={v.item.id} album={v.item.album} />;
-                  if (v.item.type === "artist") return <ArtistResult key={v.item.id} artist={v.item.artist} />;
-                  return;
+                {(result: SearchResult) => {
+                  const key = `${result.type}:${result.id}`;
+                  if (result.type === "song") return <SongResult key={key} song={result.song} />;
+                  if (result.type === "album") return <AlbumResult key={key} album={result.album} />;
+                  return <ArtistResult key={key} artist={result.artist} />;
                 }}
               </Autocomplete.List>
             </div>

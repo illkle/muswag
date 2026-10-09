@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
 import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 
@@ -19,8 +18,8 @@ import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
-import { getErrorMessage } from "#/lib/err";
 import { formatDuration, formatMetaLine } from "#/lib/format";
+import { failureNotice } from "#/lib/notify";
 import { songRow, playlistOccurrenceKey } from "@muswag/model";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -34,6 +33,8 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const queueState = useQueueManagerState();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /** Deleting this playlist has been confirmed. The page is left once it is gone, and until then shows nothing rather than that it is missing. */
+  const [leaving, setLeaving] = useState(false);
 
   const firstPlayableEntryId = useMemo(() => rows.find(({ song }) => song)?.entryId ?? null, [rows]);
   /** The first four albums the playlist draws on, for its artwork. */
@@ -41,11 +42,6 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
 
   const playingKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
-  const removeEntriesMutation = useMutation({
-    mutationFn: async (entryIds: readonly string[]) => {
-      for (const entryId of entryIds) await PlaylistActions.removeEntry(playlistId, entryId);
-    },
-  });
   const items = useMemo(
     (): TrackListItem[] =>
       rows.map(({ entryId, songId, song }) => ({
@@ -60,7 +56,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
 
   if (isLoading) return <PageState tone="quiet" title="Loading playlist…" />;
   if (isError) return <PageState tone="error" icon={<WarningIcon />} title="Playlist unavailable" description="The playlist could not be read from the local database." />;
-  if (!state) return <PageState icon={<PlaylistIcon />} title="Playlist not found" description="It may have been deleted on another device." />;
+  if (!state) return leaving ? null : <PageState icon={<PlaylistIcon />} title="Playlist not found" description="It may have been deleted on another device." />;
 
   const missingCount = rows.filter(({ song }) => !song).length;
   const canEdit = !state.readonly;
@@ -71,11 +67,16 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     state.readonly ? "read-only" : null,
   ]);
 
-  const playFrom = (entryId: string) => void QueueActions.playSource({ type: "playlist", playlistId }, playlistOccurrenceKey(playlistId, entryId));
+  const playFrom = (key: string) => void QueueActions.playSource({ type: "playlist", playlistId }, key).catch(failureNotice("The playlist could not be played."));
 
+  const removeEntries = async (entryIds: readonly string[]) => {
+    for (const entryId of entryIds) await PlaylistActions.removeEntry(playlistId, entryId);
+  };
   const removeSelected = (selection: TrackSelection) => {
     const keys = new Set(selection.items.map(({ key }) => key));
-    removeEntriesMutation.mutate(rows.flatMap(({ entryId }) => (keys.has(playlistOccurrenceKey(playlistId, entryId)) ? [entryId] : [])));
+    const entryIds = rows.flatMap(({ entryId }) => (keys.has(playlistOccurrenceKey(playlistId, entryId)) ? [entryId] : []));
+    // The row may be far from the header and the menu is closed, so a failure is a notice.
+    void removeEntries(entryIds).catch(failureNotice(`The ${entryIds.length === 1 ? "song" : "songs"} could not be removed from the playlist.`));
   };
 
   return (
@@ -87,7 +88,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           playingKey={playingKey}
           showHeader
           onActivate={(item) => {
-            if (!item.unavailable) void QueueActions.playSource({ type: "playlist", playlistId }, item.key);
+            if (!item.unavailable) playFrom(item.key);
           }}
           menu={(selection) => (
             <>
@@ -115,10 +116,13 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                   {missingCount} {missingCount === 1 ? "song is" : "songs are"} not in your synced library and will be skipped.
                 </p>
               ) : null}
-              {removeEntriesMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntriesMutation.error, "The song could not be removed.")}</p> : null}
 
               <div className="mt-2 flex items-center gap-1">
-                <Button className="h-10 w-32 gap-2 text-base" disabled={!firstPlayableEntryId} onClick={() => firstPlayableEntryId && playFrom(firstPlayableEntryId)}>
+                <Button
+                  className="h-10 w-32 gap-2 text-base"
+                  disabled={!firstPlayableEntryId}
+                  onClick={() => firstPlayableEntryId && playFrom(playlistOccurrenceKey(playlistId, firstPlayableEntryId))}
+                >
                   <PlayIcon weight="fill" className="size-5" />
                   Play
                 </Button>
@@ -161,8 +165,17 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         playlistName={state.name}
-        onConfirm={() => PlaylistActions.remove(playlistId)}
-        onDeleted={() => void navigate({ to: "/app/albums" })}
+        onConfirm={async () => {
+          setLeaving(true);
+          try {
+            await PlaylistActions.remove(playlistId);
+          } catch (error) {
+            setLeaving(false);
+            throw error;
+          }
+        }}
+        // Replaces the page of the playlist, which going back would otherwise return to.
+        onDeleted={() => void navigate({ to: "/app/albums", replace: true })}
       />
     </section>
   );

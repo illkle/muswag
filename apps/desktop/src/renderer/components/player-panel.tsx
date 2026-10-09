@@ -11,7 +11,7 @@ import {
   usePlayerCanGoBack,
   usePlayerCanGoForward,
   usePlayerCanPlay,
-  usePlayerIssue,
+  usePlayerConnected,
   usePlayerError,
   usePlayerCanSeek,
   usePlayerBuffering,
@@ -23,6 +23,8 @@ import {
   usePlayerStatus,
   usePlayerVolumePercent,
 } from "#/player/hooks";
+import { formatDuration } from "#/lib/format";
+import { failureNotice } from "#/lib/notify";
 import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
@@ -30,6 +32,20 @@ import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
 import { useHotkey } from "@tanstack/react-hotkeys";
+
+/**
+ * Whether Space is for the element that has the focus rather than for playback: a field to type in, a
+ * control the user reached with the keyboard, or anything in a dialog or a menu, which own the keyboard
+ * while they are open. A button that only kept the focus from a click is not one of them, and neither is
+ * a slider, which does nothing with Space.
+ */
+function takesSpace(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.closest("[role=dialog], [role=alertdialog], [role=menu], [role=listbox]")) return true;
+  if (element instanceof HTMLInputElement) return element.type !== "range";
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || element.isContentEditable) return true;
+  return element.matches("button, summary, [role=button]") && element.matches(":focus-visible");
+}
 
 const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canGoBack = usePlayerCanGoBack();
@@ -45,10 +61,22 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
       return;
     }
 
-    void PlayerIPC.play().catch(() => {});
+    // With no track in the player, Play starts the queue. What the player fails at is in its banner; what the queue fails at has no place but a notice.
+    if (status === "idle") void QueueActions.play().catch(failureNotice("The queue could not be started."));
+    else void PlayerIPC.play().catch(() => {});
   };
 
-  useHotkey("Space", () => togglePlay());
+  // The library would skip every input, sliders included, and would take Space from a focused button
+  // without asking: so it is told to do neither, and the press is only claimed when it is playback's.
+  useHotkey(
+    "Space",
+    (event) => {
+      if (takesSpace(document.activeElement)) return;
+      event.preventDefault();
+      togglePlay();
+    },
+    { ignoreInputs: false, preventDefault: false, stopPropagation: false },
+  );
 
   return (
     <div {...props} className={cn("flex items-center justify-center gap-1", props.className)}>
@@ -56,7 +84,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void QueueActions.previous().catch(() => {});
+          void QueueActions.previous().catch(failureNotice("The previous track could not be played."));
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
@@ -79,7 +107,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         size="icon-sm"
         variant="ghost"
         onClick={() => {
-          void QueueActions.next().catch(() => {});
+          void QueueActions.next().catch(failureNotice("The next track could not be played."));
         }}
         disabled={!canGoForward}
         aria-label="Next track"
@@ -102,75 +130,48 @@ const SEEK_KEY_DIRECTIONS: Record<string, 1 | -1 | undefined> = { ArrowLeft: -1,
 const SEEK_KEYS = new Set([...Object.keys(SEEK_KEY_DIRECTIONS), "Home", "End", "PageUp", "PageDown"]);
 
 const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
-  const ds = usePlayerDuration();
+  const durationSeconds = usePlayerDuration() ?? 0;
   const canSeek = usePlayerCanSeek();
   const currentTrackId = usePlayerCurrentTrackId();
-  const status = usePlayerStatus();
   const positionSeconds = usePlayerPositionSeconds();
 
-  const durationSeconds = ds ?? 0;
+  /** Where the user is dragging or stepping to. Nothing is sent before they let go. */
   const [draftPosition, setDraftPosition] = useState<number | null>(null);
-  const [optimisticPosition, setOptimisticPosition] = useState<number | null>(null);
+  /** The position that was sent, shown until main has answered: by then the state holds where mpv went. */
+  const [sentPosition, setSentPosition] = useState<number | null>(null);
   const draftPositionRef = useRef<number | null>(null);
-  const optimisticSeekRef = useRef<{ from: number; target: number } | null>(null);
   const seekInteractionRef = useRef<"pointer" | "keyboard" | null>(null);
+  /** Counts the seeks sent, so that only the answer to the last one ends `sentPosition`. */
+  const seeksSentRef = useRef(0);
 
   const setDraft = (nextDraft: number | null) => {
     draftPositionRef.current = nextDraft;
     setDraftPosition(nextDraft);
   };
 
+  // A position the user was moving to belongs to the track it was in.
   useEffect(() => {
     setDraft(null);
-    setOptimisticPosition(null);
-    optimisticSeekRef.current = null;
+    setSentPosition(null);
     seekInteractionRef.current = null;
-  }, [currentTrackId, status]);
+  }, [currentTrackId]);
 
-  useEffect(() => {
-    if (optimisticPosition === null) {
-      return;
-    }
+  const sliderValue = draftPosition ?? sentPosition ?? positionSeconds;
 
-    const optimisticSeek = optimisticSeekRef.current;
-    if (!optimisticSeek) {
-      setOptimisticPosition(null);
-      return;
-    }
-
-    const isForwardSeek = optimisticSeek.target >= optimisticSeek.from;
-    const reachedTarget = isForwardSeek ? positionSeconds >= optimisticSeek.target - 0.25 : positionSeconds <= optimisticSeek.target + 0.25;
-
-    if (Math.abs(positionSeconds - optimisticPosition) < 0.5 || reachedTarget) {
-      optimisticSeekRef.current = null;
-      setOptimisticPosition(null);
-    }
-  }, [optimisticPosition, positionSeconds]);
-
-  const sliderValue = draftPosition ?? optimisticPosition ?? positionSeconds;
-
-  const commitSeek = async (nextValue: number) => {
-    if (!canSeek) {
-      seekInteractionRef.current = null;
-      setDraft(null);
-      setOptimisticPosition(null);
-      return;
-    }
+  const commitSeek = (nextValue: number) => {
+    seekInteractionRef.current = null;
+    setDraft(null);
+    if (!canSeek) return;
 
     const nextPosition = Math.min(Math.max(nextValue, 0), durationSeconds);
-
-    seekInteractionRef.current = null;
-    setDraft(null);
-    optimisticSeekRef.current = { from: positionSeconds, target: nextPosition };
-    setOptimisticPosition(nextPosition);
-
-    try {
-      await PlayerIPC.seek(nextPosition);
-    } catch (cause) {
-      console.error(cause);
-      optimisticSeekRef.current = null;
-      setOptimisticPosition(null);
-    }
+    const seek = ++seeksSentRef.current;
+    setSentPosition(nextPosition);
+    void PlayerIPC.seek(nextPosition)
+      // Why it failed is the player's error, which the banner shows.
+      .catch(() => {})
+      .finally(() => {
+        if (seeksSentRef.current === seek) setSentPosition(null);
+      });
   };
 
   return (
@@ -195,9 +196,9 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           }
 
           if (seekInteractionRef.current === "pointer") {
-            void commitSeek(Number(event.currentTarget.value));
+            commitSeek(Number(event.currentTarget.value));
           }
-          // A slider that kept the focus would swallow Space and the arrow keys.
+          // A slider that kept the focus after a drag would take the arrow keys.
           event.currentTarget.blur();
         }}
         onPointerCancel={(event) => {
@@ -210,7 +211,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
         }}
         onBlur={(event) => {
           if (seekInteractionRef.current !== null) {
-            void commitSeek(Number(event.currentTarget.value));
+            commitSeek(draftPositionRef.current ?? Number(event.currentTarget.value));
             return;
           }
 
@@ -222,9 +223,12 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
           if (direction !== undefined) {
             // The slider's own step is a hundredth of a second, which is right for dragging only.
             event.preventDefault();
-            seekInteractionRef.current = "keyboard";
             // From the draft as it stands: a held key repeats faster than the slider is rendered again.
-            setDraft(Math.min(Math.max((draftPositionRef.current ?? sliderValue) + direction * SEEK_KEY_STEP_SECONDS, 0), durationSeconds));
+            const nextDraft = (draftPositionRef.current ?? sliderValue) + direction * SEEK_KEY_STEP_SECONDS;
+            // The end of a track is the start of the next one, so a step that would reach it is not taken.
+            if (nextDraft >= durationSeconds) return;
+            seekInteractionRef.current = "keyboard";
+            setDraft(Math.max(nextDraft, 0));
           } else if (SEEK_KEYS.has(event.key)) {
             seekInteractionRef.current = "keyboard";
           }
@@ -232,7 +236,8 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
         onKeyUp={(event) => {
           // Letting go of the key that moved the slider, not of a modifier held with it.
           if (seekInteractionRef.current === "keyboard" && SEEK_KEYS.has(event.key)) {
-            void commitSeek(draftPositionRef.current ?? Number(event.currentTarget.value));
+            // End and Page Up reach for the end of the track, which would start the next one: a key stops just short of it.
+            commitSeek(Math.min(draftPositionRef.current ?? Number(event.currentTarget.value), Math.max(durationSeconds - SEEK_KEY_STEP_SECONDS, 0)));
           }
         }}
         aria-label="Playback position"
@@ -245,15 +250,13 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
 const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const currentTrack = usePlayerCurrentTrack();
-  const albumQuery = useLiveQuery(
-    (q) =>
-      currentTrack?.albumId
-        ? q
-            .from({ album: db.albums })
-            .where(({ album }) => eq(album.id, currentTrack.albumId))
-            .findOne()
-        : null,
-    [currentTrack?.albumId],
+  const albumQuery = useLiveQuery((q) =>
+    currentTrack?.albumId
+      ? q
+          .from({ album: db.albums })
+          .where(({ album }) => eq(album.id, currentTrack.albumId))
+          .findOne()
+      : null,
   );
 
   const alb = albumQuery.data;
@@ -269,7 +272,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
     );
   }
 
-  const cover = <AlbumCover coverArtPath={alb?.coverArtPath} thumbnail className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />;
+  const cover = <AlbumCover thumbnail className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />;
 
   return (
     <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
@@ -442,70 +445,66 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 //
 
 /** What went wrong with playback and what can be done about it, floating above the player bar. */
-function PlayerIssueBanner() {
-  const issue = usePlayerIssue();
+function PlayerErrorBanner() {
+  const connected = usePlayerConnected();
   const error = usePlayerError();
 
   if (!error) return null;
 
-  const actions = issue?.actions ?? [];
-
   return (
     <div role="alert" className="absolute bottom-full left-1/2 mb-2 flex w-max max-w-full -translate-x-1/2 items-center gap-3 rounded-lg surface-raised px-3 py-1.5 text-sm">
       <WarningIcon weight="fill" className="size-4 shrink-0 text-destructive" />
-      <span className="line-clamp-2 min-w-0 py-1.5">{error}</span>
+      <span className="line-clamp-2 min-w-0 py-1.5">{error.message}</span>
 
-      {issue && actions.length > 0 ? (
+      {connected ? (
         <div className="-mr-1.5 flex shrink-0 items-center gap-1">
-          {actions.includes("retry") ? (
+          {error.fix === "retry" ? (
             <Button
               size="sm"
               variant="outline"
               onClick={() => {
-                void PlayerIPC.retryIssue(issue.id).catch(() => {});
+                void PlayerIPC.play().catch(() => {});
               }}
             >
               Retry
             </Button>
           ) : null}
-          {actions.includes("configureMpv") ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void MpvIPC.locate().catch(() => {});
-              }}
-            >
-              Locate mpv
-            </Button>
+          {error.fix === "mpv" ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void MpvIPC.locate().catch(() => {});
+                }}
+              >
+                Locate mpv
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void MpvIPC.recheck().catch(() => {});
+                }}
+              >
+                Recheck
+              </Button>
+            </>
           ) : null}
-          {actions.includes("refreshMpv") ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void MpvIPC.recheck().catch(() => {});
-              }}
-            >
-              Recheck
-            </Button>
-          ) : null}
-          {actions.includes("login") ? (
+          {error.fix === "login" ? (
             <Link to="/" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Log in
             </Link>
           ) : null}
-          {actions.includes("dismiss") ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                void PlayerIPC.dismissIssue(issue.id).catch(() => {});
-              }}
-            >
-              Dismiss
-            </Button>
-          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void PlayerIPC.dismissError().catch(() => {});
+            }}
+          >
+            Dismiss
+          </Button>
         </div>
       ) : null}
     </div>
@@ -516,7 +515,7 @@ export function PlayerPanel() {
   return (
     // As wide as the list above it, up to a width past which the bar would only gain empty space.
     <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-[min(calc(100%-2rem),60rem)] -translate-x-1/2 pb-1.5">
-      <PlayerIssueBanner />
+      <PlayerErrorBanner />
       <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
         <CurrentTrack />
         <PlayerButtonControls />
@@ -528,21 +527,4 @@ export function PlayerPanel() {
       </section>
     </div>
   );
-}
-
-function formatDuration(totalSeconds: number | null | undefined): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds === null || totalSeconds === undefined) {
-    return "0:00";
-  }
-
-  const roundedSeconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(roundedSeconds / 3600);
-  const minutes = Math.floor((roundedSeconds % 3600) / 60);
-  const seconds = roundedSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

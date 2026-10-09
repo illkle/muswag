@@ -1,40 +1,16 @@
-import { useEffect, useState } from "react";
+import { useLiveQuery } from "@tanstack/react-db";
 
-import { mainIpc, rendererIpc } from "#/data/ipc";
-import type { AppUpdateState, AppUpdateStatus } from "#shared/ipc";
+import { mainIpc } from "#/data/ipc";
+import { appState } from "#/data/state";
+import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
 
 export const AppUpdateIPC = {
   check: () => mainIpc.invoke("appUpdate:check"),
-  getState: () => mainIpc.invoke("appUpdate:getState"),
   install: () => mainIpc.invoke("appUpdate:install"),
-  subscribe: (listener: (state: AppUpdateState) => void) =>
-    rendererIpc.on("appUpdate:state", (_event, state) => {
-      listener(state);
-    }),
 };
 
-/** Mirrors the main process update state, which changes on its own while a download runs. */
-export function useAppUpdate(): AppUpdateState | null {
-  const [state, setState] = useState<AppUpdateState | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const unsubscribe = AppUpdateIPC.subscribe(setState);
-
-    void AppUpdateIPC.getState().then((nextState) => {
-      if (active) {
-        setState(nextState);
-      }
-    });
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
-
-  return state;
-}
+/** The update state, which main changes on its own while a check or a download runs. Null until it has arrived. */
+export const useAppUpdate = (): AppUpdateState | null => useLiveQuery((q) => q.from({ update: appState.appUpdate }).findOne()).data?.value ?? null;
 
 export function getAppUpdateStatus(state: AppUpdateState | null): AppUpdateStatus {
   return state?.status ?? "idle";

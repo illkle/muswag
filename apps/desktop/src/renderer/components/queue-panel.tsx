@@ -11,6 +11,7 @@ import type { TrackListItem, TrackSelection } from "#/components/track-list/type
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { db } from "#/data/library";
+import { failureNotice } from "#/lib/notify";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
 import { TOP_HEIGHT } from "#/styles";
 
@@ -29,25 +30,21 @@ function useSourceName(ref: QueueSourceRef | null): string | null {
   const albumId = ref?.type === "album" ? ref.albumId : null;
   const playlistId = ref?.type === "playlist" ? ref.playlistId : null;
 
-  const album = useLiveQuery(
-    (q) =>
-      albumId
-        ? q
-            .from({ album: db.albums })
-            .where(({ album }) => eq(album.id, albumId))
-            .findOne()
-        : null,
-    [albumId],
+  const album = useLiveQuery((q) =>
+    albumId
+      ? q
+          .from({ album: db.albums })
+          .where(({ album }) => eq(album.id, albumId))
+          .findOne()
+      : null,
   ).data;
-  const playlist = useLiveQuery(
-    (q) =>
-      playlistId
-        ? q
-            .from({ playlist: db.playlists })
-            .where(({ playlist }) => eq(playlist.id, playlistId))
-            .findOne()
-        : null,
-    [playlistId],
+  const playlist = useLiveQuery((q) =>
+    playlistId
+      ? q
+          .from({ playlist: db.playlists })
+          .where(({ playlist }) => eq(playlist.id, playlistId))
+          .findOne()
+      : null,
   ).data;
 
   if (ref?.type === "library") return "your library";
@@ -57,10 +54,12 @@ function useSourceName(ref: QueueSourceRef | null): string | null {
 // A row's key is its section and the key of its occurrence, which keeps an occurrence apart from itself
 // in another section.
 const rowKey = (section: string, item: PlaybackItem) => `${section}:${item.key}`;
+/** The key of the occurrence the row `key` shows. */
+const occurrenceKey = (key: string) => key.slice(key.indexOf(":") + 1);
 const USER_SECTION = "user";
 
 /** The queue keys of the selected rows that the user queued, which are the ones that can be removed. */
-const queuedKeys = (selection: TrackSelection) => selection.items.flatMap(({ key }) => (key.startsWith(`${USER_SECTION}:`) ? [key.slice(USER_SECTION.length + 1)] : []));
+const queuedKeys = (selection: TrackSelection) => selection.items.flatMap(({ key }) => (key.startsWith(`${USER_SECTION}:`) ? [occurrenceKey(key)] : []));
 
 async function removeQueued(keys: readonly string[]) {
   for (const key of keys) await QueueActions.removeQueued(key);
@@ -121,6 +120,7 @@ function QueuePanelContent() {
           items={items}
           columns={compactColumns}
           playingKey={playingKey}
+          onActivate={(item) => void QueueActions.select(occurrenceKey(item.key)).catch(failureNotice("The track could not be played."))}
           className="scrollbar-slim"
           topPadding={TOP_HEIGHT}
           bottomPadding={8}
@@ -131,7 +131,10 @@ function QueuePanelContent() {
               <>
                 <TrackMenuAddItems selection={selection} />
                 <ContextMenuSeparator />
-                <ContextMenuItem disabled={queued.length === 0} onClick={() => void removeQueued(queued)}>
+                <ContextMenuItem
+                  disabled={queued.length === 0}
+                  onClick={() => void removeQueued(queued).catch(failureNotice(`The ${queued.length === 1 ? "track" : "tracks"} could not be removed from the queue.`))}
+                >
                   Remove from queue
                 </ContextMenuItem>
               </>

@@ -32,7 +32,7 @@ vi.mock("#/player/commands", () => ({
 }));
 
 vi.mock("#/player/hooks", () => ({
-  usePlayerError: () => mocks.playerState.error,
+  usePlayerError: () => (mocks.playerState.error ? { message: mocks.playerState.error, fix: null } : null),
   usePlayerInstallOutput: () => mocks.installOutput,
   usePlayerMpvBinary: () => mocks.playerState.binary,
   usePlayerMpvInstall: () => mocks.playerState.install,
@@ -57,14 +57,9 @@ function MpvInfoDialogHarness({ initialOpen = false }: { initialOpen?: boolean }
 
 const readyState: BinaryState = { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" };
 
-const unavailable = (reason: "missing" | "invalid", message: string, options: readonly MpvInstallOption[] = []): BinaryState => ({
-  _tag: "Unavailable",
-  reason,
-  issue: { actions: [], code: "BinaryUnavailable", id: "binary", message, occurrenceKey: null, operation: "discovery" },
-  options,
-});
+const unavailable = (message: string, options: readonly MpvInstallOption[] = []): BinaryState => ({ _tag: "Unavailable", message, options });
 
-const missingState = unavailable("missing", "Install mpv or select its executable.", [{ automatic: true, command: "brew install mpv", method: "brew", note: null, url: null }]);
+const missingState = unavailable("mpv was not found. Install it, or select its executable.", [{ automatic: true, command: "brew install mpv", method: "brew", note: null, url: null }]);
 
 describe("MpvInfoDialog", () => {
   // Vitest globals are disabled in this project, so React Testing Library cannot auto-clean.
@@ -108,11 +103,11 @@ describe("MpvInfoDialog", () => {
   });
 
   it("explains an unusable binary and lets the user pick another one", async () => {
-    mocks.playerState.binary = unavailable("invalid", "The configured mpv cannot run or is older than 0.35.");
+    mocks.playerState.binary = unavailable("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.");
 
     render(<MpvInfoDialogHarness />);
 
-    expect(await screen.findByText("The configured mpv cannot run or is older than 0.35.")).toBeTruthy();
+    expect(await screen.findByText("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Locate mpv/ }));
     await waitFor(() => expect(mocks.locate).toHaveBeenCalledOnce());
@@ -130,7 +125,7 @@ describe("MpvInfoDialog", () => {
   it("copies commands that have to be run in a terminal", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    mocks.playerState.binary = unavailable("missing", "Install mpv or select its executable.", [
+    mocks.playerState.binary = unavailable("mpv was not found. Install it, or select its executable.", [
       { automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null },
     ]);
 
@@ -140,6 +135,17 @@ describe("MpvInfoDialog", () => {
 
     expect(writeText).toHaveBeenCalledWith("sudo apt install mpv");
     expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it("says what went wrong with playback last, and why an installation failed", async () => {
+    mocks.playerState.binary = readyState;
+    mocks.playerState.error = "The track could not be played after retrying.";
+    mocks.playerState.install = { _tag: "Failed", jobId: "job", method: "brew", message: "Package manager exited unsuccessfully. See installation output." };
+
+    render(<MpvInfoDialogHarness initialOpen />);
+
+    expect(await screen.findByText("The track could not be played after retrying.")).toBeTruthy();
+    expect(screen.getByText("Package manager exited unsuccessfully. See installation output.")).toBeTruthy();
   });
 
   it("shows install output and can cancel a running install", async () => {

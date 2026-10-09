@@ -48,13 +48,11 @@ export function usePlaylists() {
 }
 
 export function usePlaylist(playlistId: string) {
-  const recordQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ playlist: db.playlists })
-        .where(({ playlist }) => eq(playlist.id, playlistId))
-        .findOne(),
-    [playlistId],
+  const recordQuery = useLiveQuery((q) =>
+    q
+      .from({ playlist: db.playlists })
+      .where(({ playlist }) => eq(playlist.id, playlistId))
+      .findOne(),
   );
 
   const state = recordQuery.data?.local ?? null;

@@ -1,9 +1,8 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { VinylRecordIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { AlbumList } from "#/components/album-list/album-list";
 import { PageState } from "#/components/page-state";
-import { useUser } from "#/session/session";
 import { db } from "#/data/library";
 import { useLiveQuery } from "@tanstack/react-db";
 
@@ -11,7 +10,7 @@ export const Route = createFileRoute("/app/albums/")({
   component: RouteComponent,
 });
 
-function LibraryScreen() {
+function RouteComponent() {
   // Albums with no year go after the dated ones rather than ahead of the newest.
   const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc", nulls: "last" }));
   const albums = albumsQuery.data ?? [];
@@ -23,14 +22,4 @@ function LibraryScreen() {
   }
 
   return <AlbumList albums={albums} scrollId="library-screen-albums" rememberScroll className="h-full" />;
-}
-
-function RouteComponent() {
-  const userStateQuery = useUser();
-
-  if (!userStateQuery.data) {
-    return <Navigate to="/" />;
-  }
-
-  return <LibraryScreen />;
 }

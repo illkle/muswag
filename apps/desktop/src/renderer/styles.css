@@ -31,11 +31,6 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-brand: var(--brand);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -67,11 +62,6 @@
   --input: oklch(0.923 0.003 48.717);
   --ring: oklch(0.709 0.01 56.259);
   --brand: var(--color-lime-600);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.985 0.001 106.423);
   --sidebar-foreground: oklch(0.147 0.004 49.25);
   --sidebar-primary: oklch(0.216 0.006 56.043);
@@ -102,11 +92,6 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.553 0.013 58.071);
   --brand: var(--color-lime-500);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.116 0 56.043);
   --sidebar-foreground: oklch(0.985 0.001 106.423);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -204,16 +189,9 @@
   }
 }
 
-@layer theme {
-}
-
 @layer utilities {
   .app-drag-region {
     -webkit-app-region: drag;
-  }
-
-  .app-no-drag {
-    -webkit-app-region: no-drag;
   }
 }
 
@@ -281,26 +259,6 @@
   }
 }
 
-/* Indeterminate sync progress: a segment sweeping the bottom edge of the server button. */
-@keyframes sync-line {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(300%);
-  }
-}
-
-@keyframes wiggle {
-  0%,
-  100% {
-    transform: rotate(-3deg);
-  }
-  50% {
-    transform: rotate(3deg);
-  }
-}
-
 @keyframes scaleUpDown {
   0% {
     transform: scaleY(0.2);
@@ -334,13 +292,8 @@
   }
 }
 
-.a-delay-500 {
-  animation-delay: 0.5s;
-}
-
 .playing-indicator div {
   animation: scaleUpDown 2s cubic-bezier(0.307, -0.087, 0.416, 1.198) infinite;
-  flex-grow: grow;
   height: 100%;
   width: 100%;
   transform-origin: bottom;

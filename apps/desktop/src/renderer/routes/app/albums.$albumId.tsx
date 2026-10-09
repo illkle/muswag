@@ -6,6 +6,7 @@ import { Button } from "#/components/ui/button";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
 import { db } from "#/data/library";
 import { formatDuration, formatMetaLine } from "#/lib/format";
+import { failureNotice } from "#/lib/notify";
 import { useAlbumStatsRefresh } from "#/library/stats-refresh";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
@@ -15,7 +16,7 @@ import { albumColumns, albumColumnsWithoutArtist } from "#/components/track-list
 import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
-import { albumOccurrenceKey } from "@muswag/model";
+import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
 import { useMemo } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 
@@ -44,7 +45,8 @@ function RouteComponent() {
     q
       .from({ song: db.songs })
       .where(({ song }) => eq(song.albumId, albumId))
-      .orderBy((q) => [q.song.discNumber, q.song.track]),
+      // The order main plays the album in. Nulls first is what SQLite does too.
+      .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
   );
 
   const queueState = useQueueManagerState();
@@ -81,6 +83,8 @@ function RouteComponent() {
 
   const playingKey = queueState.source?.ref.type === "album" && queueState.source.ref.albumId === albumId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
+  const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));
+
   return (
     <>
       <TrackList
@@ -88,7 +92,7 @@ function RouteComponent() {
         columns={columns}
         playingKey={playingKey}
         showHeader
-        onActivate={(item) => void QueueActions.playSource({ type: "album", albumId }, item.key)}
+        onActivate={(item) => playFrom(item.key)}
         menu={(selection) => <TrackMenuAddItems selection={selection} />}
         scrollId={"album-" + album.id}
         topPadding={DETAIL_TOP_PADDING}
@@ -98,7 +102,6 @@ function RouteComponent() {
             title={album.name}
             art={
               <AlbumCover
-                coverArtPath={album.coverArtPath}
                 className="w-full"
                 instantLoad
                 target={{
@@ -120,7 +123,7 @@ function RouteComponent() {
             {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
 
             <div className="mt-2 flex items-center gap-1">
-              <Button className="h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && void QueueActions.playSource({ type: "album", albumId }, firstKey)}>
+              <Button className="h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
                 <PlayIcon weight="fill" className="size-5" />
                 Play
               </Button>

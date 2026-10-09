@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Muswag</title>
+    <!--
+      Runs before the first paint, so the window never opens in the wrong theme. It reads what
+      components/utils/theme-provider.tsx stores and sets the class that component keeps up to date.
+    -->
+    <script>
+      (() => {
+        const theme = localStorage.getItem("vite-ui-theme");
+        const dark = theme === "dark" || (theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.add(dark ? "dark" : "light");
+      })();
+    </script>
+    <!-- The page's background until the stylesheet is there: `--background` of styles.css in each theme. -->
+    <style>
+      html {
+        background-color: oklch(1 0 0);
+      }
+      html.dark {
+        background-color: oklch(0.15 0 1.25);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

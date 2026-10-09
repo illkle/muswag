@@ -20,4 +20,9 @@ export const db = {
 
 export type LibraryCollections = typeof db;
 
+// Without an index a lookup scans its table, and a page makes one for every row it shows: the album of
+// each track in a list, the song of each playlist entry.
+db.albums.createIndex(({ id }) => id);
+db.songs.createIndex(({ id }) => id);
 db.songs.createIndex(({ albumId }) => albumId);
+db.playlists.createIndex(({ id }) => id);

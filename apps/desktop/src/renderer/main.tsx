@@ -23,8 +23,6 @@ const router = createTanStackRouter({
   scrollRestoration: true,
   // A page for another album, artist or playlist starts over: its queries, scroll position and dialogs are its own.
   defaultRemountDeps: ({ params }) => params,
-  defaultPreload: "intent",
-  defaultPreloadStaleTime: 0,
   history: createHashHistory(),
 });
 
@@ -33,19 +31,16 @@ setupRouterSsrQueryIntegration({
   queryClient,
 });
 
-const rootElement = document.getElementById("root")!;
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement);
-  void Session.start().then(() => {
-    root.render(
-      <StrictMode>
-        <ThemeProvider>
-          <RouterProvider router={router} />
-        </ThemeProvider>
-      </StrictMode>,
-    );
-  });
-}
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+void Session.start().then(() => {
+  root.render(
+    <StrictMode>
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </StrictMode>,
+  );
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

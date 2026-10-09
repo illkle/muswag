@@ -62,8 +62,8 @@ const AlbumItem = ({
   return (
     <button
       key={album.id}
-      className="box-border flex w-full cursor-pointer flex-col justify-start rounded-lg p-2 text-left align-bottom transition-colors duration-100 outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
-      tabIndex={0}
+      // The scroll margins keep a tile that Tab has reached clear of the top bar and the player, which lie over the ends of the grid.
+      className="box-border flex w-full cursor-pointer scroll-mt-(--top-height) scroll-mb-(--player-height) flex-col justify-start rounded-lg p-2 text-left align-bottom transition-colors duration-100 outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
       onClick={() => {
         void navigate({
           to: "/app/albums/$albumId",
@@ -73,7 +73,6 @@ const AlbumItem = ({
       {...props}
     >
       <AlbumCover
-        coverArtPath={album.coverArtPath}
         instantLoad={instantCovers}
         thumbnail
         target={{
