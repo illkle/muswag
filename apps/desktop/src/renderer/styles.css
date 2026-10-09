@@ -30,6 +30,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -65,6 +66,7 @@
   --border: oklch(0.923 0.003 48.717);
   --input: oklch(0.923 0.003 48.717);
   --ring: oklch(0.709 0.01 56.259);
+  --brand: var(--color-lime-600);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -99,6 +101,7 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.553 0.013 58.071);
+  --brand: var(--color-lime-500);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -112,6 +115,16 @@
   --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.55 0 58);
+}
+
+/*
+ * The colour a scrollbar's thumb has right now. Scrollbar parts cannot be transitioned themselves,
+ * so the scrolled element transitions this registered property and its thumb inherits it.
+ */
+@property --sb-thumb-current {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
 }
 
 @layer base {
@@ -130,13 +143,25 @@
   }
 
   body {
-    --sb-track-color: var(--primary-foreground);
-    --sb-thumb-color: var(--input);
+    --sb-thumb-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+    --sb-thumb-hover-color: color-mix(in oklch, var(--foreground) 40%, transparent);
     --sb-size: 10px;
+    --sb-inset: 3px;
   }
 
+  /*
+   * The thumb shows only while the pointer is over the scrolled element or over the `scrollbar-area`
+   * it is in: the sidebar, the main column or the queue.
+   */
   .scrollbar {
+    --sb-thumb-current: transparent;
     scrollbar-gutter: stable;
+    transition: --sb-thumb-current 300ms cubic-bezier(0.25, 0, 0.329, 1);
+  }
+
+  :where(.scrollbar-area:hover) .scrollbar,
+  .scrollbar:hover {
+    --sb-thumb-current: var(--sb-thumb-color);
   }
 
   .scrollbar::-webkit-scrollbar {
@@ -144,28 +169,37 @@
   }
 
   .scrollbar::-webkit-scrollbar-track {
-    background: var(--sb-track-color);
-    border-radius: 1px;
+    background: transparent;
     margin-top: var(--top-height);
   }
 
+  /* A transparent border insets the thumb, which leaves a thin pill in the middle of the scrollbar. */
   .scrollbar::-webkit-scrollbar-thumb {
-    background: var(--sb-thumb-color);
-    border-radius: 1px;
+    min-height: 40px;
+    border: var(--sb-inset) solid transparent;
+    border-radius: 9999px;
+    background-color: var(--sb-thumb-current);
+    background-clip: padding-box;
   }
 
-  /* The track clears the top bar by default; areas outside the main column start at their own edge. */
+  .scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sb-thumb-hover-color);
+  }
+
+  .scrollbar-slim {
+    --sb-size: 8px;
+    --sb-inset: 2px;
+  }
+
+  /* The track clears the top bar by default; a list that starts below it runs from its own edge. */
   .scrollbar-flush::-webkit-scrollbar-track {
     margin-top: 0;
   }
 
-  .scrollbar-flush::-webkit-scrollbar {
-    width: 6px;
-  }
-
   @supports not selector(::-webkit-scrollbar) {
     .scrollbar {
-      scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+      scrollbar-color: var(--sb-thumb-current) transparent;
+      scrollbar-width: thin;
     }
   }
 }
@@ -180,6 +214,70 @@
 
   .app-no-drag {
     -webkit-app-region: no-drag;
+  }
+}
+
+/* A surface floating over the page: the player bar and the popups anchored to the top bar. */
+@utility surface-raised {
+  @apply bg-popover/85 text-popover-foreground shadow-lg ring-1 ring-foreground/10 backdrop-blur-xl;
+}
+
+/* A native range input drawn as a thin track filled up to its value. `--slider-fill` is that value, from 0 to 1. */
+.slider {
+  --slider-color: var(--foreground);
+  --slider-track: color-mix(in oklch, var(--foreground) 15%, transparent);
+  --slider-thumb: 12px;
+  --slider-height: 4px;
+
+  /* Taller than the track it draws, so there is more of it to grab. */
+  height: 16px;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+
+  &:hover,
+  &:active,
+  &:focus-visible {
+    --slider-color: var(--brand);
+  }
+
+  &::-webkit-slider-runnable-track {
+    height: var(--slider-height);
+    border-radius: 9999px;
+    /* The fill ends within the thumb's width of the thumb's centre, so the thumb always covers its end. */
+    background: linear-gradient(to right, var(--slider-color) calc(100% * var(--slider-fill)), var(--slider-track) calc(100% * var(--slider-fill)));
+  }
+
+  &::-webkit-slider-thumb {
+    width: var(--slider-thumb);
+    height: var(--slider-thumb);
+    margin-top: calc((var(--slider-height) - var(--slider-thumb)) / 2);
+    appearance: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+    opacity: 0;
+    transition: opacity 100ms;
+  }
+
+  &:hover::-webkit-slider-thumb,
+  &:active::-webkit-slider-thumb,
+  &:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+  }
+
+  &:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  &:disabled::-webkit-slider-thumb {
+    opacity: 0;
   }
 }
 

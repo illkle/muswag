@@ -12,6 +12,7 @@ import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { db } from "#/data/library";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { TOP_HEIGHT } from "#/styles";
 
 const STORAGE_KEY = "muswag-queue-panel-open";
 
@@ -94,7 +95,7 @@ export function QueuePanelToggle() {
 
   return (
     <Button size="icon-sm" variant="ghost" onClick={togglePanel} aria-label={open ? "Hide queue" : "Show queue"} aria-expanded={open} title="Queue">
-      <QueueIcon className="size-4" />
+      <QueueIcon weight={open ? "fill" : "regular"} className="size-4" />
     </Button>
   );
 }
@@ -109,17 +110,19 @@ function QueuePanelContent() {
   const { items, playingKey } = useQueueItems();
 
   return (
-    <aside aria-label="Queue" className="flex h-(--main-height) w-72 shrink-0 flex-col border-l bg-sidebar text-sidebar-foreground">
-      <div className="app-drag-region flex h-(--top-height) shrink-0 items-center px-4 text-sm font-medium">Queue</div>
+    <aside aria-label="Queue" className="scrollbar-area relative h-(--main-height) w-72 shrink-0 animate-in border-l bg-sidebar text-sidebar-foreground duration-200 fade-in-0 slide-in-from-right-4">
+      {/* Kept clear for the window controls, which sit over this corner on Windows. The list scrolls away under it. */}
+      <div className="app-drag-region absolute top-0 z-10 h-(--top-height) w-full bg-sidebar [-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_100%)]" />
 
       {items.length === 0 ? (
-        <p className="px-4 py-1 text-xs text-sidebar-foreground/60">Nothing is playing.</p>
+        <p className="px-4 pt-(--top-height) text-xs text-sidebar-foreground/60">Nothing is playing.</p>
       ) : (
         <TrackList
           items={items}
           columns={compactColumns}
           playingKey={playingKey}
-          className="scrollbar-flush h-auto min-h-0 flex-1"
+          className="scrollbar-slim"
+          topPadding={TOP_HEIGHT}
           bottomPadding={8}
           menu={(selection) => {
             const queued = queuedKeys(selection);

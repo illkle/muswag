@@ -2,11 +2,12 @@ import { AlbumList } from "#/components/album-list/album-list";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 import { getArtistCredits } from "#/components/utils/artist-links";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
+import { PageState } from "#/components/page-state";
 import { db } from "#/data/library";
 import { formatMetaLine } from "#/lib/format";
 import { eq, not, useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute } from "@tanstack/react-router";
+import { WarningIcon } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/app/artists/$artistId")({
   component: RouteComponent,
@@ -26,7 +27,7 @@ function RouteComponent() {
     q
       .from({ album: db.albums })
       .where((v) => eq(v.album.artistId, artistId))
-      .orderBy((v) => v.album.year, { direction: "desc" }),
+      .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" }),
   );
 
   const appearsOnQuery = useLiveQuery((q) =>
@@ -36,7 +37,7 @@ function RouteComponent() {
       .innerJoin({ song: db.songs }, ({ album, song }) => eq(album.id, song.albumId))
       .fn.where(({ song }) => song.artists?.some((artist) => artist.id === artistId))
       .select(({ album }) => album)
-      .orderBy((v) => v.album.year, { direction: "desc" })
+      .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" })
       .distinct(),
   );
 
@@ -51,25 +52,9 @@ function RouteComponent() {
   const songCredit = matchingSongQuery.data ? getArtistCredits(matchingSongQuery.data).find((credit) => credit.id === artistId) : undefined;
   const artistName = artistQuery.data?.name ?? embeddedCredit?.name ?? songCredit?.name ?? artistId;
 
-  if (artistQuery.isLoading || albumsQuery.isLoading || appearsOnQuery.isLoading || matchingSongQuery.isLoading) {
-    return (
-      <section className="flex h-full w-full flex-col">
-        <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading artist...</div>
-      </section>
-    );
-  }
-
+  if (artistQuery.isLoading || albumsQuery.isLoading || appearsOnQuery.isLoading || matchingSongQuery.isLoading) return <PageState tone="quiet" title="Loading artist…" />;
   if (artistQuery.isError || albumsQuery.isError || appearsOnQuery.isError || matchingSongQuery.isError) {
-    return (
-      <section className="flex h-full w-full flex-col">
-        <div className="m-6">
-          <Alert variant="destructive">
-            <AlertTitle>Artist unavailable</AlertTitle>
-            <AlertDescription>The artist could not be read from the local database.</AlertDescription>
-          </Alert>
-        </div>
-      </section>
-    );
+    return <PageState tone="error" icon={<WarningIcon />} title="Artist unavailable" description="The artist could not be read from the local database." />;
   }
 
   const albums = albumsQuery.data;
@@ -83,7 +68,7 @@ function RouteComponent() {
     <section className="flex h-full w-full flex-col">
       <AlbumList
         sections={[
-          { id: "albums", title: "Albums", albums },
+          { id: "albums", title: "Albums", albums, hideArtist: true },
           { id: "appears-on", title: "Appears On", albums: appearsOn },
         ]}
         scrollId={"artist-" + artistId}
@@ -91,9 +76,9 @@ function RouteComponent() {
         topPadding={DETAIL_TOP_PADDING}
         bottomPadding={DETAIL_BOTTOM_PADDING}
         topContent={
-          // The grid below pads its rows by 10px, so the artwork has to sit on the same edge.
+          // The grid below pads its tiles by as much again, which puts the artwork on the edge of the covers.
           <DetailHeader
-            className="px-0"
+            className="px-2"
             title={artistName}
             art={
               <AlbumCover

@@ -5,7 +5,6 @@ import { PlayerPanel } from "#/components/player-panel";
 import { NewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { useUser } from "#/session/session";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
-import { IconContext } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/app")({
   component: RouteComponent,
@@ -32,14 +31,12 @@ function RouteComponent() {
         } as React.CSSProperties
       }
     >
-      <IconContext.Provider value={{ weight: "fill" }}>
-        <AppSidebarWrapper>
-          <TopBar />
-          <Outlet />
-          <PlayerPanel />
-        </AppSidebarWrapper>
-        <NewPlaylistDialog />
-      </IconContext.Provider>
+      <AppSidebarWrapper>
+        <TopBar />
+        <Outlet />
+        <PlayerPanel />
+      </AppSidebarWrapper>
+      <NewPlaylistDialog />
     </div>
   );
 }

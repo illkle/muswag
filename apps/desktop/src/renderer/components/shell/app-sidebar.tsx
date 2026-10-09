@@ -15,8 +15,11 @@ export function AppSidebar() {
 
   const n = useNavigate();
 
+  const albumsActive = Boolean(r({ to: "/app/albums" }));
+  const songsActive = Boolean(r({ to: "/app/songs" }));
+
   return (
-    <Sidebar>
+    <Sidebar className="scrollbar-area">
       <SidebarContent>
         <SidebarGroup className="shrink-0">
           <div className="flex h-(--top-height) w-full gap-4">
@@ -25,13 +28,13 @@ export function AppSidebar() {
           </div>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={Boolean(r({ to: "/app/albums" }))} onClick={() => n({ to: "/app/albums" })}>
-                <VinylRecordIcon /> Albums
+              <SidebarMenuButton isActive={albumsActive} onClick={() => n({ to: "/app/albums" })}>
+                <VinylRecordIcon weight={albumsActive ? "fill" : "regular"} /> Albums
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={Boolean(r({ to: "/app/songs" }))} onClick={() => n({ to: "/app/songs" })}>
-                <MusicNotesIcon /> Songs
+              <SidebarMenuButton isActive={songsActive} onClick={() => n({ to: "/app/songs" })}>
+                <MusicNotesIcon weight={songsActive ? "fill" : "regular"} /> Songs
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -55,7 +58,7 @@ export const AppSidebarWrapper = ({ children }: { children: React.ReactNode }) =
     <SidebarProvider open={true}>
       <AppSidebar />
 
-      <SidebarInset className="grid h-(--main-height) min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+      <SidebarInset className="scrollbar-area grid h-(--main-height) min-w-0 grid-rows-[minmax(0,1fr)_auto]">
         <AppContentSizeProvider>{children}</AppContentSizeProvider>
       </SidebarInset>
 

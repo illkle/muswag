@@ -7,8 +7,10 @@ import type { FuseResult } from "fuse.js";
 import { useRef, useState, useTransition } from "react";
 import { cn } from "#/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
+import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 
 const InnerResult = ({
+  kind,
   title,
   subtitle,
   coverPath,
@@ -16,20 +18,23 @@ const InnerResult = ({
   className,
   ...props
 }: React.ComponentProps<"div"> & {
+  /** What the result is, since an artist, an album and a song can share a name. */
+  kind: string;
   title?: string;
   subtitle?: string | null | undefined;
   coverPath?: string | null | undefined;
   target?: CoverTarget | undefined;
 }) => {
   return (
-    <div className={cn("flex h-12 items-center gap-2 rounded-lg px-2 data-highlighted:bg-primary/10", className)} {...props}>
+    <div className={cn("flex h-12 items-center gap-2.5 rounded-sm px-2 data-highlighted:bg-accent", className)} {...props}>
       <div className="w-10 shrink-0">
-        <AlbumCover key={coverPath} coverArtPath={coverPath} target={target} />
+        <AlbumCover key={coverPath} coverArtPath={coverPath} thumbnail target={target} className={target?.type === "artist" ? "rounded-full" : undefined} />
       </div>
-      <div>
-        <div className="line-clamp-1 text-xs">{title}</div>
-        <div className="line-clamp-1 text-xs text-muted-foreground">{subtitle}</div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm">{title}</div>
+        <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
       </div>
+      <div className="shrink-0 text-xs text-muted-foreground">{kind}</div>
     </div>
   );
 };
@@ -40,6 +45,7 @@ const ArtistResult = ({ artist }: { artist: SearchResultArtist["artist"] }) => {
     <Autocomplete.Item
       render={
         <InnerResult
+          kind="Artist"
           title={artist.name}
           coverPath={artist.coverArtPath}
           target={
@@ -70,6 +76,7 @@ const SongResult = ({ song }: { song: SearchResultSong["song"] }) => {
     <Autocomplete.Item
       render={
         <InnerResult
+          kind="Song"
           title={song.title}
           subtitle={song.artist}
           coverPath={song.coverArtPath}
@@ -101,6 +108,7 @@ const AlbumResult = ({ album }: { album: SearchResultAlbum["album"] }) => {
     <Autocomplete.Item
       render={
         <InnerResult
+          kind="Album"
           title={album.name}
           subtitle={album.artist}
           coverPath={album.coverArtPath}
@@ -122,9 +130,14 @@ const AlbumResult = ({ album }: { album: SearchResultAlbum["album"] }) => {
   );
 };
 
+/** How the shortcut that focuses the search reads on this platform. */
+const SEARCH_SHORTCUT = navigator.userAgent.includes("Mac") ? "⌘F" : "Ctrl F";
+
 export function MiniSearch() {
   const [searchValue, setSearchValue] = useState("");
   const [searchResults, setSearchResults] = useState<FuseResult<SearchResult>[]>([]);
+  /** Whether a search has answered since the field was last empty, so "no results" is not shown ahead of the first one. */
+  const [hasSearched, setHasSearched] = useState(false);
 
   const [isPending, startTransition] = useTransition();
 
@@ -134,27 +147,48 @@ export function MiniSearch() {
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const clear = () => {
+    abortControllerRef.current?.abort();
+    setSearchValue("");
+    setSearchResults([]);
+    setHasSearched(false);
+  };
+
   useHotkey("Mod+F", () => inputRef.current?.focus());
-  useHotkey("Escape", () => inputRef.current?.blur(), { target: inputRef });
+  useHotkey(
+    "Escape",
+    () => {
+      clear();
+      inputRef.current?.blur();
+    },
+    { target: inputRef },
+  );
 
   return (
     <Autocomplete.Root
-      open={open}
+      open={open && hasSearched}
       onOpenChange={setOpen}
       items={searchResults}
       value={searchValue}
       openOnInputClick
-      onValueChange={(nextSearchValue) => {
+      onValueChange={(nextSearchValue, { reason }) => {
+        // Picking a result goes to it, which leaves nothing to keep searching for.
+        if (reason === "item-press") {
+          clear();
+          inputRef.current?.blur();
+          return;
+        }
+
+        if (nextSearchValue === "") {
+          clear();
+          return;
+        }
+
         setSearchValue(nextSearchValue);
 
         const controller = new AbortController();
         abortControllerRef.current?.abort();
         abortControllerRef.current = controller;
-
-        if (nextSearchValue === "") {
-          setSearchResults([]);
-          return;
-        }
 
         startTransition(async () => {
           const result = await FuzeSearch.search(nextSearchValue, {
@@ -166,24 +200,43 @@ export function MiniSearch() {
 
           startTransition(() => {
             setSearchResults(result);
+            setHasSearched(true);
           });
         });
       }}
       itemToStringValue={(item) => item.item.id}
       filter={null}
     >
-      <Autocomplete.Input
-        ref={inputRef}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        placeholder="Search..."
-        className="relative z-20 h-full w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-      />
+      <div className="relative">
+        <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 z-30 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Autocomplete.Input
+          ref={inputRef}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          placeholder="Search"
+          className="relative z-20 h-8 w-full min-w-0 rounded-lg bg-popover pr-12 pl-9 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 transition-shadow outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+        />
+        {searchValue ? (
+          <button
+            type="button"
+            aria-label="Clear search"
+            className="absolute top-1/2 right-2 z-30 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            // Keeps the focus in the field, so the next keys go on searching.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={clear}
+          >
+            <XIcon className="size-3" />
+          </button>
+        ) : (
+          <kbd className="pointer-events-none absolute top-1/2 right-3 z-30 -translate-y-1/2 font-sans text-xs text-muted-foreground">{SEARCH_SHORTCUT}</kbd>
+        )}
+      </div>
 
       <Autocomplete.Portal>
         <Autocomplete.Positioner className="z-20 outline-hidden" sideOffset={4} align="start">
-          <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-md bg-background px-1 shadow-2xl" aria-busy={isPending || undefined}>
-            <div className="max-h-[min(var(--available-height),22.5rem)] scroll-pt-1 scroll-pb-1 overflow-y-auto overscroll-contain">
+          <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-lg surface-raised p-1" aria-busy={isPending || undefined}>
+            <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain">
+              <Autocomplete.Empty className="px-2 py-3 text-center text-sm text-muted-foreground empty:hidden">No results for “{searchValue}”</Autocomplete.Empty>
               <Autocomplete.List>
                 {(v: FuseResult<SearchResult>) => {
                   if (v.item.type === "song") return <SongResult key={v.item.id} song={v.item.song} />;

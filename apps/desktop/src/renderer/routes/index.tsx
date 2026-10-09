@@ -8,7 +8,7 @@ import { useUser, Session } from "#/session/session";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { ShieldCheckIcon } from "@phosphor-icons/react";
+import { VinylRecordIcon } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/")({
   component: App,
@@ -46,11 +46,11 @@ function LoginScreen() {
         <CardHeader className="gap-3">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <ShieldCheckIcon className="size-5" />
+              <VinylRecordIcon weight="fill" className="size-6" />
             </div>
             <div>
-              <CardTitle>Connect your Subsonic server</CardTitle>
-              <CardDescription>Store credentials locally and unlock sync.</CardDescription>
+              <CardTitle>Muswag</CardTitle>
+              <CardDescription>Connect to your Subsonic server.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -121,13 +121,13 @@ function LoginScreen() {
             </form.Field>
 
             <Button className="w-full" type="submit" disabled={loginMutation.isPending}>
-              {loginMutation.isPending ? "Connecting..." : "Login"}
+              {loginMutation.isPending ? "Connecting…" : "Connect"}
             </Button>
           </form>
 
           {loginMutation.isError ? (
             <Alert variant="destructive" className="mt-4">
-              <AlertTitle>Login failed</AlertTitle>
+              <AlertTitle>Could not connect</AlertTitle>
               <AlertDescription>{getErrorMessage(loginMutation.error, "Check your credentials and try again.")}</AlertDescription>
             </Alert>
           ) : null}

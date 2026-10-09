@@ -15,8 +15,8 @@ export function TrackRow({
   isSelected,
   isPlaying,
   hasMenu,
+  onPlay,
   className,
-  style,
   ...props
 }: {
   item: TrackItem;
@@ -26,6 +26,8 @@ export function TrackRow({
   isPlaying: boolean;
   /** Whether the row opens the context menu of the list it is in. */
   hasMenu: boolean;
+  /** Plays the track from this list, for the cells that offer it. */
+  onPlay?: (() => void) | undefined;
 } & React.ComponentProps<"div">) {
   const Row = hasMenu ? ContextMenuTrigger : "div";
 
@@ -35,18 +37,17 @@ export function TrackRow({
       data-selected={isSelected || undefined}
       data-playing={isPlaying || undefined}
       className={cn(
-        "grid h-12 w-full items-center gap-3 px-4 text-left transition-colors duration-100 select-none",
-        "hover:bg-muted/30",
-        isSelected && "bg-muted/60 hover:bg-muted/70",
+        "group/row grid h-12 w-full items-center gap-3 rounded-md px-2 text-left transition-colors duration-100 select-none",
+        "hover:bg-muted/50",
+        isSelected && "bg-muted hover:bg-muted",
         item.unavailable && "opacity-50",
         className,
       )}
-      style={{ gridTemplateColumns: columns.map(({ width }) => width).join(" "), ...style }}
       {...props}
     >
       {columns.map(({ id, className: cellClassName, Cell }) => (
         <div key={id} className={cn("min-w-0", cellClassName)}>
-          <Cell item={item} position={position} isPlaying={isPlaying} />
+          <Cell item={item} position={position} isPlaying={isPlaying} onPlay={onPlay} />
         </div>
       ))}
     </Row>

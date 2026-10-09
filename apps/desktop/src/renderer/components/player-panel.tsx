@@ -1,8 +1,9 @@
-import { PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon } from "@phosphor-icons/react";
+import { MusicNotesIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 
-import { Button } from "#/components/ui/button";
+import { Button, buttonVariants } from "#/components/ui/button";
+import { Slider } from "#/components/ui-custom/slider";
 import { MpvIPC, PlayerIPC } from "#/player/commands";
 import { db } from "#/data/library";
 import { QueueActions } from "#/queue/queue";
@@ -50,7 +51,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   useHotkey("Space", () => togglePlay());
 
   return (
-    <div {...props} className={cn("flex items-center justify-center gap-2", props.className)}>
+    <div {...props} className={cn("flex items-center justify-center gap-1", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -59,12 +60,19 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         }}
         disabled={!canGoBack}
         aria-label="Previous track"
+        title="Previous"
       >
-        <SkipBackIcon className="size-4" />
+        <SkipBackIcon weight="fill" className="size-4" />
       </Button>
 
-      <Button size="icon" className="h-7 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
-        {status === "loading" || buffering ? <SpinnerGapIcon className="size-3 animate-spin" /> : status === "playing" ? <PauseIcon className="size-3" /> : <PlayIcon className="size-3" />}
+      <Button size="icon-sm" className="mx-1 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+        {status === "loading" || buffering ? (
+          <SpinnerGapIcon className="size-4 animate-spin" />
+        ) : status === "playing" ? (
+          <PauseIcon weight="fill" className="size-4" />
+        ) : (
+          <PlayIcon weight="fill" className="size-4" />
+        )}
       </Button>
 
       <Button
@@ -75,12 +83,18 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         }}
         disabled={!canGoForward}
         aria-label="Next track"
+        title="Next"
       >
-        <SkipForwardIcon className="size-4" />
+        <SkipForwardIcon weight="fill" className="size-4" />
       </Button>
     </div>
   );
 };
+
+/** Wide enough for the times of most tracks, so the slider between them keeps its length as they change. */
+const TIME_LABEL = "min-w-9 shrink-0 text-xs text-muted-foreground tabular-nums";
+/** Stands in for both times while nothing is loaded. */
+const NO_TIME = "–:––";
 
 const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const ds = usePlayerDuration();
@@ -155,11 +169,9 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   };
 
   return (
-    <div {...props} className={cn("flex w-full items-center gap-1", props.className)}>
-      <span className="shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatDuration(positionSeconds)}</span>
-      <input
-        type="range"
-        min={0}
+    <div {...props} className={cn("flex w-full items-center gap-2", props.className)}>
+      <span className={TIME_LABEL}>{currentTrackId ? formatDuration(sliderValue) : NO_TIME}</span>
+      <Slider
         max={Math.max(durationSeconds, 1)}
         step={0.01}
         value={Math.min(sliderValue, Math.max(durationSeconds, 1))}
@@ -208,9 +220,10 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
             void commitSeek(Number(event.currentTarget.value));
           }
         }}
-        className={cn("h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
+        aria-label="Playback position"
+        className="w-full"
       />
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{formatDuration(durationSeconds)}</span>
+      <span className={cn(TIME_LABEL, "text-right")}>{currentTrackId ? formatDuration(durationSeconds) : NO_TIME}</span>
     </div>
   );
 };
@@ -230,24 +243,46 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
   const alb = albumQuery.data;
 
-  return (
-    <div {...props} className={cn("flex h-full w-full items-center gap-2 overflow-hidden", !currentTrack && "opacity-0", props.className)}>
-      <AlbumCover coverArtPath={alb?.coverArtPath} className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />
+  if (!currentTrack) {
+    return (
+      <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
+        <div className="flex size-10 shrink-0 items-center justify-center rounded border border-border bg-muted text-muted-foreground/50">
+          <MusicNotesIcon className="size-4" />
+        </div>
+        <span className="truncate text-sm text-muted-foreground">Nothing playing</span>
+      </div>
+    );
+  }
 
-      {currentTrack && (
-        <div className="flex w-full max-w-[calc(100%-48px)] flex-col">
-          <Link to={"/app/albums/$albumId"} params={{ albumId: alb?.id ?? "" }} className="line-clamp-1 block truncate text-xs font-semibold">
+  const cover = <AlbumCover coverArtPath={alb?.coverArtPath} thumbnail className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />;
+
+  return (
+    <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
+      {currentTrack.albumId ? (
+        // The title next to it is the same link, so this one stays out of the tab order.
+        <Link to="/app/albums/$albumId" params={{ albumId: currentTrack.albumId }} tabIndex={-1} aria-hidden className="shrink-0">
+          {cover}
+        </Link>
+      ) : (
+        cover
+      )}
+
+      <div className="flex min-w-0 flex-col">
+        {currentTrack.albumId ? (
+          <Link to="/app/albums/$albumId" params={{ albumId: currentTrack.albumId }} className="truncate text-sm font-medium hover:underline">
             {currentTrack.title}
           </Link>
-          <ArtistLinks
-            artist={currentTrack.artist}
-            artistId={currentTrack.artistId}
-            artists={currentTrack.artists}
-            className="block truncate text-xs text-muted-foreground"
-            linkClassName="hover:text-foreground hover:underline"
-          />
-        </div>
-      )}
+        ) : (
+          <span className="truncate text-sm font-medium">{currentTrack.title}</span>
+        )}
+        <ArtistLinks
+          artist={currentTrack.artist}
+          artistId={currentTrack.artistId}
+          artists={currentTrack.artists}
+          className="block truncate text-xs text-muted-foreground"
+          linkClassName="hover:text-foreground hover:underline"
+        />
+      </div>
     </div>
   );
 };
@@ -333,7 +368,7 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   };
 
   return (
-    <div {...props} className={cn("flex h-full min-w-0 items-center justify-end", props.className)}>
+    <div {...props} className={cn("flex min-w-0 items-center justify-end gap-1", props.className)}>
       <Button
         size="icon-sm"
         variant="ghost"
@@ -343,13 +378,10 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
         aria-label={muted ? "Unmute playback" : "Mute playback"}
         title={muted ? "Unmute" : "Mute"}
       >
-        <VolumeIcon className="size-4" />
+        <VolumeIcon weight="fill" className="size-4" />
       </Button>
 
-      <input
-        type="range"
-        min={0}
-        max={100}
+      <Slider
         step={1}
         value={visibleVolumePercent}
         onPointerDown={(event) => {
@@ -385,7 +417,7 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
           }
         }}
         aria-label="Playback volume"
-        className={cn("h-1.5 w-full max-w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary", "disabled:cursor-not-allowed disabled:opacity-50")}
+        className="w-full max-w-28"
       />
     </div>
   );
@@ -393,15 +425,23 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
 //
 
-export function PlayerPanel() {
+/** What went wrong with playback and what can be done about it, floating above the player bar. */
+function PlayerIssueBanner() {
   const issue = usePlayerIssue();
   const error = usePlayerError();
+
+  if (!error) return null;
+
+  const actions = issue?.actions ?? [];
+
   return (
-    <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-8/10 -translate-x-1/2 pb-2">
-      {error ? (
-        <div role="alert" className="absolute bottom-full mb-2 flex max-w-full items-center gap-2 rounded border bg-background p-2 text-sm">
-          <span>{error}</span>
-          {issue?.actions.includes("retry") ? (
+    <div role="alert" className="absolute bottom-full left-1/2 mb-2 flex w-max max-w-full -translate-x-1/2 items-center gap-3 rounded-lg surface-raised px-3 py-1.5 text-sm">
+      <WarningIcon weight="fill" className="size-4 shrink-0 text-destructive" />
+      <span className="line-clamp-2 min-w-0 py-1.5">{error}</span>
+
+      {issue && actions.length > 0 ? (
+        <div className="-mr-1.5 flex shrink-0 items-center gap-1">
+          {actions.includes("retry") ? (
             <Button
               size="sm"
               variant="outline"
@@ -412,7 +452,7 @@ export function PlayerPanel() {
               Retry
             </Button>
           ) : null}
-          {issue?.actions.includes("configureMpv") ? (
+          {actions.includes("configureMpv") ? (
             <Button
               size="sm"
               variant="outline"
@@ -423,7 +463,7 @@ export function PlayerPanel() {
               Locate mpv
             </Button>
           ) : null}
-          {issue?.actions.includes("refreshMpv") ? (
+          {actions.includes("refreshMpv") ? (
             <Button
               size="sm"
               variant="outline"
@@ -434,8 +474,12 @@ export function PlayerPanel() {
               Recheck
             </Button>
           ) : null}
-          {issue?.actions.includes("login") ? <Link to="/">Log in</Link> : null}
-          {issue?.actions.includes("dismiss") ? (
+          {actions.includes("login") ? (
+            <Link to="/" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Log in
+            </Link>
+          ) : null}
+          {actions.includes("dismiss") ? (
             <Button
               size="sm"
               variant="ghost"
@@ -448,14 +492,23 @@ export function PlayerPanel() {
           ) : null}
         </div>
       ) : null}
-      <section className="grid h-full grid-cols-9 flex-col justify-between gap-1 overflow-hidden rounded-lg border border-muted/20 bg-background/90 p-2 px-2 backdrop-blur-sm">
-        <CurrentTrack className="col-span-3 row-start-1" />
-        <PlayerButtonControls className="col-span-3 row-start-1" />
-        <div className="col-span-3 row-start-1 flex min-w-0 items-center justify-end gap-1">
+    </div>
+  );
+}
+
+export function PlayerPanel() {
+  return (
+    // As wide as the list above it, up to a width past which the bar would only gain empty space.
+    <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-[min(calc(100%-2rem),60rem)] -translate-x-1/2 pb-1.5">
+      <PlayerIssueBanner />
+      <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
+        <CurrentTrack />
+        <PlayerButtonControls />
+        <div className="flex min-w-0 items-center justify-end gap-1">
           <PlayerVolume className="flex-1" />
           <QueuePanelToggle />
         </div>
-        <PlayerSeek className="col-span-9 row-start-2 row-end-2" />
+        <PlayerSeek className="col-span-3" />
       </section>
     </div>
   );

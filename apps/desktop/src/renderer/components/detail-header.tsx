@@ -5,8 +5,11 @@ import type { ReactNode } from "react";
 /** Edge of the square artwork, and the height of the header block it sits in. */
 const HEADER_HEIGHT = 200;
 
+/** Between the top bar and the header. */
+const HEADER_GAP = 12;
+
 /** Room a virtualized list has to reserve so its first row clears the floating header. */
-export const DETAIL_TOP_PADDING = HEADER_HEIGHT + TOP_HEIGHT + 16;
+export const DETAIL_TOP_PADDING = TOP_HEIGHT + HEADER_GAP + HEADER_HEIGHT + 16;
 export const DETAIL_BOTTOM_PADDING = PLAYER_HEIGHT + 16;
 
 /**
@@ -27,8 +30,8 @@ export function DetailHeader({
 }) {
   return (
     <header
-      className={cn("absolute top-0 mt-(--top-height) grid h-(--header-height) gap-4 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]", className)}
-      style={{ "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}
+      className={cn("absolute grid h-(--header-height) gap-5 px-4 md:grid-cols-[var(--header-height)_minmax(0,1fr)]", className)}
+      style={{ top: TOP_HEIGHT + HEADER_GAP, "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}
     >
       {art}
 

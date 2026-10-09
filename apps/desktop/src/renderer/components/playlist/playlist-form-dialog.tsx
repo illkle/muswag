@@ -1,4 +1,5 @@
 import { Button } from "#/components/ui/button";
+import { Checkbox } from "#/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -69,7 +70,7 @@ export function PlaylistFormDialog({
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} />
+            <Checkbox checked={isPublic} onCheckedChange={setIsPublic} />
             Visible to other users on the server
           </label>
 

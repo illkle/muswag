@@ -10,7 +10,11 @@ import { ContextMenu, ContextMenuContent } from "#/components/ui/context-menu";
 import { cn } from "#/lib/utils";
 
 const TRACK_HEIGHT = 48;
-const TEXT_HEIGHT = 32;
+const HEADING_HEIGHT = 40;
+const NOTE_HEIGHT = 32;
+/** The column header, and the gap between it and the first row. */
+const HEADER_HEIGHT = 32;
+const HEADER_GAP = 4;
 
 /**
  * A scrolling list of tracks, with headings between them where the list has sections. Selecting
@@ -20,6 +24,7 @@ export function TrackList({
   items,
   columns,
   playingKey = null,
+  showHeader = false,
   onActivate,
   menu,
   scrollId,
@@ -32,7 +37,9 @@ export function TrackList({
   columns: readonly TrackColumn[];
   /** The key of the row that is playing, when it is in this list. */
   playingKey?: string | null;
-  /** A double-click on a track, or Enter while it alone is selected. */
+  /** Names the columns above the first row. */
+  showHeader?: boolean;
+  /** A double-click on a track, its play button, or Enter while it alone is selected. */
   onActivate?: (item: TrackItem) => void;
   /** The context menu for the selected rows. A right-click selects the row under it first. */
   menu?: (selection: TrackSelection) => ReactNode;
@@ -53,11 +60,14 @@ export function TrackList({
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (items[index]?.type === "track" ? TRACK_HEIGHT : TEXT_HEIGHT),
+    estimateSize: (index) => {
+      const type = items[index]?.type;
+      return type === "track" ? TRACK_HEIGHT : type === "heading" ? HEADING_HEIGHT : NOTE_HEIGHT;
+    },
     getItemKey: (index) => items[index]?.key ?? index,
     overscan: 10,
     ...(scrollEntry?.scrollY === undefined ? {} : { initialOffset: scrollEntry.scrollY }),
-    ...(topPadding === undefined ? {} : { paddingStart: topPadding }),
+    paddingStart: (topPadding ?? 0) + (showHeader ? HEADER_HEIGHT + HEADER_GAP : 0),
     ...(bottomPadding === undefined ? {} : { paddingEnd: bottomPadding }),
   });
 
@@ -68,6 +78,8 @@ export function TrackList({
     let next = 0;
     return items.map((item) => (item.type === "track" ? next++ : -1));
   }, [items]);
+
+  const gridTemplateColumns = useMemo(() => columns.map(({ width }) => width).join(" "), [columns]);
 
   const [selectionState, setSelectionState] = useState(EMPTY_SELECTION);
   // Read from the rows that are there now, so keys of rows that have left the list select nothing.
@@ -103,11 +115,23 @@ export function TrackList({
       <div style={{ height: `${rowVirtualizer.getTotalSize()}px` }} className="relative w-full">
         {topContent}
 
+        {showHeader ? (
+          <div style={{ top: topPadding ?? 0, height: HEADER_HEIGHT }} className="absolute left-0 w-full px-2">
+            <div style={{ gridTemplateColumns }} className="grid h-full items-center gap-3 border-b px-2">
+              {columns.map(({ id, label, className: cellClassName }) => (
+                <div key={id} className={cn("min-w-0", cellClassName, "truncate text-xs font-normal text-muted-foreground")}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const item = items[virtualRow.index]!;
 
           return (
-            <div key={item.key} style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }} className="absolute top-0 left-0 flex w-full">
+            <div key={item.key} style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }} className="absolute top-0 left-0 flex w-full px-2">
               {item.type === "track" ? (
                 <TrackRow
                   item={item}
@@ -116,6 +140,8 @@ export function TrackList({
                   isSelected={selectionState.keys.has(item.key)}
                   isPlaying={item.key === playingKey}
                   hasMenu={menu !== undefined}
+                  onPlay={onActivate && !item.unavailable ? () => onActivate(item) : undefined}
+                  style={{ gridTemplateColumns }}
                   onClick={(event) => {
                     const modifiers = { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey };
                     setSelectionState((state) => selectOnClick(state, trackKeys, item.key, modifiers));
@@ -124,13 +150,13 @@ export function TrackList({
                   onContextMenu={() => setSelectionState((state) => selectForAction(state, item.key))}
                 />
               ) : item.type === "heading" ? (
-                <div className="flex h-8 w-full items-center gap-2 px-4 text-xs">
-                  <span className="truncate font-medium opacity-70">{item.title}</span>
-                  {item.subtitle ? <span className="truncate opacity-50">{item.subtitle}</span> : null}
+                <div className="flex w-full items-end gap-2 px-2 pb-1.5 text-sm">
+                  <span className="truncate font-semibold">{item.title}</span>
+                  {item.subtitle ? <span className="truncate text-muted-foreground">{item.subtitle}</span> : null}
                 </div>
               ) : (
-                <div className="flex h-8 w-full items-center px-4 text-xs">
-                  <span className="truncate opacity-50">{item.label}</span>
+                <div className="flex w-full items-center px-2 text-xs">
+                  <span className="truncate text-muted-foreground">{item.label}</span>
                 </div>
               )}
             </div>

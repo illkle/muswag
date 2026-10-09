@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
+import { MusicNotesIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { useUser } from "#/session/session";
 import { db } from "#/data/library";
@@ -11,6 +11,7 @@ import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem } from "#/components/track-list/types";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
+import { PageState } from "#/components/page-state";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/app/songs/")({
@@ -30,41 +31,24 @@ function LibraryScreen() {
   // The key is the same in every order of the library, so the row is marked whichever one is playing.
   const playingKey = queueState.source?.ref.type === "library" && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
+  if (songsQuery.isLoading) return <PageState tone="quiet" title="Loading songs…" />;
+  if (songsQuery.isError) return <PageState tone="error" icon={<WarningIcon />} title="Songs unavailable" description="The local song list could not be read." />;
+  if (items.length === 0) {
+    return <PageState icon={<MusicNotesIcon />} title="No songs yet" description="Use the server control in the sidebar to fetch your server library." />;
+  }
+
   return (
-    <section className="flex h-full w-full flex-col">
-      {songsQuery.isLoading ? <div className="m-6 rounded-xl border border-dashed border-border px-6 py-10 text-sm text-muted-foreground">Loading albums...</div> : null}
-
-      {songsQuery.isError ? (
-        <div className="m-6">
-          <Alert variant="destructive">
-            <AlertTitle>Albums unavailable</AlertTitle>
-            <AlertDescription>{"The local album list could not be read."}</AlertDescription>
-          </Alert>
-        </div>
-      ) : null}
-
-      {!songsQuery.isLoading && !songsQuery.isError && (songsQuery.data?.length ?? 0) === 0 ? (
-        <div className="mx-auto mt-(--top-height) flex max-w-md flex-col items-center justify-center gap-3 rounded-2xl py-10">
-          <div className="space-y-1">
-            <p className="font-medium">No songs in the local database yet.</p>
-            <p className="text-sm text-muted-foreground">Use the server control in the sidebar to fetch your server library.</p>
-          </div>
-        </div>
-      ) : null}
-
-      {!songsQuery.isLoading && !songsQuery.isError && (songsQuery.data?.length ?? 0) > 0 ? (
-        <TrackList
-          items={items}
-          columns={libraryColumns}
-          playingKey={playingKey}
-          onActivate={(item) => void QueueActions.playSource({ type: "library", sort: SORT }, item.key)}
-          menu={(selection) => <TrackMenuAddItems selection={selection} />}
-          scrollId="library-screen-songs"
-          topPadding={TOP_HEIGHT}
-          bottomPadding={PLAYER_HEIGHT}
-        />
-      ) : null}
-    </section>
+    <TrackList
+      items={items}
+      columns={libraryColumns}
+      playingKey={playingKey}
+      showHeader
+      onActivate={(item) => void QueueActions.playSource({ type: "library", sort: SORT }, item.key)}
+      menu={(selection) => <TrackMenuAddItems selection={selection} />}
+      scrollId="library-screen-songs"
+      topPadding={TOP_HEIGHT}
+      bottomPadding={PLAYER_HEIGHT}
+    />
   );
 }
 

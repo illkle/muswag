@@ -18,7 +18,7 @@ export const NavButtons = () => {
           router.history.back();
         }}
       >
-        <CaretLeftIcon className="size-4" />
+        <CaretLeftIcon weight="fill" className="size-4" />
       </Button>
       <Button
         variant="ghost"
@@ -29,7 +29,7 @@ export const NavButtons = () => {
           router.history.forward();
         }}
       >
-        <CaretRightIcon className="size-4" />
+        <CaretRightIcon weight="fill" className="size-4" />
       </Button>
     </div>
   );

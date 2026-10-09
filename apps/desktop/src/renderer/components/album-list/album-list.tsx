@@ -14,6 +14,8 @@ export type AlbumListSection = {
   id: string;
   title: string;
   albums: Album[];
+  /** Leaves the artist off the tiles, for a section that is all one artist's albums. */
+  hideArtist?: boolean;
 };
 
 type AlbumListRow =
@@ -24,26 +26,42 @@ type AlbumListRow =
     }
   | {
       albums: Album[];
+      hideArtist: boolean;
       id: string;
       type: "albums";
     };
 
-const SECTION_HEIGHT = 32;
+const SECTION_HEIGHT = 48;
+
+/** Narrowest a tile gets before the grid drops a column. */
+const MIN_TILE_WIDTH = 180;
+/** Around a tile's content. Two tiles side by side put twice this between their covers. */
+const TILE_PADDING = 8;
+const COVER_TO_TEXT = 8;
+/** The album's name over a line of details. */
+const TEXT_HEIGHT = 20 + 16;
 
 const AlbumItem = ({
   album,
   instantCovers,
+  hideArtist,
   ...props
 }: {
   album: Album;
   instantCovers: boolean;
+  hideArtist: boolean;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
   const navigate = useNavigate();
+  const artist = hideArtist
+    ? null
+    : getArtistCredits(album)
+        .map((credit) => credit.name)
+        .join(", ");
 
   return (
     <button
       key={album.id}
-      className="box-border flex w-full cursor-pointer flex-col justify-start rounded p-0.5 text-left align-bottom transition hover:bg-accent/10"
+      className="box-border flex w-full cursor-pointer flex-col justify-start rounded-lg p-2 text-left align-bottom transition-colors duration-100 outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
       tabIndex={0}
       onClick={() => {
         void navigate({
@@ -64,30 +82,24 @@ const AlbumItem = ({
         }}
       />
 
-      <div className="mt-1">
-        <h2 className="line-clamp-1 text-xs">{album.name}</h2>
-        <p className="line-clamp-1 truncate text-xs text-muted-foreground">
-          {getArtistCredits(album)
-            .map((artist) => artist.name)
-            .join(", ")}
+      <div className="mt-2 w-full">
+        <h2 className="truncate text-sm font-medium">{album.name}</h2>
+        <p className="flex gap-1 text-xs text-muted-foreground">
+          {artist ? <span className="truncate">{artist}</span> : null}
+          {artist && album.year ? <span>•</span> : null}
+          {album.year ? <span className="shrink-0 tabular-nums">{album.year}</span> : null}
         </p>
-        <span className="line-clamp-1 text-xs text-muted-foreground/50">{album.year}</span>
       </div>
     </button>
   );
 };
 
 const calcSize = (totalSpace: number) => {
-  const chunks = Math.max(1, Math.floor(totalSpace / 170));
-
-  const BETWEEN_TEXT_AND_IMAGE = 8;
-  const PAD_TOP_PLUS_BOTTOM = 2 * 2;
+  const chunks = Math.max(1, Math.floor(totalSpace / MIN_TILE_WIDTH));
 
   const fullWidth = totalSpace / chunks;
-  const paddings = BETWEEN_TEXT_AND_IMAGE + PAD_TOP_PLUS_BOTTOM;
-  const coverSize = fullWidth - paddings;
-  const textSize = 16 * 3;
-  const fullHeight = textSize + coverSize + paddings;
+  const coverSize = fullWidth - 2 * TILE_PADDING;
+  const fullHeight = coverSize + COVER_TO_TEXT + TEXT_HEIGHT + 2 * TILE_PADDING;
 
   return { fullWidth, fullHeight, chunks };
 };
@@ -106,6 +118,7 @@ export function createAlbumListRows(sections: AlbumListSection[], columns: numbe
       },
       ...chunk(section.albums, columns).map((albums, index) => ({
         albums,
+        hideArtist: section.hideArtist ?? false,
         id: `albums-${section.id}-${index}`,
         type: "albums" as const,
       })),
@@ -154,6 +167,7 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
         ? createAlbumListRows(sections, sizes.chunks)
         : chunk(albums, sizes.chunks).map((rowAlbums, index) => ({
             albums: rowAlbums,
+            hideArtist: false,
             id: `albums-${index}`,
             type: "albums" as const,
           })),
@@ -205,9 +219,9 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
                   height: `${virtualRow.size}px`,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
-                className="absolute top-0 left-0 flex w-full items-end px-1 pb-2"
+                className="absolute top-0 left-0 flex w-full items-end px-2 pb-1"
               >
-                <h2 className="text-xl font-semibold tracking-tight">{row.title}</h2>
+                <h2 className="text-lg font-semibold tracking-tight">{row.title}</h2>
               </div>
             );
           }
@@ -221,7 +235,7 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
               }}
               className="absolute top-0 left-0 flex w-full"
             >
-              <AlbumItemRow albums={row.albums} instantCovers={instantCovers} sizesStyle={sizesStyle} />
+              <AlbumItemRow albums={row.albums} hideArtist={row.hideArtist} instantCovers={instantCovers} sizesStyle={sizesStyle} />
             </div>
           );
         })}
@@ -230,11 +244,11 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
   );
 }
 
-const AlbumItemRow = ({ albums, instantCovers, sizesStyle }: { albums: Album[]; instantCovers: boolean; sizesStyle: Record<string, string> }) => {
+const AlbumItemRow = ({ albums, hideArtist, instantCovers, sizesStyle }: { albums: Album[]; hideArtist: boolean; instantCovers: boolean; sizesStyle: Record<string, string> }) => {
   return (
     <>
       {albums.map((album) => (
-        <AlbumItem key={album.id} instantCovers={instantCovers} album={album} style={sizesStyle} />
+        <AlbumItem key={album.id} instantCovers={instantCovers} hideArtist={hideArtist} album={album} style={sizesStyle} />
       ))}
     </>
   );

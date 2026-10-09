@@ -40,23 +40,24 @@ export function SidebarPlaylists() {
 
       {syncError ? <p className="px-2 pb-1 text-xs text-destructive">Sync problem: {syncError}</p> : null}
 
-      <SidebarGroupContent className="scrollbar scrollbar-flush -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+      <SidebarGroupContent className="scrollbar scrollbar-slim scrollbar-flush -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
         {isLoading ? <p className="px-2 py-1 text-xs text-sidebar-foreground/60">Loading...</p> : null}
         {isError ? <p className="px-2 py-1 text-xs text-destructive">The playlist list could not be read.</p> : null}
         {!isLoading && !isError && playlists.length === 0 ? <p className="px-2 py-1 text-xs text-sidebar-foreground/60">No playlists yet.</p> : null}
 
         <SidebarMenu>
-          {playlists.map((playlist) => (
-            <SidebarMenuItem key={playlist.id}>
-              <SidebarMenuButton
-                isActive={Boolean(matchRoute({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } }))}
-                onClick={() => navigate({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } })}
-              >
-                <PlaylistIcon />
-                <span>{playlist.name}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
+          {playlists.map((playlist) => {
+            const active = Boolean(matchRoute({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } }));
+
+            return (
+              <SidebarMenuItem key={playlist.id}>
+                <SidebarMenuButton isActive={active} onClick={() => navigate({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } })}>
+                  <PlaylistIcon weight={active ? "fill" : "regular"} />
+                  <span>{playlist.name}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
 

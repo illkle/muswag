@@ -1,9 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon } from "@phosphor-icons/react";
+import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 
-import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader, DetailHeaderPlaceholder } from "#/components/detail-header";
+import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { PageState } from "#/components/page-state";
+import { PlaylistArt } from "#/components/playlist/playlist-art";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
@@ -15,7 +17,6 @@ import { libraryColumns } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
-import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { getErrorMessage } from "#/lib/err";
@@ -35,6 +36,8 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const firstPlayableEntryId = useMemo(() => rows.find(({ song }) => song)?.entryId ?? null, [rows]);
+  /** The first four albums the playlist draws on, for its artwork. */
+  const artAlbumIds = useMemo(() => [...new Set(rows.flatMap(({ song }) => (song?.albumId ? [song.albumId] : [])))].slice(0, 4), [rows]);
 
   const playingKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
@@ -55,42 +58,9 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     [playlistId, rows],
   );
 
-  if (isLoading) {
-    return (
-      <section className="flex h-full w-full flex-col">
-        <div className="m-6 rounded-2xl border border-dashed border-border bg-card/70 px-6 py-12 text-sm text-muted-foreground">Loading playlist...</div>
-      </section>
-    );
-  }
-
-  if (isError) {
-    return (
-      <section className="flex h-full w-full flex-col">
-        <div className="m-6">
-          <Alert variant="destructive">
-            <AlertTitle>Playlist unavailable</AlertTitle>
-            <AlertDescription>The playlist could not be read from the local database.</AlertDescription>
-          </Alert>
-        </div>
-      </section>
-    );
-  }
-
-  if (!state) {
-    return (
-      <section className="flex h-full w-full flex-col">
-        <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border/70 bg-card/85 px-6 py-14 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <PlaylistIcon className="size-5" />
-          </div>
-          <div className="space-y-1">
-            <p className="font-medium">Playlist not found.</p>
-            <p className="text-sm text-muted-foreground">It may have been deleted on another device.</p>
-          </div>
-        </div>
-      </section>
-    );
-  }
+  if (isLoading) return <PageState tone="quiet" title="Loading playlist…" />;
+  if (isError) return <PageState tone="error" icon={<WarningIcon />} title="Playlist unavailable" description="The playlist could not be read from the local database." />;
+  if (!state) return <PageState icon={<PlaylistIcon />} title="Playlist not found" description="It may have been deleted on another device." />;
 
   const missingCount = rows.filter(({ song }) => !song).length;
   const canEdit = !state.readonly;
@@ -115,6 +85,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           items={items}
           columns={libraryColumns}
           playingKey={playingKey}
+          showHeader
           onActivate={(item) => {
             if (!item.unavailable) void QueueActions.playSource({ type: "playlist", playlistId }, item.key);
           }}
@@ -135,7 +106,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           topPadding={DETAIL_TOP_PADDING}
           bottomPadding={DETAIL_BOTTOM_PADDING}
           topContent={
-            <DetailHeader title={state.name} art={<DetailHeaderPlaceholder icon={<PlaylistIcon />} />}>
+            <DetailHeader title={state.name} art={<PlaylistArt albumIds={artAlbumIds} />}>
               <p className="text-sm text-muted-foreground">{playlistMeta}</p>
               {state.comment ? <p className="line-clamp-2 text-sm text-muted-foreground">{state.comment}</p> : null}
               {rows.length === 0 ? <p className="text-sm text-muted-foreground">Add songs from any album or the songs list.</p> : null}
@@ -147,8 +118,8 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
               {removeEntriesMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(removeEntriesMutation.error, "The song could not be removed.")}</p> : null}
 
               <div className="mt-2 flex items-center gap-1">
-                <Button size="sm" disabled={!firstPlayableEntryId} onClick={() => firstPlayableEntryId && playFrom(firstPlayableEntryId)}>
-                  <PlayIcon />
+                <Button className="h-10 w-32 gap-2 text-base" disabled={!firstPlayableEntryId} onClick={() => firstPlayableEntryId && playFrom(firstPlayableEntryId)}>
+                  <PlayIcon weight="fill" className="size-5" />
                   Play
                 </Button>
                 {canEdit ? (
