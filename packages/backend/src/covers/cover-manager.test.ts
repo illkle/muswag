@@ -89,6 +89,8 @@ describe("CoverManager", () => {
       const manager = yield* CoverManager;
       const paths = yield* Effect.all([manager.ensure(target), manager.ensure(target)], { concurrency: 2 });
 
+      // A name every platform takes: the key's colons would not do on Windows.
+      expect(paths[0]).toBe("covers/album_3a_album-1_3a_cover-1.jpg");
       expect(paths[0]).toBe(paths[1]);
       expect(fetches).toBe(1);
       expect(writes).toBe(1);

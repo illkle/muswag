@@ -1,44 +1,52 @@
-import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor } from "@muswag/model";
+import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor, SourceWindow } from "@muswag/model";
 import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
-import type { QueueSourceFactory } from "./source/types";
-import { nextTarget, previousTarget, type QueueManagerState } from "#shared/queue-state";
+import { nextTarget, previousTarget, sourceWindowItems, type QueueManagerState } from "#shared/queue-state";
 import { SerialQueue } from "./serial-queue";
 import type { QueueStorage } from "./db-queue-storage";
 import type { PlayerRuntimeState, QueuePlayerPort } from "./player-port";
-import { VirtualSourceWindow } from "./source/virtual-source-window";
+import type { QueueSources, SourceAnchor } from "./source";
 
 const TELEMETRY_SAVE_DELAY_MS = 5_000;
+/** A library sync changes the library in bursts; the source playing is read again at most this often. */
+const SOURCE_REFRESH_DELAY_MS = 250;
 /** Past this point into a track, "previous" restarts it instead of stepping back. */
 const RESTART_INSTEAD_OF_PREVIOUS_SECONDS = 5;
 
-type ActiveSource = { ref: QueueSourceRef; window: VirtualSourceWindow };
+type Source = NonNullable<QueueManagerState["source"]>;
 
-type PendingSelection = { key: string; generation: number; candidate: ActiveSource | null };
+/** A selection mpv was given that has not started. `candidate` is the source it was asked from, when it is a new one. */
+type PendingSelection = { key: string; candidate: Source | null };
 
 export class QueueManager {
   readonly store = createStore<QueueManagerState>({ nowPlaying: null, userQueue: [], source: null });
 
   private readonly player: QueuePlayerPort;
-  private readonly sources: QueueSourceFactory;
+  private readonly sources: QueueSources;
   private readonly storage: QueueStorage;
+  /** Everything that reads or changes the queue runs here, one at a time, so no step sees another half done. */
   private readonly serial = new SerialQueue();
   private readonly unsubscribePlayer: () => void;
-  private activeSource: ActiveSource | null = null;
+  private readonly unsubscribeSources: () => void;
   private runtime: PlayerRuntimeState | null = null;
   private pendingSelection: PendingSelection | null = null;
-  private selectionGeneration = 0;
-  private selectionAbort: AbortController | null = null;
+  /** Counts the sources asked for and the times the queue was cleared: either replaces a request to play a source that has not run yet. */
+  private sourceGeneration = 0;
   private telemetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private saveChain = Promise.resolve();
   private disposed = false;
 
-  constructor(options: { player: QueuePlayerPort; sources: QueueSourceFactory; storage: QueueStorage }) {
+  constructor(options: { player: QueuePlayerPort; sources: QueueSources; storage: QueueStorage }) {
     this.player = options.player;
     this.sources = options.sources;
     this.storage = options.storage;
     this.unsubscribePlayer = this.player.subscribe((state) => this.acceptRuntime(state));
+    this.unsubscribeSources = this.sources.subscribe((affects) => {
+      const source = this.store.state.source;
+      if (source && affects(source.ref)) this.scheduleSourceRefresh();
+    });
   }
 
   async restore(): Promise<boolean> {
@@ -48,12 +56,15 @@ export class QueueManager {
       const stored = await this.storage.load();
       if (!stored) return false;
 
-      let active: ActiveSource | null = null;
+      let source: Source | null = null;
       let repaired = false;
       if (stored.source) {
+        const { ref, cursor } = stored.source;
         try {
-          active = await this.openWindow(stored.source.ref, { cursor: stored.source.cursor });
-          repaired = !sameCursor(active.window.cursor, stored.source.cursor);
+          // The source may have changed while the app was closed, so its window is read anew.
+          const window = await this.sources.window(ref, anchorOf(cursor));
+          source = window && { ref, window };
+          repaired = !window || !sameCursor(window.cursor, cursor);
         } catch (cause) {
           console.error("[queue] failed to restore source", cause);
           repaired = true;
@@ -63,7 +74,7 @@ export class QueueManager {
       const restoredState: QueueManagerState = {
         nowPlaying: stored.nowPlaying ? cloneNowPlaying(stored.nowPlaying) : null,
         userQueue: stored.userQueue.map(clonePlaybackItem),
-        source: active ? publicSource(active) : null,
+        source,
       };
       const nowPlaying = restoredState.nowPlaying;
       // Without an occurrence playing there is nothing to load; the queue reaches mpv with the next selection.
@@ -78,8 +89,6 @@ export class QueueManager {
         }
       }
 
-      this.activeSource?.window.dispose();
-      this.activeSource = active;
       this.publish(restoredState);
       if (repaired) this.saveLogicalState();
       return true;
@@ -87,29 +96,22 @@ export class QueueManager {
   }
 
   playSource(ref: QueueSourceRef, key: string): Promise<void> {
-    const generation = ++this.selectionGeneration;
-    this.selectionAbort?.abort();
-    const controller = new AbortController();
-    this.selectionAbort = controller;
-    this.pendingSelection?.candidate?.window.dispose();
+    // A later request, or clearing the queue, replaces this one: it then neither starts nor reports a failure.
+    const generation = ++this.sourceGeneration;
     this.pendingSelection = null;
 
     return this.serial.run(async () => {
-      let candidate: ActiveSource | null = null;
+      let pending: PendingSelection | null = null;
       try {
-        candidate = await this.openWindow(ref, { key }, controller.signal);
-        if (controller.signal.aborted || generation !== this.selectionGeneration) {
-          candidate.window.dispose();
-          return;
-        }
-        const target = candidate.window.current;
-        if (!target || target.key !== key) throw new Error(`Source occurrence ${key} is not playable.`);
-        this.pendingSelection = { candidate, generation, key };
+        const window = await this.sources.window(ref, { key, offset: null });
+        if (generation !== this.sourceGeneration) return;
+        if (window?.current?.key !== key) throw new Error(`Source occurrence ${key} is not playable.`);
+        pending = { candidate: { ref: { ...ref }, window }, key };
+        this.pendingSelection = pending;
         await this.player.applyQueue({ items: composeMpvQueue(this.mirrorState()), select: { key, play: true } });
       } catch (cause) {
-        if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
-        candidate?.window.dispose();
-        if (!controller.signal.aborted) throw cause;
+        if (this.pendingSelection === pending) this.pendingSelection = null;
+        if (generation === this.sourceGeneration) throw cause;
       }
     });
   }
@@ -127,13 +129,6 @@ export class QueueManager {
       const next = this.store.state.userQueue.filter((item) => item.key !== key);
       if (next.length === this.store.state.userQueue.length) return;
       await this.commitQueueEdit({ ...this.store.state, userQueue: next });
-    });
-  }
-
-  clearQueued(): Promise<void> {
-    return this.serial.run(async () => {
-      if (this.store.state.userQueue.length === 0) return;
-      await this.commitQueueEdit({ ...this.store.state, userQueue: [] });
     });
   }
 
@@ -157,15 +152,11 @@ export class QueueManager {
   }
 
   clear(): Promise<void> {
-    ++this.selectionGeneration;
-    this.selectionAbort?.abort();
+    ++this.sourceGeneration;
     this.cancelTelemetrySave();
     return this.serial.run(async () => {
       this.cancelTelemetrySave();
-      this.pendingSelection?.candidate?.window.dispose();
       this.pendingSelection = null;
-      this.activeSource?.window.dispose();
-      this.activeSource = null;
       await this.player.stop();
       this.publish({ nowPlaying: null, source: null, userQueue: [] });
       await this.clearPersistedState();
@@ -175,33 +166,30 @@ export class QueueManager {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.selectionAbort?.abort();
     this.unsubscribePlayer();
-    this.activeSource?.window.dispose();
-    this.pendingSelection?.candidate?.window.dispose();
+    this.unsubscribeSources();
     if (this.telemetryTimer) clearTimeout(this.telemetryTimer);
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
   }
 
-  private async openWindow(ref: QueueSourceRef, start: { key: string } | { cursor: SourceCursor }, signal?: AbortSignal): Promise<ActiveSource> {
-    const source = this.sources.open(ref);
-    let active: ActiveSource | null = null;
-    const window = await VirtualSourceWindow.create({
-      source,
-      start,
-      ...(signal ? { signal } : {}),
-      onChange: () => {
-        if (active && this.activeSource === active) void this.serial.run(() => this.sourceWindowChanged(active!));
-      },
-    });
-    active = { ref: { ...ref }, window };
-    return active;
+  private scheduleSourceRefresh(): void {
+    if (this.refreshTimer || this.disposed) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void this.serial.run(() => this.refreshSource()).catch((cause) => console.error("[queue] failed to refresh the source", cause));
+    }, SOURCE_REFRESH_DELAY_MS);
   }
 
-  private async sourceWindowChanged(active: ActiveSource): Promise<void> {
-    if (this.activeSource !== active) return;
-    const previousCursor = this.store.state.source?.window.cursor;
-    this.publish({ ...this.store.state, source: publicSource(active) });
-    if (previousCursor && !sameCursor(previousCursor, active.window.cursor)) this.saveLogicalState();
+  /** Reads the source playing again after the library changed. Renderers and mpv hear of it only when its occurrences differ. */
+  private async refreshSource(): Promise<void> {
+    const { source, nowPlaying } = this.store.state;
+    if (!source || this.disposed) return;
+    // A gap is where the occurrence playing was. It is looked for again, since it may be back.
+    const at = nowPlaying?.origin === "source" ? { key: nowPlaying.key, offset: source.window.cursor.offset } : anchorOf(source.window.cursor);
+    const window = await this.sources.window(source.ref, at);
+    if (!window || sameOccurrences(window, source.window)) return;
+    this.publish({ ...this.store.state, source: { ref: source.ref, window } });
+    if (!sameCursor(window.cursor, source.window.cursor)) this.saveLogicalState();
     await this.applyMirror();
   }
 
@@ -213,7 +201,7 @@ export class QueueManager {
     const candidate = this.pendingSelection?.candidate;
     const current = candidate?.window.current;
     if (!candidate || !current) return state;
-    return { nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, userQueue: state.userQueue, source: publicSource(candidate) };
+    return { nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, userQueue: state.userQueue, source: candidate };
   }
 
   /**
@@ -232,19 +220,17 @@ export class QueueManager {
   }
 
   private async select(key: string): Promise<void> {
-    const generation = ++this.selectionGeneration;
-    const candidate = this.pendingSelection?.candidate ?? null;
+    const pending: PendingSelection = { candidate: this.pendingSelection?.candidate ?? null, key };
     // Queued tracks skipped on the way to `key` leave the queue, as they do when stepped through one at a time.
     const keys = composeMpvQueue(this.mirrorState()).map((item) => item.key);
     const passed = new Set(keys.slice(0, Math.max(0, keys.indexOf(key))));
     const state = this.store.state;
     const next = { ...state, userQueue: state.userQueue.filter((item) => !passed.has(item.key)) };
-    this.pendingSelection = { candidate, generation, key };
+    this.pendingSelection = pending;
     try {
       await this.player.applyQueue({ items: composeMpvQueue(this.mirrorState(next)), select: { key, play: !(this.runtime?.paused ?? false) } });
     } catch (cause) {
-      if (this.pendingSelection?.generation === generation) this.pendingSelection = null;
-      candidate?.window.dispose();
+      if (this.pendingSelection === pending) this.pendingSelection = null;
       throw cause;
     }
     if (next.userQueue.length !== state.userQueue.length) this.publish(next);
@@ -265,16 +251,16 @@ export class QueueManager {
     let logicalChanged = false;
     // A source asked for at the occurrence already playing still has to become the active one.
     if (key && (key !== this.store.state.nowPlaying?.key || pending?.candidate)) {
-      const firstUser = this.store.state.userQueue[0];
+      const state = this.store.state;
+      const firstUser = state.userQueue[0];
       if (firstUser?.key === key) {
-        if (pending?.candidate) this.activate(pending.candidate);
-        const source = pending?.candidate ? publicSource(pending.candidate) : this.store.state.source;
-        this.publish({ nowPlaying: { ...clonePlaybackItem(firstUser), origin: "user" }, userQueue: this.store.state.userQueue.slice(1), source });
+        this.publish({ nowPlaying: { ...clonePlaybackItem(firstUser), origin: "user" }, userQueue: state.userQueue.slice(1), source: pending?.candidate ?? state.source });
         logicalChanged = true;
       } else {
-        const source = pending?.candidate ?? (this.activeSource?.window.has(key) ? this.activeSource : null);
-        if (source) {
-          await this.commitSourceTransition(source, key, runtime.current!);
+        const source = pending?.candidate ?? state.source;
+        const reached = source && sourceWindowItems(source.window).find((item) => item.key === key);
+        if (source && reached) {
+          await this.commitSourceTransition(source, reached.offset, runtime.current!);
           logicalChanged = true;
         }
       }
@@ -288,17 +274,11 @@ export class QueueManager {
     }
   }
 
-  private async commitSourceTransition(source: ActiveSource, key: string, current: PlaybackItem): Promise<void> {
-    await source.window.moveTo(key);
-    this.activate(source);
-    this.publish({ ...this.store.state, nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, source: publicSource(source) });
-  }
-
-  /** Makes `source` the one playback reads from. */
-  private activate(source: ActiveSource): void {
-    const previous = this.activeSource;
-    this.activeSource = source;
-    if (previous !== source) previous?.window.dispose();
+  /** Playback has got to `current`, at `offset` of `source`: the window moves there, and `source` is what playback reads from. */
+  private async commitSourceTransition(source: Source, offset: number, current: PlaybackItem): Promise<void> {
+    // An occurrence that left the source while it was starting leaves a gap where it was.
+    const window = (await this.sources.window(source.ref, { key: current.key, offset })) ?? source.window;
+    this.publish({ ...this.store.state, nowPlaying: { ...clonePlaybackItem(current), origin: "source" }, source: { ref: source.ref, window } });
   }
 
   private applyMirror(): Promise<void> {
@@ -372,8 +352,12 @@ export function composeMpvQueue(state: QueueManagerState): PlaybackItem[] {
   return candidates.map(clonePlaybackItem);
 }
 
-function publicSource(active: ActiveSource): NonNullable<QueueManagerState["source"]> {
-  return { ref: { ...active.ref }, window: active.window.snapshot };
+const anchorOf = (cursor: SourceCursor): SourceAnchor => ({ key: cursor.type === "item" ? cursor.key : null, offset: cursor.offset });
+
+/** Whether two windows hold the same occurrences at the same places. What is known about their tracks may differ. */
+function sameOccurrences(left: SourceWindow, right: SourceWindow): boolean {
+  const places = (window: SourceWindow) => sourceWindowItems(window).map(({ key, offset }) => `${offset}:${key}`);
+  return sameCursor(left.cursor, right.cursor) && left.hasMore === right.hasMore && places(left).join("\n") === places(right).join("\n");
 }
 
 function cloneNowPlaying(item: NowPlaying): NowPlaying {

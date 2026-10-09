@@ -7,6 +7,9 @@ import { safeStorage } from "electron";
 
 import { thumbnailPathOf } from "../cover-thumbnails";
 
+/** Where cover files are kept, relative to the app data directory. */
+export const COVER_DIRECTORY = "covers";
+
 /** Resolves `requested` inside `base`, refusing paths that escape it. */
 export function resolveInside(base: string, requested: string): string {
   const absoluteBase = resolve(base);

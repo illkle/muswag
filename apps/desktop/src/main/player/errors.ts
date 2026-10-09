@@ -33,8 +33,8 @@ export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly 
 
 const retryable = ["retry", "dismiss"] as const;
 const actionsByCode: Record<IssueCode, PlayerIssue["actions"]> = {
-  NotAuthenticated: ["login"],
-  BinaryUnavailable: ["configureMpv", "refreshMpv"],
+  NotAuthenticated: ["login", "dismiss"],
+  BinaryUnavailable: ["configureMpv", "refreshMpv", "dismiss"],
   SettingsFailed: ["dismiss"],
   InvalidCommand: ["dismiss"],
   ShuttingDown: ["dismiss"],

@@ -75,6 +75,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     // Without the app's scope: the session's services are built into the scope `ScopedRef` gives
     // each session, so logging out or switching accounts stops them.
     const dependencies = Context.omit(Scope.Scope)(yield* Effect.context<SessionDependencies>());
+    const scope = yield* Effect.scope;
     const credentialsStore = yield* CredentialsStore;
     const db = yield* Db;
     const mirror = yield* SqliteMirror;
@@ -103,9 +104,22 @@ const makeSessionManager = (options: SessionManagerOptions) =>
       );
     };
 
+    const use = <A, E, R>(f: (session: AuthenticatedSession) => Effect.Effect<A, E, R>): Effect.Effect<A, E | NotAuthenticated, R> =>
+      ScopedRef.get(current).pipe(
+        Effect.flatMap((state): Effect.Effect<A, E | NotAuthenticated, R> => {
+          if (state._tag === "LoggedIn") return f(state.session);
+          return Effect.fail(new NotAuthenticated({ message: "Log in before using server services" }));
+        }),
+      );
+
+    // Every session starts by catching up with the server, as its playlists do on their own. The
+    // sync's status says how it went, and the session ending interrupts it.
+    const startLibrarySync = use((session) => session.library.sync("quick")).pipe(Effect.ignore, Effect.forkIn(scope), Effect.asVoid);
+
     const install = (credentials: SessionCredentials, verify: boolean, persist: boolean) =>
       ScopedRef.set(current, acquire(credentials, verify).pipe(Effect.tap(() => (persist ? credentialsStore.save(credentials) : Effect.void)))).pipe(
         Effect.andThen(SubscriptionRef.set(publicState, loggedInSnapshot(credentials))),
+        Effect.andThen(startLibrarySync),
         Effect.as(loggedInSnapshot(credentials)),
       );
 
@@ -154,14 +168,6 @@ const makeSessionManager = (options: SessionManagerOptions) =>
           }),
       ),
     );
-
-    const use = <A, E, R>(f: (session: AuthenticatedSession) => Effect.Effect<A, E, R>): Effect.Effect<A, E | NotAuthenticated, R> =>
-      ScopedRef.get(current).pipe(
-        Effect.flatMap((state): Effect.Effect<A, E | NotAuthenticated, R> => {
-          if (state._tag === "LoggedIn") return f(state.session);
-          return Effect.fail(new NotAuthenticated({ message: "Log in before using server services" }));
-        }),
-      );
 
     return {
       snapshot: SubscriptionRef.get(publicState),

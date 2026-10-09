@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { songRow, type PlaybackItem, type Song } from "@muswag/model";
-import type { QueueManagerState, SourceItem } from "#shared/queue-state";
-import type { QueueSource, QueueSourceFactory } from "./source/types";
+import { songRow, type PlaybackItem, type QueueSourceRef, type Song, type SourceCursor, type SourceItem, type SourceWindow } from "@muswag/model";
+import type { QueueManagerState } from "#shared/queue-state";
+import type { QueueSources, SourceAnchor } from "./source";
 import type { QueueStorage, StoredQueue } from "./db-queue-storage";
 import type { ApplyQueueInput, PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { QueueManager } from "./queue-manager";
@@ -43,18 +43,25 @@ class FakePlayer implements QueuePlayerPort {
   }
 }
 
-class FakeSource implements QueueSource {
-  readonly ref = { type: "album" as const, albumId: "album" };
-  constructor(readonly items = [sourceItem("a", 0), sourceItem("c", 1)]) {}
-  async read({ start, end }: { start: number; end: number; signal: AbortSignal }) {
-    return { revision: "1", items: this.items.filter(({ offset }) => offset >= start && offset < end), nextOffset: Math.max(start, Math.min(end, this.items.length)), isEnd: end >= this.items.length };
+/** Albums kept in memory, each a list of occurrence keys in order, read whole. */
+class FakeSources implements QueueSources {
+  listeners = new Set<(affects: (ref: QueueSourceRef) => boolean) => void>();
+  constructor(readonly albums: Record<string, string[]> = { album: ["a", "c"] }) {}
+
+  async window(ref: QueueSourceRef, at: SourceAnchor): Promise<SourceWindow | null> {
+    const items = (ref.type === "album" ? (this.albums[ref.albumId] ?? []) : []).map(sourceItem);
+    const found = items.findIndex(({ key }) => key === at.key);
+    if (found < 0 && at.offset === null) return null;
+    const cursor: SourceCursor = found < 0 ? { type: "gap", offset: at.offset! } : { type: "item", key: at.key!, offset: found };
+    return { cursor, previous: items.slice(0, cursor.offset), current: items[found] ?? null, next: items.slice(found < 0 ? cursor.offset : found + 1), hasMore: false };
   }
-  async locate({ key }: { key: string; signal: AbortSignal }) {
-    const item = this.items.find((candidate) => candidate.key === key);
-    return item ? { revision: "1", offset: item.offset } : null;
+  subscribe(listener: (affects: (ref: QueueSourceRef) => boolean) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
-  subscribe(): () => void {
-    return () => undefined;
+  /** The library changed in a way that may touch any source. */
+  changed(): void {
+    for (const listener of this.listeners) listener(() => true);
   }
 }
 
@@ -74,7 +81,8 @@ class MemoryStorage implements QueueStorage {
   }
 }
 
-const factory: QueueSourceFactory = { open: () => new FakeSource() };
+const album = { type: "album" as const, albumId: "album" };
+const factory = new FakeSources();
 
 async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -149,9 +157,8 @@ describe("QueueManager", () => {
 
   it("steps on from an occurrence that is still loading, and drops the queued tracks it skips", async () => {
     const player = new FakePlayer();
-    const source = new FakeSource(["a", "b", "c"].map((key, offset) => sourceItem(key, offset)));
-    const manager = new QueueManager({ player, sources: { open: () => source }, storage: new MemoryStorage() });
-    await manager.playSource(source.ref, "a");
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
     player.start({ key: "a", track: song("a") }, 1, 30);
     await flush();
     await manager.enqueue([song("x"), song("y")]);
@@ -187,9 +194,7 @@ describe("QueueManager", () => {
 
   it("steps through a source that is still starting, and plays from it", async () => {
     const player = new FakePlayer();
-    const second = new FakeSource(["p", "q"].map((key, offset) => sourceItem(key, offset)));
-    const sources: QueueSourceFactory = { open: (ref) => (ref.type === "album" && ref.albumId === "second" ? second : new FakeSource()) };
-    const manager = new QueueManager({ player, sources, storage: new MemoryStorage() });
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "c"], second: ["p", "q"] }), storage: new MemoryStorage() });
     await manager.playSource({ type: "album", albumId: "album" }, "a");
     player.start({ key: "a", track: song("a") }, 1);
     await flush();
@@ -213,7 +218,7 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
-  it("preserves pending users across source replacement and clearQueued leaves a playing user alone", async () => {
+  it("keeps queued tracks when a source starts, and plays them from the queue", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
     await manager.enqueue([song("queued")]);
@@ -224,8 +229,7 @@ describe("QueueManager", () => {
     expect(manager.store.state.userQueue[0]?.key).toBe(queued.key);
     player.start(queued, 2);
     await flush();
-    await manager.clearQueued();
-    expect(manager.store.state.nowPlaying?.key).toBe(queued.key);
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: queued.key, origin: "user" }, userQueue: [] });
     manager.dispose();
   });
 
@@ -272,10 +276,94 @@ describe("QueueManager", () => {
 
     await expect(manager.enqueue([song("queued-c")])).rejects.toThrow("mpv rejected queue");
     await expect(manager.removeQueued(before[0]!.key)).rejects.toThrow("mpv rejected queue");
-    await expect(manager.clearQueued()).rejects.toThrow("mpv rejected queue");
 
     expect(manager.store.state.userQueue).toEqual(before);
     expect(storage.saved?.state.userQueue).toEqual(before);
+    manager.dispose();
+  });
+
+  it("reads its source again when the library changes, and tells mpv only when its occurrences differ", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const sources = new FakeSources({ album: ["a", "c"] });
+    const manager = new QueueManager({ player, sources, storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start({ key: "a", track: song("a") }, 1);
+    await vi.advanceTimersByTimeAsync(0);
+    const applied = player.applies.length;
+
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(player.applies).toHaveLength(applied);
+
+    // A burst of changes, as a sync makes them, is read once.
+    sources.albums.album = ["b", "a", "c", "d"];
+    sources.changed();
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(manager.store.state.source?.window).toMatchObject({ cursor: { key: "a", offset: 1 }, previous: [{ key: "b" }], next: [{ key: "c" }, { key: "d" }] });
+    expect(player.applies).toHaveLength(applied + 1);
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["b", "a", "c", "d"]);
+    expect(player.applies.at(-1)?.select).toBeUndefined();
+
+    // The occurrence playing leaves the source: it plays on, with a gap where it was.
+    sources.albums.album = ["b", "c", "d"];
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a" }, source: { window: { cursor: { type: "gap", offset: 1 }, current: null, next: [{ key: "c" }, { key: "d" }] } } });
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["b", "a", "c", "d"]);
+
+    // And comes back, somewhere else: the cursor is on it again, so it is not in the queue twice.
+    sources.albums.album = ["b", "c", "a", "d"];
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(manager.store.state.source?.window).toMatchObject({ cursor: { type: "item", key: "a", offset: 2 }, current: { key: "a" }, next: [{ key: "d" }] });
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["b", "c", "a", "d"]);
+
+    // A change still waiting to be read when the queue is disposed is not read.
+    const reads = vi.spyOn(sources, "window");
+    sources.changed();
+    manager.dispose();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it("plays a source asked for right after a step that has not run yet", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c"], second: ["p", "q"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start({ key: "a", track: song("a") }, 1);
+    await flush();
+
+    // Both wait behind each other; the step must not cancel the request that follows it.
+    const stepped = manager.next();
+    const asked = manager.playSource({ type: "album", albumId: "second" }, "p");
+    await Promise.all([stepped, asked]);
+
+    expect(player.applies.filter(({ select }) => select).map(({ select }) => select?.key)).toEqual(["a", "b", "p"]);
+    manager.dispose();
+  });
+
+  it("plays from a source that changed while it was starting", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const sources = new FakeSources({ album: ["a", "c"], second: ["p", "q"] });
+    const manager = new QueueManager({ player, sources, storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start({ key: "a", track: song("a") }, 1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.playSource({ type: "album", albumId: "second" }, "p");
+    sources.albums.second = ["o", "p", "q"];
+    sources.changed();
+    player.start({ key: "p", track: song("p") }, 2);
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(manager.store.state).toMatchObject({
+      nowPlaying: { key: "p", origin: "source" },
+      source: { ref: { albumId: "second" }, window: { cursor: { key: "p", offset: 1 }, previous: [{ key: "o" }], next: [{ key: "q" }] } },
+    });
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["o", "p", "q"]);
     manager.dispose();
   });
 

@@ -47,13 +47,12 @@ export const usePlayerIssue = () => {
   const latest = useLatestIssue();
   return rejected ?? latest ?? null;
 };
+/** What that issue says. A failure of playback is among the player's issues, so dismissing it clears this as well. */
 export const usePlayerError = () => {
-  const row = usePlayerRow();
-  const rejected = useStore(commandIssue);
-  const latest = useLatestIssue();
-  if (!row) return "Playback disconnected. Reconnecting…";
-  const failure = row.playback._tag === "Failed" ? row.playback.issue : null;
-  return rejected?.message ?? failure?.message ?? latest?.message ?? null;
+  const connected = usePlayerConnected();
+  const issue = usePlayerIssue();
+  if (!connected) return "Playback disconnected. Reconnecting…";
+  return issue?.message ?? null;
 };
 
 /** Play and pause wait while main is still working on a command. */

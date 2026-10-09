@@ -18,7 +18,7 @@ describe("PlaylistCommands", () => {
       const playlist = yield* commands.create({ name: "Draft", songIds: ["song-a", "song-a"] });
       const [appended] = yield* commands.addEntries(playlist.id, ["song-b"]);
 
-      yield* commands.moveEntry(playlist.id, appended!.id, playlist.local!.entries[0]!.id);
+      yield* commands.addEntries(playlist.id, ["song-c"], appended!.id);
       yield* commands.removeEntry(playlist.id, playlist.local!.entries[1]!.id);
       yield* commands.rename(playlist.id, "Offline mix");
       yield* commands.setComment(playlist.id, "Train ride");
@@ -26,7 +26,7 @@ describe("PlaylistCommands", () => {
 
       const row = yield* saved(playlist.id);
       expect(row.local).toMatchObject({ name: "Offline mix", comment: "Train ride", public: true });
-      expect(row.local?.entries.map(({ songId }) => songId)).toEqual(["song-b", "song-a"]);
+      expect(row.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-c", "song-b"]);
       expect(row.revision).toBe(6);
       expect(row.base).toBeNull();
     }).pipe(Effect.provide(layer)),
@@ -116,14 +116,9 @@ describe("PlaylistCommands", () => {
       const commands = yield* PlaylistCommands;
       const playlist = yield* commands.create({ name: "Intact", songIds: ["song-a", "song-b"] });
 
-      const errors = yield* Effect.all([
-        Effect.flip(commands.removeEntry(playlist.id, "nope")),
-        Effect.flip(commands.moveEntry(playlist.id, "nope", null)),
-        Effect.flip(commands.moveEntry(playlist.id, playlist.local!.entries[0]!.id, "nope")),
-        Effect.flip(commands.addEntries(playlist.id, ["song-c"], "nope")),
-      ]);
+      const errors = yield* Effect.all([Effect.flip(commands.removeEntry(playlist.id, "nope")), Effect.flip(commands.addEntries(playlist.id, ["song-c"], "nope"))]);
 
-      expect(errors.map(({ message }) => message)).toEqual(Array(4).fill("Playlist entry not found: nope"));
+      expect(errors.map(({ message }) => message)).toEqual(Array(2).fill("Playlist entry not found: nope"));
       expect(yield* saved(playlist.id)).toEqual(playlist);
     }).pipe(Effect.provide(layer)),
   );
@@ -149,7 +144,7 @@ describe("PlaylistCommands", () => {
 
       const playlist = yield* commands.create({ name: "Announced" });
       yield* Effect.flip(commands.rename(playlist.id, ""));
-      yield* commands.moveEntry(playlist.id, "same", "same").pipe(Effect.ignore);
+      yield* commands.addEntries(playlist.id, []);
       yield* commands.rename(playlist.id, "Renamed");
       yield* commands.delete(playlist.id);
 

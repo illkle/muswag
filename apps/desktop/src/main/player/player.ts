@@ -177,6 +177,8 @@ export const PlayerLive = Layer.effect(
       });
     const addIssue = (problem: PlayerIssue) =>
       publish({ ...state, issues: withIssue(state.issues, problem, (existing) => existing.operation === problem.operation && existing.occurrenceKey === problem.occurrenceKey) });
+    /** The issues left once what `code` complained about is fixed. */
+    const withoutIssues = (code: PlayerIssue["code"]) => (state.issues.some((issue) => issue.code === code) ? state.issues.filter((issue) => issue.code !== code) : state.issues);
     const failPlayback = Effect.fn("Player.failPlayback")(function* (problem: PlayerIssue) {
       const media = currentMedia(state);
       yield* closeEngine();
@@ -297,14 +299,20 @@ export const PlayerLive = Layer.effect(
     /**
      * Mirrors `next` into mpv, in the session that is running. A selection has mpv start that occurrence,
      * unless mpv already has it open, in which case playback only moves within it. Without a selection the
-     * current occurrence must be retained and keeps playing.
+     * current occurrence must be retained and keeps playing; when mpv holds no queue, after a failure
+     * say, `next` is only kept for the selection that starts playback again.
      */
     const apply = Effect.fn("Player.apply")(function* (next: readonly PlaybackItem[], selection: Selection | null) {
       if (!next.length) return yield* stop();
       const correlation = engine?.correlation ?? null;
       if (!selection) {
-        if (!correlation) return yield* new InvalidCommand({ operation: "queue", message: "Select a track to start playback." });
-        if (!retainsCurrent(correlation, next)) return yield* new InvalidCommand({ operation: "queue", message: "Select a track when replacing the current occurrence." });
+        const held = currentMedia(state)?.item.key;
+        const retained = correlation ? retainsCurrent(correlation, next) : held === undefined || next.some((item) => item.key === held);
+        if (!retained) return yield* new InvalidCommand({ operation: "queue", message: "Select a track when replacing the current occurrence." });
+        if (!correlation) {
+          items = next;
+          return yield* publish({ ...state, queue: { revision: state.queue.revision + 1, keys: next.map((item) => item.key), sync: "unknown" } });
+        }
       }
       const urls = yield* resolveStreamUrls(credentials, streamSalt, next);
       items = next;
@@ -348,9 +356,9 @@ export const PlayerLive = Layer.effect(
       if (state.playback._tag === "Loading") yield* publish({ ...state, playback: { ...state.playback, targetPaused: confirmed } });
       else yield* publish({ ...state, playback: settled(confirmed, media) });
     });
-    /** Play and Toggle start an ended or failed track over; otherwise they only change pause. */
-    const playOrPause = Effect.fn("Player.playOrPause")(function* (paused: boolean) {
-      if (state.playback._tag !== "Ended" && state.playback._tag !== "Failed") return yield* pause(paused);
+    /** Play starts an ended or failed track over; otherwise it only resumes. */
+    const play = Effect.fn("Player.play")(function* () {
+      if (state.playback._tag !== "Ended" && state.playback._tag !== "Failed") return yield* pause(false);
       const media = currentMedia(state);
       if (!media) return yield* new InvalidCommand({ operation: "play", message: "Select a track first." });
       retried = false;
@@ -382,7 +390,7 @@ export const PlayerLive = Layer.effect(
     const refreshBinary = Effect.fn("Player.refreshBinary")(function* () {
       yield* publish({ ...state, binary: { _tag: "Checking" } });
       const binary = yield* binaries.resolve(settings.manualPath, settings.cachedPath);
-      yield* publish({ ...state, binary });
+      yield* publish({ ...state, binary, issues: binary._tag === "Ready" ? withoutIssues("BinaryUnavailable") : state.issues });
       yield* updateSettings({ cachedPath: binary._tag === "Ready" ? binary.path : null });
     });
     const setBinaryPath = Effect.fn("Player.setBinaryPath")(function* (path: string | null) {
@@ -401,6 +409,7 @@ export const PlayerLive = Layer.effect(
       const play = state.playback._tag === "Playing";
       credentials = next;
       streamSalt = makeStreamSalt();
+      if (credentials) yield* publish({ ...state, issues: withoutIssues("NotAuthenticated") });
       // Stream URLs embed credentials, so a session built with the old ones must not survive.
       yield* closeEngine();
       if (!credentials) yield* stop();
@@ -419,9 +428,7 @@ export const PlayerLive = Layer.effect(
           case "Credentials":
             return changeCredentials(operation.credentials);
           case "Play":
-            return playOrPause(false);
-          case "Toggle":
-            return playOrPause(state.playback._tag === "Playing");
+            return play();
           case "Pause":
             return pause(true);
           case "Restart":
@@ -596,8 +603,8 @@ export const PlayerLive = Layer.effect(
           );
         case "SessionEvent":
           return abortable(handleEvent(message)).pipe(
-            Effect.catch((error) => report(error, "event")),
-            Effect.asVoid,
+            // Stop and logout cut the handler short on purpose, and settle the state themselves.
+            Effect.catch((error) => (error._tag === "CommandRejected" ? Effect.void : Effect.asVoid(report(error, "event")))),
           );
         case "Position":
           return publishPosition(message.event);

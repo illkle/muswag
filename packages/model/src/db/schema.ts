@@ -153,7 +153,7 @@ export const queueState = sqliteTable("queue_state", {
   id: integer().primaryKey(),
   nowPlayingKey: text(),
   nowPlayingOrigin: text({ enum: ["source", "user"] }).$type<NowPlaying["origin"]>(),
-  source: json<{ ref: QueueSourceRef; cursor: SourceCursor; revision: string; hasMore: boolean }>(),
+  source: json<{ ref: QueueSourceRef; cursor: SourceCursor; hasMore: boolean }>(),
   /** Where playback resumes after a restart. Restores always start paused, so play state is not kept. */
   resumePositionSeconds: real().notNull(),
 });

@@ -15,7 +15,6 @@ export const QueueActions = {
       tracks.map(({ id }) => id),
     ),
   removeQueued: (key: string) => appCommand("queue:removeQueued", key),
-  clearQueued: () => appCommand("queue:clearQueued"),
   next: () => appCommand("queue:next"),
   previous: () => appCommand("queue:previous"),
 };

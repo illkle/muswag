@@ -63,7 +63,7 @@ export const PlayerCommand = Schema.Union([
     items: Schema.Array(PlaybackItemSchema).check(Schema.isMaxLength(1000)),
     select: Schema.NullOr(Selection),
   }).check(Schema.makeFilter(queueProblem)),
-  ...(["Play", "Pause", "Toggle", "Restart", "Stop", "RefreshBinary"] as const).map((tag) => Schema.TaggedStruct(tag, {})),
+  ...(["Play", "Pause", "Restart", "Stop", "RefreshBinary"] as const).map((tag) => Schema.TaggedStruct(tag, {})),
   Schema.TaggedStruct("Seek", { seconds: Seconds }),
   Schema.TaggedStruct("SetVolume", { percent: Percent }),
   Schema.TaggedStruct("SetMuted", { muted: Schema.Boolean }),

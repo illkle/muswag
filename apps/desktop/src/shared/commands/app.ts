@@ -29,7 +29,6 @@ export const AppCommandArgs = {
   "session:login": Schema.Tuple([SessionCredentials]),
   "session:logout": Schema.Tuple([]),
   "library:sync": Schema.Tuple([SyncMode]),
-  "library:cancelSync": Schema.Tuple([]),
   "library:refreshStats": Schema.Tuple([RefreshStatTarget]),
   "covers:ensure": Schema.Tuple([CoverTarget]),
   "covers:repair": Schema.Tuple([CoverTarget, Text]),
@@ -39,13 +38,11 @@ export const AppCommandArgs = {
   "playlists:setVisibility": Schema.Tuple([Id, Schema.Boolean]),
   "playlists:addEntries": Schema.Tuple([Id, Ids, Schema.NullOr(Id)]),
   "playlists:removeEntry": Schema.Tuple([Id, Id]),
-  "playlists:moveEntry": Schema.Tuple([Id, Id, Schema.NullOr(Id)]),
   "playlists:delete": Schema.Tuple([Id]),
   "playlists:sync": Schema.Tuple([]),
   "queue:playSource": Schema.Tuple([QueueSourceRef, Id]),
   "queue:enqueue": Schema.Tuple([Ids]),
   "queue:removeQueued": Schema.Tuple([Id]),
-  "queue:clearQueued": Schema.Tuple([]),
   "queue:next": Schema.Tuple([]),
   "queue:previous": Schema.Tuple([]),
 } as const;
@@ -57,7 +54,6 @@ export type AppCommandResults = {
   "session:login": AuthSnapshot;
   "session:logout": AuthSnapshot;
   "library:sync": void;
-  "library:cancelSync": void;
   "library:refreshStats": void;
   "covers:ensure": string | null;
   "covers:repair": string | null;
@@ -67,13 +63,11 @@ export type AppCommandResults = {
   "playlists:setVisibility": Written;
   "playlists:addEntries": Written<PlaylistEntry[]>;
   "playlists:removeEntry": Written;
-  "playlists:moveEntry": Written;
   "playlists:delete": Written;
   "playlists:sync": PlaylistSyncStatus;
   "queue:playSource": void;
   "queue:enqueue": void;
   "queue:removeQueued": void;
-  "queue:clearQueued": void;
   "queue:next": void;
   "queue:previous": void;
 };

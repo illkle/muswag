@@ -234,6 +234,68 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
+  it.effect("keeps queue edits made after playback failed, for the selection that starts it again", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks.slice(0, 2), select: { key: "a", play: true, positionSeconds: 0 } });
+      test.emit({ type: "end-file", entryId: test.currentId, reason: "error" });
+      yield* until(player, (state) => state.playback._tag === "Recovering");
+      yield* player.execute("barrier", { _tag: "SetVolume", percent: 10 });
+      test.emit({ type: "end-file", entryId: test.currentId, reason: "error" });
+      const failed = yield* until(player, (state) => state.playback._tag === "Failed");
+      const loads = () => test.commands.filter((command) => command[0] === "loadfile").length;
+      const loaded = loads();
+
+      // mpv is gone, so there is nothing to change: the queue is only kept.
+      yield* player.execute("edit", { _tag: "ApplyQueue", items: tracks, select: null });
+      expect(yield* player.snapshot).toMatchObject({ playback: { _tag: "Failed" }, queue: { keys: ["a", "b", "c"] }, issues: failed.issues });
+      expect(loads()).toBe(loaded);
+      // The occurrence that failed is what Play starts again, so the queue still has to hold it.
+      expect((yield* player.execute("bad-edit", { _tag: "ApplyQueue", items: tracks.slice(1), select: null }).pipe(Effect.result))._tag).toBe("Failure");
+
+      yield* player.execute("play", { _tag: "Play" });
+      expect(yield* player.snapshot).toMatchObject({ playback: { _tag: "Loading", media: { item: { key: "a" } } }, queue: { keys: ["a", "b", "c"], sync: "synced" } });
+      expect(loads()).toBe(loaded + 3);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("drops the issue about a missing mpv once mpv is found", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      const select = player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      test.failOpen(new EngineError({ reason: "spawn", operation: "connection", uncertain: true }));
+      yield* select.pipe(Effect.result);
+      yield* select.pipe(Effect.result);
+      const missing = (yield* player.snapshot).issues.filter((issue) => issue.code === "BinaryUnavailable");
+      expect(missing).toMatchObject([{ actions: ["configureMpv", "refreshMpv", "dismiss"] }]);
+
+      test.failOpen(null);
+      yield* player.execute("recheck", { _tag: "RefreshBinary" });
+      expect((yield* player.snapshot).binary._tag).toBe("Ready");
+      expect((yield* player.snapshot).issues.filter((issue) => issue.code === "BinaryUnavailable")).toEqual([]);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("stop cuts an event handler short without reporting it as a failure", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute("select", { _tag: "ApplyQueue", items: tracks, select: { key: "a", play: true, positionSeconds: 0 } });
+      const started = yield* Deferred.make<void>();
+      test.override((command) => (command.args[0] === "get_property" && command.args[1] === "pause" ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)) : undefined));
+      test.emit({ type: "file-loaded" });
+      yield* Deferred.await(started);
+
+      yield* player.execute("stop", { _tag: "Stop" });
+      expect(yield* player.snapshot).toMatchObject({ playback: { _tag: "Idle" }, issues: [] });
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("keeps a track's stream URL across queue edits, so mpv's prefetch of it stays valid", () => {
     const test = fixture();
     return Effect.gen(function* () {

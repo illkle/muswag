@@ -11,9 +11,9 @@ import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { MuswagMainIpc } from "#shared/ipc";
 import type { PlayerHandle } from "../player/ipc";
 import { createQueue } from "../queue";
-import type { SourceDb } from "../queue/source/db-sources";
+import type { SourceDb } from "../queue/source";
 import { serveAppCommands } from "./commands";
-import { MiniFsLive, safeStorageCipher } from "./platform";
+import { COVER_DIRECTORY, MiniFsLive, safeStorageCipher } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
 
 export interface AppOptions {
@@ -39,12 +39,7 @@ const makeApp = (options: AppOptions) =>
     yield* mirror.serve(createElectronMainTransport({ ipcMain: options.ipcMain }));
 
     const library: SourceDb = {
-      playlist: (playlistId) => run(LibraryQueries.playlist(playlistId)),
-      songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)),
-      albumSongs: (albumId) => run(LibraryQueries.albumSongs(albumId)),
-      librarySize: () => run(LibraryQueries.librarySize),
-      librarySongs: (sort, start, end) => run(LibraryQueries.librarySongs(sort, start, end)),
-      libraryOffset: (sort, songId) => run(LibraryQueries.libraryOffset(sort, songId)),
+      sourceWindow: (ref, at, size) => run(LibraryQueries.sourceWindow(ref, at, size)),
       subscribe: (listener) => mirror.subscribe(listener),
     };
     const queue = yield* Effect.acquireRelease(
@@ -73,13 +68,13 @@ const makeApp = (options: AppOptions) =>
       Effect.forkScoped,
     );
 
-    yield* serveAppCommands({ ipcMain: options.ipcMain, mainIpc: options.mainIpc, queue, songsByIds: library.songsByIds });
+    yield* serveAppCommands({ ipcMain: options.ipcMain, mainIpc: options.mainIpc, queue, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)) });
   });
 
 /** Starts main's side of the app once the database is migrated and the session is being restored. */
 export async function startApp(options: AppOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const services = BackendLive({ filename: options.databasePath, coverSaveLocation: "covers", cipher: safeStorageCipher }).pipe(Layer.provide(platform));
+  const services = BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY, cipher: safeStorageCipher }).pipe(Layer.provide(platform));
   const runtime = ManagedRuntime.make(Layer.effectDiscard(makeApp(options)).pipe(Layer.provideMerge(services)));
   await runtime.runPromise(Effect.void);
   return { dispose: () => runtime.dispose() };

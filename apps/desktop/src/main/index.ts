@@ -20,12 +20,25 @@ let player: PlayerHandle | undefined;
 let stateMirror: Awaited<ReturnType<typeof startStateMirror>> | undefined;
 let mainApp: Awaited<ReturnType<typeof startApp>> | undefined;
 
+// A second instance would open the same library and fight the first over the queue. Development
+// checkouts run side by side on purpose, each with its own library.
+const isSecondInstance = !is.dev && !app.requestSingleInstanceLock();
+if (isSecondInstance) app.quit();
+
 registerCoverScheme();
 
 const mainIpc = new IpcListener<MuswagMainIpc>();
 const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
 
+app.on("second-instance", () => {
+  const [window] = BrowserWindow.getAllWindows();
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.focus();
+});
+
 app.whenReady().then(async () => {
+  if (isSecondInstance) return;
   electronApp.setAppUserModelId("com.muswag.desktop");
 
   app.on("browser-window-created", (_, window) => {
@@ -83,8 +96,10 @@ app.on("before-quit", (event) => {
   shutdownStarted = true;
   void Effect.runPromise(
     Effect.tryPromise(async () => {
+      // The player first and on its own: mpv is a separate process, and would play on without a
+      // window if anything before it failed or ran into the deadline.
+      await player?.shutdown().catch((cause) => console.error("Failed to shut the player down", cause));
       await mainApp?.dispose();
-      await player?.shutdown();
       await stateMirror?.dispose();
     }).pipe(
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.logWarning("Desktop shutdown deadline reached") }),

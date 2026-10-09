@@ -109,12 +109,12 @@ describe("ServerMenu", () => {
     expect(screen.getByRole("button", { name: "Log out" })).toBeTruthy();
   });
 
-  it("starts a quick sync from the menu", async () => {
+  it("starts a full sync from the menu", async () => {
     renderServerMenu();
 
     fireEvent.click(screen.getByRole("button", { name: "Sync library" }));
 
-    await waitFor(() => expect(mocks.sync).toHaveBeenCalledWith("quick"));
+    await waitFor(() => expect(mocks.sync).toHaveBeenCalledWith("full"));
   });
 
   it("shows a sync running in main that this menu did not start, and does not start another", () => {
@@ -127,6 +127,17 @@ describe("ServerMenu", () => {
     expect(syncItem.disabled).toBe(true);
     fireEvent.click(syncItem);
     expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it("says why the last sync failed, until another one runs", () => {
+    mocks.librarySync = { running: null, error: "Unable to reach the server", lastSyncedAt: null };
+    renderServerMenu();
+    expect(screen.getByRole("alert").textContent).toBe("Last sync failed: Unable to reach the server");
+    cleanup();
+
+    mocks.librarySync = { running: "full", error: "Unable to reach the server", lastSyncedAt: null };
+    renderServerMenu();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("raises an alert on the button and the mpv row when playback is unavailable", () => {

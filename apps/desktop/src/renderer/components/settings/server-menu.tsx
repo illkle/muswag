@@ -36,7 +36,8 @@ export function ServerMenu() {
     mutationFn: () => Session.logout(),
   });
   const syncMutation = useMutation({
-    mutationFn: () => LibraryActions.sync("quick"),
+    // Asked for by hand, so nothing is assumed unchanged: a quick sync skips albums that look the same.
+    mutationFn: () => LibraryActions.sync("full"),
   });
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -102,6 +103,11 @@ export function ServerMenu() {
             {syncRunning ? <SpinnerGapIcon className="size-4 animate-spin" /> : <ArrowsClockwiseIcon className="size-4 text-muted-foreground" />}
             {syncRunning ? "Syncing library…" : "Sync library"}
           </MenuItem>
+          {librarySync.error && !syncRunning ? (
+            <p role="alert" title={librarySync.error} className="line-clamp-2 px-2 pb-1.5 text-xs text-destructive">
+              Last sync failed: {librarySync.error}
+            </p>
+          ) : null}
 
           <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={() => setDialog("mpv")}>
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}

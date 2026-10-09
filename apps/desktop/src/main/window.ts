@@ -21,7 +21,6 @@ export function createWindow(): void {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
       focusOnNavigation: process.env.NODE_ENV !== "development",
     },
   });
@@ -31,7 +30,8 @@ export function createWindow(): void {
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    // Links open in the browser; anything else a page asks for is dropped.
+    if (/^https?:/i.test(details.url)) void shell.openExternal(details.url);
     return { action: "deny" };
   });
 

@@ -1,22 +1,4 @@
-import type { NowPlaying, PlaybackItem, QueueItemRow, QueueSourceRef, QueueStateRow, SourceCursor } from "@muswag/model";
-
-export type SourceRevision = string;
-
-export type SourceItem = PlaybackItem & {
-  /** Absolute raw position in this source revision. */
-  offset: number;
-};
-
-/** The part of a queue source main keeps loaded around the cursor. */
-export type SourceWindow = {
-  revision: SourceRevision;
-  cursor: SourceCursor;
-  previous: readonly SourceItem[];
-  current: SourceItem | null;
-  next: readonly SourceItem[];
-  /** Whether the source goes on past `next`. Main loads what follows as the cursor advances. */
-  hasMore: boolean;
-};
+import type { NowPlaying, PlaybackItem, QueueItemRow, QueueSourceRef, QueueStateRow, SourceItem, SourceWindow } from "@muswag/model";
 
 /** Everything the window has materialised, in playback order. */
 export function sourceWindowItems(window: SourceWindow): SourceItem[] {
@@ -75,7 +57,7 @@ export function queueStateRow(state: QueueManagerState, resumePositionSeconds: n
     id: 1,
     nowPlayingKey: state.nowPlaying?.key ?? null,
     nowPlayingOrigin: state.nowPlaying?.origin ?? null,
-    source: source ? { ref: source.ref, cursor: source.window.cursor, revision: source.window.revision, hasMore: source.window.hasMore } : null,
+    source: source ? { ref: source.ref, cursor: source.window.cursor, hasMore: source.window.hasMore } : null,
     resumePositionSeconds,
   };
 }
@@ -93,12 +75,11 @@ export function queueStateFromRows(state: QueueStateRow | null | undefined, item
 }
 
 function windowFromRows(source: NonNullable<QueueStateRow["source"]>, ordered: readonly QueueItemRow[]): SourceWindow {
-  const { cursor, revision, hasMore } = source;
+  const { cursor, hasMore } = source;
   const items = ordered.filter(({ list }) => list === "source").map(({ key, track, position }): SourceItem => ({ key, track, offset: position }));
   // A gap cursor has no current occurrence; what follows it starts at its offset.
   const current = cursor.type === "item" ? (items.find(({ key }) => key === cursor.key) ?? null) : null;
   return {
-    revision,
     cursor,
     previous: items.filter(({ offset }) => offset < cursor.offset),
     current,

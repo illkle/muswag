@@ -95,7 +95,7 @@ const make = (coverSaveLocation: string) =>
           return yield* new UnsupportedExtension({ id });
         }
 
-        const fileName = key + extension;
+        const fileName = safeFileName(key) + extension;
         const writePath = path.join(coverSaveLocation, fileName);
 
         yield* fs.writeFile(writePath, bytes);
@@ -149,6 +149,12 @@ const make = (coverSaveLocation: string) =>
   });
 
 const getFileName = (t: CoverTarget) => (t.type === "album" ? `album:${t.id}:${t.coverArtId}` : `artist:${t.id}`);
+
+/**
+ * A cover's key as a file name every platform accepts: Windows has no `:`, and server ids may hold
+ * anything. Each other character is spelled out by its code, so two keys never share a name.
+ */
+const safeFileName = (key: string) => key.replace(/[^A-Za-z0-9.-]/g, (character) => `_${character.codePointAt(0)!.toString(16)}_`);
 
 function detectCoverExtension(bytes: Uint8Array): string | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return ".jpg";

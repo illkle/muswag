@@ -111,7 +111,8 @@ export function fixture() {
   return {
     layer,
     commands: commands as readonly (readonly unknown[])[],
-    failOpen: (error: EngineError) => {
+    /** Makes mpv fail to start, and be reported missing, until called with `null`. */
+    failOpen: (error: EngineError | null) => {
       openFailure = error;
     },
     get probes() {

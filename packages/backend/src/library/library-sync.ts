@@ -15,7 +15,7 @@ import {
 } from "@muswag/model";
 import { eq, inArray } from "drizzle-orm";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
-import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
+import { Cause, Context, Data, Deferred, Effect, Exit, Layer, SubscriptionRef } from "effect";
 
 import SubsonicAPI from "../api/subsonic-api.js";
 import { Db, write } from "../db/database.js";
@@ -24,6 +24,7 @@ import { chunks, excludedSet, STATEMENT_IDS, STATEMENT_ROWS } from "../db/upsert
 export class AlbumWithoutSongs extends Data.TaggedError("AlbumWithoutSongs")<{
   readonly id: string;
   readonly expectedSongCount: number;
+  readonly message: string;
 }> {}
 
 export class SyncAlreadyRunning extends Data.TaggedError("SyncAlreadyRunning")<{
@@ -38,7 +39,7 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
     const status = yield* SubscriptionRef.make<LibrarySyncStatus>(IDLE_LIBRARY_SYNC);
-    type Running = { readonly mode: SyncMode; readonly done: Deferred.Deferred<void, SyncError>; fiber: Fiber.Fiber<unknown> | null };
+    type Running = { readonly mode: SyncMode; readonly done: Deferred.Deferred<void, SyncError> };
     let current: Running | null = null;
 
     const run = (running: Running) =>
@@ -46,7 +47,12 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
         Effect.onExit((exit) =>
           Exit.isSuccess(exit)
             ? SubscriptionRef.set(status, { ...IDLE_LIBRARY_SYNC, lastSyncedAt: new Date().toISOString() })
-            : SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: Cause.hasInterruptsOnly(exit.cause) ? null : Cause.pretty(exit.cause) })),
+            : Cause.hasInterruptsOnly(exit.cause)
+              ? SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: null }))
+              : // The status has room for one line; the log keeps the rest.
+                Effect.logError("Library sync failed", exit.cause).pipe(
+                  Effect.andThen(SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: failureMessage(exit.cause) }))),
+                ),
         ),
         Effect.exit,
         Effect.flatMap((exit) => Deferred.done(running.done, exit)),
@@ -70,17 +76,13 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
             if (current.mode !== mode) return Effect.fail(new SyncAlreadyRunning({ running: current.mode, message: `A ${current.mode} sync is already running` }));
             return Deferred.await(current.done);
           }
-          const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>(), fiber: null };
+          const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
           current = running;
           return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, error: null })).pipe(
             Effect.andThen(Effect.forkIn(run(running), scope)),
-            Effect.flatMap((fiber) => {
-              running.fiber = fiber;
-              return Deferred.await(running.done);
-            }),
+            Effect.andThen(Deferred.await(running.done)),
           );
         }),
-      cancel: Effect.suspend(() => (current?.fiber ? Fiber.interrupt(current.fiber) : Effect.void)),
       refreshStats: (target: RefreshStatTarget) => refreshStats(target).pipe(Effect.provide(context)),
     } as const;
   }),
@@ -89,6 +91,12 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
 }
 
 type SyncError = Effect.Error<ReturnType<typeof syncLibrary>>;
+
+/** What went wrong, as one line. */
+const failureMessage = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message || error.name : String(error);
+};
 
 const ALBUM_STAT_FIELDS = ["playCount", "played", "starred", "userRating"] as const;
 const SONG_STAT_FIELDS = ["playCount", "played", "starred", "userRating", "averageRating", "bookmarkPosition"] as const;
@@ -233,7 +241,11 @@ const syncAlbum = (incoming: AlbumID3, mode: SyncMode) =>
 
     const { album } = yield* api.getAlbum({ id: incoming.id });
     if (!album.song && incoming.songCount > 0) {
-      return yield* new AlbumWithoutSongs({ id: incoming.id, expectedSongCount: incoming.songCount });
+      return yield* new AlbumWithoutSongs({
+        id: incoming.id,
+        expectedSongCount: incoming.songCount,
+        message: `The server lists ${incoming.songCount} songs for the album "${incoming.name}" (${incoming.id}) but returned none`,
+      });
     }
 
     const incomingSongs = (album.song ?? []).map(toSongRow);

@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { albums, covers, credentials, playlists, songs, type SessionCredentials } from "@muswag/model";
-import { Crypto, Effect, Layer } from "effect";
+import { Crypto, Effect, Layer, Option, Stream } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { layer as PathLayer } from "effect/Path";
 import { describe, expect } from "vitest";
@@ -24,7 +24,7 @@ const reversingCipher: CredentialsCipher = {
   decrypt: (encrypted) => [...encrypted].reverse().join(""),
 };
 
-function makeLayer(options: { removed?: string[]; cipher?: CredentialsCipher; playlistsGate?: Promise<void> } = {}) {
+function makeLayer(options: { removed?: string[]; cipher?: CredentialsCipher; playlistsGate?: Promise<void>; requested?: string[] } = {}) {
   let pingCalls = 0;
   const crypto = Crypto.make({
     randomBytes: (size) => new Uint8Array(size).fill(0xab),
@@ -32,6 +32,7 @@ function makeLayer(options: { removed?: string[]; cipher?: CredentialsCipher; pl
   });
   const http = HttpClient.make((request, url) => {
     if (url.pathname === "/rest/ping.view") pingCalls += 1;
+    options.requested?.push(url.pathname);
     const body = request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
     const username = new URLSearchParams(body).get("u");
     const failed = username === "bad";
@@ -95,6 +96,27 @@ describe("SessionManager", () => {
       yield* manager.login(goodCredentials);
       expect(yield* manager.restore).toEqual({ _tag: "LoggedIn", url: goodCredentials.url, username: "alice" });
       expect(pingCalls()).toBe(3);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.live("starts a library sync with each session, and reports how it went in the sync's status", () => {
+    const requested: string[] = [];
+    const { layer } = makeLayer({ requested });
+
+    return Effect.gen(function* () {
+      const manager = yield* SessionManager;
+      yield* manager.login(goodCredentials);
+      const status = yield* manager.use(({ library }) =>
+        library.changes.pipe(
+          Stream.filter(({ running, error }) => running === null && error !== null),
+          Stream.runHead,
+        ),
+      );
+
+      // The server of this test answers with nothing to sync, which the sync reports and login does not.
+      expect(requested).toContain("/rest/getIndexes.view");
+      expect(Option.getOrThrow(status).error).toEqual(expect.any(String));
+      expect(yield* manager.snapshot).toMatchObject({ _tag: "LoggedIn" });
     }).pipe(Effect.provide(layer));
   });
 

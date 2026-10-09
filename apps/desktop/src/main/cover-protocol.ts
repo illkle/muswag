@@ -1,8 +1,9 @@
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { nativeImage, net, protocol } from "electron";
 
-import { resolveInside } from "./app/platform";
+import { COVER_DIRECTORY, resolveInside } from "./app/platform";
 import { makeThumbnails, THUMBNAIL_SIZE, type ResizeCover } from "./cover-thumbnails";
 
 const SCHEME = "muswag-cover";
@@ -40,7 +41,8 @@ const resizeCover: ResizeCover = (cover) => {
 };
 
 /**
- * Serves cached cover files, which are relative to `userDataPath` and may not leave it.
+ * Serves cached cover files. Their paths are relative to `userDataPath` and may not leave its cover
+ * directory: the library database, with the stored credentials, is next to it.
  * With `thumbnail` in the query, the cover is served scaled down to `THUMBNAIL_SIZE`.
  * Returns the function that answers a cover request's query.
  */
@@ -55,7 +57,7 @@ export function handleCoverProtocol(userDataPath: string): (query: URLSearchPara
 
     let absolutePath: string;
     try {
-      absolutePath = resolveInside(userDataPath, requestedPath);
+      absolutePath = resolveInside(join(userDataPath, COVER_DIRECTORY), resolveInside(userDataPath, requestedPath));
     } catch {
       return new Response("Invalid path", { status: 400 });
     }

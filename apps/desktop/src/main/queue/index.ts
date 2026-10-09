@@ -3,7 +3,7 @@ import type { PlayerCommand } from "#shared/commands/player";
 import { DbQueueStorage, type QueueTables } from "./db-queue-storage";
 import { runtimeView } from "./player-port";
 import { QueueManager } from "./queue-manager";
-import { createQueueSourceFactory, type SourceDb } from "./source/db-sources";
+import { createQueueSources, type SourceDb } from "./source";
 
 const playerCommand = (player: PlayerHandle, command: PlayerCommand) =>
   player.execute(command).then((result) => {
@@ -21,7 +21,7 @@ export function createQueue(options: { player: PlayerHandle; library: SourceDb; 
       getState: async () => runtimeView(await player.snapshot()),
       subscribe: (listener) => player.subscribe((snapshot) => listener(runtimeView(snapshot))),
     },
-    sources: createQueueSourceFactory(options.library),
+    sources: createQueueSources(options.library),
     // Stored in mirrored tables, which is also how renderers see the queue.
     storage: new DbQueueStorage(options.tables),
   });

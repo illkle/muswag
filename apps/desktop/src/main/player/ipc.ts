@@ -19,7 +19,19 @@ export interface PlayerHandle {
 }
 
 const invalid = (operation: string, message: string) => new CommandFailed({ issue: toIssue(new InvalidCommand({ operation, message })) });
-const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(PlayerCommand)(input).pipe(Effect.mapError(() => invalid("decode", "Invalid player command.")));
+/**
+ * Commands main keeps to itself: the queue is changed through the queue manager, and the path of a
+ * binary to run comes from the native dialog of `player:locate`.
+ */
+const mainOnly = (command: PlayerCommand) => command._tag === "ApplyQueue" || command._tag === "Stop" || command._tag === "Restart" || (command._tag === "SetBinaryPath" && command.path !== null);
+const decodeCommand = (input: unknown) =>
+  Schema.decodeUnknownEffect(PlayerCommand)(input).pipe(
+    Effect.mapError(() => invalid("decode", "Invalid player command.")),
+    Effect.filterOrFail(
+      (command) => !mainOnly(command),
+      () => invalid("decode", "Invalid player command."),
+    ),
+  );
 
 /** Runs the player and its commands. Renderers see its state through `options.stateMirror`. */
 export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
@@ -35,13 +47,14 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
         }),
       ),
     );
-  const execute = (commandId: string, input: unknown) => respond(commandId, decodeCommand(input).pipe(Effect.flatMap((command) => Player.use((player) => player.execute(commandId, command)))));
+  const execute = (commandId: string, command: Effect.Effect<PlayerCommand, CommandFailed>) =>
+    respond(commandId, command.pipe(Effect.flatMap((command) => Player.use((player) => player.execute(commandId, command)))));
 
-  main.handle("player:command", (_event, commandId, command) => execute(commandId, command));
+  main.handle("player:command", (_event, commandId, command) => execute(commandId, decodeCommand(command)));
   main.handle("player:locate", async () => {
     const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
     const path = result.canceled ? undefined : result.filePaths[0];
-    return path ? execute(crypto.randomUUID(), { _tag: "SetBinaryPath", path }) : null;
+    return path ? execute(crypto.randomUUID(), Effect.succeed({ _tag: "SetBinaryPath", path })) : null;
   });
 
   const listeners = new Set<(snapshot: PlayerSnapshot) => void>();
@@ -56,11 +69,7 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
   );
 
   return {
-    execute: (command) =>
-      respond(
-        crypto.randomUUID(),
-        Player.use((player) => player.execute(crypto.randomUUID(), command)),
-      ),
+    execute: (command) => execute(crypto.randomUUID(), Effect.succeed(command)),
     setCredentials: (credentials) =>
       respond(
         "credentials",
@@ -74,8 +83,9 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
       };
     },
     shutdown: async () => {
-      await runtime.runPromise(Player.use((player) => player.shutdown));
+      // First, so nobody takes the player going idle as it closes for playback having stopped.
       listeners.clear();
+      await runtime.runPromise(Player.use((player) => player.shutdown));
       await runtime.dispose();
     },
   };

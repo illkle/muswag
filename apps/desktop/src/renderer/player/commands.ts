@@ -57,7 +57,6 @@ export const MpvIPC = {
 export const PlayerIPC = {
   pause: () => execute({ _tag: "Pause" }),
   play: () => execute({ _tag: "Play" }),
-  toggle: () => execute({ _tag: "Toggle" }),
   seek: (seconds: number) => execute({ _tag: "Seek", seconds }),
   setVolume: (percent: number) => execute({ _tag: "SetVolume", percent }),
   setMuted: (muted: boolean) => execute({ _tag: "SetMuted", muted }),

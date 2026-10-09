@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { albums, artists, songs, syncState, type AlbumWithSongsID3 } from "@muswag/model";
-import { Cause, Effect, Exit, Fiber, Layer } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 
 import type { SubsonicApiService } from "../api/subsonic-api.js";
 import { Db } from "../db/database.js";
@@ -242,7 +242,7 @@ describe("LibrarySync.sync", () => {
       const error = yield* Effect.flip(sync.sync("full"));
 
       expect(error).toMatchObject({ _tag: "AlbumWithoutSongs", id: "empty", expectedSongCount: 1 });
-      expect(yield* sync.status).toMatchObject({ running: null, error: expect.stringContaining("AlbumWithoutSongs") });
+      expect(yield* sync.status).toMatchObject({ running: null, error: expect.stringContaining("(empty) but returned none") });
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -269,32 +269,6 @@ describe("LibrarySync.sync", () => {
       expect(rejected._tag).toBe("SyncAlreadyRunning");
       expect(listCalls).toBe(1);
       expect(yield* sync.status).toMatchObject({ running: null, error: null, lastSyncedAt: expect.any(String) });
-    }).pipe(Effect.provide(layer(api)));
-  });
-});
-
-describe("LibrarySync.cancel", () => {
-  it.live("interrupts the running sync and lets the next one start", () => {
-    let listCalls = 0;
-    const api: Partial<SubsonicApiService> = {
-      getIndexes: () => Effect.never,
-      getAlbumList2: () => {
-        listCalls += 1;
-        return Effect.succeed({ status: "ok", version: "1.16.1", albumList2: {} });
-      },
-    };
-
-    return Effect.gen(function* () {
-      const sync = yield* LibrarySync;
-      const waiter = yield* Effect.forkChild(Effect.exit(sync.sync("quick")));
-      yield* Effect.sleep("10 millis");
-
-      yield* sync.cancel;
-      const exit = yield* Fiber.join(waiter);
-
-      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
-      expect(yield* sync.status).toMatchObject({ running: null, error: null });
-      expect(listCalls).toBe(0);
     }).pipe(Effect.provide(layer(api)));
   });
 });

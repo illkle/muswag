@@ -14,7 +14,7 @@ describe("queue rows", () => {
     const state: QueueManagerState = {
       nowPlaying: { ...item("b"), origin: "source" },
       userQueue: [item("user:1"), item("user:2")],
-      source: { ref, window: { revision: "r", cursor: { type: "item", key: "b", offset: 1 }, previous: [sourceItem("a", 0)], current: sourceItem("b", 1), next: [sourceItem("c", 2)], hasMore: true } },
+      source: { ref, window: { cursor: { type: "item", key: "b", offset: 1 }, previous: [sourceItem("a", 0)], current: sourceItem("b", 1), next: [sourceItem("c", 2)], hasMore: true } },
     };
     expect(queueItemRows(state).map(({ key, list }) => [key, list])).toEqual([
       ["a", "source"],
@@ -30,7 +30,7 @@ describe("queue rows", () => {
     const state: QueueManagerState = {
       nowPlaying: { ...item("user:now"), origin: "user" },
       userQueue: [],
-      source: { ref, window: { revision: "r", cursor: { type: "item", key: "a", offset: 0 }, previous: [], current: sourceItem("a", 0), next: [sourceItem("b", 1)], hasMore: false } },
+      source: { ref, window: { cursor: { type: "item", key: "a", offset: 0 }, previous: [], current: sourceItem("a", 0), next: [sourceItem("b", 1)], hasMore: false } },
     };
     expect(queueItemRows(state).at(-1)).toMatchObject({ key: "user:now", list: "now" });
     expect(roundTrip(state)).toEqual(state);
@@ -40,7 +40,7 @@ describe("queue rows", () => {
     const state: QueueManagerState = {
       nowPlaying: { ...item("gone"), origin: "source" },
       userQueue: [],
-      source: { ref, window: { revision: "r", cursor: { type: "gap", offset: 1 }, previous: [sourceItem("a", 0)], current: null, next: [sourceItem("b", 1), sourceItem("c", 2)], hasMore: false } },
+      source: { ref, window: { cursor: { type: "gap", offset: 1 }, previous: [sourceItem("a", 0)], current: null, next: [sourceItem("b", 1), sourceItem("c", 2)], hasMore: false } },
     };
     expect(roundTrip(state)).toEqual(state);
   });

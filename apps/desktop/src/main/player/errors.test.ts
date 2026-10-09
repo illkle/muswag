@@ -11,7 +11,7 @@ describe("safe log context", () => {
 
 describe("issues", () => {
   it("derive their code and actions from the error tag", () => {
-    expect(toIssue(new NotAuthenticated({ operation: "playback", message: "Log in." }))).toMatchObject({ code: "NotAuthenticated", operation: "playback", actions: ["login"] });
+    expect(toIssue(new NotAuthenticated({ operation: "playback", message: "Log in." }))).toMatchObject({ code: "NotAuthenticated", operation: "playback", actions: ["login", "dismiss"] });
     expect(toIssue(new EngineError({ reason: "rejected", operation: "seek", uncertain: false }), "Seek", "a")).toMatchObject({ code: "CommandRejected", operation: "Seek", occurrenceKey: "a" });
   });
 });
