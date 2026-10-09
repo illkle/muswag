@@ -11,7 +11,7 @@ import { MpvSession, MpvSessionLive, type SessionEvent } from "./session";
 import { booleanProperty, command, numberProperty } from "./protocol";
 import { applyQueue } from "../queue";
 
-// Explicitly opt in; CI's mpv job should set this and provide mpv >= 0.41.
+// Explicitly opt in; CI's mpv job should set this and provide an mpv of at least `MINIMUM_MPV_VERSION`.
 describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", () => {
   it("loads exact duplicate-media occurrences, pauses/seeks, selects in place, edits, advances and closes", async () => {
     const root = await mkdtemp(join(tmpdir(), "muswag-effect-mpv-"));

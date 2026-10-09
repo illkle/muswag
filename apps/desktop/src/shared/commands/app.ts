@@ -1,5 +1,4 @@
 import {
-  CoverTarget,
   CreatePlaylistInput,
   Id,
   Ids,
@@ -30,8 +29,6 @@ export const AppCommandArgs = {
   "session:logout": Schema.Tuple([]),
   "library:sync": Schema.Tuple([SyncMode]),
   "library:refreshStats": Schema.Tuple([RefreshStatTarget]),
-  "covers:ensure": Schema.Tuple([CoverTarget]),
-  "covers:repair": Schema.Tuple([CoverTarget, Text]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -41,6 +38,8 @@ export const AppCommandArgs = {
   "playlists:delete": Schema.Tuple([Id]),
   "playlists:sync": Schema.Tuple([]),
   "queue:playSource": Schema.Tuple([QueueSourceRef, Id]),
+  "queue:select": Schema.Tuple([Id]),
+  "queue:play": Schema.Tuple([]),
   "queue:enqueue": Schema.Tuple([Ids]),
   "queue:removeQueued": Schema.Tuple([Id]),
   "queue:next": Schema.Tuple([]),
@@ -55,8 +54,6 @@ export type AppCommandResults = {
   "session:logout": AuthSnapshot;
   "library:sync": void;
   "library:refreshStats": void;
-  "covers:ensure": string | null;
-  "covers:repair": string | null;
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;
@@ -66,6 +63,8 @@ export type AppCommandResults = {
   "playlists:delete": Written;
   "playlists:sync": PlaylistSyncStatus;
   "queue:playSource": void;
+  "queue:select": void;
+  "queue:play": void;
   "queue:enqueue": void;
   "queue:removeQueued": void;
   "queue:next": void;

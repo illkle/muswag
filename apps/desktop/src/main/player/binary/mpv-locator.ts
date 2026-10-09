@@ -32,6 +32,11 @@ export const createMpvLocatorDeps = Effect.gen(function* () {
   } satisfies MpvLocatorDeps;
 });
 
+/**
+ * Where mpv may be, the likeliest place first, found without running anything: the binary the
+ * environment or the user names, the one that worked last time, PATH, and the usual install
+ * locations that exist. A login shell is asked only after these (`probeLoginShell`).
+ */
 export const collectMpvCandidates = Effect.fn("collectMpvCandidates")(function* (
   options: { manualPath?: string | null; cachedPath?: string | null },
   deps: MpvLocatorDeps,
@@ -47,9 +52,6 @@ export const collectMpvCandidates = Effect.fn("collectMpvCandidates")(function* 
       candidates.push({ binaryPath, explicit: false, source: "well-known" });
     }
   }
-
-  const shellPath = yield* probeLoginShell("mpv", deps);
-  if (shellPath) candidates.push({ binaryPath: shellPath, explicit: false, source: "login-shell" });
   return candidates;
 });
 
@@ -68,16 +70,12 @@ export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
       joinWindowsPath(programFiles, "MPV Player\\mpv.exe"),
     ];
   }
-  return [
-    "/usr/bin/mpv",
-    "/usr/local/bin/mpv",
-    join(deps.homeDirectory, ".local/bin/mpv"),
-    "/snap/bin/mpv",
-    "/var/lib/flatpak/exports/bin/io.mpv.Mpv",
-    join(deps.homeDirectory, ".local/share/flatpak/exports/bin/io.mpv.Mpv"),
-  ];
+  // Not the Flatpak or snap wrappers: a sandboxed mpv is given a /tmp of its own, so it would pass the
+  // version check and then open its socket where the app cannot see it. (Reasoned, not tried on Linux.)
+  return ["/usr/bin/mpv", "/usr/local/bin/mpv", join(deps.homeDirectory, ".local/bin/mpv")];
 }
 
+/** What a login shell finds on its PATH. Starting one takes from a fraction of a second to seconds. */
 export const probeLoginShell = Effect.fn("probeLoginShell")(function* (command: string, deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
   if (deps.platform === "win32") return null;
   const result = yield* deps.runCommand(deps.env.SHELL ?? "/bin/sh", ["-ilc", `command -v ${command}`], {

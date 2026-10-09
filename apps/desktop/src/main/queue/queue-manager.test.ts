@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { songRow, type PlaybackItem, type QueueSourceRef, type Song, type SourceCursor, type SourceItem, type SourceWindow } from "@muswag/model";
 import type { QueueManagerState } from "#shared/queue-state";
 import type { QueueSources, SourceAnchor } from "./source";
-import type { QueueStorage, StoredQueue } from "./db-queue-storage";
+import { DbQueueStorage, type QueueStorage, type QueueTables, type StoredQueue } from "./db-queue-storage";
 import type { ApplyQueueInput, PlayerRuntimeState, QueuePlayerPort } from "./player-port";
 import { QueueManager } from "./queue-manager";
 
@@ -11,20 +11,32 @@ const song = (id: string): Song => songRow({ id, title: id });
 const sourceItem = (key: string, offset: number): SourceItem => ({ key, offset, track: song(key) });
 
 class FakePlayer implements QueuePlayerPort {
-  state: PlayerRuntimeState = { sequence: 0, current: null, status: "idle", positionSeconds: 0, paused: false };
+  state: PlayerRuntimeState = { sequence: 0, current: null, status: "idle", positionSeconds: 0, paused: false, trackFailed: false };
   listeners = new Set<(state: PlayerRuntimeState) => void>();
   applies: ApplyQueueInput[] = [];
   applyError: Error | null = null;
+  /** Whether a selection that fails with `applyError` is held all the same, as one is that mpv could not start. */
+  holdsWhatItRefuses = false;
+  stopError: Error | null = null;
   restarts = 0;
 
+  /** As the player does, it holds a selection from the moment it takes the command; the track starts later. */
   async applyQueue(input: ApplyQueueInput): Promise<void> {
     this.applies.push(structuredClone(input));
+    const { select } = input;
+    const selected = select && input.items.find(({ key }) => key === select.key);
+    if (selected && (!this.applyError || this.holdsWhatItRefuses)) {
+      const status = this.applyError ? "error" : "loading";
+      this.state = { ...this.state, current: structuredClone(selected), status, positionSeconds: select.positionSeconds ?? 0, paused: !select.play, trackFailed: false };
+    }
     if (this.applyError) throw this.applyError;
   }
   async restartCurrent(): Promise<void> {
     this.restarts += 1;
   }
-  async stop(): Promise<void> {}
+  async stop(): Promise<void> {
+    if (this.stopError) throw this.stopError;
+  }
   async getState(): Promise<PlayerRuntimeState> {
     return this.state;
   }
@@ -32,14 +44,21 @@ class FakePlayer implements QueuePlayerPort {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  start(item: PlaybackItem, sequence: number, positionSeconds = 0): void {
-    this.state = { ...this.state, sequence, current: structuredClone(item), positionSeconds, status: "playing" };
+  /** The player says what it is doing with `item`. */
+  report(item: PlaybackItem, sequence: number, state: Partial<PlayerRuntimeState>): void {
+    this.state = { ...this.state, trackFailed: false, ...state, sequence, current: structuredClone(item) };
     for (const listener of this.listeners) listener(this.state);
   }
-  /** The player has selected `item`, which has not started yet. */
+  start(item: PlaybackItem, sequence: number, positionSeconds = 0): void {
+    this.report(item, sequence, { status: "playing", paused: false, positionSeconds });
+  }
+  /** The player holds `item`, which has not started yet: one it was told to play, or one mpv moved on to. */
   load(item: PlaybackItem, sequence: number): void {
-    this.state = { ...this.state, sequence, current: structuredClone(item), status: "loading" };
-    for (const listener of this.listeners) listener(this.state);
+    this.report(item, sequence, { status: "loading", positionSeconds: 0 });
+  }
+  /** Playback of `item` failed: because the track cannot be played, or for another reason. */
+  fail(item: PlaybackItem, sequence: number, trackFailed = true): void {
+    this.report(item, sequence, { status: "error", trackFailed });
   }
 }
 
@@ -83,6 +102,9 @@ class MemoryStorage implements QueueStorage {
 
 const album = { type: "album" as const, albumId: "album" };
 const factory = new FakeSources();
+const occurrence = (key: string): PlaybackItem => ({ key, track: song(key) });
+/** The occurrences the player was told to play, in order. */
+const selections = (player: FakePlayer) => player.applies.flatMap(({ select }) => (select ? [select.key] : []));
 
 async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -103,19 +125,19 @@ describe("QueueManager", () => {
     };
     const manager = new QueueManager({ player, sources: factory, storage });
 
-    await expect(manager.restore()).resolves.toBe(true);
+    await manager.restore();
     expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a", track: { id: "embedded-deleted-library-row" } }, source: { window: { cursor: { key: "a", offset: 0 } } } });
     expect(player.applies.at(-1)?.select).toEqual({ key: "a", play: false, positionSeconds: 42 });
     expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["a", "user:saved", "c"]);
     manager.dispose();
   });
 
-  it("restores a queue with nothing playing without loading it, and keeps a queue mpv cannot load", async () => {
+  it("restores a queue with nothing playing without loading it, and keeps a queue mpv cannot load, for Play to start", async () => {
     const player = new FakePlayer();
     const storage = new MemoryStorage();
     storage.stored = { nowPlaying: null, userQueue: [{ key: "user:saved", track: song("queued") }], source: null, resumePositionSeconds: 0 };
     const idle = new QueueManager({ player, sources: factory, storage });
-    await expect(idle.restore()).resolves.toBe(true);
+    await idle.restore();
     expect(player.applies).toEqual([]);
     expect(idle.store.state.userQueue.map(({ key }) => key)).toEqual(["user:saved"]);
     idle.dispose();
@@ -123,17 +145,46 @@ describe("QueueManager", () => {
     storage.stored = { ...storage.stored, nowPlaying: { key: "user:now", origin: "user", track: song("now") } };
     player.applyError = new Error("mpv is missing");
     const broken = new QueueManager({ player, sources: factory, storage });
-    await expect(broken.restore()).resolves.toBe(true);
+    await broken.restore();
+    expect(broken.store.state).toMatchObject({ nowPlaying: { key: "user:now" }, userQueue: [{ key: "user:saved" }] });
+
+    // The player holds nothing, so Play is the queue's: it loads what the queue says is playing.
+    player.applyError = null;
+    await broken.play();
+    expect(player.applies.at(-1)).toMatchObject({ select: { key: "user:now", play: true }, items: [{ key: "user:now" }, { key: "user:saved" }] });
     expect(broken.store.state).toMatchObject({ nowPlaying: { key: "user:now" }, userQueue: [{ key: "user:saved" }] });
     broken.dispose();
   });
 
-  it("commits only correlated starts and keeps manual items out of source history", async () => {
+  it("starts the queue with Play when nothing is playing, and leaves Play to the player once it holds a track", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
+    await manager.play();
+    expect(player.applies).toEqual([]);
+
+    await manager.enqueue([song("x"), song("y")]);
+    const [x, y] = manager.store.state.userQueue;
+    await manager.play();
+    expect(player.applies.at(-1)).toMatchObject({ select: { key: x!.key, play: true }, items: [{ key: x!.key }, { key: y!.key }] });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: x!.key, origin: "user" }, userQueue: [{ key: y!.key }] });
+
+    await manager.play();
+    expect(selections(player)).toEqual([x!.key]);
+    manager.dispose();
+  });
+
+  it("is on a selection once the player holds it, and keeps manual items out of source history", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
 
+    // A selection the player turned down without taking it is not the queue's either.
+    player.applyError = new Error("the player is busy");
+    await expect(manager.playSource({ type: "album", albumId: "album" }, "a")).rejects.toThrow("the player is busy");
+    expect(manager.store.state).toEqual({ nowPlaying: null, userQueue: [], source: null });
+    player.applyError = null;
+
     await manager.playSource({ type: "album", albumId: "album" }, "a");
-    expect(manager.store.state.nowPlaying).toBeNull();
+    expect(manager.store.state.nowPlaying).toMatchObject({ key: "a", origin: "source" });
     player.start({ key: "a", track: song("a") }, 1);
     await flush();
     expect(manager.store.state.nowPlaying).toMatchObject({ key: "a", origin: "source" });
@@ -141,7 +192,7 @@ describe("QueueManager", () => {
     await manager.enqueue([song("b")]);
     const user = manager.store.state.userQueue[0]!;
     await manager.next();
-    expect(manager.store.state.userQueue).toHaveLength(1);
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: user.key, origin: "user" }, userQueue: [] });
     player.start(user, 2);
     await flush();
     expect(manager.store.state).toMatchObject({ nowPlaying: { key: user.key, origin: "user" }, userQueue: [] });
@@ -167,9 +218,10 @@ describe("QueueManager", () => {
     await manager.next();
     player.load(x!, 2);
     await flush();
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: x!.key, origin: "user" }, userQueue: [{ key: y!.key }] });
     await manager.next();
     expect(player.applies.at(-1)?.select?.key).toBe(y!.key);
-    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a" }, userQueue: [{ key: y!.key }] });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: y!.key, origin: "user" }, userQueue: [] });
     await manager.next();
     expect(player.applies.at(-1)?.select?.key).toBe("b");
     expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["a", "b", "c"]);
@@ -182,7 +234,7 @@ describe("QueueManager", () => {
     await manager.next();
     expect(player.applies.at(-1)?.select?.key).toBe("c");
     await manager.next();
-    expect(player.applies.filter(({ select }) => select).map(({ select }) => select?.key)).toEqual(["a", x!.key, y!.key, "b", "a", "b", "c"]);
+    expect(selections(player)).toEqual(["a", x!.key, y!.key, "b", "a", "b", "c"]);
 
     player.start({ key: "c", track: song("c") }, 3, 30);
     await flush();
@@ -204,7 +256,7 @@ describe("QueueManager", () => {
     await manager.playSource({ type: "album", albumId: "second" }, "p");
     await manager.next();
     expect(player.applies.at(-1)).toMatchObject({ select: { key: x.key }, items: [{ key: "p" }, { key: x.key }, { key: "q" }] });
-    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a" }, source: { ref: { albumId: "album" } } });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: x.key }, source: { ref: { albumId: "second" } } });
     player.start(x, 2);
     await flush();
     expect(manager.store.state).toMatchObject({ nowPlaying: { key: x.key, origin: "user" }, userQueue: [], source: { ref: { albumId: "second" }, window: { cursor: { key: "p" } } } });
@@ -248,18 +300,46 @@ describe("QueueManager", () => {
   });
 
   it("stores every published state, and the resume position only when playback is saved", async () => {
+    vi.useFakeTimers();
     const player = new FakePlayer();
     const storage = new MemoryStorage();
     const manager = new QueueManager({ player, sources: factory, storage });
     await manager.playSource({ type: "album", albumId: "album" }, "a");
+    expect(storage.saved).toMatchObject({ state: { nowPlaying: { key: "a" } }, resumePositionSeconds: 0 });
     player.start({ key: "a", track: song("a") }, 1, 7);
-    await flush();
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(storage.saved).toMatchObject({ state: { nowPlaying: { key: "a" } }, resumePositionSeconds: 7 });
 
     await manager.enqueue([song("queued")]);
-    await flush();
+    await vi.advanceTimersByTimeAsync(0);
     expect(storage.saved?.state.userQueue.map(({ track }) => track.id)).toEqual(["queued"]);
     expect(storage.saved?.resumePositionSeconds).toBe(7);
+
+    // Another occurrence starts from its own beginning.
+    await manager.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(storage.saved).toMatchObject({ state: { nowPlaying: { track: { id: "queued" } } }, resumePositionSeconds: 0 });
+    manager.dispose();
+  });
+
+  it("saves only the resume position while a track plays, which no renderer hears of", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const writes: Parameters<QueueTables["write"]>[0][] = [];
+    const tables: QueueTables = { load: async () => ({ state: null, items: [], resumePositionSeconds: 0 }), write: async (change) => void writes.push(change), clear: async () => {} };
+    const manager = new QueueManager({ player, sources: factory, storage: new DbQueueStorage(tables) });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await vi.advanceTimersByTimeAsync(0);
+    const written = writes.length;
+
+    for (let tick = 1; tick <= 20; tick++) {
+      player.start(occurrence("a"), 1 + tick, tick / 2);
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    expect(writes.length).toBeGreaterThan(written);
+    for (const change of writes.slice(written)) expect(change).toEqual({ upsert: [], remove: [], state: null, resumePositionSeconds: expect.any(Number) });
     manager.dispose();
   });
 
@@ -340,7 +420,7 @@ describe("QueueManager", () => {
     const asked = manager.playSource({ type: "album", albumId: "second" }, "p");
     await Promise.all([stepped, asked]);
 
-    expect(player.applies.filter(({ select }) => select).map(({ select }) => select?.key)).toEqual(["a", "b", "p"]);
+    expect(selections(player)).toEqual(["a", "b", "p"]);
     manager.dispose();
   });
 
@@ -439,6 +519,271 @@ describe("QueueManager", () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(save).toHaveBeenCalledTimes(savesAfterClear);
+    expect(storage.saved).toBeNull();
+    manager.dispose();
+  });
+
+  it("follows mpv into a track that is loading or has failed, so Next and Previous step from it", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c", "d", "e"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await flush();
+
+    // "a" ended and mpv went on to "b", which has not started.
+    player.load(occurrence("b"), 2);
+    await flush();
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "b", origin: "source" }, source: { window: { cursor: { key: "b", offset: 1 }, previous: [{ key: "a" }] } } });
+    await manager.next();
+    expect(player.applies.at(-1)?.select?.key).toBe("c");
+
+    // "c" ended and mpv went on to "d", where playback broke off for a reason that is not the track's.
+    player.start(occurrence("c"), 3, 30);
+    player.fail(occurrence("d"), 4, false);
+    await flush();
+    expect(manager.store.state.nowPlaying?.key).toBe("d");
+    expect(selections(player)).toEqual(["a", "c"]);
+    await manager.next();
+    expect(player.applies.at(-1)?.select?.key).toBe("e");
+    player.fail(occurrence("e"), 5, false);
+    await flush();
+    await manager.previous();
+    expect(player.applies.at(-1)?.select?.key).toBe("d");
+    manager.dispose();
+  });
+
+  it("moves past a track that cannot be played, as Next would, and keeps playback paused when it was", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c", "d"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await flush();
+    await manager.enqueue([song("x")]);
+    const x = manager.store.state.userQueue[0]!;
+
+    // mpv went on to the queued track, which failed a second time.
+    player.fail(x, 2);
+    await flush();
+    expect(player.applies.at(-1)).toMatchObject({ select: { key: "b", play: true }, items: [{ key: "a" }, { key: "b" }, { key: "c" }, { key: "d" }] });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "b", origin: "source" }, userQueue: [] });
+
+    player.report(occurrence("b"), 3, { status: "paused", paused: true });
+    await manager.next();
+    player.fail(occurrence("c"), 4);
+    await flush();
+    expect(player.applies.at(-1)?.select).toMatchObject({ key: "d", play: false });
+    manager.dispose();
+  });
+
+  it("stays on a failure after three unplayable tracks in a row, and when the track is not the cause", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] }), storage: new MemoryStorage() });
+    let sequence = 0;
+    const fail = async (key: string, trackFailed = true) => {
+      player.fail(occurrence(key), ++sequence, trackFailed);
+      await flush();
+    };
+
+    await manager.playSource(album, "a");
+    await fail("a", false);
+    expect(selections(player)).toEqual(["a"]);
+
+    await fail("a");
+    await fail("b");
+    await fail("c");
+    expect(selections(player)).toEqual(["a", "b", "c", "d"]);
+    await fail("d");
+    expect(selections(player)).toEqual(["a", "b", "c", "d"]);
+    expect(manager.store.state.nowPlaying?.key).toBe("d");
+
+    // The user's own step lets the queue move on again, and so does a track that plays.
+    await manager.next();
+    await fail("e");
+    await fail("f");
+    player.start(occurrence("g"), ++sequence);
+    await flush();
+    await fail("h");
+    await fail("i");
+    expect(selections(player)).toEqual(["a", "b", "c", "d", "e", "f", "g", "i", "j"]);
+    manager.dispose();
+  });
+
+  it("stays on a track that fails after it has played, or long after it was started: the server is likelier the cause", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1, 1800);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The stream breaks half an hour in.
+    player.fail(occurrence("a"), 2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selections(player)).toEqual(["a"]);
+    expect(manager.store.state.nowPlaying?.key).toBe("a");
+
+    // A track that takes a minute to fail did not fail for being a bad file.
+    await manager.next();
+    await vi.advanceTimersByTimeAsync(60_000);
+    player.fail(occurrence("b"), 3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selections(player)).toEqual(["a", "b"]);
+    expect(manager.store.state.nowPlaying?.key).toBe("b");
+    manager.dispose();
+  });
+
+  it("stays on the track restored at start when it cannot be loaded, with the place in it", async () => {
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    storage.stored = {
+      nowPlaying: { key: "a", origin: "source", track: song("a") },
+      userQueue: [],
+      source: { ref: album, cursor: { type: "item", key: "a", offset: 0 } },
+      resumePositionSeconds: 2530,
+    };
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c"] }), storage });
+    await manager.restore();
+
+    // The server is not there when the app starts.
+    player.fail(occurrence("a"), 1);
+    await flush();
+
+    expect(selections(player)).toEqual(["a"]);
+    expect(manager.store.state.nowPlaying?.key).toBe("a");
+    // Nothing was selected after the restore, which asked for the track where it was left.
+    expect(player.applies.filter(({ select }) => select).map(({ select }) => select?.positionSeconds)).toEqual([2530]);
+    manager.dispose();
+  });
+
+  it("stays on a failure at the end of the queue, also when a track is queued afterwards", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    player.fail(occurrence("b"), 2);
+    await flush();
+    expect(manager.store.state.nowPlaying?.key).toBe("b");
+
+    await manager.enqueue([song("x")]);
+    player.fail(occurrence("b"), 3);
+    await flush();
+    expect(selections(player)).toEqual(["a"]);
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "b" }, userQueue: [{ track: { id: "x" } }] });
+
+    await manager.next();
+    expect(manager.store.state).toMatchObject({ nowPlaying: { track: { id: "x" }, origin: "user" }, userQueue: [] });
+    manager.dispose();
+  });
+
+  it("keeps a loading track that a library change takes out of its source", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const sources = new FakeSources({ album: ["a", "b", "c"] });
+    const manager = new QueueManager({ player, sources, storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.next();
+    sources.albums.album = ["a", "c"];
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(manager.store.state).toMatchObject({
+      nowPlaying: { key: "b", origin: "source" },
+      source: { window: { cursor: { type: "gap", offset: 1 }, previous: [{ key: "a" }], next: [{ key: "c" }] } },
+    });
+    expect(player.applies.at(-1)?.items.map(({ key }) => key)).toEqual(["a", "b", "c"]);
+
+    player.start(occurrence("b"), 2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.store.state.nowPlaying?.key).toBe("b");
+    await manager.next();
+    expect(player.applies.at(-1)?.select?.key).toBe("c");
+    manager.dispose();
+  });
+
+  it("follows mpv into a track a library change has just taken out of the window", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const sources = new FakeSources({ album: ["a", "b", "c"] });
+    const manager = new QueueManager({ player, sources, storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await vi.advanceTimersByTimeAsync(0);
+    sources.albums.album = ["a", "c"];
+    sources.changed();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(manager.store.state.source?.window.next.map(({ key }) => key)).toEqual(["c"]);
+
+    // mpv had started "b" before it heard of the change.
+    player.load(occurrence("b"), 2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.store.state).toMatchObject({
+      nowPlaying: { key: "b", origin: "source" },
+      source: { window: { cursor: { type: "gap", offset: 1 }, previous: [{ key: "a" }], next: [{ key: "c" }] } },
+    });
+    expect(player.applies.at(-1)).toMatchObject({ items: [{ key: "a" }, { key: "b" }, { key: "c" }] });
+    expect(player.applies.at(-1)?.select).toBeUndefined();
+    await manager.previous();
+    expect(player.applies.at(-1)?.select?.key).toBe("a");
+    manager.dispose();
+  });
+
+  it("is on a selection the player holds although it refused it", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
+    player.applyError = new Error("mpv is missing");
+    player.holdsWhatItRefuses = true;
+
+    await expect(manager.playSource(album, "a")).rejects.toThrow("mpv is missing");
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "a", origin: "source" }, source: { ref: album, window: { next: [{ key: "c" }] } } });
+
+    player.holdsWhatItRefuses = false;
+    await expect(manager.next()).rejects.toThrow("mpv is missing");
+    expect(manager.store.state.nowPlaying?.key).toBe("a");
+    manager.dispose();
+  });
+
+  it("plays an occurrence of the queue, which the queued tracks passed over leave", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: new FakeSources({ album: ["a", "b", "c"] }), storage: new MemoryStorage() });
+    await manager.playSource(album, "a");
+    player.report(occurrence("a"), 1, { status: "paused", paused: true });
+    await flush();
+    await manager.enqueue([song("x"), song("y"), song("z")]);
+    const [, y, z] = manager.store.state.userQueue;
+
+    await manager.select(y!.key);
+    expect(player.applies.at(-1)).toMatchObject({ select: { key: y!.key, play: true }, items: [{ key: "a" }, { key: y!.key }, { key: z!.key }, { key: "b" }, { key: "c" }] });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: y!.key, origin: "user" }, userQueue: [{ key: z!.key }], source: { window: { cursor: { key: "a" } } } });
+
+    await manager.select("c");
+    expect(player.applies.at(-1)).toMatchObject({ select: { key: "c" }, items: [{ key: "a" }, { key: "b" }, { key: "c" }] });
+    expect(manager.store.state).toMatchObject({ nowPlaying: { key: "c", origin: "source" }, userQueue: [], source: { window: { cursor: { key: "c", offset: 2 } } } });
+
+    await expect(manager.select("gone")).rejects.toThrow("not in the queue");
+    expect(manager.store.state.nowPlaying?.key).toBe("c");
+    manager.dispose();
+  });
+
+  it("clears the queue and what is stored of it even when the player refuses to stop", async () => {
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    const manager = new QueueManager({ player, sources: factory, storage });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await manager.enqueue([song("queued")]);
+    player.stopError = new Error("the player is busy");
+
+    await expect(manager.clear()).rejects.toThrow("the player is busy");
+    expect(manager.store.state).toEqual({ nowPlaying: null, userQueue: [], source: null });
+    expect(storage.saved).toBeNull();
+
+    // The player plays on. It is no longer this queue's, so nothing of it comes back.
+    player.start(occurrence("a"), 2, 10);
+    player.load(occurrence("c"), 3);
+    await flush();
+    expect(manager.store.state).toEqual({ nowPlaying: null, userQueue: [], source: null });
     expect(storage.saved).toBeNull();
     manager.dispose();
   });

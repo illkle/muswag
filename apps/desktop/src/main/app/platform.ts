@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 import { FileSystemError, MiniFs, type CredentialsCipher } from "@muswag/backend";
@@ -28,7 +28,10 @@ export const MiniFsLive = (base: string) =>
         try: async () => {
           const target = resolveInside(base, path);
           await mkdir(dirname(target), { recursive: true });
-          await writeFile(target, data);
+          // Renamed into place, so neither a crash nor a request served meanwhile sees half a cover.
+          const temporary = `${target}.tmp`;
+          await writeFile(temporary, data);
+          await rename(temporary, target);
         },
         catch: (cause) => new FileSystemError({ cause: String(cause), message: `Failed to write ${path}` }),
       }),
@@ -36,9 +39,18 @@ export const MiniFsLive = (base: string) =>
       Effect.tryPromise({
         try: async () => {
           const target = resolveInside(base, path);
-          await Promise.all([rm(target, { force: true }), rm(thumbnailPathOf(target), { force: true })]);
+          await Promise.all([rm(target, { recursive: true, force: true }), rm(thumbnailPathOf(target), { force: true })]);
         },
         catch: (cause) => new FileSystemError({ cause: String(cause), message: `Failed to remove ${path}` }),
+      }),
+    exists: (path) =>
+      Effect.promise(async () => {
+        try {
+          await access(resolveInside(base, path));
+          return true;
+        } catch {
+          return false;
+        }
       }),
   });
 

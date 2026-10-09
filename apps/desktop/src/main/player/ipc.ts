@@ -2,8 +2,8 @@ import { dialog } from "electron";
 import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { Effect, ManagedRuntime, Schema, Stream } from "effect";
 import type { MuswagMainIpc } from "#shared/ipc";
-import { PlayerCommand, type CommandAck, type CommandResult, type PlayerCredentials, type PlayerSnapshot } from "#shared/commands/player";
-import { CommandFailed, InvalidCommand, toIssue } from "./errors";
+import { RendererCommand, type CommandResult, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot } from "#shared/commands/player";
+import { CommandFailed } from "./errors";
 import { makePlayerLayer } from "./layer";
 import { Player } from "./player";
 
@@ -18,43 +18,30 @@ export interface PlayerHandle {
   readonly shutdown: () => Promise<void>;
 }
 
-const invalid = (operation: string, message: string) => new CommandFailed({ issue: toIssue(new InvalidCommand({ operation, message })) });
-/**
- * Commands main keeps to itself: the queue is changed through the queue manager, and the path of a
- * binary to run comes from the native dialog of `player:locate`.
- */
-const mainOnly = (command: PlayerCommand) => command._tag === "ApplyQueue" || command._tag === "Stop" || command._tag === "Restart" || (command._tag === "SetBinaryPath" && command.path !== null);
-const decodeCommand = (input: unknown) =>
-  Schema.decodeUnknownEffect(PlayerCommand)(input).pipe(
-    Effect.mapError(() => invalid("decode", "Invalid player command.")),
-    Effect.filterOrFail(
-      (command) => !mainOnly(command),
-      () => invalid("decode", "Invalid player command."),
-    ),
-  );
+/** A renderer's command, which is all a renderer can make the player do: main's own commands do not decode. */
+const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(RendererCommand)(input).pipe(Effect.mapError(() => new CommandFailed({ message: "Invalid player command." })));
 
 /** Runs the player and its commands. Renderers see its state through `options.stateMirror`. */
 export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
   const runtime = ManagedRuntime.make(makePlayerLayer(options));
   const snapshot = () => runtime.runPromise(Player.use((player) => player.snapshot));
   /** Runs a player operation and pairs its outcome with the state-mirror position that reflects it. */
-  const respond = (commandId: string, operation: Effect.Effect<CommandAck, CommandFailed, Player>): Promise<CommandResult> =>
+  const respond = (operation: Effect.Effect<void, CommandFailed, Player>): Promise<CommandResult> =>
     runtime.runPromise(
       operation.pipe(
         Effect.matchEffect({
-          onSuccess: (ack) => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: true, ack, position }))),
-          onFailure: (error) => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: false, commandId, issue: error.issue, position }))),
+          onSuccess: () => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: true, position }))),
+          onFailure: (error) => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: false, message: error.message, position }))),
         }),
       ),
     );
-  const execute = (commandId: string, command: Effect.Effect<PlayerCommand, CommandFailed>) =>
-    respond(commandId, command.pipe(Effect.flatMap((command) => Player.use((player) => player.execute(commandId, command)))));
+  const execute = (command: Effect.Effect<PlayerCommand, CommandFailed>) => respond(command.pipe(Effect.flatMap((command) => Player.use((player) => player.execute(command)))));
 
-  main.handle("player:command", (_event, commandId, command) => execute(commandId, decodeCommand(command)));
+  main.handle("player:command", (_event, command) => execute(decodeCommand(command)));
   main.handle("player:locate", async () => {
     const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
     const path = result.canceled ? undefined : result.filePaths[0];
-    return path ? execute(crypto.randomUUID(), Effect.succeed({ _tag: "SetBinaryPath", path })) : null;
+    return path ? execute(Effect.succeed({ _tag: "SetBinaryPath", path })) : null;
   });
 
   const listeners = new Set<(snapshot: PlayerSnapshot) => void>();
@@ -69,12 +56,8 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
   );
 
   return {
-    execute: (command) => execute(crypto.randomUUID(), Effect.succeed(command)),
-    setCredentials: (credentials) =>
-      respond(
-        "credentials",
-        Player.use((player) => player.setCredentials(credentials)),
-      ),
+    execute: (command) => execute(Effect.succeed(command)),
+    setCredentials: (credentials) => respond(Player.use((player) => player.setCredentials(credentials))),
     snapshot,
     subscribe: (listener) => {
       listeners.add(listener);

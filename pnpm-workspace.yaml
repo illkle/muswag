@@ -9,7 +9,6 @@ catalog:
   "@effect/sql-sqlite-node": 4.0.0
   "@effect/tsgo": 0.47.1
   "@effect/vitest": 4.0.0
-  "@electron-toolkit/preload": ^3.0.2
   "@electron-toolkit/typed-ipc": ^1.0.2
   "@electron-toolkit/utils": ^4.0.0
   "@rolldown/plugin-babel": ^0.2.4

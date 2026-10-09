@@ -1,10 +1,9 @@
 import { Context, Effect, Layer } from "effect";
 import type { BinaryState } from "#shared/commands/player";
 import type { MpvInstallMethod } from "#shared/commands/player";
-import { issue } from "../errors";
 import { detectInstallCandidates, type MpvInstallCandidate } from "./install-catalog";
-import { collectMpvCandidates, createMpvLocatorDeps, type MpvLocatorDeps } from "./mpv-locator";
-import { MINIMUM_MPV_VERSION, validateMpvBinary } from "./mpv-validator";
+import { collectMpvCandidates, createMpvLocatorDeps, probeLoginShell, type MpvCandidate, type MpvLocatorDeps } from "./mpv-locator";
+import { validateMpvBinary } from "./mpv-validator";
 
 export class Binaries extends Context.Service<
   Binaries,
@@ -13,33 +12,50 @@ export class Binaries extends Context.Service<
     readonly candidate: (method: MpvInstallMethod) => Effect.Effect<MpvInstallCandidate | null>;
   }
 >()("@muswag/player/Binaries") {}
+
+/** A candidate as the user is told about it: by whom it was named, or where it was found. */
+const describeCandidate = ({ binaryPath, source }: MpvCandidate): string => {
+  if (source === "env") return `MUSWAG_MPV_PATH (${binaryPath})`;
+  if (source === "manual") return `The mpv you selected (${binaryPath})`;
+  return source === "path" ? "The mpv on PATH" : `The mpv at ${binaryPath}`;
+};
+
 export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Service => ({
+  /**
+   * The first candidate that runs and is new enough, tried in order, so that an mpv which is where it
+   * was last time costs one version check. A binary named by the user or the environment is the only
+   * one tried: it is never replaced by one the app finds itself.
+   */
   resolve: Effect.fn("Binaries.resolve")(
     function* (manualPath: string | null, cachedPath: string | null) {
-      const candidates = yield* collectMpvCandidates({ manualPath, cachedPath }, environment);
-      let invalid = false;
-      const seen = new Set<string>();
-      for (const candidate of candidates) {
-        if (seen.has(candidate.binaryPath)) continue;
-        seen.add(candidate.binaryPath);
+      const tried = new Set<string>();
+      /** Why the first binary that was turned down cannot be used. */
+      let rejected: string | null = null;
+      const attempt = Effect.fnUntraced(function* (candidate: MpvCandidate) {
+        if (tried.has(candidate.binaryPath)) return null;
+        tried.add(candidate.binaryPath);
         const validation = yield* validateMpvBinary(candidate.binaryPath, environment);
         if (validation.ok) return { _tag: "Ready" as const, path: candidate.binaryPath, version: validation.version, source: candidate.source };
-        if (candidate.explicit) {
-          invalid = true;
-          break;
-        }
-        if (!validation.missing && candidate.source !== "cache") invalid = true;
+        // A place the app only guessed at and found empty is not worth a word, nor is a remembered binary that has gone or changed.
+        if (candidate.explicit || (!validation.missing && candidate.source !== "cache")) rejected ??= `${describeCandidate(candidate)} cannot be used. ${validation.reason}`;
+        return null;
+      });
+      const unavailable = Effect.fnUntraced(function* () {
+        const options = (yield* detectInstallCandidates(environment)).map((candidate) => candidate.option);
+        return { _tag: "Unavailable" as const, message: rejected ?? "mpv was not found. Install it, or select its executable.", options };
+      });
+
+      for (const candidate of yield* collectMpvCandidates({ manualPath, cachedPath }, environment)) {
+        const ready = yield* attempt(candidate);
+        if (ready) return ready;
+        if (candidate.explicit) return yield* unavailable();
       }
-      return {
-        _tag: "Unavailable" as const,
-        reason: invalid ? ("invalid" as const) : ("missing" as const),
-        issue: issue("BinaryUnavailable", "discovery", invalid ? `The configured mpv cannot run or is older than ${MINIMUM_MPV_VERSION.join(".")}.` : "Install mpv or select its executable."),
-        options: (yield* detectInstallCandidates(environment)).map((candidate) => candidate.option),
-      };
+      const shellPath = yield* probeLoginShell("mpv", environment);
+      return (shellPath ? yield* attempt({ binaryPath: shellPath, explicit: false, source: "login-shell" }) : null) ?? (yield* unavailable());
     },
     Effect.timeoutOrElse({
       duration: "30 seconds",
-      orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", reason: "probeFailed", issue: issue("BinaryUnavailable", "discovery", "Checking mpv timed out."), options: [] }),
+      orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", message: "Checking mpv timed out.", options: [] }),
     }),
   ),
   candidate: (method) => detectInstallCandidates(environment).pipe(Effect.map((candidates) => candidates.find((candidate) => candidate.option.method === method) ?? null)),

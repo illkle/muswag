@@ -2,7 +2,13 @@ import { Effect } from "effect";
 import type { MpvLocatorDeps } from "./mpv-locator";
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
-export const MINIMUM_MPV_VERSION = [0, 41, 0] as const;
+/**
+ * Set by `loadfile <url> insert-at <index>`, which puts a track into the middle of mpv's playlist
+ * (`queue.ts`): the action and the index argument both came with mpv 0.38.0. Everything else the app
+ * asks of mpv is older; the next newest are `playlist-play-index`, playlist entry ids and
+ * `--input-ipc-client`, all from 0.33.0.
+ */
+export const MINIMUM_MPV_VERSION = [0, 38, 0] as const;
 
 export type MpvValidation = { ok: true; version: string } | { ok: false; missing: boolean; reason: string };
 
@@ -53,6 +59,5 @@ function firstNonEmptyLine(value: string): string | null {
 function describeSpawnErrorCode(errorCode: string): string {
   if (errorCode === "EACCES") return "The file is not executable.";
   if (errorCode === "ETIMEDOUT") return "`--version` did not finish in time.";
-  if (errorCode === "EFTYPE" || errorCode === "ENOEXEC") return "The file is not a runnable binary for this machine.";
-  return `The binary could not be started (${errorCode}).`;
+  return "The file could not be started.";
 }

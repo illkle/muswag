@@ -38,6 +38,8 @@ export const rendererConfig = defineConfig({
           proxy: {
             "/__bridge": {
               target: `http://127.0.0.1:${devBridgePort}`,
+              // The bridge answers only to its own name, whatever name the browser reached this server by.
+              changeOrigin: true,
               // The proxy leaves a response open when main dies in the middle of it, and the browser must see its event stream end.
               configure: (proxy) => proxy.on("proxyRes", (proxyResponse, _request, response) => proxyResponse.on("close", () => proxyResponse.complete || response.destroy())),
             },

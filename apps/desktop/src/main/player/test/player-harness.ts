@@ -5,7 +5,7 @@ import type { PlayerSnapshot } from "#shared/commands/player";
 import { PLAYER_TABLES } from "#shared/state/player";
 import { Binaries } from "../binary/binaries";
 import { Installer } from "../binary/installer";
-import { EngineError, issue } from "../errors";
+import type { EngineError } from "../errors";
 import { isPositionEvent, MpvSession, type SessionEvent, type SessionSinks } from "../mpv/session";
 import type { MpvCommand, MpvEvent } from "../mpv/protocol";
 import { PlayerLive, type PlayerService } from "../player";
@@ -25,6 +25,7 @@ export function fixture() {
   let closes = 0;
   let probes = 0;
   let openFailure: EngineError | null = null;
+  let probeGate: Effect.Effect<void> = Effect.void;
   const commands: unknown[][] = [];
   let override: ((command: MpvCommand<unknown>) => Effect.Effect<unknown, EngineError> | undefined) | undefined;
   const deliver = (event: MpvEvent, entryId: number | null, gen = generation) => {
@@ -68,8 +69,6 @@ export function fixture() {
               } else if (name === "get_property" && arg === "playlist") result = playlist;
               else if (name === "get_property" && arg === "pause") result = paused;
               else if (name === "get_property" && arg === "time-pos") result = position;
-              else if (name === "get_property" && arg === "volume") result = 50;
-              else if (name === "get_property" && arg === "mute") result = false;
               else if (name === "set_property" && arg === "pause") paused = mode as boolean;
               else if (name === "seek") position = arg as number;
               else if (name === "playlist-remove") playlist.splice(arg as number, 1);
@@ -92,12 +91,14 @@ export function fixture() {
         session,
         Layer.succeed(Binaries, {
           resolve: () =>
-            Effect.sync(() => {
-              probes++;
-              return openFailure
-                ? { _tag: "Unavailable" as const, reason: "missing" as const, issue: issue("BinaryUnavailable", "discovery", "Missing mpv"), options: [] }
-                : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
-            }),
+            Effect.suspend(() => probeGate).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  probes++;
+                  return openFailure ? { _tag: "Unavailable" as const, message: "Missing mpv", options: [] } : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
+                }),
+              ),
+            ),
           candidate: () => Effect.succeed(null),
         }),
         Layer.succeed(Installer, { start: () => Effect.die("unused"), cancel: () => Effect.void, changes: Stream.empty }),
@@ -114,6 +115,10 @@ export function fixture() {
     /** Makes mpv fail to start, and be reported missing, until called with `null`. */
     failOpen: (error: EngineError | null) => {
       openFailure = error;
+    },
+    /** Makes every check for mpv wait for `gate` first. */
+    holdProbes: (gate: Effect.Effect<void>) => {
+      probeGate = gate;
     },
     get probes() {
       return probes;

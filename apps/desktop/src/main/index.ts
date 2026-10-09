@@ -1,21 +1,20 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { IpcEmitter, IpcListener } from "@electron-toolkit/typed-ipc/main";
+import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import type { MuswagMainIpc, MuswagRendererIpc } from "#shared/ipc";
+import type { MuswagMainIpc } from "#shared/ipc";
 import { getDefaultMpvIpcPath } from "./player";
 import { registerPlayerIpc, type PlayerHandle } from "./player/ipc";
 import { startStateMirror } from "./state-mirror";
-import { startApp } from "./app";
-import { initializeAutoUpdater, registerAppUpdateIpc } from "./app-updater";
+import { LibraryDatabaseError, resetLibrary, startApp, type AppOptions } from "./app";
+import { initializeAutoUpdater, registerAppUpdater } from "./app-updater";
 import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
 import { startDevBridge } from "./dev-bridge";
 import { createWindow } from "./window";
 
 import { Effect } from "effect";
 
-let unsubscribeAppUpdateState: (() => void) | undefined;
 let player: PlayerHandle | undefined;
 let stateMirror: Awaited<ReturnType<typeof startStateMirror>> | undefined;
 let mainApp: Awaited<ReturnType<typeof startApp>> | undefined;
@@ -28,7 +27,40 @@ if (isSecondInstance) app.quit();
 registerCoverScheme();
 
 const mainIpc = new IpcListener<MuswagMainIpc>();
-const rendererIpc = new IpcEmitter<MuswagRendererIpc>();
+
+/**
+ * Starts main's side of the app, or resolves to nothing when the app has to quit. A library database
+ * that cannot be opened is offered for deletion: what it holds is on the server, or is entered again.
+ */
+async function startAppOrReset(options: AppOptions): Promise<Awaited<ReturnType<typeof startApp>> | undefined> {
+  let reset = false;
+  for (;;) {
+    try {
+      if (reset) await resetLibrary(options);
+      return await startApp(options);
+    } catch (cause) {
+      console.error("Failed to start", cause);
+      if (!(cause instanceof LibraryDatabaseError)) {
+        dialog.showErrorBox("muswag could not start", cause instanceof Error ? cause.message : String(cause));
+        return undefined;
+      }
+      if (!cause.resettable) {
+        dialog.showErrorBox("The library database could not be opened", `${cause.databasePath}\n\n${cause.message}`);
+        return undefined;
+      }
+      const { response } = await dialog.showMessageBox({
+        type: "error",
+        message: "The library database could not be opened",
+        detail: `${cause.databasePath}\n\n${cause.message}\n\nThe library is a copy of what is on your server. Resetting deletes this file and the downloaded covers. You log in again, and the library is downloaded again.`,
+        buttons: ["Reset library", "Quit"],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      if (response !== 0) return undefined;
+      reset = true;
+    }
+  }
+}
 
 app.on("second-instance", () => {
   const [window] = BrowserWindow.getAllWindows();
@@ -45,31 +77,30 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  const serveCover = handleCoverProtocol(app.getPath("userData"));
+  const userDataPath = app.getPath("userData");
+  // Covers come from the session, which is there once the app has started.
+  const serveCover = handleCoverProtocol({ userDataPath, coverPath: async (owner) => mainApp?.coverPath(owner) ?? null });
   // Before any handler is registered: the bridge only knows the handlers registered after it starts.
   const devBridgePort = Number(process.env.MUSWAG_DEV_BRIDGE_PORT);
   if (is.dev && devBridgePort) startDevBridge({ ipcMain, port: devBridgePort, serveCover });
-  unsubscribeAppUpdateState = registerAppUpdateIpc(mainIpc, rendererIpc);
 
   stateMirror = await startStateMirror(ipcMain);
+  registerAppUpdater(mainIpc, stateMirror.mirror);
   player = registerPlayerIpc(mainIpc, {
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
-    settingsPath: join(app.getPath("userData"), "player-settings.json"),
+    settingsPath: join(userDataPath, "player-settings.json"),
     stateMirror: stateMirror.mirror,
   });
   // The library is migrated and mirrored before any window can ask for it.
-  try {
-    mainApp = await startApp({
-      databasePath: process.env.NODE_ENV === "development" ? "./dev-library.db" : join(app.getPath("userData"), "library.db"),
-      userDataPath: app.getPath("userData"),
-      ipcMain,
-      mainIpc,
-      player,
-      stateMirror: stateMirror.mirror,
-    });
-  } catch (cause) {
-    console.error("Failed to open the library database", cause);
-    dialog.showErrorBox("muswag could not start", `The library database could not be opened.\n\n${cause instanceof Error ? cause.message : String(cause)}`);
+  mainApp = await startAppOrReset({
+    // A development checkout keeps its library next to itself, so several can run side by side.
+    databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
+    userDataPath,
+    ipcMain,
+    player,
+    stateMirror: stateMirror.mirror,
+  });
+  if (!mainApp) {
     app.quit();
     return;
   }
@@ -107,7 +138,6 @@ app.on("before-quit", (event) => {
     ),
   ).finally(() => {
     mainIpc.dispose();
-    unsubscribeAppUpdateState?.();
     allowQuit = true;
     app.quit();
   });

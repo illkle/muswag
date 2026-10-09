@@ -2,7 +2,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { delimiter, dirname } from "node:path";
 import { Context, Deferred, Effect, FiberHandle, Layer, Semaphore, Stream, SubscriptionRef } from "effect";
 import type { InstallOutput, InstallState, MpvInstallMethod } from "#shared/commands/player";
-import { Busy, InstallFailed, toIssue } from "../errors";
+import { InstallFailed } from "../errors";
 import { installationLines } from "../support/output";
 import { Binaries } from "./binaries";
 
@@ -13,7 +13,7 @@ export class Installer extends Context.Service<
   Installer,
   {
     /** Starts an automatic install and resolves with its job id once the package manager is running. */
-    readonly start: (method: MpvInstallMethod) => Effect.Effect<string, Busy | InstallFailed>;
+    readonly start: (method: MpvInstallMethod) => Effect.Effect<string, InstallFailed>;
     readonly cancel: (jobId: string) => Effect.Effect<void>;
     readonly changes: Stream.Stream<InstallProgress>;
   }
@@ -64,7 +64,7 @@ export const InstallerLive = Layer.effect(
     }, Effect.scoped);
 
     const start = Effect.fn("Installer.start")(function* (method: MpvInstallMethod) {
-      if (isActive((yield* SubscriptionRef.get(progress)).state)) return yield* new Busy({ operation: "install", message: "Another installation is running." });
+      if (isActive((yield* SubscriptionRef.get(progress)).state)) return yield* failure("Another installation is running.");
       const candidate = yield* binaries.candidate(method);
       if (!candidate?.managerPath || !candidate.option.automatic) return yield* failure("Run the suggested installation command in a terminal.");
       const id = crypto.randomUUID();
@@ -73,7 +73,7 @@ export const InstallerLive = Layer.effect(
       yield* runPackageManager(id, candidate.managerPath, candidate.args, spawned).pipe(
         Effect.matchEffect({
           onSuccess: () => setState({ _tag: "Succeeded", jobId: id, method }),
-          onFailure: (error) => setState({ _tag: "Failed", jobId: id, method, issue: toIssue(error) }),
+          onFailure: (error) => setState({ _tag: "Failed", jobId: id, method, message: error.message }),
         }),
         Effect.onInterrupt(() => setState({ _tag: "Cancelled", jobId: id, method })),
         Effect.ensuring(Deferred.succeed(spawned, undefined)),

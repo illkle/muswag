@@ -17,17 +17,25 @@ export type ApplyQueueInput = {
 export type PlayerRuntimeState = {
   epoch?: string;
   sequence: number;
+  /** The occurrence the player holds, whatever it is doing with it: loading it, playing it, or failed at it. */
   current: PlaybackItem | null;
   status: PlayerStatus;
   positionSeconds: number;
   paused: boolean;
+  /**
+   * Playback failed because `current` could not be played: the player tried it a second time, or it
+   * never finished loading. Not set when mpv, its binary or the credentials are the problem.
+   */
+  trackFailed: boolean;
 };
 
 /** What the queue manager needs from the player. */
 export interface QueuePlayerPort {
+  /** With a selection, the player holds that occurrence from the moment it takes the command, also when it then fails to start it. */
   applyQueue(input: ApplyQueueInput): Promise<void>;
   restartCurrent(): Promise<void>;
   stop(): Promise<void>;
+  /** The state as it is now, which is at least as late as any command that has settled. */
   getState(): Promise<PlayerRuntimeState>;
   subscribe(listener: (state: PlayerRuntimeState) => void): () => void;
 }
@@ -42,5 +50,6 @@ export function runtimeView(snapshot: PlayerSnapshot): PlayerRuntimeState {
     status: playerStatus(playback),
     positionSeconds: media?.positionSeconds ?? 0,
     paused: playback._tag === "Paused" || (playback._tag === "Loading" && playback.targetPaused),
+    trackFailed: playback._tag === "Failed" && playback.reason === "track",
   };
 }

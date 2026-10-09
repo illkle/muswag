@@ -3,10 +3,8 @@ import type { Song } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Effect, Exit, Schema } from "effect";
 import type { IpcMain } from "electron";
-import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
 
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
-import type { MuswagMainIpc } from "#shared/ipc";
 import type { QueueManager } from "../queue/queue-manager";
 
 type Handlers = { [K in AppCommandName]: (...args: (typeof AppCommandArgs)[K]["Type"]) => Effect.Effect<AppCommandResults[K], unknown> };
@@ -16,8 +14,7 @@ type Handlers = { [K in AppCommandName]: (...args: (typeof AppCommandArgs)[K]["T
  * `AppCommandArgs`, runs it, and replies with its result or failure as data.
  */
 export const serveAppCommands = (options: {
-  readonly ipcMain: IpcMain;
-  readonly mainIpc: IpcListener<MuswagMainIpc>;
+  readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
   readonly queue: QueueManager;
   readonly songsByIds: (ids: readonly string[]) => Promise<Song[]>;
 }) =>
@@ -37,18 +34,15 @@ export const serveAppCommands = (options: {
       return ids.flatMap((id) => byId.get(id) ?? []);
     };
 
+    // Ending a session must work even when playback cannot be stopped cleanly.
+    const clearQueue = Effect.tryPromise(() => queue.clear()).pipe(Effect.catch((cause) => Effect.logWarning("Failed to stop playback and clear the queue", cause)));
+
     const handlers: Handlers = {
-      "session:login": (credentials) => session.login(credentials),
-      // Logging out must work even when playback cannot be stopped cleanly.
-      "session:logout": () =>
-        Effect.tryPromise(() => queue.clear()).pipe(
-          Effect.catch((cause) => Effect.logWarning("Failed to stop playback before logout", cause)),
-          Effect.andThen(session.logout),
-        ),
+      // Logging in as someone else deletes what the database holds of the account before; the queue goes with it.
+      "session:login": (credentials) => session.login(credentials, { beforeDataIsDeleted: clearQueue }),
+      "session:logout": () => clearQueue.pipe(Effect.andThen(session.logout)),
       "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
       "library:refreshStats": (target) => session.use((active) => active.library.refreshStats(target)),
-      "covers:ensure": (target) => session.use((active) => active.covers.ensure(target)),
-      "covers:repair": (target, failedPath) => session.use((active) => active.covers.repair(target, failedPath)),
       "playlists:create": (input) => written(commands.create(input)),
       "playlists:rename": (id, name) => written(commands.rename(id, name)),
       "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),
@@ -58,6 +52,8 @@ export const serveAppCommands = (options: {
       "playlists:delete": (id) => written(commands.delete(id)),
       "playlists:sync": () => session.use((active) => active.playlists.sync),
       "queue:playSource": (ref, key) => Effect.promise(() => queue.playSource({ ...ref }, key)),
+      "queue:select": (key) => Effect.promise(() => queue.select(key)),
+      "queue:play": () => Effect.promise(() => queue.play()),
       "queue:enqueue": (songIds) => Effect.promise(() => songsInOrder(songIds).then((tracks) => queue.enqueue(tracks))),
       "queue:removeQueued": (key) => Effect.promise(() => queue.removeQueued(key)),
       "queue:next": () => Effect.promise(() => queue.next()),
@@ -83,8 +79,8 @@ export const serveAppCommands = (options: {
 
     yield* Effect.acquireRelease(
       Effect.sync(() => {
-        options.mainIpc.handle("app:command", (_event, name, args) => {
-          if (!Object.hasOwn(AppCommandArgs, name)) return { ok: false, error: { tag: "InvalidCommand", message: `Unknown command ${name}` } };
+        options.ipcMain.handle("app:command", (_event, name: unknown, args: unknown) => {
+          if (typeof name !== "string" || !Object.hasOwn(AppCommandArgs, name)) return { ok: false, error: { tag: "InvalidCommand", message: `Unknown command ${String(name)}` } };
           return run(execute(name as AppCommandName, args));
         });
       }),

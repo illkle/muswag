@@ -4,12 +4,14 @@ import { json } from "node:stream/consumers";
 import type { WebContentsLike } from "@muswag/tanstack-db-mirror/electron/main";
 import type { IpcMain } from "electron";
 
+import type { ServeCover } from "./cover-protocol";
+
 type Handler = (event: { readonly sender: WebContentsLike }, ...args: Array<unknown>) => unknown;
 
 export interface DevBridgeOptions {
   readonly ipcMain: IpcMain;
   readonly port: number;
-  readonly serveCover: (query: URLSearchParams) => Promise<Response>;
+  readonly serveCover: ServeCover;
 }
 
 /**
@@ -17,9 +19,12 @@ export interface DevBridgeOptions {
  * `renderer/data/dev-bridge.ts` is the other end. To the handlers, every browser tab is a renderer of its own.
  *
  * Whatever reaches the port can run every command, so it listens on loopback only; the Vite dev server
- * proxies `/__bridge` to it. Requests are separate HTTP calls, so unlike IPC they may arrive out of order.
+ * proxies `/__bridge` to it, naming the bridge as the host. A request that names another host is a page
+ * that had a name of its own resolve to this machine, and is refused.
+ * Requests are separate HTTP calls, so unlike IPC they may arrive out of order.
+ * Returns the function that stops it.
  */
-export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions): void {
+export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions): () => void {
   // `ipcMain` does not give its handlers back, so the bridge keeps the ones registered from here on.
   const handlers = new Map<string, Handler>();
   const handle = ipcMain.handle.bind(ipcMain);
@@ -65,13 +70,28 @@ export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions):
     return handler({ sender }, ...args);
   };
 
+  const host = `127.0.0.1:${port}`;
+
   const route = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    if (request.headers.host !== host) {
+      response.writeHead(403).end();
+      return;
+    }
     const url = new URL(request.url ?? "/", "http://localhost");
     const sendJson = (body: unknown) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 
+    const cover = request.method === "GET" && /^\/__bridge\/cover\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+    if (cover) {
+      const served = await serveCover({ type: cover[1]!, id: decodeURIComponent(cover[2]!), thumbnail: url.searchParams.has("thumbnail") });
+      const contentType = served.headers.get("content-type");
+      response.writeHead(served.status, contentType ? { "content-type": contentType } : {}).end(Buffer.from(await served.arrayBuffer()));
+      return;
+    }
+
     switch (`${request.method} ${url.pathname}`) {
       case "GET /__bridge/ping":
-        response.end();
+        // No content: the dev server answers this path with its page when the bridge is not behind it.
+        response.writeHead(204).end();
         return;
       case "GET /__bridge/events":
         openEvents(url.searchParams.get("client") ?? "", response);
@@ -86,17 +106,11 @@ export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions):
           ),
         );
         return;
-      case "GET /__bridge/cover": {
-        const cover = await serveCover(url.searchParams);
-        const contentType = cover.headers.get("content-type");
-        response.writeHead(cover.status, contentType ? { "content-type": contentType } : {}).end(Buffer.from(await cover.arrayBuffer()));
-        return;
-      }
     }
     response.writeHead(404).end();
   };
 
-  createServer((request, response) => {
+  const server = createServer((request, response) => {
     route(request, response).catch((cause: unknown) => {
       console.error("[dev-bridge] request failed", request.url, cause);
       if (!response.headersSent) response.writeHead(500);
@@ -105,4 +119,5 @@ export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions):
   })
     .on("error", (cause) => console.error("[dev-bridge] server failed", cause))
     .listen(port, "127.0.0.1", () => console.log(`[dev-bridge] listening on 127.0.0.1:${port}`));
+  return () => void server.close();
 }

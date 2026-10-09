@@ -93,13 +93,13 @@ const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps
   return candidates;
 });
 
+/** Flatpak is not offered: the app could not reach the socket of an mpv installed that way (see `getWellKnownMpvPaths`). */
 const detectLinux = Effect.fn("detectLinux")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
   const managers: Array<{ args: string[]; command: string; method: MpvInstallMethod; name: string; paths: string[] }> = [
     { args: ["install", "mpv"], command: "sudo apt install mpv", method: "apt", name: "apt", paths: ["/usr/bin/apt"] },
     { args: ["install", "mpv"], command: "sudo dnf install mpv", method: "dnf", name: "dnf", paths: ["/usr/bin/dnf"] },
     { args: ["-S", "mpv"], command: "sudo pacman -S mpv", method: "pacman", name: "pacman", paths: ["/usr/bin/pacman"] },
     { args: ["install", "mpv"], command: "sudo zypper install mpv", method: "zypper", name: "zypper", paths: ["/usr/bin/zypper"] },
-    { args: ["install", "--user", "flathub", "io.mpv.Mpv"], command: "flatpak install --user flathub io.mpv.Mpv", method: "flatpak", name: "flatpak", paths: ["/usr/bin/flatpak"] },
   ];
   const candidates: MpvInstallCandidate[] = [];
   for (const manager of managers) {

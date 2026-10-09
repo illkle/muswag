@@ -1,9 +1,9 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
-import { nativeImage, net, protocol } from "electron";
+import { coverMediaType, type CoverOwner } from "@muswag/backend";
+import { nativeImage, protocol } from "electron";
 
-import { COVER_DIRECTORY, resolveInside } from "./app/platform";
 import { makeThumbnails, THUMBNAIL_SIZE, type ResizeCover } from "./cover-thumbnails";
 
 const SCHEME = "muswag-cover";
@@ -40,39 +40,52 @@ const resizeCover: ResizeCover = (cover) => {
   return isPng(cover) ? resized.toPNG() : resized.toJPEG(90);
 };
 
+/** What a cover address names: `<type>/<id>`, and whether the scaled-down copy is asked for. */
+export interface CoverRequest {
+  readonly type: string;
+  readonly id: string;
+  readonly thumbnail: boolean;
+}
+
+export type ServeCover = (request: CoverRequest) => Promise<Response>;
+
+export interface CoverProtocolOptions {
+  readonly userDataPath: string;
+  /**
+   * The file of an album's or artist's cover, relative to `userDataPath`, downloaded first when it is
+   * not there. Null when there is no cover; rejects when it cannot be had.
+   */
+  readonly coverPath: (owner: CoverOwner) => Promise<string | null>;
+}
+
 /**
- * Serves cached cover files. Their paths are relative to `userDataPath` and may not leave its cover
- * directory: the library database, with the stored credentials, is next to it.
- * With `thumbnail` in the query, the cover is served scaled down to `THUMBNAIL_SIZE`.
- * Returns the function that answers a cover request's query.
+ * Serves covers by what they are of: `muswag-cover://album/<id>` and `muswag-cover://artist/<id>`,
+ * with `thumbnail` in the query for a copy scaled down to `THUMBNAIL_SIZE`. Renderers name no file.
+ * The rest of the query is theirs: they put the cover's id there, so a changed cover has a new address.
+ * Returns the function that answers a request, for the dev bridge to serve the same to a browser.
  */
-export function handleCoverProtocol(userDataPath: string): (query: URLSearchParams) => Promise<Response> {
+export function handleCoverProtocol({ userDataPath, coverPath }: CoverProtocolOptions): ServeCover {
   const thumbnailOf = makeThumbnails(resizeCover);
+  const notFound = () => new Response(null, { status: 404 });
 
-  const serveCover = async (query: URLSearchParams): Promise<Response> => {
-    const requestedPath = query.get("path");
-    if (!requestedPath) {
-      return new Response("Missing path", { status: 400 });
-    }
-
-    let absolutePath: string;
+  const serveCover: ServeCover = async ({ type, id, thumbnail }) => {
+    if (type !== "album" && type !== "artist") return notFound();
     try {
-      absolutePath = resolveInside(join(userDataPath, COVER_DIRECTORY), resolveInside(userDataPath, requestedPath));
+      const relativePath = await coverPath({ type, id });
+      if (!relativePath) return notFound();
+      const absolutePath = join(userDataPath, relativePath);
+      // A cover that cannot be scaled down is served as it is.
+      const image = (thumbnail ? await thumbnailOf(absolutePath).catch(() => null) : null) ?? (await readFile(absolutePath));
+      return new Response(image, { headers: { "content-type": coverMediaType(image) ?? "application/octet-stream" } });
     } catch {
-      return new Response("Invalid path", { status: 400 });
+      // No session, a download that failed or a file that went: the renderer shows its placeholder for each.
+      return notFound();
     }
-
-    if (query.has("thumbnail")) {
-      // A cover that cannot be read falls through, so the request fails the same way as without a thumbnail.
-      const thumbnail = await thumbnailOf(absolutePath).catch(() => null);
-      if (thumbnail) {
-        return new Response(thumbnail, { headers: { "content-type": isPng(thumbnail) ? "image/png" : "image/jpeg" } });
-      }
-    }
-
-    return net.fetch(pathToFileURL(absolutePath).toString());
   };
 
-  protocol.handle(SCHEME, (request) => serveCover(new URL(request.url).searchParams));
+  protocol.handle(SCHEME, (request) => {
+    const url = new URL(request.url);
+    return serveCover({ type: url.hostname, id: decodeURIComponent(url.pathname.slice(1)), thumbnail: url.searchParams.has("thumbnail") });
+  });
   return serveCover;
 }

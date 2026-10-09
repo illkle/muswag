@@ -7,7 +7,7 @@ import { createQueueSources, type SourceDb } from "./source";
 
 const playerCommand = (player: PlayerHandle, command: PlayerCommand) =>
   player.execute(command).then((result) => {
-    if (!result.ok) throw new Error(result.issue.message);
+    if (!result.ok) throw new Error(result.message);
   });
 
 /** The playback queue, driving `player` with sources read from `library` and stored in `tables`. */

@@ -1,5 +1,5 @@
 import { Cause, Data } from "effect";
-import type { IssueCode, PlayerIssue } from "#shared/commands/player";
+import type { PlayerError } from "#shared/commands/player";
 
 /** A failure talking to mpv. `uncertain` means mpv's state is unknown afterwards (e.g. a timeout mid-mutation). */
 export class EngineError extends Data.TaggedError("EngineError")<{
@@ -11,67 +11,36 @@ export class EngineError extends Data.TaggedError("EngineError")<{
 export class SettingsError extends Data.TaggedError("SettingsError")<{ readonly operation: "load" | "save" }> {}
 
 type Failure = { readonly operation: string; readonly message: string };
-/** Malformed input, or a request that makes no sense in the current state. */
+/** A request that makes no sense in the current state. */
 export class InvalidCommand extends Data.TaggedError("InvalidCommand")<Failure> {}
 export class NotAuthenticated extends Data.TaggedError("NotAuthenticated")<Failure> {}
 export class BinaryUnavailable extends Data.TaggedError("BinaryUnavailable")<Failure> {}
-/** Cancelled by a later Stop or logout. */
-export class CommandRejected extends Data.TaggedError("CommandRejected")<Failure> {}
+/** The current track could not be played: mpv gave up on it twice, or it never finished loading. */
+export class PlaybackFailed extends Data.TaggedError("PlaybackFailed")<Failure> {}
 /** mpv's playlist no longer matches what the player believes it contains. */
 export class QueueOutOfSync extends Data.TaggedError("QueueOutOfSync")<Failure> {}
 export class InstallFailed extends Data.TaggedError("InstallFailed")<Failure> {}
 export class SettingsFailed extends Data.TaggedError("SettingsFailed")<Failure> {}
-export class Busy extends Data.TaggedError("Busy")<Failure> {}
-export class ShuttingDown extends Data.TaggedError("ShuttingDown")<Failure> {}
 export class InternalError extends Data.TaggedError("InternalError")<Failure> {}
-export type PlayerError = InvalidCommand | NotAuthenticated | BinaryUnavailable | CommandRejected | QueueOutOfSync | InstallFailed | SettingsFailed | Busy | ShuttingDown | InternalError;
-const playerErrors = [InvalidCommand, NotAuthenticated, BinaryUnavailable, CommandRejected, QueueOutOfSync, InstallFailed, SettingsFailed, Busy, ShuttingDown, InternalError];
-export const isPlayerError = (value: unknown): value is PlayerError => playerErrors.some((type) => value instanceof type);
+export type PlayerFailure = InvalidCommand | NotAuthenticated | BinaryUnavailable | PlaybackFailed | QueueOutOfSync | InstallFailed | SettingsFailed | InternalError;
+const playerFailures = [InvalidCommand, NotAuthenticated, BinaryUnavailable, PlaybackFailed, QueueOutOfSync, InstallFailed, SettingsFailed, InternalError];
+export const isPlayerFailure = (value: unknown): value is PlayerFailure => playerFailures.some((type) => value instanceof type);
 
-/** How a player command fails publicly: with the issue it produced, which the snapshot records as well. */
-export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly issue: PlayerIssue }> {}
+/** How a command fails for whoever sent it. The player's state says the same to the user. */
+export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly message: string }> {}
 
-const retryable = ["retry", "dismiss"] as const;
-const actionsByCode: Record<IssueCode, PlayerIssue["actions"]> = {
-  NotAuthenticated: ["login", "dismiss"],
-  BinaryUnavailable: ["configureMpv", "refreshMpv", "dismiss"],
-  SettingsFailed: ["dismiss"],
-  InvalidCommand: ["dismiss"],
-  ShuttingDown: ["dismiss"],
-  InternalError: ["dismiss"],
-  EngineUnavailable: retryable,
-  CommandRejected: retryable,
-  PlaybackFailed: retryable,
-  QueueOutOfSync: retryable,
-  InstallFailed: retryable,
-  Busy: retryable,
-};
-export const issue = (code: IssueCode, operation: string, message: string, occurrenceKey: string | null = null): PlayerIssue => ({
-  id: crypto.randomUUID(),
-  code,
-  operation,
-  message,
-  occurrenceKey,
-  actions: actionsByCode[code],
-});
-
-/** Converts a failure into the issue shown to the user. Engine failures are attributed to `occurrenceKey`. */
-export const toIssue = (error: PlayerError | EngineError, operation: string = error.operation, occurrenceKey: string | null = null): PlayerIssue => {
-  if (error._tag !== "EngineError") return issue(error._tag, error.operation, error.message);
-  return issue(
-    error.reason === "rejected" && !error.uncertain ? "CommandRejected" : "EngineUnavailable",
-    operation,
-    error.reason === "timeout" ? "The playback engine did not respond in time." : "The playback engine could not complete the operation.",
-    occurrenceKey,
-  );
+/** A failure as the user is told about it. */
+export const describeFailure = (error: PlayerFailure | EngineError): PlayerError => {
+  if (error._tag === "EngineError")
+    return { message: error.reason === "timeout" ? "The playback engine did not respond in time." : "The playback engine could not complete the operation.", fix: null };
+  return { message: error.message, fix: error._tag === "BinaryUnavailable" ? "mpv" : error._tag === "NotAuthenticated" ? "login" : null };
 };
 
 // Never log native Error objects: they can contain signed URLs, credentials or mpv arguments.
 export const safeFailure = (error: unknown): Record<string, string> => {
   if (error instanceof EngineError) return { tag: error._tag, reason: error.reason, operation: error.operation };
   if (error instanceof SettingsError) return { tag: error._tag, operation: error.operation };
-  if (error instanceof CommandFailed) return { tag: error._tag, code: error.issue.code, operation: error.issue.operation };
-  if (isPlayerError(error)) return { tag: error._tag, operation: error.operation };
+  if (isPlayerFailure(error)) return { tag: error._tag, operation: error.operation };
   if (error instanceof Error)
     return {
       tag: "Defect",

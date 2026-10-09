@@ -42,15 +42,36 @@ describe("makeThumbnails", () => {
     expect(resize).toHaveBeenCalledTimes(1);
   });
 
+  it("resizes one cover at a time and lets the event loop run after each", async () => {
+    const coverPaths = await Promise.all(
+      ["a", "b", "c"].map(async (name) => {
+        const path = join(directory, name);
+        await writeFile(path, name);
+        return path;
+      }),
+    );
+    const events: string[] = [];
+    // The timer stands for the IPC and player events that wait for the loop.
+    const resize: ResizeCover = (cover) => {
+      events.push("resize");
+      setTimeout(() => events.push("turn"), 0);
+      return cover;
+    };
+
+    await Promise.all(coverPaths.map(makeThumbnails(resize)));
+
+    expect(events.slice(0, 5)).toEqual(["resize", "turn", "resize", "turn", "resize"]);
+  });
+
   it("makes the thumbnail again when the cover was replaced", async () => {
     const thumbnailOf = makeThumbnails(shrink());
     await thumbnailOf(coverPath);
 
-    await writeFile(coverPath, "repaired");
+    await writeFile(coverPath, "replaced");
     const later = new Date(Date.now() + 60_000);
     await utimes(coverPath, later, later);
 
-    expect((await thumbnailOf(coverPath))?.toString()).toBe("small repaired");
+    expect((await thumbnailOf(coverPath))?.toString()).toBe("small replaced");
   });
 
   it("gives null and decodes only once for a cover that needs no thumbnail", async () => {

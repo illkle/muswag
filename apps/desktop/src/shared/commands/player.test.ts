@@ -1,28 +1,43 @@
-import { Redacted, Schema } from "effect";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { initialSnapshot, PlayerCommand, PlayerCredentials, PlayerSnapshot } from "./player";
+import { PlayerRow, playerRow } from "#shared/state/player";
+import { initialSnapshot, RendererCommand } from "./player";
 
-const decode = Schema.decodeUnknownExit(PlayerCommand);
-const track = (id: string) => ({ id, title: id, isDir: false, album: "kept" });
+const decode = Schema.decodeUnknownExit(RendererCommand);
+const item = { key: "a", track: { id: "1", title: "A", isDir: false, album: "kept" } };
 
-describe("player command contract", () => {
-  it("rejects duplicate occurrences, invalid tracks and selections outside the queue", () => {
-    const item = { key: "a", track: track("1") };
-    expect(decode({ _tag: "ApplyQueue", items: [item, item], select: null })._tag).toBe("Failure");
-    expect(decode({ _tag: "ApplyQueue", items: [{ key: "a", track: { id: "" } }], select: null })._tag).toBe("Failure");
-    expect(decode({ _tag: "ApplyQueue", items: [item], select: { key: "b", play: true, positionSeconds: 0 } })._tag).toBe("Failure");
+describe("player commands from a renderer", () => {
+  it("are the transport and mpv controls", () => {
+    for (const command of [
+      { _tag: "Play" },
+      { _tag: "Seek", seconds: 12 },
+      { _tag: "SetVolume", percent: 40 },
+      { _tag: "ClearBinaryPath" },
+      { _tag: "DismissError" },
+      { _tag: "StartInstall", method: "brew" },
+    ])
+      expect(decode(command)).toMatchObject({ _tag: "Success", value: command });
+    expect(decode({ _tag: "Seek", seconds: -1 })._tag).toBe("Failure");
+    expect(decode({ _tag: "SetVolume", percent: 140 })._tag).toBe("Failure");
   });
-  it("preserves the full track payload", () => {
-    const decoded = decode({ _tag: "ApplyQueue", items: [{ key: "a", track: track("1") }], select: { key: "a", play: true, positionSeconds: 0 } });
-    expect(decoded).toMatchObject({ _tag: "Success", value: { items: [{ track: { album: "kept" } }] } });
+  it("cannot change the queue, stop playback or name a binary to run: those are main's", () => {
+    expect(decode({ _tag: "ApplyQueue", items: [item], select: { key: "a", play: true, positionSeconds: 0 } })._tag).toBe("Failure");
+    expect(decode({ _tag: "Stop" })._tag).toBe("Failure");
+    expect(decode({ _tag: "Restart" })._tag).toBe("Failure");
+    expect(decode({ _tag: "SetBinaryPath", path: "/tmp/anything" })._tag).toBe("Failure");
   });
-  it("redacts the password as soon as credentials are decoded", () => {
-    const credentials = Schema.decodeSync(PlayerCredentials)({ url: "https://music.test", username: "me", password: "hunter2" });
-    expect(Redacted.value(credentials.password)).toBe("hunter2");
-    expect(JSON.stringify(credentials)).not.toContain("hunter2");
-  });
-  it("accepts the snapshots main produces and rejects malformed ones", () => {
-    expect(Schema.decodeExit(PlayerSnapshot)(initialSnapshot("epoch"))._tag).toBe("Success");
-    expect(Schema.decodeUnknownExit(PlayerSnapshot)({ ...initialSnapshot("epoch"), playback: { _tag: "Playing" } })._tag).toBe("Failure");
+});
+
+describe("the player row renderers read", () => {
+  const encode = Schema.encodeUnknownExit(PlayerRow);
+  it("is what main makes of a snapshot, with the full track payload", () => {
+    expect(encode(playerRow(initialSnapshot("epoch")))).toMatchObject({ _tag: "Success", value: { status: "idle", item: null, error: null } });
+    const failed = playerRow({
+      ...initialSnapshot("epoch"),
+      playback: { _tag: "Failed", media: { item: item as never, positionSeconds: 3, durationSeconds: null }, reason: "track" },
+      error: { message: "The track did not finish loading.", fix: "retry" },
+    });
+    expect(encode(failed)).toMatchObject({ _tag: "Success", value: { status: "error", item: { track: { album: "kept" } }, error: { fix: "retry" } } });
+    expect(encode({ ...failed, item: { key: "a", track: { id: "" } } })._tag).toBe("Failure");
   });
 });

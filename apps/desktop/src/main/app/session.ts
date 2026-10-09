@@ -16,22 +16,14 @@ const followSession = <A>(session: Session, loggedOut: A, select: (session: Auth
     ),
   );
 
-/**
- * Sends the session's credentials to the player. Every credentials change preempts the player's
- * in-flight operation, so only real changes are sent.
- */
-export const makePlayerCredentialsSync = (session: Session, player: PlayerHandle) => {
-  let pushed: string | undefined;
-  return session.credentials.pipe(
-    Effect.flatMap((credentials) => {
-      const key = JSON.stringify(credentials);
-      if (key === pushed) return Effect.void;
-      pushed = key;
-      return Effect.promise(() => player.setCredentials(credentials ? { url: credentials.url, username: credentials.username, password: Redacted.make(credentials.password) } : null));
-    }),
+/** Sends the session's credentials to the player, which signs stream URLs with them. The player ignores the ones it already has. */
+export const makePlayerCredentialsSync = (session: Session, player: PlayerHandle) =>
+  session.credentials.pipe(
+    Effect.flatMap((credentials) =>
+      Effect.promise(() => player.setCredentials(credentials ? { url: credentials.url, username: credentials.username, password: Redacted.make(credentials.password) } : null)),
+    ),
     Effect.asVoid,
   );
-};
 
 /**
  * Publishes the session and its sync status to `state`, which must mirror `SESSION_TABLES`, for as long

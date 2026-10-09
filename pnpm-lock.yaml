@@ -24,9 +24,6 @@ catalogs:
     '@effect/vitest':
       specifier: 4.0.0
       version: 4.0.0
-    '@electron-toolkit/preload':
-      specifier: ^3.0.2
-      version: 3.0.2
     '@electron-toolkit/typed-ipc':
       specifier: ^1.0.2
       version: 1.0.2
@@ -198,9 +195,6 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0(effect@4.0.0)(vitest@5.0.2)
-      '@electron-toolkit/preload':
-        specifier: 'catalog:'
-        version: 3.0.2(electron@44.5.0(supports-color@7.2.0))
       '@electron-toolkit/typed-ipc':
         specifier: 'catalog:'
         version: 1.0.2(@electron-toolkit/preload@3.0.2(electron@44.5.0(supports-color@7.2.0)))(electron@44.5.0(supports-color@7.2.0))
@@ -4857,8 +4851,8 @@ packages:
       vite-plus:
         optional: true
 
-  oxlint-plugin-react-doctor@0.9.14:
-    resolution: {integrity: sha512-YGdwFmQXGQulT63SnVD9JI1hV2EwGnZHrgSlUMQaOkvnhYA200QwDeb7DfVT8UBt34lBvbkjtz8VRFJugHjsRQ==}
+  oxlint-plugin-react-doctor@0.9.17:
+    resolution: {integrity: sha512-j6tdFoJbLztISYNlw7LMT+6naqhVsXTNn7drhoGRIqf0x2mCSD2Ur71hK0E/VrLens355finI6j+sMqHxHpEfA==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint-tsgolint@7.0.2003:
@@ -5122,8 +5116,8 @@ packages:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
 
-  react-doctor@0.9.14:
-    resolution: {integrity: sha512-JzOwAY/hoSxHa4Siyqgfxr/KCNak0SB9pSTseFVStFHAnWS+XxR6RsWU6Q5Ho+J5Jmyb9LZRXc6ZK5jt3cfcQQ==}
+  react-doctor@0.9.17:
+    resolution: {integrity: sha512-YCsjYk6MocO/oBhVxCcKvPotFxEOf/WJep/oF7jrpyVUBVKDKdpt7jVwTxrJrFE8uALMmVTljzXNTIjoL3talg==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -9962,7 +9956,7 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.71.0
       '@oxfmt/binding-win32-x64-msvc': 0.71.0
 
-  oxlint-plugin-react-doctor@0.9.14:
+  oxlint-plugin-react-doctor@0.9.17:
     dependencies:
       '@shaderfrog/glsl-parser': 7.0.1
       '@typescript-eslint/types': 8.71.0
@@ -10236,7 +10230,7 @@ snapshots:
       iconv-lite: 0.7.3
       unpipe: 1.0.0
 
-  react-doctor@0.9.14(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(oxlint-tsgolint@7.0.2003)(react@19.3.0)(supports-color@7.2.0):
+  react-doctor@0.9.17(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(oxlint-tsgolint@7.0.2003)(react@19.3.0)(supports-color@7.2.0):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@sentry/node': 10.75.3(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@7.2.0)
@@ -10251,7 +10245,7 @@ snapshots:
       oxc-parser: 0.148.0
       oxc-resolver: 11.24.2
       oxlint: 1.81.0(oxlint-tsgolint@7.0.2003)
-      oxlint-plugin-react-doctor: 0.9.14
+      oxlint-plugin-react-doctor: 0.9.17
       playwright-core: 1.63.0
       prompts: 2.4.2
       typescript: 5.9.3
@@ -10292,7 +10286,7 @@ snapshots:
       preact: 10.29.8
       prompts: 2.4.2
       react: 19.3.0
-      react-doctor: 0.9.14(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(oxlint-tsgolint@7.0.2003)(react@19.3.0)(supports-color@7.2.0)
+      react-doctor: 0.9.17(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(oxlint-tsgolint@7.0.2003)(react@19.3.0)(supports-color@7.2.0)
       react-dom: 19.3.0(react@19.3.0)
       react-grab: 0.2.0(react@19.3.0)
     optionalDependencies:

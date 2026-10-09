@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { BrowserWindow, shell } from "electron";
+import { BrowserWindow, nativeTheme, shell } from "electron";
 import { is } from "@electron-toolkit/utils";
 
 export function createWindow(): void {
@@ -10,6 +10,8 @@ export function createWindow(): void {
     minHeight: 600,
     minWidth: 800,
     show: false,
+    // What is behind the page until it has painted: `--background` of the theme the OS asks for.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b0b" : "#ffffff",
     autoHideMenuBar: true,
     ...(process.platform === "darwin"
       ? {
@@ -21,7 +23,9 @@ export function createWindow(): void {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      focusOnNavigation: process.env.NODE_ENV !== "development",
+      // The preload is written for the sandbox: it reaches nothing but `electron`.
+      sandbox: true,
+      focusOnNavigation: !is.dev,
     },
   });
 

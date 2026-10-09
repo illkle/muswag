@@ -35,6 +35,14 @@ const MPV_ARGS = [
   "--ytdl=no",
   "--demuxer-lavf-o-add=fflags=+fastseek",
 ];
+/**
+ * On POSIX mpv is also given one end of a socket pair, as an IPC client it never hears from. mpv quits
+ * when that connection closes, which the system does when the app's process ends, however it ends:
+ * without it, an mpv whose app crashed would play on with nothing to stop it. mpv has no such option on
+ * Windows.
+ */
+const LIFELINE_FD = 3;
+const hasLifeline = process.platform !== "win32";
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 /** How often to look for the socket mpv creates once it has started. */
 const CONNECT_INTERVAL = "10 millis";
@@ -48,19 +56,23 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
       return {
         open: (binaryPath, ipcPath) =>
           Effect.gen(function* () {
-            const lines = yield* Queue.bounded<string, EngineError>(256);
+            // Unbounded: after the main thread stalls, everything mpv said meanwhile arrives at once.
+            const lines = yield* Queue.unbounded<string, EngineError>();
             yield* Effect.addFinalizer(() => Queue.shutdown(lines));
             if (process.platform !== "win32") yield* Effect.addFinalizer(() => fs.remove(ipcPath, { force: true }).pipe(Effect.ignore));
             const child = yield* spawner
               .spawn(
-                ChildProcess.make(binaryPath, [...MPV_ARGS, ...extraArgs, `--input-ipc-server=${ipcPath}`], {
+                ChildProcess.make(binaryPath, [...MPV_ARGS, ...extraArgs, `--input-ipc-server=${ipcPath}`, ...(hasLifeline ? [`--input-ipc-client=fd://${LIFELINE_FD}`] : [])], {
                   stdin: "ignore",
                   stdout: "ignore",
                   stderr: "ignore",
                   forceKillAfter: "1 second",
+                  ...(hasLifeline ? { additionalFds: { [`fd${LIFELINE_FD}`]: { type: "output" } } } : {}),
                 }),
               )
               .pipe(Effect.mapError(() => failure("spawn")));
+            // mpv reports its events to the lifeline as to any client; read away, they cannot fill it up.
+            if (hasLifeline) yield* child.getOutputFd(LIFELINE_FD).pipe(Stream.runDrain, Effect.ignore, Effect.forkScoped);
             const opened = yield* Deferred.make<void, EngineError>();
             const failed = yield* Deferred.make<never, EngineError>();
             const fail = (error: EngineError) =>
@@ -88,7 +100,7 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
                   while ((end = buffer.indexOf("\n")) >= 0) {
                     const line = buffer.slice(0, end).replace(/\r$/, "");
                     buffer = buffer.slice(end + 1);
-                    if (!Queue.offerUnsafe(lines, line)) return yield* Effect.fail(failure("protocol"));
+                    Queue.offerUnsafe(lines, line);
                   }
                 }
               }
