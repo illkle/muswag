@@ -1,7 +1,7 @@
 import type { AuthenticatedSession, SessionManager } from "@muswag/backend";
-import { IDLE_LIBRARY_SYNC, IDLE_PLAYLIST_SYNC, type AuthSnapshot, type PlaylistSyncStatus } from "@muswag/model";
+import { IDLE_LIBRARY_SYNC, IDLE_PLAYLIST_SYNC, type AuthSnapshot } from "@muswag/model";
 import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
-import { Effect, Queue, Redacted, Stream } from "effect";
+import { Effect, Redacted, Stream } from "effect";
 
 import { auth, librarySync, playlistSync } from "#shared/state/session";
 import type { PlayerHandle } from "../player/ipc";
@@ -14,17 +14,6 @@ const followSession = <A>(session: Session, loggedOut: A, select: (session: Auth
     Stream.switchMap((snapshot: AuthSnapshot) =>
       snapshot._tag === "LoggedIn" ? Stream.unwrap(session.use((active) => Effect.succeed(select(active)))).pipe(Stream.catch(() => Stream.make(loggedOut))) : Stream.make(loggedOut),
     ),
-  );
-
-const playlistStatusStream = (session: AuthenticatedSession): Stream.Stream<PlaylistSyncStatus> =>
-  Stream.callback<PlaylistSyncStatus>((queue) =>
-    Effect.gen(function* () {
-      Queue.offerUnsafe(queue, yield* session.playlists.getStatus);
-      const unsubscribe = yield* session.playlists.subscribe((status) => {
-        Queue.offerUnsafe(queue, status);
-      });
-      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-    }),
   );
 
 /**
@@ -66,7 +55,7 @@ export const publishSession = (session: Session, state: MemoryMirrorService, onS
       Stream.runForEach((status) => state.upsert(librarySync, { id: "library_sync", value: status })),
       Effect.forkScoped,
     );
-    yield* followSession(session, IDLE_PLAYLIST_SYNC, playlistStatusStream).pipe(
+    yield* followSession(session, IDLE_PLAYLIST_SYNC, (active) => active.playlists.changes).pipe(
       Stream.runForEach((status) => state.upsert(playlistSync, { id: "playlist_sync", value: status })),
       Effect.forkScoped,
     );

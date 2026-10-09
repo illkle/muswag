@@ -34,7 +34,7 @@ export type LibrarySyncStatus = typeof LibrarySyncStatus.Type;
 export const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, error: null, lastSyncedAt: null };
 
 export const PlaylistSyncStatus = Schema.Struct({
-  state: Schema.Literals(["idle", "scheduled", "syncing", "paused", "error"]),
+  state: Schema.Literals(["idle", "scheduled", "syncing", "error"]),
   error: Schema.NullOr(Schema.String),
   lastSyncedAt: Schema.NullOr(Schema.String),
 });

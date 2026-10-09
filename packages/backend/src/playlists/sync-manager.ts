@@ -9,7 +9,7 @@ import {
   type RemotePlaylistMutation,
 } from "@muswag/model";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Queue, Stream } from "effect";
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Stream, SubscriptionRef } from "effect";
 
 import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
 import { Db, type Database, write } from "../db/database.js";
@@ -23,7 +23,8 @@ const DEFAULT_MAX_RETRY_MS = 5 * 60_000;
 const DEFAULT_FETCH_CONCURRENCY = 5;
 
 type PlaylistApi = Pick<SubsonicApiService, "getPlaylists" | "getPlaylist" | "createPlaylist" | "updatePlaylist" | "deletePlaylist">;
-type SyncRequest = { readonly full: boolean; readonly result?: Deferred.Deferred<PlaylistSyncStatus> };
+/** A pass to run after `delayMs`, and the `sync` callers waiting for its outcome. */
+type SyncRequest = { readonly full: boolean; readonly delayMs: number; readonly waiters: ReadonlyArray<Deferred.Deferred<PlaylistSyncStatus>> };
 
 export interface PlaylistSyncManagerOptions {
   debounceMs?: number;
@@ -36,13 +37,10 @@ export interface PlaylistSyncManagerOptions {
 }
 
 export interface PlaylistSyncManagerService {
-  readonly getStatus: Effect.Effect<PlaylistSyncStatus>;
-  readonly subscribe: (listener: (status: PlaylistSyncStatus) => void) => Effect.Effect<() => void>;
+  readonly status: Effect.Effect<PlaylistSyncStatus>;
+  readonly changes: Stream.Stream<PlaylistSyncStatus>;
   /** Queues a full pass. Failures are reflected in the returned status. */
   readonly sync: Effect.Effect<PlaylistSyncStatus>;
-  readonly pause: Effect.Effect<void>;
-  readonly resume: Effect.Effect<void>;
-  readonly cancel: Effect.Effect<void>;
 }
 
 export class PlaylistSyncManager extends Context.Service<PlaylistSyncManager, PlaylistSyncManagerService>()("@muswag/backend/PlaylistSyncManager") {}
@@ -115,7 +113,7 @@ function matchesSummary(base: PlaylistState, summary: { changed: string; songCou
 }
 
 /**
- * `reusable` is empty for full passes (startup, interval, manual sync), which self-heals anything the
+ * `reusable` is empty for full passes (startup, manual sync, retry), which self-heals anything the
  * `changed` timestamp missed — it has second granularity, so two edits inside one second can look equal.
  */
 function fetchRemotePlaylists(api: PlaylistApi, currentUsername: string, concurrency: number, reusable: ReadonlyMap<string, PlaylistState>) {
@@ -249,76 +247,28 @@ function executeRemoteMutation(db: Database, api: PlaylistApi, mutation: RemoteP
   });
 }
 
+/** One pass for both requests: full if either asked for that, after the wait the later one asked for. */
+const joinRequests = (earlier: SyncRequest, later: SyncRequest): SyncRequest => ({
+  full: earlier.full || later.full,
+  delayMs: later.delayMs,
+  waiters: [...earlier.waiters, ...later.waiters],
+});
+
 const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const api = yield* SubsonicAPI;
     const edits = yield* PlaylistEdits;
-    const scope = yield* Effect.scope;
     const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     const retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
     const maxRetryMs = options.maxRetryMs ?? DEFAULT_MAX_RETRY_MS;
     const fetchConcurrency = options.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY;
     const requests = yield* Queue.unbounded<SyncRequest>();
-    const waiters = new Set<Deferred.Deferred<PlaylistSyncStatus>>();
-    const listeners = new Set<(status: PlaylistSyncStatus) => void>();
-    let status: PlaylistSyncStatus = IDLE_PLAYLIST_SYNC;
-    let scheduled: Fiber.Fiber<void> | undefined;
-    let currentPass: Fiber.Fiber<boolean, unknown> | undefined;
-    let currentRequest: SyncRequest | undefined;
-    let interval: Fiber.Fiber<never> | undefined;
+    const status = yield* SubscriptionRef.make<PlaylistSyncStatus>(IDLE_PLAYLIST_SYNC);
     let retryDelay = retryMs;
-    let paused = false;
 
-    const setStatus = (next: PlaylistSyncStatus) => {
-      status = next;
-      for (const listener of listeners) listener(status);
-    };
-
-    const clearScheduled = Effect.suspend(() => {
-      const current = scheduled;
-      scheduled = undefined;
-      return current ? Fiber.interrupt(current) : Effect.void;
-    });
-
-    const enqueue = (request: SyncRequest) => Queue.offer(requests, request).pipe(Effect.asVoid);
-
-    const requestSync = (full: boolean) =>
-      Effect.gen(function* () {
-        const result = yield* Deferred.make<PlaylistSyncStatus>();
-        waiters.add(result);
-        yield* enqueue({ full, result });
-        return yield* Deferred.await(result).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              waiters.delete(result);
-            }),
-          ),
-        );
-      });
-
-    const schedule = (delay: number, full = false): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        if (paused) return;
-
-        yield* clearScheduled;
-        if (!currentPass) setStatus({ ...status, state: "scheduled" });
-        const fiber = yield* Effect.forkIn(
-          Effect.sleep(delay).pipe(
-            Effect.andThen(
-              Effect.sync(() => {
-                scheduled = undefined;
-              }),
-            ),
-            Effect.andThen(requestSync(full)),
-            Effect.asVoid,
-          ),
-          scope,
-          { startImmediately: false },
-        );
-        scheduled = fiber;
-      });
+    const request = (full: boolean, delayMs: number) => Queue.offer(requests, { full, delayMs, waiters: [] }).pipe(Effect.asVoid);
 
     const runPass = (full: boolean) =>
       Effect.gen(function* () {
@@ -369,98 +319,60 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         return needsRerun;
       });
 
-    const processRequest = (request: SyncRequest) =>
-      Effect.gen(function* () {
-        currentRequest = request;
-        if (paused) {
-          if (request.result) yield* Deferred.succeed(request.result, status);
-          currentRequest = undefined;
-          return;
-        }
+    // With nothing asked for, the interval starts a pass that picks up what changed on the server.
+    const nextRequest =
+      intervalMs > 0 ? Queue.take(requests).pipe(Effect.timeoutOption(intervalMs), Effect.map(Option.getOrElse((): SyncRequest => ({ full: false, delayMs: 0, waiters: [] })))) : Queue.take(requests);
 
-        setStatus({ ...status, state: "syncing", error: null });
-        const fiber = yield* Effect.forkIn(runPass(request.full), scope, { startImmediately: false });
-        currentPass = fiber;
-        const exit = yield* Fiber.await(fiber);
-        currentPass = undefined;
+    const cycle = Effect.gen(function* () {
+      let next = yield* nextRequest;
+      // A request that arrives during the wait joins the pass and restarts the wait with its own delay,
+      // which debounces edits and lets a manual sync run at once.
+      if (next.delayMs > 0) yield* SubscriptionRef.update(status, (previous) => ({ ...previous, state: "scheduled" as const }));
+      while (next.delayMs > 0) {
+        const more = yield* Queue.take(requests).pipe(Effect.timeoutOption(next.delayMs));
+        if (Option.isNone(more)) break;
+        next = joinRequests(next, more.value);
+      }
+      for (const more of yield* Queue.clear(requests)) next = joinRequests(next, more);
 
-        let needsRerun = false;
-        let retryAfter: number | undefined;
-        if (Exit.isSuccess(exit)) {
-          needsRerun = exit.value;
-          retryDelay = retryMs;
-          setStatus({ state: paused ? "paused" : "idle", error: null, lastSyncedAt: new Date().toISOString() });
-        } else if (Cause.hasInterruptsOnly(exit.cause)) {
-          setStatus({ ...status, state: paused ? "paused" : "idle", error: null });
-        } else {
-          const error = Cause.squash(exit.cause);
-          setStatus({ ...status, state: "error", error: error instanceof Error ? error.message : String(error) });
-          retryAfter = retryDelay;
-          retryDelay = Math.min(retryDelay * 2, maxRetryMs);
-        }
+      yield* SubscriptionRef.update(status, (previous) => ({ ...previous, state: "syncing" as const, error: null }));
+      const exit = yield* Effect.exit(runPass(next.full));
+      if (Exit.isSuccess(exit)) {
+        retryDelay = retryMs;
+        yield* SubscriptionRef.set(status, { state: "idle", error: null, lastSyncedAt: new Date().toISOString() });
+        if (exit.value) yield* request(false, 0);
+      } else {
+        const error = Cause.squash(exit.cause);
+        yield* SubscriptionRef.update(status, (previous) => ({ ...previous, state: "error" as const, error: error instanceof Error ? error.message : String(error) }));
+        yield* request(true, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, maxRetryMs);
+      }
 
-        // Scheduling a follow-up changes the public state, but callers need the result of this pass.
-        const passStatus = status;
-        if (retryAfter !== undefined) yield* schedule(retryAfter, true);
-        else if (needsRerun) yield* enqueue({ full: false });
-        if (request.result) yield* Deferred.succeed(request.result, passStatus);
-        currentRequest = undefined;
-      });
+      // Read before the follow-up changes the public state: callers need the result of this pass.
+      const result = yield* SubscriptionRef.get(status);
+      for (const waiter of next.waiters) yield* Deferred.succeed(waiter, result);
+    });
 
-    yield* Effect.forkIn(Effect.forever(Queue.take(requests).pipe(Effect.flatMap(processRequest))), scope);
+    // Startup pulls everything once.
+    yield* request(true, 0);
+    // Passes belong to the session: closing it, e.g. on logout, interrupts the one running.
+    const loop = yield* Effect.forkScoped(Effect.forever(cycle));
 
     // Local edits come from the playlist commands; sync's own writes are not announced.
-    yield* Effect.forkIn(
-      Stream.runForEach(edits.stream, () => schedule(debounceMs)),
-      scope,
-    );
-
-    if (intervalMs > 0) {
-      interval = yield* Effect.forkIn(Effect.forever(Effect.sleep(intervalMs).pipe(Effect.andThen(schedule(0, true)))), scope);
-    }
-
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* clearScheduled;
-        if (currentPass) yield* Fiber.interrupt(currentPass);
-        if (interval) yield* Fiber.interrupt(interval);
-        const finalStatus: PlaylistSyncStatus = { ...status, state: "idle" };
-        if (currentRequest?.result) yield* Deferred.succeed(currentRequest.result, finalStatus);
-        currentRequest = undefined;
-        for (const waiter of waiters) {
-          yield* Deferred.succeed(waiter, finalStatus);
-        }
-        waiters.clear();
-        listeners.clear();
-      }),
-    );
-
-    yield* Effect.forkIn(
-      Effect.suspend(() => (currentPass || Queue.sizeUnsafe(requests) > 0 || status.lastSyncedAt ? Effect.void : schedule(0, true))),
-      scope,
-    );
+    yield* Effect.forkScoped(Stream.runForEach(edits.stream, () => request(false, debounceMs)));
 
     return {
-      getStatus: Effect.sync(() => status),
-      subscribe: (listener) =>
-        Effect.sync(() => {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
-        }),
+      status: SubscriptionRef.get(status),
+      changes: SubscriptionRef.changes(status),
       sync: Effect.gen(function* () {
-        yield* clearScheduled;
-        return yield* requestSync(true);
+        const result = yield* Deferred.make<PlaylistSyncStatus>();
+        yield* Queue.offer(requests, { full: true, delayMs: 0, waiters: [result] });
+        // A pass cut short by the session closing reports nothing, so its callers get the last status.
+        const closed = Fiber.await(loop).pipe(
+          Effect.andThen(SubscriptionRef.get(status)),
+          Effect.map((last): PlaylistSyncStatus => ({ ...last, state: "idle" })),
+        );
+        return yield* Effect.raceFirst(Deferred.await(result), closed);
       }),
-      pause: Effect.gen(function* () {
-        paused = true;
-        yield* clearScheduled;
-        if (currentPass) yield* Fiber.interrupt(currentPass);
-        setStatus({ ...status, state: "paused", error: null });
-      }),
-      resume: Effect.suspend(() => {
-        paused = false;
-        return schedule(0, true);
-      }),
-      cancel: Effect.suspend(() => (currentPass ? Fiber.interrupt(currentPass) : Effect.void)),
     } satisfies PlaylistSyncManagerService;
   });

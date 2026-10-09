@@ -7,10 +7,11 @@ import {
   type DeletePlaylistArgs,
   type GetPlaylistArgs,
   type PlaylistRecord,
+  type PlaylistSyncStatus,
   type PlaylistWithSongs,
   type UpdatePlaylistArgs,
 } from "@muswag/model";
-import { Clock, Effect, Layer, ManagedRuntime } from "effect";
+import { Clock, Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import SubsonicAPI, { type SubsonicApiService } from "../api/subsonic-api.js";
@@ -161,31 +162,30 @@ function createManager(db: TestDb, api: FakePlaylistApi, options: PlaylistSyncMa
   const service = runtime.runSync(PlaylistSyncManager);
 
   return {
-    getStatus: () => runtime.runSync(service.getStatus),
-    subscribe: (listener: Parameters<typeof service.subscribe>[0]) => runtime.runSync(service.subscribe(listener)),
-    sync: () => runtime.runPromise(service.sync),
-    pause: () => runtime.runPromise(service.pause),
-    resume: () => runtime.runPromise(service.resume),
-    cancel: () => runtime.runPromise(service.cancel),
+    getStatus: () => runtime.runSync(service.status),
+    /** The statuses `select` lets through, starting with the current one. Fails if they take over a second. */
+    statuses: (select: (changes: Stream.Stream<PlaylistSyncStatus>) => Stream.Stream<PlaylistSyncStatus>) =>
+      runtime.runPromise(
+        Stream.runCollect(select(service.changes)).pipe(
+          Effect.timeoutOrElse({
+            duration: 1_000,
+            orElse: () => Effect.flatMap(service.status, (status) => Effect.die(new Error(`Timed out waiting for playlist sync: ${JSON.stringify(status)}`))),
+          }),
+        ),
+      ),
+    // Callers outlive the session in the app; inside this runtime, disposing it would interrupt them.
+    sync: () => Effect.runPromise(service.sync),
     destroy: () => runtime.dispose(),
   };
 }
 
 async function waitForCompletedSync(manager: ReturnType<typeof createManager>): Promise<void> {
-  if (manager.getStatus().lastSyncedAt) return;
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for playlist sync: ${JSON.stringify(manager.getStatus())}`));
-    }, 1_000);
-    const unsubscribe = manager.subscribe((status) => {
-      if (!status.lastSyncedAt) return;
-      clearTimeout(timeout);
-      unsubscribe();
-      resolve();
-    });
-  });
+  await manager.statuses((changes) =>
+    changes.pipe(
+      Stream.filter((status) => status.lastSyncedAt !== null),
+      Stream.take(1),
+    ),
+  );
 }
 
 /** The status is published before the pass chain finishes unwinding; this waits for the rest. */
@@ -194,24 +194,14 @@ function settle(): Promise<void> {
 }
 
 /** Resolves once a pass that started after this call has finished, successfully or not. */
-function waitForSyncCycle(manager: ReturnType<typeof createManager>, timeoutMs = 1_000): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    let sawSyncing = false;
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for a playlist sync cycle: ${JSON.stringify(manager.getStatus())}`));
-    }, timeoutMs);
-    const unsubscribe = manager.subscribe((status) => {
-      if (status.state === "syncing") {
-        sawSyncing = true;
-        return;
-      }
-      if (!sawSyncing) return;
-      clearTimeout(timeout);
-      unsubscribe();
-      resolve();
-    });
-  });
+async function waitForSyncCycle(manager: ReturnType<typeof createManager>): Promise<void> {
+  await manager.statuses((changes) =>
+    changes.pipe(
+      Stream.drop(1),
+      Stream.dropWhile((status) => status.state !== "syncing"),
+      Stream.takeUntil((status) => status.state !== "syncing"),
+    ),
+  );
 }
 
 describe("playlist sync manager", () => {
@@ -380,6 +370,40 @@ describe("playlist sync manager", () => {
     manager.destroy();
   });
 
+  it("runs another pass by itself after a stale mutation", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.getPlaylistCalls.length = 0;
+    api.updatePlaylistCalls.length = 0;
+
+    await db.addEntry("server-1", "song-local");
+    // The second request of the pass is the re-read just before the replacement.
+    api.getPlaylistHook = (id, callNumber) => {
+      if (id === "server-1" && callNumber === 2) {
+        api.playlists.get(id)!.songIds.push("song-remote");
+        api.getPlaylistHook = undefined;
+      }
+    };
+
+    const twoPasses = manager.statuses((changes) =>
+      changes.pipe(
+        Stream.drop(1),
+        Stream.filter((status) => status.state === "idle"),
+        Stream.take(2),
+      ),
+    );
+    await manager.sync();
+    await twoPasses;
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-remote", "song-local"]);
+    manager.destroy();
+  });
+
   it("reuses unchanged playlists instead of refetching them on an edit-triggered pass", async () => {
     const db = await createDb();
     const api = new FakePlaylistApi();
@@ -442,6 +466,75 @@ describe("playlist sync manager", () => {
     await manager.sync();
 
     expect(api.getPlaylistCalls).toEqual(["server-1", "server-2"]);
+    manager.destroy();
+  });
+
+  it("reuses unchanged playlists on an interval pass", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      intervalMs: 20,
+    });
+
+    await waitForCompletedSync(manager);
+    api.getPlaylistCalls.length = 0;
+
+    const remote = api.playlists.get("server-2")!;
+    remote.name = "Two renamed elsewhere";
+    remote.changed = "2026-07-11T00:00:00.000Z";
+    await waitForSyncCycle(manager);
+
+    expect(api.getPlaylistCalls).toEqual(["server-2"]);
+    expect((await db.get("server-2"))?.local?.name).toBe("Two renamed elsewhere");
+    manager.destroy();
+  });
+
+  it("keeps a pending retry full when an edit joins it", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: ["song-b"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+    await waitForCompletedSync(manager);
+    await settle();
+
+    api.listError = new Error("offline");
+    await manager.sync();
+    api.listError = undefined;
+    api.getPlaylistCalls.length = 0;
+
+    const cycle = waitForSyncCycle(manager);
+    await db.rename("server-1", "One edited");
+    await cycle;
+
+    // An edit-triggered pass on its own would have reused "server-2".
+    expect(api.getPlaylistCalls).toContain("server-2");
+    manager.destroy();
+  });
+
+  it("reports an edit as scheduled, then syncing, then idle", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "One", comment: "", public: false, songIds: ["song-a"] });
+    const manager = createManager(db, api, {
+      debounceMs: 5,
+    });
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const statuses = manager.statuses((changes) =>
+      changes.pipe(
+        Stream.drop(1),
+        Stream.takeUntil((status) => status.state === "idle"),
+      ),
+    );
+    await db.rename("server-1", "One edited");
+
+    expect((await statuses).map(({ state }) => state)).toEqual(["scheduled", "syncing", "idle"]);
     manager.destroy();
   });
 
@@ -646,9 +739,11 @@ describe("playlist sync manager", () => {
     await db.clear();
     const destroying = manager.destroy();
     release();
-    await syncing.catch(() => undefined);
+    const interrupted = await syncing;
     await destroying;
 
+    expect(interrupted.state).toBe("idle");
+    expect(interrupted.lastSyncedAt).toBeNull();
     expect(await db.all()).toEqual([]);
   });
 });
