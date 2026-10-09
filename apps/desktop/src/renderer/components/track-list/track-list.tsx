@@ -7,6 +7,7 @@ import { EMPTY_SELECTION, selectAll, selectForAction, selectOnClick } from "#/co
 import { TrackRow } from "#/components/track-list/track-row";
 import { isTrackItem, type TrackItem, type TrackListItem, type TrackSelection } from "#/components/track-list/types";
 import { ContextMenu, ContextMenuContent } from "#/components/ui/context-menu";
+import { scrollMemory } from "#/lib/scroll-memory";
 import { cn } from "#/lib/utils";
 
 const TRACK_HEIGHT = 48;
@@ -28,6 +29,7 @@ export function TrackList({
   onActivate,
   menu,
   scrollId,
+  rememberScroll = false,
   topPadding,
   bottomPadding,
   topContent,
@@ -45,6 +47,8 @@ export function TrackList({
   menu?: (selection: TrackSelection) => ReactNode;
   /** Restores the scroll position when navigating back to the page the list is on. */
   scrollId?: string;
+  /** Comes back to where it was on any visit to the page, not only when going back to it. Needs `scrollId`. */
+  rememberScroll?: boolean;
   topPadding?: number;
   bottomPadding?: number;
   /** Rendered above the rows, absolutely positioned inside the scrolled area — reserve room with `topPadding`. */
@@ -56,6 +60,8 @@ export function TrackList({
   const scrollRestorationId = scrollId === undefined ? undefined : "track-list-" + scrollId;
   // Without an id on the element nothing is stored, so this finds nothing to restore.
   const scrollEntry = useElementScrollRestoration({ id: scrollRestorationId ?? "track-list" });
+  const memoryId = rememberScroll ? scrollRestorationId : undefined;
+  const initialOffset = scrollEntry?.scrollY ?? (memoryId === undefined ? undefined : scrollMemory.get(memoryId));
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -66,7 +72,7 @@ export function TrackList({
     },
     getItemKey: (index) => items[index]?.key ?? index,
     overscan: 10,
-    ...(scrollEntry?.scrollY === undefined ? {} : { initialOffset: scrollEntry.scrollY }),
+    ...(initialOffset === undefined ? {} : { initialOffset }),
     paddingStart: (topPadding ?? 0) + (showHeader ? HEADER_HEIGHT + HEADER_GAP : 0),
     ...(bottomPadding === undefined ? {} : { paddingEnd: bottomPadding }),
   });
@@ -95,6 +101,7 @@ export function TrackList({
       // Focusable so the list gets the keys pressed after a click in it.
       tabIndex={0}
       className={cn("scrollbar h-full overflow-y-auto outline-none", className)}
+      onScroll={memoryId === undefined ? undefined : (event) => scrollMemory.set(memoryId, event.currentTarget.scrollTop)}
       onClick={(event) => {
         if (!(event.target as Element).closest("[data-track-key]")) setSelectionState(EMPTY_SELECTION);
       }}

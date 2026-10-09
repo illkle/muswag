@@ -22,7 +22,7 @@ function LibraryScreen() {
     return <PageState icon={<VinylRecordIcon />} title="No albums yet" description="Use the server control in the sidebar to fetch your server library." />;
   }
 
-  return <AlbumList albums={albums} scrollId="library-screen-albums" className="h-full" />;
+  return <AlbumList albums={albums} scrollId="library-screen-albums" rememberScroll className="h-full" />;
 }
 
 function RouteComponent() {

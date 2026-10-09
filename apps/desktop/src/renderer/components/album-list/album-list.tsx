@@ -3,6 +3,7 @@ import { startTransition, useEffect, useMemo, useRef, useState, type JSX } from 
 import { useContentSize } from "#/components/utils/app-content-size";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { getArtistCredits } from "#/components/utils/artist-links";
+import { scrollMemory } from "#/lib/scroll-memory";
 import { cn } from "#/lib/utils";
 import type { Album } from "@muswag/model";
 import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
@@ -128,6 +129,8 @@ export function createAlbumListRows(sections: AlbumListSection[], columns: numbe
 
 type AlbumListProps = {
   scrollId: string;
+  /** Comes back to where it was on any visit to the page, not only when going back to it. */
+  rememberScroll?: boolean;
   className?: string;
   topPadding?: number;
   bottomPadding?: number;
@@ -144,13 +147,14 @@ type AlbumListProps = {
     }
 );
 
-export function AlbumList({ albums, sections, scrollId, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
+export function AlbumList({ albums, sections, scrollId, rememberScroll = false, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   const scrollRestorationId = "album-list-" + scrollId;
   const scrollEntry = useElementScrollRestoration({
     id: scrollRestorationId,
   });
+  const initialOffset = scrollEntry?.scrollY ?? (rememberScroll ? scrollMemory.get(scrollRestorationId) : undefined);
 
   const contentSize = useContentSize();
   const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
@@ -187,14 +191,19 @@ export function AlbumList({ albums, sections, scrollId, className, topPadding = 
     estimateSize: (index) => (rows[index]?.type === "section" ? SECTION_HEIGHT : sizes.fullHeight),
     getItemKey: (index) => rows[index]?.id ?? index,
     overscan: 4,
-    ...(scrollEntry?.scrollY === undefined ? {} : { initialOffset: scrollEntry.scrollY }),
+    ...(initialOffset === undefined ? {} : { initialOffset }),
     paddingStart: topPadding,
     paddingEnd: bottomPadding,
     directDomUpdates: true,
   });
 
   return (
-    <div ref={parentRef} data-scroll-restoration-id={scrollRestorationId} className={cn("scrollbar overflow-y-auto px-2", className)}>
+    <div
+      ref={parentRef}
+      data-scroll-restoration-id={scrollRestorationId}
+      className={cn("scrollbar overflow-y-auto px-2", className)}
+      onScroll={rememberScroll ? (event) => scrollMemory.set(scrollRestorationId, event.currentTarget.scrollTop) : undefined}
+    >
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,

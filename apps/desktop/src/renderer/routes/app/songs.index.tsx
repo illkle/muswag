@@ -46,6 +46,7 @@ function LibraryScreen() {
       onActivate={(item) => void QueueActions.playSource({ type: "library", sort: SORT }, item.key)}
       menu={(selection) => <TrackMenuAddItems selection={selection} />}
       scrollId="library-screen-songs"
+      rememberScroll
       topPadding={TOP_HEIGHT}
       bottomPadding={PLAYER_HEIGHT}
     />
