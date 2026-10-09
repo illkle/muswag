@@ -35,7 +35,7 @@ Both servers speak the same protocol:
 
 How each server produces its changes:
 
-- **SQLite.** Each mirrored table gets `AFTER INSERT/UPDATE/DELETE` triggers. They append the row to `__mirror_changes` as `json_object(...)`, under an `AUTOINCREMENT` `seq`. `SqliteMirror.write(effect)` runs the effect in a transaction and broadcasts after it commits. If broadcasting fails, the error is logged and the next flush retries. A captured change that can't be decoded is logged and skipped, so it doesn't block later changes.
+- **SQLite.** Each mirrored table gets temporary `AFTER INSERT/UPDATE/DELETE` triggers. They append the row to `__mirror_changes` as `json_object(...)`, under an `AUTOINCREMENT` `seq`. `SqliteMirror.write(effect)` runs the effect in a transaction and broadcasts after it commits. If broadcasting fails, the error is logged and the next flush retries. A captured change that can't be decoded is logged and skipped, so it doesn't block later changes.
 - **Memory.** `MemoryMirror.write(effect)` holds the effect's changes aside and applies them only if it succeeds, then broadcasts one batch with the end state of each row it touched. A row rewritten with an equal value produces no change. Rows are encoded with the table's schema when written; clients decode them on arrival and skip, with an error log, any row that does not decode.
 
 ## Usage
@@ -198,7 +198,7 @@ mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
 - **Column names** come from the Drizzle table definition. Drizzle's database-level `casing` option is not applied, so name columns explicitly instead of relying on it.
 - **Runtime defaults:** `$defaultFn` and `$onUpdateFn` are applied to mutations from the renderer. Defaults written as SQL expressions are not.
 - **One connection.** The server relies on Effect's single-connection SQLite client: it turns on `PRAGMA recursive_triggers` (so rows removed by `REPLACE` produce delete events), and it detects open transactions through `sql.withTransaction`. Raw `BEGIN` statements, other connections and other processes writing the same file aren't covered. `recursive_triggers` also applies to your own triggers on that connection.
-- **Schema changes:** triggers are rebuilt from the table definitions at every start, so migrations don't need to know about them. Exclude `__mirror_changes` and `__mirror_changes_meta` from drizzle-kit (`tablesFilter`). Capture triggers are named `__mirror_changes__<table>_<op>`; only those are dropped on restart.
+- **Schema changes:** capture triggers are temporary. They live on the server's connection, are created from the table definitions at every start and are never stored in the database file, so a migration that runs before the server starts doesn't meet them. Exclude `__mirror_changes` and `__mirror_changes_meta` from drizzle-kit (`tablesFilter`). Capture triggers are named `__mirror_changes__<table>_<op>`.
 
 ### Both
 

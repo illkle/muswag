@@ -97,9 +97,13 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
           `INSERT INTO ${metaSql} (key, value) VALUES ('epoch', ?) ON CONFLICT(key) DO UPDATE SET value = max(value + 1, excluded.value) RETURNING value`,
           [Date.now()],
         );
-        const existing = yield* sql.unsafe<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND instr(name, ?) = 1`, [triggerPrefix(changeLog)]);
-        for (const { name } of existing) {
-          yield* sql.unsafe(`DROP TRIGGER ${quoteIdentifier(name)}`);
+        // A server started before on this connection left its triggers in `temp`; versions that stored
+        // them in the database file left them in `main`.
+        for (const schema of ["temp", "main"]) {
+          const existing = yield* sql.unsafe<{ name: string }>(`SELECT name FROM ${schema}.sqlite_master WHERE type = 'trigger' AND instr(name, ?) = 1`, [triggerPrefix(changeLog)]);
+          for (const { name } of existing) {
+            yield* sql.unsafe(`DROP TRIGGER ${schema}.${quoteIdentifier(name)}`);
+          }
         }
         for (const info of tables.values()) {
           for (const statement of createTriggerSql(info, changeLog)) {

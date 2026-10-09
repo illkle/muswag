@@ -597,7 +597,7 @@ describe("startup", () => {
     await harness.insertAlbums([album("a2")]);
     expect(log.changes().map((change) => [change.key, change.seq])).toEqual([["a2", before.seq + 1]]);
 
-    const triggers = await harness.run(harness.sql.unsafe<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name`));
+    const triggers = await harness.run(harness.sql.unsafe<{ name: string }>(`SELECT name FROM temp.sqlite_master WHERE type = 'trigger' ORDER BY name`));
     expect(triggers.map((trigger) => trigger.name)).toEqual([
       "__mirror_changes__albums_delete",
       "__mirror_changes__albums_insert",
@@ -627,6 +627,15 @@ describe("startup", () => {
 
     expect(withoutSeq(batches.flatMap((batch) => batch.changes))).toEqual([{ table: "unmirrored", type: "upsert", key: "x", value: { id: "x", label: "hello" } }]);
     await harness.run(Scope.close(scope, Exit.void));
+  });
+
+  it("keeps its triggers out of the database file, where a later migration would meet them", async () => {
+    harness = await createHarness();
+    // As a version that stored its triggers left them.
+    await harness.run(harness.sql.unsafe(`CREATE TRIGGER __mirror_changes__albums_insert AFTER INSERT ON albums BEGIN SELECT NEW.name; END`));
+    await harness.startServer();
+
+    expect(await harness.run(harness.sql.unsafe(`SELECT name FROM main.sqlite_master WHERE type = 'trigger'`))).toEqual([]);
   });
 
   it("fails when a mirrored table does not exist", async () => {
