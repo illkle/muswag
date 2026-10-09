@@ -61,10 +61,6 @@ How to read an item:
 
 `packages/backend/src/session/`, `packages/backend/src/api/subsonic-api.ts`
 
-- [ ] **S7 · `security` · S — The password is stored in plain text when no keychain is available.**
-      Linux without a keyring. An accepted alpha decision; it should be in the README. Storing one salt and
-      token pair in place of the password would be enough for Subsonic.
-
 ### Backend, found while fixing the rest
 
 - [ ] **N8 · `bug` · M — A `createPlaylist` whose answer is lost still makes a second playlist.**

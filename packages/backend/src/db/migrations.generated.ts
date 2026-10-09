@@ -20,5 +20,17 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1791549993000,
     "hash": "b5320823ef999a0d7a0ebbb5f9600973a02999bd6336fd89029c488f76024c77",
     "name": "20261009124633_init"
+  },
+  {
+    "sql": [
+      "-- A stored password cannot be turned into a token here, so the account is left without one: the app\n-- starts at the login form, and a login as the same user keeps the library.\nCREATE TABLE `__new_credentials` (\n\t`id` integer PRIMARY KEY,\n\t`url` text NOT NULL,\n\t`username` text NOT NULL,\n\t`salt` text NOT NULL,\n\t`token` text NOT NULL\n);\n",
+      "\nINSERT INTO `__new_credentials`(`id`, `url`, `username`, `salt`, `token`) SELECT `id`, `url`, `username`, '', '' FROM `credentials`;",
+      "\nDROP TABLE `credentials`;",
+      "\nALTER TABLE `__new_credentials` RENAME TO `credentials`;\n"
+    ],
+    "bps": true,
+    "folderMillis": 1791562769000,
+    "hash": "e17269d687e3b880adcc320c5b0da6f1a474248fbe176c0c5df1af69151a594b",
+    "name": "20261009161929_credentials_token"
   }
 ];

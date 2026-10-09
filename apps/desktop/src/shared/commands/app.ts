@@ -4,7 +4,7 @@ import {
   Ids,
   QueueSourceRef,
   RefreshStatTarget,
-  SessionCredentials,
+  LoginCredentials,
   SyncMode,
   Text,
   type AuthSnapshot,
@@ -25,7 +25,7 @@ import { Schema } from "effect";
 
 /** Argument schemas; main decodes every command against them before running it. */
 export const AppCommandArgs = {
-  "session:login": Schema.Tuple([SessionCredentials]),
+  "session:login": Schema.Tuple([LoginCredentials]),
   "session:logout": Schema.Tuple([]),
   "library:sync": Schema.Tuple([SyncMode]),
   "library:refreshStats": Schema.Tuple([RefreshStatTarget]),

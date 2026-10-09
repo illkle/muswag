@@ -6,12 +6,10 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { IpcMain } from "electron";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { PlayerHandle } from "../player/ipc";
 import { startStateMirror } from "../state-mirror";
-
-vi.mock("electron", () => ({ safeStorage: { isEncryptionAvailable: () => false } }));
 
 const { LibraryDatabaseError, resetLibrary, startApp } = await import("./index");
 

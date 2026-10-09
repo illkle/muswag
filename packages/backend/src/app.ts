@@ -2,7 +2,7 @@ import { Layer } from "effect";
 
 import { DatabaseLive } from "./db/database.js";
 import { PlaylistCommands, PlaylistEdits } from "./playlists/commands.js";
-import { CredentialsStoreSql, type CredentialsCipher } from "./session/credentials-store.js";
+import { CredentialsStoreSql } from "./session/credentials-store.js";
 import { SessionManagerLive } from "./session/session-manager.js";
 
 export interface BackendLiveOptions {
@@ -10,7 +10,6 @@ export interface BackendLiveOptions {
   readonly filename: string;
   /** Directory for cover files, relative to `MiniFs`. */
   readonly coverSaveLocation: string;
-  readonly cipher?: CredentialsCipher;
 }
 
 /**
@@ -20,6 +19,6 @@ export interface BackendLiveOptions {
  */
 export const BackendLive = (options: BackendLiveOptions) =>
   Layer.mergeAll(SessionManagerLive({ coverSaveLocation: options.coverSaveLocation }), PlaylistCommands.layer).pipe(
-    Layer.provideMerge(Layer.mergeAll(CredentialsStoreSql(options.cipher), PlaylistEdits.layer)),
+    Layer.provideMerge(Layer.mergeAll(CredentialsStoreSql(), PlaylistEdits.layer)),
     Layer.provideMerge(DatabaseLive(options.filename)),
   );

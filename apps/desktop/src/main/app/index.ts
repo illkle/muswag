@@ -15,7 +15,7 @@ import { createQueue } from "../queue";
 import type { SourceDb } from "../queue/source";
 import { unplayableTracks } from "#shared/state/queue";
 import { serveAppCommands } from "./commands";
-import { COVER_DIRECTORY, MiniFsLive, safeStorageCipher } from "./platform";
+import { COVER_DIRECTORY, MiniFsLive } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
 
 export interface AppOptions {
@@ -108,7 +108,7 @@ const rootMessage = (error: unknown): string => {
  */
 export async function startApp(options: AppOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY, cipher: safeStorageCipher }).pipe(Layer.provide(platform)));
+  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY }).pipe(Layer.provide(platform)));
   try {
     // Building the backend opens and migrates the database; nothing else in it reaches outside the process.
     await backend.runPromise(Effect.void);

@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { albums, credentials, playlists, songs, type SessionCredentials } from "@muswag/model";
+import { albums, credentials, playlists, songs, type LoginCredentials, type SessionCredentials } from "@muswag/model";
 import { Crypto, Effect, Exit, Fiber, Layer, Option, Stream } from "effect";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import { layer as PathLayer } from "effect/Path";
@@ -10,29 +10,32 @@ import { MiniFs } from "../covers/cover-manager.js";
 import { Db } from "../db/database.js";
 import { PlaylistEdits } from "../playlists/commands.js";
 import { apiAlbum, apiSong, idsOf, seed, TestDatabase } from "../test/index.js";
-import { CredentialsStoreSql, type CredentialsCipher } from "./credentials-store.js";
+import { subsonicToken } from "../api/subsonic-api.js";
+import { CredentialsStore, CredentialsStoreError, CredentialsStoreSql } from "./credentials-store.js";
 import { SessionManager, SessionManagerLive } from "./session-manager.js";
 
-const goodCredentials: SessionCredentials = {
+const goodCredentials: LoginCredentials = {
   url: "https://music.example",
   username: "alice",
   password: "secret",
 };
 
-const reversingCipher: CredentialsCipher = {
-  isAvailable: () => true,
-  encrypt: (plain) => [...plain].reverse().join(""),
-  decrypt: (encrypted) => [...encrypted].reverse().join(""),
-};
+/** The salt the `Crypto` of these tests gives every login. */
+const SALT = "ab".repeat(16);
+/** What a session keeps of a login: the token in place of the password. */
+const sessionOf = ({ password, ...account }: LoginCredentials): SessionCredentials => ({ ...account, salt: SALT, token: subsonicToken(password, SALT) });
 
 type Answer = Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
 
 function makeLayer(
   options: {
     removed?: string[];
-    cipher?: CredentialsCipher;
+    /** Whether the credentials of a login can be stored, asked at each login. */
+    storing?: () => boolean;
     playlistsGate?: Promise<void>;
     requested?: string[];
+    /** The parameters of every request, which travel in its body. */
+    sent?: URLSearchParams[];
     /** Answers in place of the server, for the requests it returns something for. */
     answer?: (url: URL, respond: (response: Response) => Answer, fail: (cause: unknown) => Answer) => Answer | undefined;
   } = {},
@@ -45,13 +48,14 @@ function makeLayer(
   const http = HttpClient.make((request, url) => {
     if (url.pathname === "/rest/ping.view") pingCalls += 1;
     options.requested?.push(url.pathname);
+    const body = request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+    options.sent?.push(new URLSearchParams(body));
     const answer = options.answer?.(
       url,
       (response) => Effect.succeed(HttpClientResponse.fromWeb(request, response)),
       (cause) => Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause }) })),
     );
     if (answer) return answer;
-    const body = request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
     const username = new URLSearchParams(body).get("u");
     const failed = username === "bad";
     const remote = { id: "srv1", name: "Remote", songCount: 0, duration: 0, created: "2026-01-01T00:00:00Z", changed: "2026-01-01T00:00:00Z" };
@@ -80,7 +84,18 @@ function makeLayer(
     PathLayer,
     PlaylistEdits.layer,
   );
-  const layer = SessionManagerLive({ coverSaveLocation: "covers" }).pipe(Layer.provideMerge(CredentialsStoreSql(options.cipher)), Layer.provideMerge(dependencies), Layer.provideMerge(TestDatabase()));
+  const store = Layer.effect(
+    CredentialsStore,
+    Effect.gen(function* () {
+      const sql = yield* CredentialsStore;
+      return {
+        ...sql,
+        save: (saved: SessionCredentials) =>
+          (options.storing?.() ?? true) ? sql.save(saved) : Effect.fail(new CredentialsStoreError({ operation: "save", message: "Failed to save credentials", cause: "the disk is full" })),
+      };
+    }),
+  ).pipe(Layer.provide(CredentialsStoreSql()));
+  const layer = SessionManagerLive({ coverSaveLocation: "covers" }).pipe(Layer.provideMerge(store), Layer.provideMerge(dependencies), Layer.provideMerge(TestDatabase()));
   return { layer, pingCalls: () => pingCalls };
 }
 
@@ -97,14 +112,15 @@ describe("SessionManager", () => {
 
       expect(yield* manager.login(goodCredentials)).toEqual({ _tag: "LoggedIn", url: goodCredentials.url, username: "alice" });
       expect(pingCalls()).toBe(1);
-      expect(yield* storedCredentials).toEqual([{ id: 1, ...goodCredentials, encrypted: false }]);
-      expect(yield* manager.credentials).toEqual(goodCredentials);
+      // The password is in neither: what is kept and stored is the token made of it.
+      expect(yield* storedCredentials).toEqual([{ id: 1, ...sessionOf(goodCredentials) }]);
+      expect(yield* manager.credentials).toEqual(sessionOf(goodCredentials));
 
       const failed = yield* Effect.flip(manager.login({ ...goodCredentials, username: "bad" }));
       expect(pingCalls()).toBe(2);
       expect(failed).toMatchObject({ _tag: "SessionError", operation: "login" });
-      expect(yield* storedCredentials).toEqual([{ id: 1, ...goodCredentials, encrypted: false }]);
-      expect(yield* manager.credentials).toEqual(goodCredentials);
+      expect(yield* storedCredentials).toEqual([{ id: 1, ...sessionOf(goodCredentials) }]);
+      expect(yield* manager.credentials).toEqual(sessionOf(goodCredentials));
       expect(yield* manager.snapshot).toEqual({ _tag: "LoggedIn", url: goodCredentials.url, username: "alice" });
 
       expect(yield* manager.logout).toEqual({ _tag: "LoggedOut" });
@@ -139,16 +155,22 @@ describe("SessionManager", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("encrypts the stored password when a cipher is available", () => {
-    const { layer } = makeLayer({ cipher: reversingCipher });
+  it.effect("signs every request of a session with the token of its login, and never sends the password", () => {
+    const sent: URLSearchParams[] = [];
+    const { layer } = makeLayer({ sent });
 
     return Effect.gen(function* () {
       const manager = yield* SessionManager;
       yield* manager.login(goodCredentials);
+      yield* manager.restore;
+      yield* manager.use(({ playlists }) => playlists.sync);
 
-      expect(yield* storedCredentials).toEqual([{ id: 1, ...goodCredentials, password: "terces", encrypted: true }]);
-      expect(yield* manager.restore).toMatchObject({ _tag: "LoggedIn" });
-      expect(yield* manager.credentials).toEqual(goodCredentials);
+      const { salt, token } = sessionOf(goodCredentials);
+      expect(sent.length).toBeGreaterThan(1);
+      for (const params of sent) {
+        expect([params.get("u"), params.get("s"), params.get("t")]).toEqual(["alice", salt, token]);
+        expect([...params.values()]).not.toContain(goodCredentials.password);
+      }
     }).pipe(Effect.provide(layer));
   });
 
@@ -269,15 +291,7 @@ describe("SessionManager", () => {
 
   it.effect("deletes what another account left on login, and keeps what the same account left", () => {
     const removed: string[] = [];
-    let keychainLost = false;
-    const cipher: CredentialsCipher = {
-      ...reversingCipher,
-      decrypt: (encrypted) => {
-        if (keychainLost) throw new Error("The keychain has no key for this");
-        return reversingCipher.decrypt(encrypted);
-      },
-    };
-    const { layer } = makeLayer({ removed, cipher });
+    const { layer } = makeLayer({ removed });
     const library = { albums: [apiAlbum("a1")], songs: [apiSong("s1", "a1")] };
     let deletions = 0;
     const beforeDataIsDeleted = Effect.sync(() => {
@@ -289,11 +303,6 @@ describe("SessionManager", () => {
       yield* manager.login(goodCredentials);
       yield* seed(library);
       removed.length = 0;
-
-      // The stored password can no longer be read, so the app starts at the login form with the data still there.
-      keychainLost = true;
-      expect(yield* manager.restore).toEqual({ _tag: "LoggedOut" });
-      expect(yield* idsOf(albums)).toEqual(["a1"]);
 
       // The same server and user, spelled another way: the data is theirs.
       yield* manager.login({ ...goodCredentials, url: "https://MUSIC.example/" }, { beforeDataIsDeleted });
@@ -335,20 +344,13 @@ describe("SessionManager", () => {
       yield* Effect.sleep("50 millis");
 
       expect(yield* manager.snapshot).toMatchObject({ _tag: "LoggedIn" });
-      expect(yield* storedCredentials).toEqual([{ id: 1, ...goodCredentials, encrypted: false }]);
+      expect(yield* storedCredentials).toEqual([{ id: 1, ...sessionOf(goodCredentials) }]);
     }).pipe(Effect.provide(layer));
   });
 
   it.effect("forgets the account before, when the login that replaced it cannot be stored", () => {
     let failing = false;
-    const cipher: CredentialsCipher = {
-      ...reversingCipher,
-      encrypt: (plain) => {
-        if (failing) throw new Error("keychain is locked");
-        return reversingCipher.encrypt(plain);
-      },
-    };
-    const { layer } = makeLayer({ cipher });
+    const { layer } = makeLayer({ storing: () => !failing });
 
     return Effect.gen(function* () {
       const manager = yield* SessionManager;
@@ -365,7 +367,7 @@ describe("SessionManager", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.live("ends a session whose password the server refuses, and keeps its data for the next login", () => {
+  it.live("ends a session whose token the server refuses, and keeps its data for the next login", () => {
     const requested: string[] = [];
     let refused = false;
     const { layer } = makeLayer({
@@ -392,9 +394,9 @@ describe("SessionManager", () => {
       expect(Option.getOrThrow(yield* Fiber.join(ended))).toEqual(expired);
       expect(yield* manager.credentials).toBeNull();
       expect(yield* Effect.flip(manager.use(() => Effect.void))).toMatchObject({ _tag: "NotAuthenticated" });
-      // The library stays, and so does whose it is, without the password that no longer works.
+      // The library stays, and so does whose it is, without the token that no longer works.
       expect(yield* idsOf(albums)).toEqual(["a1"]);
-      expect(yield* storedCredentials).toEqual([{ id: 1, url: goodCredentials.url, username: "alice", password: "", encrypted: false }]);
+      expect(yield* storedCredentials).toEqual([{ id: 1, url: goodCredentials.url, username: "alice", salt: "", token: "" }]);
 
       // The next start asks the server nothing and says the same.
       requested.length = 0;
@@ -404,7 +406,7 @@ describe("SessionManager", () => {
       refused = false;
       yield* manager.login({ ...goodCredentials, password: "new-secret" });
       expect(yield* idsOf(albums)).toEqual(["a1"]);
-      expect(yield* manager.credentials).toEqual({ ...goodCredentials, password: "new-secret" });
+      expect(yield* manager.credentials).toEqual(sessionOf({ ...goodCredentials, password: "new-secret" }));
     }).pipe(Effect.provide(layer));
   });
 });

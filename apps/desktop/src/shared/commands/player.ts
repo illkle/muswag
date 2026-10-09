@@ -75,8 +75,8 @@ export type PlayerCommand =
   | { readonly _tag: "Stop" }
   | { readonly _tag: "SetBinaryPath"; readonly path: string };
 
-/** Server credentials as main keeps them: the password is redacted so it cannot reach logs by accident. */
-export type PlayerCredentials = { readonly url: string; readonly username: string; readonly password: Redacted.Redacted<string> };
+/** Server credentials as main keeps them: the token is redacted so it cannot reach logs by accident. */
+export type PlayerCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: Redacted.Redacted<string> };
 
 /**
  * Where the state mirror stood once the command was handled; renderers await it to see its outcome.

@@ -11,12 +11,19 @@ export const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(
 export const Text = Schema.String.check(Schema.isMaxLength(65_536));
 export const Ids = Schema.Array(Id).check(Schema.isMaxLength(100_000));
 
-export const SessionCredentials = Schema.Struct({ url: Text, username: Text, password: Text });
-export type SessionCredentials = typeof SessionCredentials.Type;
+/** What the login form sends. The password goes no further than the login. */
+export const LoginCredentials = Schema.Struct({ url: Text, username: Text, password: Text });
+export type LoginCredentials = typeof LoginCredentials.Type;
+
+/**
+ * What a session signs its requests with, and what is stored. Subsonic takes a salt and the MD5 of the
+ * password followed by that salt in place of the password, so the password itself is never kept.
+ */
+export type SessionCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: string };
 
 export const AuthSnapshot = Schema.Union([
   Schema.TaggedStruct("Initializing", {}),
-  // `expired` names the account of a session the server ended by refusing its password.
+  // `expired` names the account of a session the server ended by refusing its credentials.
   Schema.TaggedStruct("LoggedOut", { expired: Schema.optional(Schema.Struct({ url: Schema.String, username: Schema.String })) }),
   Schema.TaggedStruct("LoggedIn", { url: Schema.String, username: Schema.String }),
 ]);

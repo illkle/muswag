@@ -1,14 +1,16 @@
-import { NodeCrypto } from "@effect/platform-node";
-import { PlaylistCommands, PlaylistEdits } from "@muswag/backend";
+import { randomBytes } from "node:crypto";
+
+import { PlaylistCommands, PlaylistEdits, subsonicToken } from "@muswag/backend";
 import { SubsonicAPILive, TestDatabase } from "@muswag/backend/testing";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { FetchHttpClient } from "effect/http";
 
 export function subsonicLayerFor(connection: { baseUrl: string; username: string; password: string }) {
+  const salt = randomBytes(16).toString("hex");
   return SubsonicAPILive({
     url: connection.baseUrl,
-    auth: { username: connection.username, password: connection.password },
-  }).pipe(Layer.provide(Layer.mergeAll(FetchHttpClient.layer, NodeCrypto.layer)));
+    auth: { username: connection.username, salt, token: subsonicToken(connection.password, salt) },
+  }).pipe(Layer.provide(FetchHttpClient.layer));
 }
 
 const libraryLayer = () => PlaylistCommands.layer.pipe(Layer.provideMerge(PlaylistEdits.layer), Layer.provideMerge(TestDatabase()));

@@ -169,9 +169,9 @@ export const credentials = sqliteTable("credentials", {
   id: integer().primaryKey(),
   url: text().notNull(),
   username: text().notNull(),
-  /** Encrypted with the OS keychain when `encrypted`, otherwise plain text. Empty once the server has refused it. */
-  password: text().notNull(),
-  encrypted: integer({ mode: "boolean" }).notNull(),
+  /** Subsonic's stand-in for the password: a salt and the MD5 of the password followed by it. Both empty once the server has refused them. */
+  salt: text().notNull(),
+  token: text().notNull(),
 });
 
 /** Tables the renderer mirrors. Everything else stays in main. */

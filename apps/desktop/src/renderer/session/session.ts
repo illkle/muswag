@@ -1,4 +1,4 @@
-import type { SessionCredentials } from "@muswag/model";
+import type { LoginCredentials } from "@muswag/model";
 import { useLiveQuery } from "@tanstack/react-db";
 
 import { appCommand } from "#/data/app-command";
@@ -30,7 +30,7 @@ export const Session = {
     return startPromise;
   },
 
-  login: (credentials: SessionCredentials) => appCommand("session:login", credentials).then(() => undefined),
+  login: (credentials: LoginCredentials) => appCommand("session:login", credentials).then(() => undefined),
   /** Main stops playback, ends the session and deletes the local library. */
   logout: () => appCommand("session:logout").then(() => undefined),
 };

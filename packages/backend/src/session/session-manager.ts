@@ -13,14 +13,16 @@ import {
   SubsonicHttpError,
   syncState,
   type AuthSnapshot,
+  type LoginCredentials,
   type SessionCredentials,
 } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { Context, Crypto, Data, Effect, Layer, Scope, ScopedRef, Semaphore, Stream, SubscriptionRef } from "effect";
 import { HttpClient, HttpClientError } from "effect/http";
 import { Path } from "effect/Path";
 
-import { locateSubsonicServer, makeSubsonicAPI, SubsonicAPI, WRONG_CREDENTIALS, type SubsonicApiConfig } from "../api/subsonic-api.js";
+import { locateSubsonicServer, makeSubsonicAPI, SubsonicAPI, subsonicToken, WRONG_CREDENTIALS, type SubsonicApiConfig } from "../api/subsonic-api.js";
 import { CoverManager, CoverManagerLive, MiniFs } from "../covers/cover-manager.js";
 import { Db } from "../db/database.js";
 import { LibrarySync } from "../library/library-sync.js";
@@ -54,9 +56,10 @@ export interface SessionManagerService {
   /**
    * Starts a session once the server accepts the credentials; a login that fails changes nothing. The
    * local data is deleted first unless it belongs to the same server and user. The session's
-   * credentials carry the address the server was found at, which is the one that is stored.
+   * credentials carry the address the server was found at, which is the one that is stored, and a
+   * token made of the password in its place.
    */
-  readonly login: (credentials: SessionCredentials, options?: LoginOptions) => Effect.Effect<AuthSnapshot, SessionError>;
+  readonly login: (credentials: LoginCredentials, options?: LoginOptions) => Effect.Effect<AuthSnapshot, SessionError>;
   /** Ends the session and deletes the local library, playlists and covers. */
   readonly logout: Effect.Effect<AuthSnapshot, SessionError>;
   readonly use: <A, E, R>(f: (session: AuthenticatedSession) => Effect.Effect<A, E, R>) => Effect.Effect<A, E | NotAuthenticated, R>;
@@ -81,7 +84,8 @@ const toApiConfig = (credentials: SessionCredentials): SubsonicApiConfig => ({
   url: credentials.url,
   auth: {
     username: credentials.username,
-    password: credentials.password,
+    salt: credentials.salt,
+    token: credentials.token,
   },
 });
 
@@ -108,7 +112,7 @@ class InvalidServerUrl extends Data.TaggedError("InvalidServerUrl")<{}> {}
 
 /**
  * Why a login failed, in one line for the login form. It repeats what the server or the network said,
- * which names the address at most: the username and the password travel in the request's body.
+ * which names the address at most: the username and the token travel in the request's body.
  */
 const loginFailureMessage = (error: { readonly _tag: string }): string => {
   if (HttpClientError.isHttpClientError(error)) {
@@ -124,7 +128,7 @@ const loginFailureMessage = (error: { readonly _tag: string }): string => {
   if (error instanceof SubsonicHttpError) return `${NOT_A_SUBSONIC_SERVER} (HTTP ${error.status})`;
   if (error instanceof SubsonicDecodeError) return NOT_A_SUBSONIC_SERVER;
   if (error instanceof SubsonicConfigError) return `The login is incomplete: ${error.message}`;
-  // What is left failed on this machine: the database, the keychain or the cover files.
+  // What is left failed on this machine: the database or the cover files.
   return "The server accepted the login, but it could not be set up on this computer";
 };
 
@@ -141,6 +145,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     const db = yield* Db;
     const mirror = yield* SqliteMirror;
     const fs = yield* MiniFs;
+    const crypto = yield* Crypto.Crypto;
     // Login, logout and a session the server ends each replace the session, one at a time.
     const transitions = yield* Semaphore.make(1);
     const current = yield* ScopedRef.make<SessionState>(() => ({ _tag: "LoggedOut" }));
@@ -154,7 +159,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     /**
      * Ends the session the server answered with "wrong username or password", and nothing else: the
      * library, the playlists and whose they are stay, so logging in again as the same user goes on
-     * from here. The password is forgotten, or every start would try it again.
+     * from here. The token is forgotten, or every start would try it again.
      *
      * Forked, because ending the session interrupts the request that reports this.
      */
@@ -172,7 +177,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
           Effect.catch((error) => Effect.succeed(error instanceof SubsonicApiError && error.code === WRONG_CREDENTIALS)),
         );
         if (!refusedAgain) return;
-        yield* credentialsStore.forgetPassword.pipe(Effect.catchCause((cause) => Effect.logError("Failed to forget the password the server refused", cause)));
+        yield* credentialsStore.forgetToken.pipe(Effect.catchCause((cause) => Effect.logError("Failed to forget the token the server refused", cause)));
         yield* loggedOut({ url: credentials.url, username: credentials.username });
       }).pipe(
         transitions.withPermit,
@@ -222,7 +227,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     const restore = Effect.gen(function* () {
       const credentials = yield* credentialsStore.load;
       if (credentials) return yield* install(credentials, false);
-      // An account left without its password is one the server refused, which the login form says.
+      // An account left without its token is one the server refused, which the login form says.
       return yield* loggedOut((yield* credentialsStore.account) ?? undefined);
     }).pipe(
       Effect.catchCause((cause) => Effect.logError("Failed to restore the session", cause).pipe(Effect.andThen(loggedOut()))),
@@ -231,13 +236,16 @@ const makeSessionManager = (options: SessionManagerOptions) =>
 
     const clearLocalData = mirror.write(Effect.forEach(USER_TABLES, (table) => db.delete(table), { discard: true })).pipe(Effect.andThen(fs.remove(options.coverSaveLocation)));
 
-    const login = (entered: SessionCredentials, loginOptions: LoginOptions = {}) =>
+    const login = (entered: LoginCredentials, loginOptions: LoginOptions = {}) =>
       Effect.gen(function* () {
         const url = normalizeServerUrl(entered.url);
         if (url === null) return yield* new InvalidServerUrl();
+        // The password goes no further: the session signs with this salt and the token made of both.
+        const salt = bytesToHex(yield* crypto.randomBytes(16));
+        const signed: SessionCredentials = { url, username: entered.username, salt, token: subsonicToken(entered.password, salt) };
         // The server is asked before anything changes, so a login that fails leaves everything as it was.
-        const located = yield* locateSubsonicServer(toApiConfig({ ...entered, url })).pipe(Effect.provide(dependencies));
-        const credentials: SessionCredentials = { ...entered, url: located };
+        const located = yield* locateSubsonicServer(toApiConfig(signed)).pipe(Effect.provide(dependencies));
+        const credentials: SessionCredentials = { ...signed, url: located };
 
         return yield* Effect.gen(function* () {
           const account = yield* credentialsStore.account;
