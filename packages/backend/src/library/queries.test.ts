@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { ALBUM_ORDER, albumOccurrenceKey, LIBRARY_ORDERS, libraryOccurrenceKey, playlistOccurrenceKey, songRow, titleSortKey, type QueueSourceRef, type SourceWindow } from "@muswag/model";
+import { ALBUM_ORDER, albumOccurrenceKey, artistOccurrenceKey, LIBRARY_ORDERS, libraryOccurrenceKey, playlistOccurrenceKey, songRow, titleSortKey, type QueueSourceRef, type SourceWindow } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
@@ -7,7 +7,7 @@ import { describe, expect } from "vitest";
 
 import { write } from "../db/database.js";
 import { PlaylistCommands, PlaylistEdits } from "../playlists/commands.js";
-import { apiSong, seed, TestDatabase } from "../test/index.js";
+import { apiAlbum, apiSong, seed, TestDatabase } from "../test/index.js";
 import { LibraryQueries } from "./queries.js";
 
 const layer = PlaylistCommands.layer.pipe(Layer.provideMerge(PlaylistEdits.layer), Layer.provideMerge(TestDatabase()));
@@ -69,6 +69,34 @@ describe("LibraryQueries.sourceWindow", () => {
       });
       expect(idsOf(window!.next)).toEqual(idsOf(expected));
       expect(idsOf(window!.next)).toEqual(["e", "z", "x", "y", "c", "d", "B", "k", "m", "a", "b"]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads an artist's albums newest first, undated ones last and tied years by id, each album in disc and track order", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [
+          apiAlbum("old", { artistId: "artist", year: 2001 }),
+          apiAlbum("undated", { artistId: "artist" }),
+          apiAlbum("new-b", { artistId: "artist", year: 2020 }),
+          apiAlbum("new-a", { artistId: "artist", year: 2020 }),
+          apiAlbum("other", { artistId: "someone else", year: 2030 }),
+        ],
+        songs: [
+          apiSong("old-2", "old", { track: 2 }),
+          apiSong("old-1", "old", { track: 1 }),
+          apiSong("undated-1", "undated", { track: 1 }),
+          apiSong("new-b-1", "new-b", { track: 1 }),
+          apiSong("new-a-1", "new-a", { track: 1 }),
+          apiSong("other-1", "other", { track: 1 }),
+        ],
+      });
+      const ref: QueueSourceRef = { type: "artist", artistId: "artist" };
+
+      const window = yield* windowAt(ref, artistOccurrenceKey("artist", "new-b-1"));
+
+      expect([idsOf(window.previous), window.current?.track.id, idsOf(window.next)]).toEqual([["new-a-1"], "new-b-1", ["old-1", "old-2", "undated-1"]]);
+      expect(yield* LibraryQueries.sourceWindow(ref, { key: artistOccurrenceKey("artist", "other-1"), offset: null }, SIZE)).toBeNull();
     }).pipe(Effect.provide(layer)),
   );
 

@@ -99,8 +99,8 @@ export function TrackList({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => {
-      const type = items[index]?.type;
-      return type === "track" ? TRACK_HEIGHT : type === "heading" ? HEADING_HEIGHT : NOTE_HEIGHT;
+      const item = items[index];
+      return item?.type === "track" ? TRACK_HEIGHT : item?.type === "heading" ? HEADING_HEIGHT : item?.type === "block" ? item.height : NOTE_HEIGHT;
     },
     getItemKey: (index) => items[index]?.key ?? index,
     overscan: 10,
@@ -268,6 +268,12 @@ export function TrackList({
                   <div role="gridcell" aria-colspan={columns.length} className="flex min-w-0 items-end gap-2">
                     <span className="truncate font-semibold">{item.title}</span>
                     {item.subtitle ? <span className="truncate text-muted-foreground">{item.subtitle}</span> : null}
+                  </div>
+                </div>
+              ) : item.type === "block" ? (
+                <div role="row" aria-rowindex={rowIndex} className="flex w-full">
+                  <div role="gridcell" aria-colspan={columns.length} className="min-w-0 flex-1">
+                    {item.content}
                   </div>
                 </div>
               ) : (

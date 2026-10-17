@@ -1,6 +1,9 @@
 import {
   ALBUM_ORDER,
   albumOccurrenceKey,
+  albums,
+  ARTIST_ALBUM_ORDER,
+  artistOccurrenceKey,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
   playlistOccurrenceKey,
@@ -17,7 +20,7 @@ import {
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { Db, position, write, type Database } from "../db/database.js";
@@ -43,6 +46,25 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
     .pipe(
       Effect.map((rows) => {
         const items = rows.map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
+        return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
+      }),
+    );
+
+/** The songs of an artist's albums, album after album, which is how the artists page lists them. A discography is small enough to read whole. */
+const openArtist = (db: Reads, artistId: string, key: string | null) =>
+  db
+    .select({ track: songs })
+    .from(songs)
+    .innerJoin(albums, eq(albums.id, songs.albumId))
+    .where(eq(albums.artistId, artistId))
+    .orderBy(
+      // SQLite puts nulls first going up and last going down, as the page asks TanStack DB to.
+      ...ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column])),
+      ...ALBUM_ORDER.map((column) => asc(songs[column])),
+    )
+    .pipe(
+      Effect.map((rows) => {
+        const items = rows.map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
         return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
       }),
     );
@@ -116,6 +138,8 @@ const openSource = (db: Reads, ref: QueueSourceRef, key: string | null) => {
   switch (ref.type) {
     case "album":
       return openAlbum(db, ref.albumId, key);
+    case "artist":
+      return openArtist(db, ref.artistId, key);
     case "playlist":
       return openPlaylist(db, ref.playlistId, key);
     case "library":

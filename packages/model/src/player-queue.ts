@@ -35,6 +35,8 @@ export type SourceWindow = {
 export const QueueSourceRef = Schema.Union([
   Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }),
   Schema.Struct({ type: Schema.Literal("album"), albumId: Id }),
+  /** Every album of an artist, one after another in `ARTIST_ALBUM_ORDER`. */
+  Schema.Struct({ type: Schema.Literal("artist"), artistId: Id }),
   /** Every song of the library, in the given order. */
   Schema.Struct({ type: Schema.Literal("library"), sort: LibrarySort }),
 ]);
@@ -46,6 +48,10 @@ export function playlistOccurrenceKey(playlistId: string, entryId: string): stri
 
 export function albumOccurrenceKey(albumId: string, songId: string): string {
   return `album:${albumId}:${songId}`;
+}
+
+export function artistOccurrenceKey(artistId: string, songId: string): string {
+  return `artist:${artistId}:${songId}`;
 }
 
 /** The same for every order of the library, so an occurrence keeps its key when the order changes. */

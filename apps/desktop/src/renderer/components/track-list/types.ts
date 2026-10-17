@@ -1,4 +1,5 @@
 import type { Song } from "@muswag/model";
+import type { ReactNode } from "react";
 
 /** One occurrence of a song in a list. The same song can appear in several rows, each with its own key. */
 export type TrackItem = {
@@ -10,8 +11,12 @@ export type TrackItem = {
   unavailable?: boolean;
 };
 
-/** A row of a track list: a track, a heading over the tracks that follow it, or a line of text. */
-export type TrackListItem = TrackItem | { type: "heading"; key: string; title: string; subtitle?: string } | { type: "note"; key: string; label: string };
+/** A row of a track list: a track, a heading over the tracks that follow it, a line of text, or whatever a list draws itself at a height it gives. */
+export type TrackListItem =
+  | TrackItem
+  | { type: "heading"; key: string; title: string; subtitle?: string }
+  | { type: "note"; key: string; label: string }
+  | { type: "block"; key: string; height: number; content: ReactNode };
 
 export const isTrackItem = (item: TrackListItem): item is TrackItem => item.type === "track";
 

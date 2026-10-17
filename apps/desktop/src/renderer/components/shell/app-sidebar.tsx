@@ -3,7 +3,7 @@ import { ServerMenu } from "#/components/settings/server-menu";
 
 import { SidebarProvider, SidebarContent, SidebarInset, Sidebar, SidebarGroup, SidebarFooter, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "#/components/ui/sidebar";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
+import { MicrophoneStageIcon, MusicNotesIcon, VinylRecordIcon } from "@phosphor-icons/react";
 
 import React from "react";
 import { NavButtons } from "#/components/shell/nav-buttons";
@@ -16,6 +16,7 @@ export function AppSidebar() {
   const n = useNavigate();
 
   const albumsActive = Boolean(r({ to: "/app/albums" }));
+  const artistsActive = Boolean(r({ to: "/app/artists" }));
   const songsActive = Boolean(r({ to: "/app/songs" }));
 
   return (
@@ -31,6 +32,11 @@ export function AppSidebar() {
             <SidebarMenuItem>
               <SidebarMenuButton isActive={albumsActive} onClick={() => n({ to: "/app/albums" })}>
                 <VinylRecordIcon weight={albumsActive ? "fill" : "regular"} /> Albums
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton isActive={artistsActive} onClick={() => n({ to: "/app/artists" })}>
+                <MicrophoneStageIcon weight={artistsActive ? "fill" : "regular"} /> Artists
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>

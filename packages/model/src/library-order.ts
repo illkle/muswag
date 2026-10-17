@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import type { Song } from "./db/schema.js";
+import type { Album, Song } from "./db/schema.js";
 
 /** The orders the whole library can be listed and played in. */
 export const LibrarySort = Schema.Literals(["title"]);
@@ -23,6 +23,16 @@ export const LIBRARY_ORDERS = {
  * with the id for the same reason the library's orders do: track numbers can be missing or repeat.
  */
 export const ALBUM_ORDER = ["discNumber", "track", "id"] as const satisfies ReadonlyArray<keyof Song>;
+
+/**
+ * How an artist's albums follow one another on the artists page and when they are played from it:
+ * the newest first, those without a year after every dated one, and by id where the years tie. Each
+ * album's songs are then in `ALBUM_ORDER`.
+ */
+export const ARTIST_ALBUM_ORDER = [
+  { column: "year", direction: "desc" },
+  { column: "id", direction: "asc" },
+] as const satisfies ReadonlyArray<{ column: keyof Album; direction: "asc" | "desc" }>;
 
 /**
  * What a song is sorted by in the alphabetical order: its title without case or accents.
