@@ -116,7 +116,7 @@ export const MpvConnectionLive = (extraArgs: readonly string[] = []) =>
                 const chunks = yield* reader.pull;
                 for (const chunk of chunks) {
                   buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
-                  if (Buffer.byteLength(buffer) > MAX_BUFFERED_BYTES) return yield* Effect.fail(failure("protocol"));
+                  if (Buffer.byteLength(buffer) > MAX_BUFFERED_BYTES) return yield* failure("protocol");
                   let end: number;
                   while ((end = buffer.indexOf("\n")) >= 0) {
                     const line = buffer.slice(0, end).replace(/\r$/, "");

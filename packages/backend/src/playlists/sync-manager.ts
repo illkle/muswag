@@ -369,7 +369,7 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         }
 
         // A change the server failed on stays pending, and the pass is retried as a failed one is.
-        if (failure) return yield* Effect.fail(failure);
+        if (failure) return yield* failure;
         return { needsRerun, refused };
       });
 
