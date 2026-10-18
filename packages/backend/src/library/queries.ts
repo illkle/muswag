@@ -4,8 +4,10 @@ import {
   albums,
   ARTIST_ALBUM_ORDER,
   artistOccurrenceKey,
+  artists,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
+  MAIN_ONLY_SONG_COLUMNS,
   playlistOccurrenceKey,
   playlists,
   queueItems,
@@ -17,11 +19,13 @@ import {
   type QueueItemRow,
   type QueueSourceRef,
   type QueueStateRow,
+  type SearchHit,
+  type SearchResult,
   type SourceCursor,
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { Db, position, write, type Database } from "../db/database.js";
@@ -148,6 +152,13 @@ const openSource = (db: Reads, ref: QueueSourceRef, key: string | null) => {
   }
 };
 
+const MAIN_ONLY = new Set<string>(MAIN_ONLY_SONG_COLUMNS);
+/** The columns of a song that renderers mirror. */
+const LIBRARY_SONG_COLUMNS = Object.fromEntries(Object.entries(getTableColumns(songs)).filter(([name]) => !MAIN_ONLY.has(name))) as Omit<
+  (typeof songs)["_"]["columns"],
+  (typeof MAIN_ONLY_SONG_COLUMNS)[number]
+>;
+
 /** Reads main itself needs, such as the playback queue's sources. */
 export const LibraryQueries = {
   songsByIds: (ids: ReadonlyArray<string>) =>
@@ -159,6 +170,27 @@ export const LibraryQueries = {
           .where(inArray(songs.id, [...chunk])),
       ),
     ).pipe(Effect.map((pages) => pages.flat())),
+
+  /** The rows of what a search found, in the order it found them, leaving out any that have gone since. Songs come as renderers mirror them. */
+  searchResults: (hits: ReadonlyArray<SearchHit>) =>
+    Db.use((db) => {
+      const idsOf = (type: SearchHit["type"]) => hits.flatMap((hit) => (hit.type === type ? [hit.id] : []));
+      const [songIds, albumIds, artistIds] = [idsOf("song"), idsOf("album"), idsOf("artist")];
+      return Effect.all([
+        songIds.length ? db.select(LIBRARY_SONG_COLUMNS).from(songs).where(inArray(songs.id, songIds)) : Effect.succeed([]),
+        albumIds.length ? db.select().from(albums).where(inArray(albums.id, albumIds)) : Effect.succeed([]),
+        artistIds.length ? db.select().from(artists).where(inArray(artists.id, artistIds)) : Effect.succeed([]),
+      ]);
+    }).pipe(
+      Effect.map(([songRows, albumRows, artistRows]) => {
+        const found = new Map<string, SearchResult>([
+          ...songRows.map((song) => [`song:${song.id}`, { type: "song", id: song.id, song }] as const),
+          ...albumRows.map((album) => [`album:${album.id}`, { type: "album", id: album.id, album }] as const),
+          ...artistRows.map((artist) => [`artist:${artist.id}`, { type: "artist", id: artist.id, artist }] as const),
+        ]);
+        return hits.flatMap((hit) => found.get(`${hit.type}:${hit.id}`) ?? []);
+      }),
+    ),
 
   /**
    * Where `artistId` appears on other artists' albums: the albums with a song that credits it. The

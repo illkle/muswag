@@ -8,4 +8,6 @@ export const LibraryActions = {
   refresh: (target: RefreshTarget) => appCommand("library:refresh", target),
   /** Where an artist appears on other artists' albums, which main finds in the credits of every song. */
   artistAppearances: (artistId: string) => appCommand("library:artistAppearances", artistId),
+  /** The best matches for `query` among the albums, artists and songs, which main searches; `null` when a later search took its place. */
+  search: (query: string, limit: number) => appCommand("library:search", query, limit),
 };

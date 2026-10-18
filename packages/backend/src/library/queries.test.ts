@@ -312,3 +312,24 @@ describe("LibraryQueries.artistAppearances", () => {
     }).pipe(Effect.provide(layer)),
   );
 });
+
+describe("LibraryQueries.searchResults", () => {
+  it.effect("reads the rows of what a search found, in its order, songs without the columns only main reads, leaving out what has gone", () =>
+    Effect.gen(function* () {
+      yield* seed({ albums: [apiAlbum("album")], artists: [{ id: "artist", name: "Someone" }], songs: [apiSong("song", "album", { title: "Harvest", path: "music/harvest.flac" })] });
+
+      const results = yield* LibraryQueries.searchResults([
+        { type: "song", id: "song" },
+        { type: "artist", id: "gone" },
+        { type: "artist", id: "artist" },
+        { type: "album", id: "album" },
+      ]);
+
+      expect(results.map(({ type, id }) => `${type}:${id}`)).toEqual(["song:song", "artist:artist", "album:album"]);
+      expect(results[0]).toMatchObject({ song: { title: "Harvest", albumId: "album" } });
+      expect(results[0]?.type === "song" && "path" in results[0].song).toBe(false);
+      expect(results[1]).toMatchObject({ artist: { name: "Someone" } });
+      expect(yield* LibraryQueries.searchResults([])).toEqual([]);
+    }).pipe(Effect.provide(layer)),
+  );
+});

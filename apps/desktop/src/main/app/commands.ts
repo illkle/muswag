@@ -6,6 +6,7 @@ import type { IpcMain } from "electron";
 
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
 import type { QueueManager } from "../queue/queue-manager";
+import type { LibrarySearch } from "../search/library-search";
 
 type Handlers = { [K in AppCommandName]: (...args: (typeof AppCommandArgs)[K]["Type"]) => Effect.Effect<AppCommandResults[K], unknown> };
 
@@ -17,6 +18,7 @@ export const serveAppCommands = (options: {
   readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
   readonly queue: QueueManager;
   readonly songsByIds: (ids: readonly string[]) => Promise<Song[]>;
+  readonly search: LibrarySearch["search"];
 }) =>
   Effect.gen(function* () {
     const session = yield* SessionManager;
@@ -45,6 +47,9 @@ export const serveAppCommands = (options: {
       "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
       "library:refresh": (target) => session.use((active) => active.library.refresh(target)),
       "library:artistAppearances": (artistId) => LibraryQueries.artistAppearances(artistId).pipe(Effect.provideService(Db, db)),
+      // The worker finds the rows, and their current contents are read here.
+      "library:search": (query, limit) =>
+        Effect.tryPromise(() => options.search(query, limit)).pipe(Effect.flatMap((hits) => (hits ? LibraryQueries.searchResults(hits).pipe(Effect.provideService(Db, db)) : Effect.succeed(null)))),
       "playlists:create": (input) => written(commands.create(input)),
       "playlists:rename": (id, name) => written(commands.rename(id, name)),
       "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),

@@ -12,6 +12,7 @@ import {
   type PlaylistEntry,
   type PlaylistRecord,
   type PlaylistSyncStatus,
+  type SearchResult,
 } from "@muswag/model";
 import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
@@ -31,6 +32,7 @@ export const AppCommandArgs = {
   "library:sync": Schema.Tuple([SyncMode]),
   "library:refresh": Schema.Tuple([RefreshTarget]),
   "library:artistAppearances": Schema.Tuple([Id]),
+  "library:search": Schema.Tuple([Text, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 }))]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -58,6 +60,8 @@ export type AppCommandResults = {
   "library:refresh": void;
   /** Read when asked, not mirrored: it is as current as the library was then. */
   "library:artistAppearances": ArtistAppearances;
+  /** The best matches for a query, best first; `null` when a later search took its place before it ran. */
+  "library:search": SearchResult[] | null;
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;
