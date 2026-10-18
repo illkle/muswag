@@ -1,5 +1,16 @@
 import { it } from "@effect/vitest";
-import { ALBUM_ORDER, albumOccurrenceKey, artistOccurrenceKey, LIBRARY_ORDERS, libraryOccurrenceKey, playlistOccurrenceKey, songRow, titleSortKey, type QueueSourceRef, type SourceWindow } from "@muswag/model";
+import {
+  ALBUM_ORDER,
+  albumOccurrenceKey,
+  artistOccurrenceKey,
+  LIBRARY_ORDERS,
+  libraryOccurrenceKey,
+  playlistOccurrenceKey,
+  songRow,
+  titleSortKey,
+  type QueueSourceRef,
+  type SourceWindow,
+} from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
@@ -272,6 +283,32 @@ describe("LibraryQueries queue storage", () => {
 
       yield* LibraryQueries.clearQueue;
       expect(yield* LibraryQueries.loadQueue).toEqual({ state: null, items: [], resumePositionSeconds: 0 });
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+describe("LibraryQueries.artistAppearances", () => {
+  it.effect("finds the other artists' albums with a song that credits the artist, and the name a credit gives it", () =>
+    Effect.gen(function* () {
+      const guest = { id: "guest", name: "The Guest" };
+      const host = { id: "host", name: "Host" };
+      yield* seed({
+        albums: [apiAlbum("own", { artistId: "guest" }), apiAlbum("featured", { artistId: "host" }), apiAlbum("various"), apiAlbum("without")],
+        songs: [
+          apiSong("own-1", "own", { artists: [guest] }),
+          apiSong("featured-1", "featured", { artists: [host, guest] }),
+          apiSong("featured-2", "featured", { artists: [guest] }),
+          apiSong("various-1", "various", { artists: [guest] }),
+          apiSong("without-1", "without", { artists: [host] }),
+          apiSong("uncredited", "without"),
+          apiSong("no-album", "gone", { artists: [guest] }),
+        ],
+      });
+
+      const appearances = yield* LibraryQueries.artistAppearances("guest");
+      expect([...appearances.albumIds].sort()).toEqual(["featured", "various"]);
+      expect(appearances.name).toBe("The Guest");
+      expect(yield* LibraryQueries.artistAppearances("nobody")).toEqual({ albumIds: [], name: null });
     }).pipe(Effect.provide(layer)),
   );
 });

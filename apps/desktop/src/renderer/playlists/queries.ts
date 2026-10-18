@@ -1,8 +1,10 @@
 import { db } from "#/data/library";
 import { appState } from "#/data/state";
+import { rowStore } from "#/data/stores";
 import type { PlaylistRow } from "#/playlists/rows";
 import { IDLE_PLAYLIST_SYNC, type PlaylistEntry, type PlaylistSyncStatus } from "@muswag/model";
 import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
+import { useSelector } from "@tanstack/react-store";
 import { useMemo } from "react";
 
 export type PlaylistSummary = {
@@ -19,7 +21,7 @@ export type PlaylistSummary = {
 const EMPTY_ENTRIES: readonly PlaylistEntry[] = [];
 
 export function usePlaylists() {
-  const query = useLiveQuery((q) => q.from({ playlist: db.playlists }));
+  const query = useLiveQuery({ queryKey: ["playlists"], query: (q) => q.from({ playlist: db.playlists }) });
 
   const playlists = useMemo((): PlaylistSummary[] => {
     return (
@@ -48,12 +50,14 @@ export function usePlaylists() {
 }
 
 export function usePlaylist(playlistId: string) {
-  const recordQuery = useLiveQuery((q) =>
-    q
-      .from({ playlist: db.playlists })
-      .where(({ playlist }) => eq(playlist.id, playlistId))
-      .findOne(),
-  );
+  const recordQuery = useLiveQuery({
+    queryKey: ["playlist", playlistId],
+    query: (q) =>
+      q
+        .from({ playlist: db.playlists })
+        .where(({ playlist }) => eq(playlist.id, playlistId))
+        .findOne(),
+  });
 
   const state = recordQuery.data?.local ?? null;
   const entries = state?.entries ?? EMPTY_ENTRIES;
@@ -65,7 +69,7 @@ export function usePlaylist(playlistId: string) {
     return unique.length > 0 ? unique : [" "];
   }, [entries]);
 
-  const songsQuery = useLiveQuery((q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds)));
+  const songsQuery = useLiveQuery({ queryKey: ["playlist-songs", songIds], query: (q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds)) });
 
   const rows = useMemo((): PlaylistRow[] => {
     const byId = new Map((songsQuery.data ?? []).map((song) => [song.id, song]));
@@ -81,4 +85,7 @@ export function usePlaylist(playlistId: string) {
   };
 }
 
-export const usePlaylistSyncStatus = (): PlaylistSyncStatus => useLiveQuery((q) => q.from({ status: appState.playlistSync }).findOne()).data?.value ?? IDLE_PLAYLIST_SYNC;
+const playlistSyncRow = rowStore(appState.playlistSync, "playlist_sync");
+
+/** The playlist sync main is running, whoever started it. */
+export const usePlaylistSyncStatus = (): PlaylistSyncStatus => useSelector(playlistSyncRow, (row) => row?.value ?? IDLE_PLAYLIST_SYNC);

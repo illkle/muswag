@@ -1,11 +1,10 @@
 import { MusicNotesIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { eq, useLiveQuery } from "@tanstack/react-db";
 
 import { Button, buttonVariants } from "#/components/ui/button";
 import { Slider } from "#/components/ui-custom/slider";
 import { MpvIPC, PlayerIPC } from "#/player/commands";
-import { db } from "#/data/library";
+import { useAlbumCoverArt } from "#/library/album-cover-art";
 import { QueueActions } from "#/queue/queue";
 import {
   usePlayerCanGoBack,
@@ -250,16 +249,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
 const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const currentTrack = usePlayerCurrentTrack();
-  const albumQuery = useLiveQuery((q) =>
-    currentTrack?.albumId
-      ? q
-          .from({ album: db.albums })
-          .where(({ album }) => eq(album.id, currentTrack.albumId))
-          .findOne()
-      : null,
-  );
-
-  const alb = albumQuery.data;
+  const coverArtId = useAlbumCoverArt(currentTrack?.albumId);
 
   if (!currentTrack) {
     return (
@@ -272,7 +262,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
     );
   }
 
-  const cover = <AlbumCover thumbnail className="w-10 shrink-0" target={alb ? { type: "album", id: alb.id, coverArtId: alb.coverArt ?? null } : undefined} />;
+  const cover = <AlbumCover thumbnail className="w-10 shrink-0" target={currentTrack.albumId ? { type: "album", id: currentTrack.albumId, coverArtId } : undefined} />;
 
   return (
     <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>

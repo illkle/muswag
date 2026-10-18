@@ -15,7 +15,7 @@ import { getArtistCredits } from "#/components/utils/artist-links";
 import { db } from "#/data/library";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
-import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 const COVER_SIZE = 128;
@@ -34,11 +34,22 @@ const playArtist = (artistId: string, key: string) => void QueueActions.playSour
 
 /** What goes over an album's tracks: its cover, which opens the album, beside its name, details and a button that plays the artist from it. */
 function AlbumBlock({ album, onPlay }: { album: Album; onPlay: () => void }) {
-  const meta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), album.genre ?? album.genres?.[0]?.name ?? null]);
+  const meta = formatMetaLine([
+    album.year ? String(album.year) : null,
+    `${album.songCount} track${album.songCount === 1 ? "" : "s"}`,
+    formatDuration(album.duration),
+    album.genre ?? album.genres?.[0]?.name ?? null,
+  ]);
 
   return (
     <div className="flex h-full items-end gap-4 px-2" style={{ paddingBottom: COVER_TO_TRACKS }}>
-      <Link to="/app/albums/$albumId" params={{ albumId: album.id }} aria-label={album.name} className="shrink-0 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/60" style={{ width: COVER_SIZE }}>
+      <Link
+        to="/app/albums/$albumId"
+        params={{ albumId: album.id }}
+        aria-label={album.name}
+        className="shrink-0 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        style={{ width: COVER_SIZE }}
+      >
         <AlbumCover className="w-full" thumbnail target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />
       </Link>
 
@@ -56,18 +67,20 @@ function AlbumBlock({ album, onPlay }: { album: Album; onPlay: () => void }) {
 
 /** Every album of an artist, newest first, each with its tracks under its cover. Playing a track goes on through the albums after it. */
 export function ArtistDiscography({ artistId }: { artistId: string }) {
-  const albumsQuery = useLiveQuery(
-    (q) =>
+  // The keys name what each query reads, so a render builds no query unless the artist is another one.
+  const albumsQuery = useLiveQuery({
+    queryKey: ["discography-albums", artistId],
+    query: (q) =>
       ARTIST_ALBUM_ORDER.reduce(
         (query, { column, direction }) => query.orderBy(({ album }) => album[column], { direction, nulls: "last", stringSort: "lexical" }),
         q.from({ album: db.albums }).where(({ album }) => eq(album.artistId, artistId)),
       ),
-    [artistId],
-  );
+  });
 
   // The order main plays the artist in (`openArtist` in the backend's queries).
-  const songsQuery = useLiveQuery(
-    (q) =>
+  const songsQuery = useLiveQuery({
+    queryKey: ["discography-songs", artistId],
+    query: (q) =>
       ARTIST_ALBUM_ORDER.reduce(
         (query, { column, direction }) => query.orderBy(({ album }) => album[column], { direction, nulls: "last", stringSort: "lexical" }),
         q
@@ -77,10 +90,9 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
       )
         .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" })
         .select(({ song }) => song),
-    [artistId],
-  );
+  });
 
-  const queueState = useQueueManagerState();
+  const playingKey = usePlayingKey((ref) => ref.type === "artist" && ref.artistId === artistId);
 
   const albums = albumsQuery.data;
   const songs = songsQuery.data;
@@ -120,8 +132,6 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
   // Naming the artist on every row only says something when a track is credited differently from its album.
   const albumCredits = new Map(albums.map((album) => [album.id, creditLine(album)]));
   const columns = songs.every((song) => creditLine(song) === albumCredits.get(song.albumId ?? "")) ? albumColumnsWithoutArtist : albumColumns;
-
-  const playingKey = queueState.source?.ref.type === "artist" && queueState.source.ref.artistId === artistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
   return (
     <TrackList

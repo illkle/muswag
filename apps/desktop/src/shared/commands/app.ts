@@ -7,6 +7,7 @@ import {
   LoginCredentials,
   SyncMode,
   Text,
+  type ArtistAppearances,
   type AuthSnapshot,
   type PlaylistEntry,
   type PlaylistRecord,
@@ -29,6 +30,7 @@ export const AppCommandArgs = {
   "session:logout": Schema.Tuple([]),
   "library:sync": Schema.Tuple([SyncMode]),
   "library:refreshStats": Schema.Tuple([RefreshStatTarget]),
+  "library:artistAppearances": Schema.Tuple([Id]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -54,6 +56,8 @@ export type AppCommandResults = {
   "session:logout": AuthSnapshot;
   "library:sync": void;
   "library:refreshStats": void;
+  /** Read when asked, not mirrored: it is as current as the library was then. */
+  "library:artistAppearances": ArtistAppearances;
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;

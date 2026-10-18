@@ -15,8 +15,11 @@ export interface MirrorCollectionUtils extends UtilsRecord {
   awaitPosition: (position: MirrorPosition, timeoutMs?: number) => Promise<void>;
 }
 
-export type MirrorCollectionConfig<TTable extends AnyMirrorTable> = Omit<
-  BaseCollectionConfig<MirrorRowOf<TTable>, MirrorKeyOf<TTable>, never, MirrorCollectionUtils>,
+/** A row of `TTable` without the columns `TOmit` names. */
+export type MirroredRowOf<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never> = [TOmit] extends [never] ? MirrorRowOf<TTable> : Omit<MirrorRowOf<TTable>, TOmit>;
+
+export type MirrorCollectionConfig<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never> = Omit<
+  BaseCollectionConfig<MirroredRowOf<TTable, TOmit>, MirrorKeyOf<TTable>, never, MirrorCollectionUtils>,
   "getKey" | "onInsert" | "onUpdate" | "onDelete" | "syncMode" | "schema" | "utils"
 > & {
   readonly client: MirrorClient;
@@ -26,9 +29,19 @@ export type MirrorCollectionConfig<TTable extends AnyMirrorTable> = Omit<
    * the server. Use it when the server is `readOnly` and changes go through your own commands.
    */
   readonly readOnly?: boolean | undefined;
+  /**
+   * The columns the server leaves out of this table (`SqliteMirror`'s `omitColumns`). The rows arrive
+   * without them, and the collection's rows are typed without them.
+   */
+  readonly omit?: ReadonlyArray<TOmit> | undefined;
 };
 
-export type MirrorCollectionOptions<TTable extends AnyMirrorTable> = CollectionConfig<MirrorRowOf<TTable>, MirrorKeyOf<TTable>, never, MirrorCollectionUtils> & {
+export type MirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never> = CollectionConfig<
+  MirroredRowOf<TTable, TOmit>,
+  MirrorKeyOf<TTable>,
+  never,
+  MirrorCollectionUtils
+> & {
   id: string;
   utils: MirrorCollectionUtils;
 };
@@ -39,11 +52,13 @@ export type MirrorCollectionOptions<TTable extends AnyMirrorTable> = CollectionC
  * Loads the whole table, then applies the server's change stream. Mutations are written to the
  * server and resolve once their changes come back through the stream, unless `readOnly`.
  */
-export function mirrorCollectionOptions<TTable extends AnyMirrorTable>(config: MirrorCollectionConfig<TTable>): MirrorCollectionOptions<TTable> {
-  type Row = MirrorRowOf<TTable>;
+export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never>(
+  config: MirrorCollectionConfig<TTable, TOmit>,
+): MirrorCollectionOptions<TTable, TOmit> {
+  type Row = MirroredRowOf<TTable, TOmit>;
   type Key = MirrorKeyOf<TTable>;
 
-  const { client, table, readOnly = false, ...collectionConfig } = config;
+  const { client, table, readOnly = false, omit: _omit, ...collectionConfig } = config;
   const info = tableAccess(table);
   const primaryKey = info.primaryKey;
   const id = config.id ?? `mirror:${info.name}`;

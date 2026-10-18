@@ -13,7 +13,8 @@ import {
   type RefreshStatTarget,
   type SyncMode,
 } from "@muswag/model";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Layer, SubscriptionRef } from "effect";
 
@@ -112,6 +113,13 @@ const statFields = <K extends string>(source: object, fields: ReadonlyArray<K>) 
   return Object.fromEntries(fields.map((field) => [field, values[field] ?? null])) as Record<K, never>;
 };
 
+/**
+ * Holds for a row whose stats are not `stats` already. A refresh writes only those rows: every row it
+ * writes is sent to the renderers, and most refreshes find nothing changed.
+ */
+const statsDiffer = <K extends string>(columns: Record<K, SQLiteColumn>, stats: Record<K, unknown>) =>
+  or(...(Object.keys(stats) as Array<K>).map((field) => sql`${columns[field]} IS NOT ${stats[field]}`));
+
 const syncLibrary = (mode: SyncMode) =>
   Effect.gen(function* () {
     const db = yield* Db;
@@ -131,14 +139,28 @@ const refreshStats = (target: RefreshStatTarget) =>
     const api = yield* SubsonicAPI;
 
     const updateSongs = (incoming: ReadonlyArray<Child>) =>
-      Effect.forEach(incoming, (song) => db.update(songs).set(statFields(song, SONG_STAT_FIELDS)).where(eq(songs.id, song.id)), { discard: true });
+      Effect.forEach(
+        incoming,
+        (song) => {
+          const stats = statFields(song, SONG_STAT_FIELDS);
+          return db
+            .update(songs)
+            .set(stats)
+            .where(and(eq(songs.id, song.id), statsDiffer(songs, stats)));
+        },
+        { discard: true },
+      );
 
     switch (target.type) {
       case "album": {
         const { album } = yield* api.getAlbum({ id: target.id });
         yield* write(
           Effect.gen(function* () {
-            yield* db.update(albums).set(statFields(album, ALBUM_STAT_FIELDS)).where(eq(albums.id, target.id));
+            const stats = statFields(album, ALBUM_STAT_FIELDS);
+            yield* db
+              .update(albums)
+              .set(stats)
+              .where(and(eq(albums.id, target.id), statsDiffer(albums, stats)));
             yield* updateSongs(album.song ?? []);
           }),
         );

@@ -1,6 +1,5 @@
 import { QueueIcon } from "@phosphor-icons/react";
 import type { PlaybackItem, QueueSourceRef } from "@muswag/model";
-import { eq, useLiveQuery } from "@tanstack/react-db";
 import { createStore, useStore } from "@tanstack/react-store";
 import { useMemo } from "react";
 
@@ -11,6 +10,7 @@ import type { TrackListItem, TrackSelection } from "#/components/track-list/type
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { db } from "#/data/library";
+import { useCollectionRow } from "#/data/stores";
 import { failureNotice } from "#/lib/notify";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
 import { TOP_HEIGHT } from "#/styles";
@@ -27,37 +27,12 @@ function togglePanel() {
 
 /** What to call the album, playlist, artist or library the queue is playing through. */
 function useSourceName(ref: QueueSourceRef | null): string | null {
-  const albumId = ref?.type === "album" ? ref.albumId : null;
-  const playlistId = ref?.type === "playlist" ? ref.playlistId : null;
-  const artistId = ref?.type === "artist" ? ref.artistId : null;
-
-  const album = useLiveQuery((q) =>
-    albumId
-      ? q
-          .from({ album: db.albums })
-          .where(({ album }) => eq(album.id, albumId))
-          .findOne()
-      : null,
-  ).data;
-  const playlist = useLiveQuery((q) =>
-    playlistId
-      ? q
-          .from({ playlist: db.playlists })
-          .where(({ playlist }) => eq(playlist.id, playlistId))
-          .findOne()
-      : null,
-  ).data;
-  const artist = useLiveQuery((q) =>
-    artistId
-      ? q
-          .from({ artist: db.artists })
-          .where(({ artist }) => eq(artist.id, artistId))
-          .findOne()
-      : null,
-  ).data;
+  const album = useCollectionRow(db.albums, ref?.type === "album" ? ref.albumId : null, ({ name }) => name);
+  const playlist = useCollectionRow(db.playlists, ref?.type === "playlist" ? ref.playlistId : null, ({ local }) => local?.name);
+  const artist = useCollectionRow(db.artists, ref?.type === "artist" ? ref.artistId : null, ({ name }) => name);
 
   if (ref?.type === "library") return "your library";
-  return album?.name ?? playlist?.local?.name ?? artist?.name ?? null;
+  return album ?? playlist ?? artist ?? null;
 }
 
 // A row's key is its section and the key of its occurrence, which keeps an occurrence apart from itself

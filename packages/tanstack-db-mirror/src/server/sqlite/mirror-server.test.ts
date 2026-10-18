@@ -269,6 +269,51 @@ describe("change capture", () => {
 
     expect(log.batches).toEqual([]);
   });
+
+  it("captures nothing for an update that leaves every column as it was", async () => {
+    harness = await createHarness();
+    await harness.insertAlbums([album("a1", { name: "Same", extra: { tags: ["x"] } }), album("a2")]);
+    const log = record(harness);
+
+    await harness.exec(`UPDATE albums SET name = name, extra = extra`);
+    await harness.exec(`INSERT INTO albums (id, name) VALUES ('a1', 'Same') ON CONFLICT(id) DO UPDATE SET name = excluded.name`);
+    expect(log.batches).toEqual([]);
+
+    await harness.exec(`UPDATE albums SET name = 'SAME' WHERE id = 'a1'`);
+    expect(withoutSeq(log.changes())).toEqual([{ table: "albums", type: "upsert", key: "a1", value: album("a1", { name: "SAME", extra: { tags: ["x"] } }) }]);
+  });
+});
+
+describe("omitted columns", () => {
+  it("leaves them out of snapshots, changes and pulls, and does not mirror a change to them alone", async () => {
+    harness = await createHarness({ server: { omitColumns: { albums: ["extra", "plays"] } } });
+    const { extra: _extra, plays: _plays, ...rest } = album("a1", { extra: { tags: ["x"] }, plays: 2 });
+    const { seq } = await harness.run(harness.server.position);
+    const log = record(harness);
+
+    await harness.insertAlbums([album("a1", { extra: { tags: ["x"] }, plays: 2 })]);
+    await harness.exec(`UPDATE albums SET plays = plays + 1, extra = NULL`);
+    await harness.exec(`UPDATE albums SET name = 'Renamed'`);
+
+    expect(withoutSeq(log.changes())).toEqual([
+      { table: "albums", type: "upsert", key: "a1", value: rest },
+      { table: "albums", type: "upsert", key: "a1", value: { ...rest, name: "Renamed" } },
+    ]);
+    expect(await harness.dbRows("albums")).toEqual([{ ...rest, name: "Renamed" }]);
+    expect(withoutSeq(pulledBatch(await request(harness, { type: "pull", fromSeq: seq })).changes)).toEqual(withoutSeq(log.changes()));
+  });
+
+  it.each([
+    ["a column the table does not have", { albums: ["missing"] }, /no column "missing"/],
+    ["the primary key", { albums: ["id"] }, /primary key of "albums" cannot be omitted/],
+    ["a table that is not mirrored", { unmirrored: ["id"] }, /"unmirrored", which is not mirrored/],
+  ])("rejects omitting %s", async (_name, omitColumns, message) => {
+    harness = await createHarness();
+    const exit = await harness.run(Effect.exit(Effect.scoped(SqliteMirror.make({ tables: [albums], omitColumns, changeLogTable: "omit_changes" }))));
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+    expect(error).toBeInstanceOf(MirrorSchemaError);
+    expect((error as Error).message).toMatch(message);
+  });
 });
 
 describe("write", () => {

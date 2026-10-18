@@ -1,4 +1,4 @@
-import { albums, artists, playlists, queueItems, queueState, songs } from "@muswag/model";
+import { albums, artists, MAIN_ONLY_SONG_COLUMNS, playlists, queueItems, queueState, songs } from "@muswag/model";
 import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
 import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
 import { BasicIndex, createCollection } from "@tanstack/react-db";
@@ -6,14 +6,19 @@ import { BasicIndex, createCollection } from "@tanstack/react-db";
 /** Main owns the library database and the queue; these collections mirror their tables. Changes go through main's commands. */
 export const mirrorClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer }) });
 
-const options = { client: mirrorClient, defaultIndexType: BasicIndex, readOnly: true } as const;
+// Loading a table again means another snapshot from main, so a collection is kept once it has loaded.
+const options = { client: mirrorClient, defaultIndexType: BasicIndex, readOnly: true, gcTime: 0 } as const;
 
 export const db = {
   albums: createCollection(mirrorCollectionOptions({ ...options, table: albums })),
   artists: createCollection(mirrorCollectionOptions({ ...options, table: artists })),
-  songs: createCollection(mirrorCollectionOptions({ ...options, table: songs })),
+  /**
+   * Without the columns only main reads (`LibrarySong`). The largest table by far, so it loads when
+   * something first reads it, a page or the search, rather than with the window.
+   */
+  songs: createCollection(mirrorCollectionOptions({ ...options, table: songs, omit: MAIN_ONLY_SONG_COLUMNS, startSync: false })),
   playlists: createCollection(mirrorCollectionOptions({ ...options, table: playlists })),
-  /** The playback queue; read it through `useQueueManagerState`. */
+  /** The playback queue; read it through the hooks in `queue/queue.ts`. */
   queueItems: createCollection(mirrorCollectionOptions({ ...options, table: queueItems })),
   queueState: createCollection(mirrorCollectionOptions({ ...options, table: queueState })),
 };

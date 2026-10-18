@@ -1,6 +1,6 @@
 import type { Artist } from "@muswag/model";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useId, useRef, type KeyboardEvent } from "react";
+import { memo, useId, useRef, type KeyboardEvent } from "react";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { scrollMemory } from "#/lib/scroll-memory";
@@ -9,6 +9,25 @@ import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 const ROW_HEIGHT = 44;
 const SCROLL_ID = "artist-list";
+
+/** An artist in the list. Moving the selection draws again only the row it leaves and the one it reaches. */
+const ArtistRow = memo(function ArtistRow({ artist, id, selected, onSelect }: { artist: Artist; id: string | undefined; selected: boolean; onSelect: (artistId: string) => void }) {
+  return (
+    <div
+      id={id}
+      role="option"
+      aria-selected={selected}
+      className={cn(
+        "flex h-full cursor-pointer items-center gap-3 rounded-md px-2 text-sm transition-colors duration-100 select-none hover:bg-muted/50",
+        selected && "bg-muted font-medium group-focus-visible/list:ring-2 group-focus-visible/list:ring-ring/60 group-focus-visible/list:ring-inset hover:bg-muted",
+      )}
+      onClick={() => onSelect(artist.id)}
+    >
+      <AlbumCover className="size-8 shrink-0 rounded-full" thumbnail target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />
+      <span className="truncate">{artist.name}</span>
+    </div>
+  );
+});
 
 /**
  * The artists to pick from on the artists page. The list holds the focus, and the arrows, Page Up,
@@ -31,6 +50,8 @@ export function ArtistList({ artists, selectedId, onSelect, className }: { artis
     // The top bar and the player lie over the ends of the list.
     scrollPaddingStart: TOP_HEIGHT,
     scrollPaddingEnd: PLAYER_HEIGHT,
+    // A scroll is drawn in the next frame rather than at once, which keeps scrolling smooth.
+    useFlushSync: false,
   });
 
   const selectedIndex = artists.findIndex(({ id }) => id === selectedId);
@@ -66,19 +87,7 @@ export function ArtistList({ artists, selectedId, onSelect, className }: { artis
 
           return (
             <div key={artist.id} style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }} className="absolute top-0 left-0 w-full px-2">
-              <div
-                id={selected ? selectedRowId : undefined}
-                role="option"
-                aria-selected={selected}
-                className={cn(
-                  "flex h-full cursor-pointer items-center gap-3 rounded-md px-2 text-sm transition-colors duration-100 select-none hover:bg-muted/50",
-                  selected && "bg-muted font-medium hover:bg-muted group-focus-visible/list:ring-2 group-focus-visible/list:ring-ring/60 group-focus-visible/list:ring-inset",
-                )}
-                onClick={() => onSelect(artist.id)}
-              >
-                <AlbumCover className="size-8 shrink-0 rounded-full" thumbnail target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />
-                <span className="truncate">{artist.name}</span>
-              </div>
+              <ArtistRow artist={artist} id={selected ? selectedRowId : undefined} selected={selected} onSelect={onSelect} />
             </div>
           );
         })}

@@ -180,6 +180,16 @@ SqliteMirror.make({ tables: [albums, songs], readOnly: true }); // main
 mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
 ```
 
+### Omitted columns
+
+Columns that only main reads can stay out of the mirror. Snapshots and changes leave them out, and an update that changes nothing but them is not sent. Give the client the same list, which types its rows without them:
+
+```ts
+const MAIN_ONLY = ["path", "size"] as const;
+SqliteMirror.make({ tables: [albums, songs], omitColumns: { songs: MAIN_ONLY } }); // main
+mirrorCollectionOptions({ client, table: songs, omit: MAIN_ONLY }); // renderer
+```
+
 ## Rules and limits
 
 ### Memory tables
@@ -192,6 +202,7 @@ mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
 ### SQLite tables
 
 - **Write through `mirror.write`.** Writes made any other way are still captured, but they aren't broadcast until the next `write` or `mirror.flush`. `autoFlushInterval` adds a periodic backstop.
+- **Unchanged rows** are not captured: an update that leaves every mirrored column as it was, such as an upsert of a row that is already there, produces no change.
 - **Primary keys:** single-column only. A primary-key change is mirrored as a delete followed by an insert.
 - **Supported columns:** text, JSON text, integer, boolean, timestamp, real and numeric (string or number mode). Custom column types are allowed but must not store blobs. Blob and bigint columns are rejected at startup. At most 63 columns per table, because of SQLite's limit on function arguments.
 - **Integers** must stay within `Number.MAX_SAFE_INTEGER`. Larger keys are skipped with an error log, and larger values in other columns are rounded.

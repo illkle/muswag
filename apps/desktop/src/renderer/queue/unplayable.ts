@@ -5,7 +5,7 @@ import { notifyFailure } from "#/lib/notify";
 
 const unplayable = appState.unplayable;
 const subscribe = (onChange: () => void) => {
-  const subscription = unplayable.subscribeChanges(onChange);
+  const subscription = unplayable.subscribeChanges(onChange, { includeInitialState: false });
   return () => subscription.unsubscribe();
 };
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { albums, artists, songs, syncState, type AlbumWithSongsID3 } from "@muswag/model";
+import type { MirrorChange } from "@muswag/tanstack-db-mirror/protocol";
+import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { eq } from "drizzle-orm";
 import { Effect, Fiber, Layer } from "effect";
 
@@ -389,6 +391,33 @@ describe("LibrarySync.refreshStats", () => {
 
       expect(yield* rowOf(songs, "known")).toMatchObject({ title: "Local song", playCount: 8, averageRating: 3, bookmarkPosition: null });
       expect(yield* rowOf(songs, "not-local")).toBeUndefined();
+    }).pipe(Effect.provide(layer(api)));
+  });
+
+  it.effect("sends renderers only the rows whose stats changed", () => {
+    let playCount = 3;
+    const api: Partial<SubsonicApiService> = {
+      getAlbum: () =>
+        Effect.succeed({
+          status: "ok",
+          version: "1.16.1",
+          album: { ...album("stats", { playCount: 10 }), song: [song("same", "stats", { playCount: 2, starred: "2026-01-01" }), song("played", "stats", { playCount })] },
+        }),
+    };
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album("stats", { playCount: 10 })], songs: [song("same", "stats", { playCount: 2, starred: "2026-01-01" }), song("played", "stats", { playCount: 3 })] });
+      const changes: Array<MirrorChange> = [];
+      (yield* SqliteMirror).subscribe((batch) => changes.push(...batch.changes));
+      const sync = yield* LibrarySync;
+
+      yield* sync.refreshStats({ type: "album", id: "stats" });
+      expect(changes).toEqual([]);
+
+      playCount = 4;
+      yield* sync.refreshStats({ type: "album", id: "stats" });
+      expect(changes.map(({ table, key }) => `${table}:${key}`)).toEqual(["songs:played"]);
+      expect((yield* rowOf(songs, "played"))?.playCount).toBe(4);
     }).pipe(Effect.provide(layer(api)));
   });
 });

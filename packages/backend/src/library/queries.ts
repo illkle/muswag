@@ -12,6 +12,7 @@ import {
   queueResume,
   queueState,
   songs,
+  type ArtistAppearances,
   type LibrarySort,
   type QueueItemRow,
   type QueueSourceRef,
@@ -158,6 +159,21 @@ export const LibraryQueries = {
           .where(inArray(songs.id, [...chunk])),
       ),
     ).pipe(Effect.map((pages) => pages.flat())),
+
+  /**
+   * Where `artistId` appears on other artists' albums: the albums with a song that credits it. The
+   * credits are JSON on each song, so this reads every song, which SQLite does far faster than a page.
+   */
+  artistAppearances: (artistId: string) =>
+    Db.use((db) =>
+      db.all<{ albumId: string; name: string | null }>(sql`
+        SELECT DISTINCT ${songs.albumId} AS albumId, json_extract(credit.value, '$.name') AS name
+        FROM ${songs}
+        JOIN ${albums} ON ${albums.id} = ${songs.albumId}
+        JOIN json_each(${songs.artists}) AS credit
+        WHERE json_extract(credit.value, '$.id') = ${artistId} AND ${albums.artistId} IS NOT ${artistId}
+      `),
+    ).pipe(Effect.map((rows): ArtistAppearances => ({ albumIds: [...new Set(rows.map(({ albumId }) => albumId))], name: rows.find(({ name }) => name)?.name ?? null }))),
 
   /**
    * The part of a queue source around `at`: the occurrence `at.key` where the source has it, and

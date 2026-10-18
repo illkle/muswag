@@ -6,4 +6,6 @@ import { appCommand } from "#/data/app-command";
 export const LibraryActions = {
   sync: (mode: SyncMode) => appCommand("library:sync", mode),
   refreshStats: (target: RefreshStatTarget) => appCommand("library:refreshStats", target),
+  /** Where an artist appears on other artists' albums, which main finds in the credits of every song. */
+  artistAppearances: (artistId: string) => appCommand("library:artistAppearances", artistId),
 };

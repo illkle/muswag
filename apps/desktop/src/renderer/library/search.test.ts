@@ -18,6 +18,8 @@ const found = (results: ReturnType<ReturnType<typeof createSearchIndex>["search"
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("the search index", () => {
@@ -72,5 +74,90 @@ describe("the search index", () => {
     collections.songs.insert(songRow({ id: "song-new", title: "Song new" }));
     expect(found(index.search("new", 20))).toEqual(["song:song-new"]);
     expect(built).toHaveBeenCalledTimes(2);
+  });
+
+  it("is not built again for a change to a field no search looks at", () => {
+    const collections = library([songRow({ id: "song-a", title: "Cortez" })]);
+    const built = vi.spyOn(Fuse.prototype, "setCollection");
+    const index = createSearchIndex(collections);
+    index.search("cortez", 20);
+    built.mockClear();
+
+    collections.songs.update("song-a", (song) => {
+      song.playCount = 3;
+      song.starred = "2026-01-01T00:00:00Z";
+    });
+    collections.albums.update("album-a", (album) => {
+      album.playCount = 1;
+    });
+    expect(index.search("cortez", 20)).toMatchObject([{ song: { playCount: 3 } }]);
+    expect(built).not.toHaveBeenCalled();
+
+    collections.albums.update("album-a", (album) => {
+      album.name = "Zuma";
+    });
+    expect(found(index.search("zuma", 20))).toEqual(["album:album-a"]);
+    expect(built).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads none of the library until it is prepared or searched", () => {
+    const collections = library();
+    const subscribed = vi.spyOn(collections.songs, "subscribeChanges");
+    const index = createSearchIndex(collections);
+    expect(subscribed).not.toHaveBeenCalled();
+
+    index.prepare();
+    index.prepare();
+    index.search("harvest", 20);
+    expect(subscribed).toHaveBeenCalledTimes(1);
+  });
+
+  it("is built ahead of the next search once the library has been quiet and the window is idle", () => {
+    vi.useFakeTimers();
+    const idle: Array<() => void> = [];
+    vi.stubGlobal("requestIdleCallback", (callback: () => void) => idle.push(callback));
+    const collections = library([songRow({ id: "song-a", title: "Cortez" })]);
+    const built = vi.spyOn(Fuse.prototype, "setCollection");
+    const index = createSearchIndex(collections);
+    built.mockClear();
+
+    index.prepare();
+    vi.advanceTimersByTime(1_000);
+    idle.splice(0).forEach((callback) => callback());
+    expect(built).toHaveBeenCalledTimes(1);
+
+    // A sync goes on changing the library: the index waits for it to stop.
+    collections.songs.insert(songRow({ id: "song-b", title: "Cortez the Killer" }));
+    vi.advanceTimersByTime(900);
+    collections.songs.insert(songRow({ id: "song-c", title: "Cortez again" }));
+    vi.advanceTimersByTime(900);
+    expect(idle).toEqual([]);
+    vi.advanceTimersByTime(100);
+    idle.splice(0).forEach((callback) => callback());
+    expect(built).toHaveBeenCalledTimes(2);
+
+    expect(found(index.search("cortez", 20))).toEqual(["song:song-a", "song:song-b", "song:song-c"]);
+    expect(built).toHaveBeenCalledTimes(2);
+  });
+
+  it("tells whoever follows it of a build ahead of a search, so that a search made before the songs had loaded is made again", () => {
+    vi.useFakeTimers();
+    const idle: Array<() => void> = [];
+    vi.stubGlobal("requestIdleCallback", (callback: () => void) => idle.push(callback));
+    const collections = library();
+    const index = createSearchIndex(collections);
+    const told = vi.fn();
+    index.subscribe(told);
+
+    expect(index.search("cortez", 20)).toEqual([]);
+    expect(index.builds()).toBe(0);
+
+    collections.songs.insert(songRow({ id: "song-a", title: "Cortez" }));
+    vi.advanceTimersByTime(1_000);
+    idle.splice(0).forEach((callback) => callback());
+
+    expect(told).toHaveBeenCalledTimes(1);
+    expect(index.builds()).toBe(1);
+    expect(found(index.search("cortez", 20))).toEqual(["song:song-a"]);
   });
 });

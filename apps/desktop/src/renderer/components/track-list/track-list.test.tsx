@@ -17,10 +17,7 @@ vi.mock("#/player/hooks", () => ({ usePlayerStatus: () => player.status }));
 const unplayable = vi.hoisted(() => new Set<string>());
 vi.mock("#/queue/unplayable", () => ({ useSongIsUnplayable: (id: string) => unplayable.has(id) }));
 
-vi.mock("@tanstack/react-db", () => ({
-  useLiveQuery: () => ({ data: undefined }),
-  eq: () => undefined,
-}));
+vi.mock("#/library/album-cover-art", () => ({ useAlbumCoverArt: () => null }));
 
 vi.mock("#/library/actions", () => ({ LibraryActions: {} }));
 
@@ -187,11 +184,25 @@ describe("TrackList", () => {
     expect(seen.selection?.items.map(({ key }) => key)).toEqual(["entry-2"]);
   });
 
+  it("opens no menu outside the rows, and reads the selection only once the menu opens", () => {
+    const seen = renderWithMenu(duplicates);
+    const list = document.querySelector<HTMLElement>('[role="grid"]')!;
+
+    fireEvent.click(row("entry-1"));
+    fireEvent.contextMenu(list);
+    expect(seen.selection).toBeNull();
+    expect(selectedKeys()).toEqual(["entry-1"]);
+
+    fireEvent.contextMenu(row("entry-1"));
+    expect(seen.selection?.items.map(({ key }) => key)).toEqual(["entry-1"]);
+  });
+
   it("leaves songs that are not in the library out of what the menu acts on", () => {
     const seen = renderWithMenu([track("entry-1", "song-a", "Here"), track("entry-2", "song-gone", "song-gone", true)]);
 
     fireEvent.click(row("entry-1"));
     fireEvent.click(row("entry-2"), { metaKey: true });
+    fireEvent.contextMenu(row("entry-2"));
 
     expect(seen.selection?.items).toHaveLength(2);
     expect(seen.selection?.songs.map(({ id }) => id)).toEqual(["song-a"]);

@@ -53,6 +53,12 @@ export const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: nu
 export const RefreshStatTarget = Schema.Struct({ type: Schema.Literals(["album", "playlist"]), id: Id });
 export type RefreshStatTarget = typeof RefreshStatTarget.Type;
 
+/**
+ * The albums of other artists that one of their songs credits an artist on, and the name such a credit
+ * gives the artist: an artist credited only on songs has no row of its own, and is known by it.
+ */
+export type ArtistAppearances = { readonly albumIds: ReadonlyArray<string>; readonly name: string | null };
+
 /** What a cover is of. `coverArtId` is the server's name for the image (`coverArt` on the row), which changes when the image does. */
 export type CoverTarget = { readonly type: "album" | "artist"; readonly id: string; readonly coverArtId: string | null };
 
