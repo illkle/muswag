@@ -21,3 +21,22 @@ export function chunks<T>(items: ReadonlyArray<T>, size: number): Array<Readonly
   for (let start = 0; start < items.length; start += size) result.push(items.slice(start, start + size));
   return result;
 }
+
+/**
+ * `ON CONFLICT DO UPDATE` that takes the incoming row only where it differs from the stored one. An
+ * unchanged row is not written at all, so it fires no capture trigger and renderers hear nothing of it.
+ * `keep` columns are neither taken nor compared; `set` adds assignments of its own, such as for them.
+ */
+export function upsertChanged<TTable extends SQLiteTable>(table: TTable, options: { readonly keep?: ReadonlyArray<keyof InferSelectModel<TTable>>; readonly set?: Record<string, SQL> } = {}) {
+  const keep = options.keep ?? [];
+  const columns = Object.entries(getColumns(table)).filter(([key, column]) => !column.primary && !keep.includes(key as keyof InferSelectModel<TTable>));
+  const primary = Object.values(getColumns(table)).find((column) => column.primary)!;
+  return {
+    target: primary,
+    set: { ...excludedSet(table, keep), ...options.set },
+    setWhere: sql.join(
+      columns.map(([, column]) => sql`${column} IS NOT ${sql.raw(`excluded."${column.name.replaceAll('"', '""')}"`)}`),
+      sql` OR `,
+    ),
+  };
+}

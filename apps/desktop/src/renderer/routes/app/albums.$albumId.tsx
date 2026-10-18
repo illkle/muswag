@@ -7,7 +7,7 @@ import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { db } from "#/data/library";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
-import { useAlbumStatsRefresh } from "#/library/stats-refresh";
+import { useAlbumRefresh } from "#/library/page-refresh";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks, getArtistCredits } from "#/components/utils/artist-links";
@@ -32,7 +32,7 @@ const creditLine = (credited: Parameters<typeof getArtistCredits>[0]) =>
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
-  useAlbumStatsRefresh(albumId);
+  useAlbumRefresh(albumId);
 
   // The keys name what each query reads, so a render builds no query unless the album is another one.
   const albumQuery = useLiveQuery({

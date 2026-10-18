@@ -43,7 +43,7 @@ export const serveAppCommands = (options: {
       "session:login": (credentials) => session.login(credentials, { beforeDataIsDeleted: clearQueue }),
       "session:logout": () => clearQueue.pipe(Effect.andThen(session.logout)),
       "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
-      "library:refreshStats": (target) => session.use((active) => active.library.refreshStats(target)),
+      "library:refresh": (target) => session.use((active) => active.library.refresh(target)),
       "library:artistAppearances": (artistId) => LibraryQueries.artistAppearances(artistId).pipe(Effect.provideService(Db, db)),
       "playlists:create": (input) => written(commands.create(input)),
       "playlists:rename": (id, name) => written(commands.rename(id, name)),

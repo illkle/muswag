@@ -153,6 +153,7 @@ async function createDb(records: PlaylistRecord[] = []) {
     rename: (id: string, name: string) => run(commands.rename(id, name)),
     addEntry: (id: string, songId: string) => run(commands.addEntries(id, [songId])).then(([entry]) => entry!),
     removeEntry: (id: string, entryId: string) => run(commands.removeEntry(id, entryId)),
+    moveEntry: (id: string, entryId: string, beforeEntryId: string | null) => run(commands.moveEntry(id, entryId, beforeEntryId)),
     delete: (id: string) => run(commands.delete(id)),
     get: (id: string) => run(rowOf(playlists, id)),
     all: () => run(Db.use((db) => db.select().from(playlists))),
@@ -908,6 +909,90 @@ describe("playlist sync manager", () => {
     await manager.sync();
 
     expect(api.playlists.get("server-1")?.songIds).toEqual(["song-b"]);
+    manager.destroy();
+  });
+
+  it("sends only the songs added at the end", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    await db.addEntry("server-1", "song-c");
+    await db.addEntry("server-1", "song-a");
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.updatePlaylistCalls[0]?.songIdToAdd).toEqual(["song-c", "song-a"]);
+    expect(api.updatePlaylistCalls[0]?.songIndexToRemove).toBeUndefined();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-b", "song-c", "song-a"]);
+    manager.destroy();
+  });
+
+  it("sends only the indices of the songs removed, highest first", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b", "song-c", "song-d"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    const entries = (await db.get("server-1"))!.local!.entries;
+    await db.removeEntry("server-1", entries[3]!.id);
+    await db.removeEntry("server-1", entries[1]!.id);
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.updatePlaylistCalls[0]?.songIndexToRemove).toEqual([3, 1]);
+    expect(api.updatePlaylistCalls[0]?.songIdToAdd).toBeUndefined();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-c"]);
+    manager.destroy();
+  });
+
+  it("removes one copy of a duplicated song by index", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b", "song-a", "song-c"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    // Without the first two songs, the list matches from the start onto the second copy of song-a.
+    const entries = (await db.get("server-1"))!.local!.entries;
+    await db.removeEntry("server-1", entries[0]!.id);
+    await db.removeEntry("server-1", entries[1]!.id);
+    await manager.sync();
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.updatePlaylistCalls[0]?.songIndexToRemove).toEqual([2, 1]);
+    expect(api.updatePlaylistCalls[0]?.songIdToAdd).toBeUndefined();
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-a", "song-c"]);
+    expect((await db.get("server-1"))?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a", "song-c"]);
+    manager.destroy();
+  });
+
+  it("rewrites the whole list for a reorder", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: ["song-a", "song-b", "song-c"] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+    api.updatePlaylistCalls.length = 0;
+
+    const entries = (await db.get("server-1"))!.local!.entries;
+    await db.moveEntry("server-1", entries[2]!.id, entries[0]!.id);
+    await manager.sync();
+
+    expect(api.updatePlaylistCalls).toHaveLength(1);
+    expect(api.updatePlaylistCalls[0]).toMatchObject({ songIndexToRemove: [2, 1, 0], songIdToAdd: ["song-c", "song-a", "song-b"] });
+    expect(api.playlists.get("server-1")?.songIds).toEqual(["song-c", "song-a", "song-b"]);
     manager.destroy();
   });
 

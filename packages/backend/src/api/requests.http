@@ -54,15 +54,26 @@ Content-Type: application/x-www-form-urlencoded
 
 v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&type=newest&size=20&offset=0
 
-### Get indexes
-# @name getIndexes
-
-# Milliseconds since January 1, 1970. Use 0 to return all indexes.
-@ifModifiedSince = 1787503367345
-POST {{baseUrl}}/rest/getIndexes.view
+### Get artists
+# @name getArtists
+POST {{baseUrl}}/rest/getArtists.view
 Content-Type: application/x-www-form-urlencoded
 
-v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&ifModifiedSince={{ifModifiedSince}}
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}
+
+### Get scan status
+# @name getScanStatus
+POST {{baseUrl}}/rest/getScanStatus.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}
+
+### Every song, a page at a time: an empty query matches all
+# @name search3
+POST {{baseUrl}}/rest/search3.view
+Content-Type: application/x-www-form-urlencoded
+
+v={{apiVersion}}&c={{clientName}}&f=json&u={{subsonicUsername}}&t={{subsonicToken}}&s={{subsonicSalt}}&query=&artistCount=0&albumCount=0&songCount=500&songOffset=0
 
 ### Get cover art
 # @name getCoverArt

@@ -32,5 +32,23 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1791562769000,
     "hash": "e17269d687e3b880adcc320c5b0da6f1a474248fbe176c0c5df1af69151a594b",
     "name": "20261009161929_credentials_token"
+  },
+  {
+    "sql": [
+      "ALTER TABLE `artists` ADD `albumCount` integer;",
+      "\nALTER TABLE `artists` ADD `musicBrainzId` text;",
+      "\nALTER TABLE `artists` ADD `sortName` text;",
+      "\nALTER TABLE `sync_state` ADD `serverScan` text;",
+      "\nALTER TABLE `sync_state` ADD `lastSyncedAt` text;",
+      "\nALTER TABLE `artists` DROP COLUMN `userRating`;",
+      "\nALTER TABLE `artists` DROP COLUMN `averageRating`;",
+      "\nALTER TABLE `sync_state` DROP COLUMN `indexesLastModified`;",
+      "\nALTER TABLE `sync_state` DROP COLUMN `lastFullSyncAt`;",
+      "\nALTER TABLE `sync_state` DROP COLUMN `lastQuickSyncAt`;"
+    ],
+    "bps": true,
+    "folderMillis": 1792319159000,
+    "hash": "cb47d9a722b58c06a76771ef75c21be300397795447c45dc8825a60c25d9f5ae",
+    "name": "20261018102559_library_sync_rework"
   }
 ];

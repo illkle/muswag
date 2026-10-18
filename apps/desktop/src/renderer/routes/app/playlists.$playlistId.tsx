@@ -11,7 +11,7 @@ import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { PlaylistActions } from "#/playlists/actions";
 import { totalDuration } from "#/playlists/rows";
 import { usePlaylist } from "#/playlists/queries";
-import { usePlaylistSongStatsRefresh } from "#/library/stats-refresh";
+import { usePlaylistSongsRefresh } from "#/library/page-refresh";
 import { libraryColumns } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/app/playlists/$playlistId")({
 function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const navigate = useNavigate();
   const { record, state, rows, isLoading, isError } = usePlaylist(playlistId);
-  usePlaylistSongStatsRefresh(record?.serverId ?? null);
+  usePlaylistSongsRefresh(record?.serverId ?? null);
   const playingKey = usePlayingKey((ref) => ref.type === "playlist" && ref.playlistId === playlistId);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);

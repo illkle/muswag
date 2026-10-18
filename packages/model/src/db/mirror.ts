@@ -4,7 +4,7 @@ import type { Song } from "./schema.js";
  * Song columns that stay in main: how to stream the file and the details no page shows. The renderers'
  * mirror leaves them out, which takes most of the weight off a song, and the library holds a lot of
  * them. A page that comes to show one of these takes it off the list. The play stats stay mirrored,
- * since refreshing them is what `LibrarySync.refreshStats` is for.
+ * for the pages that `LibrarySync.refresh` reads again when they open.
  */
 export const MAIN_ONLY_SONG_COLUMNS = [
   "isDir",

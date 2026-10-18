@@ -149,7 +149,7 @@ describe("SessionManager", () => {
       );
 
       // The server of this test answers with nothing to sync, which the sync reports and login does not.
-      expect(requested).toContain("/rest/getIndexes.view");
+      expect(requested).toContain("/rest/getArtists.view");
       expect(Option.getOrThrow(status).error).toEqual(expect.any(String));
       expect(yield* manager.snapshot).toMatchObject({ _tag: "LoggedIn" });
     }).pipe(Effect.provide(layer));

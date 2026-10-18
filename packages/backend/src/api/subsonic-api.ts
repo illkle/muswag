@@ -10,11 +10,14 @@ import {
   type GetAlbumArgs,
   type GetAlbumList2Args,
   type GetCoverArtArgs,
-  type GetIndexesArgs,
+  type GetArtistsArgs,
   type GetPlaylistArgs,
-  type Indexes,
+  type ArtistsID3,
   type PlaylistWithSongs,
   type Playlists,
+  type ScanStatus,
+  type Search3Args,
+  type SearchResult3,
   SubsonicApiError,
   type SubsonicBaseResponse,
   SubsonicConfigError,
@@ -25,12 +28,14 @@ import {
   createPlaylistResponseSchema,
   getAlbumList2ResponseSchema,
   getAlbumResponseSchema,
-  getIndexesResponseSchema,
+  getArtistsResponseSchema,
   getPlaylistResponseSchema,
   getPlaylistsResponseSchema,
+  getScanStatusResponseSchema,
   normalizeServerUrl,
   pingResponseSchema,
   responseEnvelopeSchema,
+  search3ResponseSchema,
   subsonicRestUrl,
 } from "@muswag/model";
 const API_VERSION = "1.16.1";
@@ -70,7 +75,9 @@ export interface SubsonicApiService {
   readonly ping: Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
   readonly getAlbum: (args: GetAlbumArgs) => Effect.Effect<SubsonicBaseResponse & { album: AlbumWithSongsID3 }, SubsonicClientError>;
   readonly getAlbumList2: (args: GetAlbumList2Args) => Effect.Effect<SubsonicBaseResponse & { albumList2: AlbumList2 }, SubsonicClientError>;
-  readonly getIndexes: (args?: GetIndexesArgs) => Effect.Effect<SubsonicBaseResponse & { indexes: Indexes }, SubsonicClientError>;
+  readonly getArtists: (args?: GetArtistsArgs) => Effect.Effect<SubsonicBaseResponse & { artists: ArtistsID3 }, SubsonicClientError>;
+  readonly getScanStatus: Effect.Effect<SubsonicBaseResponse & { scanStatus: ScanStatus }, SubsonicClientError>;
+  readonly search3: (args: Search3Args) => Effect.Effect<SubsonicBaseResponse & { searchResult3: SearchResult3 }, SubsonicClientError>;
   readonly getCoverArt: (args: GetCoverArtArgs) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError | SubsonicHttpError>;
   readonly getPlaylists: Effect.Effect<SubsonicBaseResponse & { playlists: Playlists }, SubsonicClientError>;
   readonly getPlaylist: (args: GetPlaylistArgs) => Effect.Effect<SubsonicBaseResponse & { playlist: PlaylistWithSongs }, SubsonicClientError>;
@@ -179,7 +186,9 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
       ping: read("ping", {}, pingResponseSchema),
       getAlbum: (args) => read("getAlbum", args, getAlbumResponseSchema),
       getAlbumList2: (args) => read("getAlbumList2", args, getAlbumList2ResponseSchema),
-      getIndexes: (args = {}) => read("getIndexes", args, getIndexesResponseSchema),
+      getArtists: (args = {}) => read("getArtists", args, getArtistsResponseSchema),
+      getScanStatus: read("getScanStatus", {}, getScanStatusResponseSchema),
+      search3: (args) => read("search3", args, search3ResponseSchema),
       getCoverArt: (args) => request("getCoverArt", args, READ_RETRIES).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
       getPlaylists: read("getPlaylists", {}, getPlaylistsResponseSchema),
       getPlaylist: (args) => read("getPlaylist", args, getPlaylistResponseSchema),

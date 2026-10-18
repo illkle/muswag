@@ -6,22 +6,22 @@ import {
   syncState,
   toRow,
   toSongRow,
-  type AlbumID3,
+  type Album,
+  type AlbumWithSongsID3,
   type Child,
-  type IndexArtist,
   type LibrarySyncStatus,
-  type RefreshStatTarget,
+  type RefreshTarget,
+  type Song,
   type SyncMode,
 } from "@muswag/model";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
-import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
+import { count, eq, inArray, sql } from "drizzle-orm";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
-import { Cause, Context, Data, Deferred, Effect, Exit, Layer, SubscriptionRef } from "effect";
+import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
-import { SubsonicAPI } from "../api/subsonic-api.js";
+import { SubsonicAPI, WRONG_CREDENTIALS } from "../api/subsonic-api.js";
 import { MiniFs, removeCoverFiles } from "../covers/cover-manager.js";
 import { Db, write } from "../db/database.js";
-import { chunks, excludedSet, STATEMENT_IDS, STATEMENT_ROWS } from "../db/upsert.js";
+import { chunks, STATEMENT_IDS, STATEMENT_ROWS, upsertChanged } from "../db/upsert.js";
 
 export class AlbumWithoutSongs extends Data.TaggedError("AlbumWithoutSongs")<{
   readonly id: string;
@@ -29,35 +29,46 @@ export class AlbumWithoutSongs extends Data.TaggedError("AlbumWithoutSongs")<{
   readonly message: string;
 }> {}
 
-export class SyncAlreadyRunning extends Data.TaggedError("SyncAlreadyRunning")<{
-  readonly running: SyncMode;
-  readonly message: string;
-}> {}
+/** How often a session catches up with the server on its own. */
+const SYNC_INTERVAL_MS = 30 * 60_000;
 
-/** Downloads the library from the server into the database and keeps play statistics fresh. */
+type Progress = LibrarySyncStatus["progress"];
+type ReportProgress = (progress: Progress) => Effect.Effect<void>;
+
+/** Downloads the library from the server into the database and keeps it up to date. */
 export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend/LibrarySync", {
   make: Effect.gen(function* () {
     const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror | MiniFs>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
-    const status = yield* SubscriptionRef.make<LibrarySyncStatus>(IDLE_LIBRARY_SYNC);
+    const db = yield* Db;
+    const [saved] = yield* db.select({ lastSyncedAt: syncState.lastSyncedAt }).from(syncState).where(eq(syncState.id, 1));
+    const status = yield* SubscriptionRef.make<LibrarySyncStatus>({ ...IDLE_LIBRARY_SYNC, lastSyncedAt: saved?.lastSyncedAt ?? null });
     type Running = { readonly mode: SyncMode; readonly done: Deferred.Deferred<void, SyncError> };
     let current: Running | null = null;
 
+    const reportProgress: ReportProgress = (progress) => SubscriptionRef.update(status, (previous) => ({ ...previous, progress }));
+
     const run = (running: Running) =>
-      syncLibrary(running.mode).pipe(
+      syncLibrary(running.mode, reportProgress).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit)
-            ? SubscriptionRef.set(status, { ...IDLE_LIBRARY_SYNC, lastSyncedAt: new Date().toISOString() })
+            ? SubscriptionRef.set(status, { running: null, progress: null, error: exit.value.problem, lastSyncedAt: exit.value.syncedAt })
             : Cause.hasInterruptsOnly(exit.cause)
-              ? SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: null }))
+              ? SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, progress: null, error: null }))
               : // The status has room for one line; the log keeps the rest.
                 Effect.logError("Library sync failed", exit.cause).pipe(
-                  Effect.andThen(SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, error: failureMessage(exit.cause) }))),
+                  Effect.andThen(SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, progress: null, error: failureMessage(exit.cause) }))),
                 ),
         ),
         Effect.exit,
-        Effect.flatMap((exit) => Deferred.done(running.done, exit)),
+        Effect.flatMap((exit) =>
+          Effect.suspend(() => {
+            // Before its waiters go on, so that what they ask for next is not taken for this one.
+            if (current === running) current = null;
+            return Deferred.done(running.done, Exit.asVoid(exit));
+          }),
+        ),
         Effect.ensuring(
           Effect.suspend(() => {
             if (current === running) current = null;
@@ -68,24 +79,41 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
         Effect.provide(context),
       );
 
+    /** Runs a sync, or joins the one running when that does as much. */
+    const sync = (mode: SyncMode): Effect.Effect<void, SyncError> =>
+      Effect.suspend(() => {
+        if (current) {
+          if (mode === "quick" || current.mode === "full") return Deferred.await(current.done);
+          // A full sync asked for during a quick one runs once that one is over, however it ended.
+          return Deferred.await(current.done).pipe(Effect.ignore, Effect.andThen(sync(mode)));
+        }
+        const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
+        current = running;
+        return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, progress: null, error: null })).pipe(
+          Effect.andThen(Effect.forkIn(run(running), scope)),
+          Effect.andThen(Deferred.await(running.done)),
+        );
+      });
+
+    /** A quick sync, unless one is running or the last ended less than `maxAgeMs` ago. Its failures are in the status. */
+    const syncIfStale = (maxAgeMs: number) =>
+      Effect.gen(function* () {
+        if (current) return;
+        const { lastSyncedAt } = yield* SubscriptionRef.get(status);
+        if (lastSyncedAt !== null && Date.now() - Date.parse(lastSyncedAt) < maxAgeMs) return;
+        yield* sync("quick").pipe(Effect.ignore);
+      });
+
+    // Albums added on the server show up without a restart. A quick sync that finds nothing changed costs a few requests.
+    yield* Effect.forkIn(Effect.forever(Effect.sleep(SYNC_INTERVAL_MS).pipe(Effect.andThen(syncIfStale(SYNC_INTERVAL_MS)))), scope);
+
     return {
       status: SubscriptionRef.get(status),
       changes: SubscriptionRef.changes(status),
-      /** Runs a sync, or joins the one already running in the same mode. */
-      sync: (mode: SyncMode) =>
-        Effect.suspend((): Effect.Effect<void, SyncError | SyncAlreadyRunning> => {
-          if (current) {
-            if (current.mode !== mode) return Effect.fail(new SyncAlreadyRunning({ running: current.mode, message: `A ${current.mode} sync is already running` }));
-            return Deferred.await(current.done);
-          }
-          const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
-          current = running;
-          return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, error: null })).pipe(
-            Effect.andThen(Effect.forkIn(run(running), scope)),
-            Effect.andThen(Deferred.await(running.done)),
-          );
-        }),
-      refreshStats: (target: RefreshStatTarget) => refreshStats(target).pipe(Effect.provide(context)),
+      sync,
+      syncIfStale,
+      // In the session's scope like a sync, so that logging out stops it before the data is deleted, and it cannot write after.
+      refresh: (target: RefreshTarget) => Effect.forkIn(refresh(target).pipe(Effect.provide(context)), scope).pipe(Effect.flatMap(Fiber.join)),
     } as const;
   }),
 }) {
@@ -100,205 +128,335 @@ const failureMessage = (cause: Cause.Cause<unknown>) => {
   return error instanceof Error ? error.message || error.name : String(error);
 };
 
-const ALBUM_STAT_FIELDS = ["playCount", "played", "starred", "userRating"] as const;
-const SONG_STAT_FIELDS = ["playCount", "played", "starred", "userRating", "averageRating", "bookmarkPosition"] as const;
+const ALBUM_PAGE_SIZE = 500;
+const SONG_PAGE_SIZE = 500;
+/** Albums whose songs are read before they are written, in one transaction. */
+const ALBUM_WRITE_GROUP = 50;
+const ALBUM_FETCH_CONCURRENCY = 10;
+
 /**
  * The cover file is the cover manager's. An update keeps it for as long as the server names the same
  * image, and forgets it when the image is another one, so that it is downloaded again.
  */
 const keptCoverPath = (table: typeof albums | typeof artists) => sql`CASE WHEN excluded.${sql.identifier(table.coverArt.name)} IS ${table.coverArt} THEN ${table.coverArtPath} END`;
+const upsertAlbums = upsertChanged(albums, { keep: ["coverArtPath"], set: { coverArtPath: keptCoverPath(albums) } });
+const upsertArtists = upsertChanged(artists, { keep: ["coverArtPath"], set: { coverArtPath: keptCoverPath(artists) } });
+const upsertSongs = upsertChanged(songs);
 
-const statFields = <K extends string>(source: object, fields: ReadonlyArray<K>) => {
-  const values = source as Record<string, unknown>;
-  return Object.fromEntries(fields.map((field) => [field, values[field] ?? null])) as Record<K, never>;
-};
+const writeSongs = (rows: ReadonlyArray<Song>) =>
+  Db.use((db) =>
+    Effect.forEach(
+      chunks(rows, STATEMENT_ROWS),
+      (chunk) =>
+        db
+          .insert(songs)
+          .values([...chunk])
+          .onConflictDoUpdate(upsertSongs),
+      { discard: true },
+    ),
+  );
+
+/** The songs of an album `getAlbum` answered with, which may not be none when the album has songs. */
+const songsOf = (album: AlbumWithSongsID3, songCount: number) =>
+  (album.song?.length ?? 0) === 0 && songCount > 0
+    ? Effect.fail(new AlbumWithoutSongs({ id: album.id, expectedSongCount: songCount, message: `The server lists ${songCount} songs for the album "${album.name}" (${album.id}) but returned none` }))
+    : Effect.succeed((album.song ?? []).map(toSongRow));
+
+/** Makes the album's songs the ones given: those it no longer lists go, the rest are written where they changed. */
+const replaceAlbumSongs = (albumId: string, rows: ReadonlyArray<Song>) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const keep = new Set(rows.map(({ id }) => id));
+    const stale = (yield* db.select({ id: songs.id }).from(songs).where(eq(songs.albumId, albumId))).map(({ id }) => id).filter((id) => !keep.has(id));
+    for (const ids of chunks(stale, STATEMENT_IDS)) yield* db.delete(songs).where(inArray(songs.id, [...ids]));
+    yield* writeSongs(rows);
+  });
 
 /**
- * Holds for a row whose stats are not `stats` already. A refresh writes only those rows: every row it
- * writes is sent to the renderers, and most refreshes find nothing changed.
+ * What the server says of its last scan, or `null` when it does not say or is scanning now. While it
+ * says the same, no file has changed.
  */
-const statsDiffer = <K extends string>(columns: Record<K, SQLiteColumn>, stats: Record<K, unknown>) =>
-  or(...(Object.keys(stats) as Array<K>).map((field) => sql`${columns[field]} IS NOT ${stats[field]}`));
+const serverScan = SubsonicAPI.use((api) => api.getScanStatus).pipe(
+  Effect.map(({ scanStatus }) => (scanStatus.scanning || scanStatus.lastScan === undefined ? null : `${scanStatus.lastScan} ${scanStatus.count ?? ""}`)),
+  // A server without the method may answer with an error, an HTTP status or something else entirely.
+  Effect.catchTags({ SubsonicApiError: () => Effect.succeed(null), SubsonicHttpError: () => Effect.succeed(null), SubsonicDecodeError: () => Effect.succeed(null) }),
+);
 
-const syncLibrary = (mode: SyncMode) =>
+const syncLibrary = (mode: SyncMode, reportProgress: ReportProgress) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const [state] = yield* db.select().from(syncState).where(eq(syncState.id, 1));
-    yield* syncArtistsFromIndexes(mode === "quick" ? (state?.indexesLastModified ?? 0) : 0);
-    yield* syncAlbumList(mode);
-    const now = new Date().toISOString();
+    const scan = yield* serverScan;
+
+    yield* syncArtists;
+    const { listed, changed, before } = yield* syncAlbumList;
+
+    // While the server has not scanned since the last sync that read every song, the songs of an album
+    // that looks the same are the same, and a quick sync reads only the others.
+    const readEverySong = mode === "full" || (scan !== null && scan !== (state?.serverScan ?? null));
+    // Without search3 a full sync reads every album with getAlbum, and a quick one only those that look changed.
+    const failures = readEverySong ? yield* syncEverySong(listed, mode === "full" ? listed : changed, reportProgress) : yield* syncAlbumSongs(changed, reportProgress);
+    // An album whose songs could not be read goes back to what it was compared by, so that the next
+    // sync finds it changed again, whether or not the server reports its scans.
+    yield* write(
+      Effect.forEach(
+        failures.flatMap(({ id }) => {
+          const previous = before.get(id);
+          return previous ? [previous] : [];
+        }),
+        ({ id, ...look }) => db.update(albums).set(look).where(eq(albums.id, id)),
+        { discard: true },
+      ),
+    );
+
+    // Songs of albums that are gone, however they were left behind.
+    yield* write(db.delete(songs).where(sql`${songs.albumId} IS NULL OR ${songs.albumId} NOT IN (SELECT ${albums.id} FROM ${albums})`));
+
+    const syncedAt = new Date().toISOString();
+    // A scan counts as read only once all its songs are. An album that failed has the next sync read every song again.
+    const nextScan = failures.length > 0 ? null : readEverySong ? scan : (state?.serverScan ?? null);
     yield* db
       .insert(syncState)
-      .values({ id: 1, ...(mode === "full" ? { lastFullSyncAt: now } : { lastQuickSyncAt: now }) })
-      .onConflictDoUpdate({ target: syncState.id, set: mode === "full" ? { lastFullSyncAt: now } : { lastQuickSyncAt: now } });
+      .values({ id: 1, serverScan: nextScan, lastSyncedAt: syncedAt })
+      .onConflictDoUpdate({ target: syncState.id, set: { serverScan: nextScan, lastSyncedAt: syncedAt } });
+
+    for (const { message } of failures) yield* Effect.logWarning(message);
+    const problem = failures.length === 0 ? null : `${failures.length === 1 ? "1 album" : `${failures.length} albums`} could not be synced: ${failures[0]!.message}`;
+    return { syncedAt, problem };
   });
 
-const refreshStats = (target: RefreshStatTarget) =>
+const syncArtists = Effect.gen(function* () {
+  const api = yield* SubsonicAPI;
+  const db = yield* Db;
+
+  const { artists: listing } = yield* api.getArtists();
+  const incoming = (listing.index ?? []).flatMap((index) => index.artist ?? []);
+  const incomingIds = new Set(incoming.map(({ id }) => id));
+  const stale = (yield* db.select({ id: artists.id }).from(artists)).map(({ id }) => id).filter((id) => !incomingIds.has(id));
+
+  const removed = yield* write(
+    Effect.gen(function* () {
+      for (const rows of chunks(
+        incoming.map((artist) => toRow(artists, artist)),
+        STATEMENT_ROWS,
+      )) {
+        yield* db
+          .insert(artists)
+          .values([...rows])
+          .onConflictDoUpdate(upsertArtists);
+      }
+      return yield* Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) =>
+        db
+          .delete(artists)
+          .where(inArray(artists.id, [...ids]))
+          .returning({ cover: artists.coverArtPath }),
+      );
+    }),
+  );
+  yield* removeCoverFiles(removed.flat().map(({ cover }) => cover));
+});
+
+/** What an album that looks changed is told by. Fields such as its play count change without its songs. */
+type AlbumLook = Pick<Album, "songCount" | "duration" | "created" | "name" | "artist">;
+const looksTheSame = (before: AlbumLook, after: AlbumLook) =>
+  before.songCount === after.songCount && before.duration === after.duration && before.created === after.created && before.name === after.name && before.artist === after.artist;
+
+/**
+ * Writes every album the server lists and removes the ones it no longer does. Answers with the albums
+ * listed, and those of them whose songs need reading: the new ones, the ones that look changed and the
+ * ones whose songs are not all here.
+ */
+const syncAlbumList = Effect.gen(function* () {
+  const api = yield* SubsonicAPI;
+  const db = yield* Db;
+
+  const before = new Map(
+    (yield* db.select({ id: albums.id, songCount: albums.songCount, duration: albums.duration, created: albums.created, name: albums.name, artist: albums.artist }).from(albums)).map((album) => [
+      album.id,
+      album,
+    ]),
+  );
+  const songCounts = yield* localSongCounts;
+
+  const listed = new Map<string, Album>();
+  // Until a page comes back empty: a server may give fewer albums a page than asked for.
+  for (let offset = 0; ;) {
+    const { albumList2 } = yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: ALBUM_PAGE_SIZE, offset });
+    const page = (albumList2.album ?? []).map((album) => toRow(albums, album));
+    // A page of only albums listed before is the end too: a server that ignores the offset answers with the same page again.
+    if (!page.some(({ id }) => !listed.has(id))) break;
+    offset += page.length;
+    yield* write(
+      Effect.forEach(
+        chunks(page, STATEMENT_ROWS),
+        (rows) =>
+          db
+            .insert(albums)
+            .values([...rows])
+            .onConflictDoUpdate(upsertAlbums),
+        { discard: true },
+      ),
+    );
+    for (const album of page) listed.set(album.id, album);
+  }
+
+  const removed = [...before.keys()].filter((id) => !listed.has(id));
+  if (removed.length > 0) {
+    const gone = yield* write(
+      Effect.forEach(chunks(removed, STATEMENT_IDS), (ids) =>
+        Effect.gen(function* () {
+          const covers = yield* db
+            .delete(albums)
+            .where(inArray(albums.id, [...ids]))
+            .returning({ cover: albums.coverArtPath });
+          yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
+          return covers;
+        }),
+      ),
+    );
+    yield* removeCoverFiles(gone.flat().map(({ cover }) => cover));
+  }
+
+  const changed = [...listed.values()].filter((album) => {
+    const previous = before.get(album.id);
+    return previous === undefined || !looksTheSame(previous, album) || (songCounts.get(album.id) ?? 0) !== album.songCount;
+  });
+  return { listed: [...listed.values()], changed, before };
+});
+
+const localSongCounts = Db.use((db) => db.select({ albumId: songs.albumId, songs: count() }).from(songs).groupBy(songs.albumId)).pipe(
+  Effect.map((rows) => new Map(rows.map(({ albumId, songs }) => [albumId, songs]))),
+);
+
+type AlbumFailure = { readonly id: string; readonly message: string };
+
+/**
+ * Reads the songs of each album with `getAlbum` and writes them, a group of albums per transaction.
+ * Answers with what went wrong with the albums that could not be read: the others are written all the same.
+ */
+const syncAlbumSongs = (targets: ReadonlyArray<Album>, reportProgress: ReportProgress) =>
+  Effect.gen(function* () {
+    const api = yield* SubsonicAPI;
+    const failures: AlbumFailure[] = [];
+    if (targets.length === 0) return failures;
+
+    let done = 0;
+    yield* reportProgress({ done, total: targets.length });
+    for (const group of chunks(targets, ALBUM_WRITE_GROUP)) {
+      const fetched = yield* Effect.forEach(
+        group,
+        (listed) =>
+          api.getAlbum({ id: listed.id }).pipe(
+            Effect.flatMap(({ album }) => songsOf(album, listed.songCount)),
+            Effect.map((rows) => ({ id: listed.id, rows })),
+            // One album the server cannot answer for is left as it was. Refused credentials, or no answer at all, end the sync.
+            Effect.catchIf(
+              (error) => error._tag === "AlbumWithoutSongs" || error._tag === "SubsonicDecodeError" || (error._tag === "SubsonicApiError" && error.code !== WRONG_CREDENTIALS),
+              (error) => Effect.sync(() => void failures.push({ id: listed.id, message: `${error.message} (album ${listed.id})` })).pipe(Effect.as(null)),
+            ),
+          ),
+        { concurrency: ALBUM_FETCH_CONCURRENCY },
+      );
+      yield* write(Effect.forEach(fetched, (album) => (album ? replaceAlbumSongs(album.id, album.rows) : Effect.void), { discard: true }));
+      done += group.length;
+      yield* reportProgress({ done, total: targets.length });
+    }
+    return failures;
+  });
+
+/**
+ * Reads every song of the library a page at a time through `search3`, which with an empty query
+ * matches them all on Navidrome and most servers. Of an album it listed every song of, the songs it
+ * did not list are removed. The others, as when the library changed between pages, are read with
+ * `getAlbum`, which leaves their songs as they were when it fails. A server that lists no songs that
+ * way has the `fallback` albums read with `getAlbum` instead.
+ */
+const syncEverySong = (listed: ReadonlyArray<Album>, fallback: ReadonlyArray<Album>, reportProgress: ReportProgress) =>
+  Effect.gen(function* () {
+    const api = yield* SubsonicAPI;
+    const db = yield* Db;
+    const albumIds = new Set(listed.map(({ id }) => id));
+    const total = listed.reduce((sum, album) => sum + album.songCount, 0);
+
+    const seen = new Set<string>();
+    const seenOf = new Map<string, number>();
+    const listedSongs = new Set<string>();
+    yield* reportProgress({ done: 0, total });
+    for (let offset = 0; ;) {
+      const result = yield* api.search3({ query: "", artistCount: 0, albumCount: 0, songCount: SONG_PAGE_SIZE, songOffset: offset }).pipe(
+        // A server that will not search for nothing answers as one that finds nothing.
+        Effect.catchIf(
+          (error) => offset === 0 && (error._tag === "SubsonicHttpError" || error._tag === "SubsonicDecodeError" || (error._tag === "SubsonicApiError" && error.code !== WRONG_CREDENTIALS)),
+          () => Effect.succeed({ searchResult3: {} as { song?: ReadonlyArray<Child> } }),
+        ),
+      );
+      const page = result.searchResult3.song ?? [];
+      // A page of only songs listed before is the end too: a server that ignores the offset answers with the same page again.
+      if (!page.some(({ id }) => !listedSongs.has(id))) break;
+      for (const { id } of page) listedSongs.add(id);
+      offset += page.length;
+      // Songs of albums the list did not have would only be removed again.
+      const rows = page.filter((song) => song.albumId !== undefined && albumIds.has(song.albumId) && !seen.has(song.id)).map(toSongRow);
+      for (const { id, albumId } of rows) {
+        seen.add(id);
+        seenOf.set(albumId!, (seenOf.get(albumId!) ?? 0) + 1);
+      }
+      yield* write(writeSongs(rows));
+      yield* reportProgress({ done: seen.size, total });
+    }
+
+    if (seen.size === 0 && total > 0) return yield* syncAlbumSongs(fallback, reportProgress);
+
+    const complete = new Set(listed.filter((album) => (seenOf.get(album.id) ?? 0) === album.songCount).map(({ id }) => id));
+    const stale = (yield* db.select({ id: songs.id, albumId: songs.albumId }).from(songs)).filter(({ id, albumId }) => !seen.has(id) && albumId !== null && complete.has(albumId)).map(({ id }) => id);
+    yield* write(Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) => db.delete(songs).where(inArray(songs.id, [...ids])), { discard: true }));
+
+    return yield* syncAlbumSongs(
+      listed.filter(({ id }) => !complete.has(id)),
+      reportProgress,
+    );
+  });
+
+/**
+ * Reads what a page shows from the server again: an album with all its songs, or the songs of a
+ * playlist that are in the library. A playlist's songs of albums the library does not have are left
+ * to the sync, which adds them with their album.
+ */
+const refresh = (target: RefreshTarget) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const api = yield* SubsonicAPI;
 
-    const updateSongs = (incoming: ReadonlyArray<Child>) =>
-      Effect.forEach(
-        incoming,
-        (song) => {
-          const stats = statFields(song, SONG_STAT_FIELDS);
-          return db
-            .update(songs)
-            .set(stats)
-            .where(and(eq(songs.id, song.id), statsDiffer(songs, stats)));
-        },
-        { discard: true },
-      );
-
     switch (target.type) {
       case "album": {
         const { album } = yield* api.getAlbum({ id: target.id });
+        const rows = yield* songsOf(album, album.songCount);
         yield* write(
           Effect.gen(function* () {
-            const stats = statFields(album, ALBUM_STAT_FIELDS);
-            yield* db
-              .update(albums)
-              .set(stats)
-              .where(and(eq(albums.id, target.id), statsDiffer(albums, stats)));
-            yield* updateSongs(album.song ?? []);
+            yield* db.insert(albums).values(toRow(albums, album)).onConflictDoUpdate(upsertAlbums);
+            yield* replaceAlbumSongs(album.id, rows);
           }),
         );
         break;
       }
       case "playlist": {
         const { playlist } = yield* api.getPlaylist({ id: target.id });
-        yield* write(updateSongs(playlist.entry ?? []));
+        const entries = playlist.entry ?? [];
+        yield* write(
+          Effect.gen(function* () {
+            const known = new Set<string>();
+            for (const ids of chunks([...new Set(entries.map(({ id }) => id))], STATEMENT_IDS)) {
+              for (const { id } of yield* db
+                .select({ id: songs.id })
+                .from(songs)
+                .where(inArray(songs.id, [...ids])))
+                known.add(id);
+            }
+            const rows = new Map(entries.filter(({ id }) => known.has(id)).map((song) => [song.id, toSongRow(song)]));
+            yield* writeSongs([...rows.values()]);
+          }),
+        );
         break;
       }
     }
-  });
-
-const syncArtistsFromIndexes = (ifModifiedSince: number) =>
-  Effect.gen(function* () {
-    const api = yield* SubsonicAPI;
-    const db = yield* Db;
-
-    const { indexes } = yield* api.getIndexes({ ifModifiedSince });
-    const incoming: ReadonlyArray<IndexArtist> = (indexes.index ?? []).flatMap((index) => index.artist ?? []);
-
-    // An unchanged or empty index says nothing about which artists are gone.
-    if (incoming.length > 0) {
-      const incomingIds = new Set(incoming.map(({ id }) => id));
-      const stale = (yield* db.select({ id: artists.id }).from(artists)).map(({ id }) => id).filter((id) => !incomingIds.has(id));
-
-      yield* write(
-        Effect.gen(function* () {
-          for (const rows of chunks(
-            incoming.map((artist) => toRow(artists, artist)),
-            STATEMENT_ROWS,
-          )) {
-            yield* db
-              .insert(artists)
-              .values([...rows])
-              .onConflictDoUpdate({ target: artists.id, set: { ...excludedSet(artists), coverArtPath: keptCoverPath(artists) } });
-          }
-          return yield* Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) =>
-            db
-              .delete(artists)
-              .where(inArray(artists.id, [...ids]))
-              .returning({ cover: artists.coverArtPath }),
-          );
-        }),
-      ).pipe(Effect.flatMap((removed) => removeCoverFiles(removed.flat().map(({ cover }) => cover))));
-    }
-
-    yield* db
-      .insert(syncState)
-      .values({ id: 1, indexesLastModified: indexes.lastModified })
-      .onConflictDoUpdate({ target: syncState.id, set: { indexesLastModified: indexes.lastModified } });
-  });
-
-const ALBUM_PAGE_SIZE = 500;
-
-const syncAlbumList = (mode: SyncMode) =>
-  Effect.gen(function* () {
-    const api = yield* SubsonicAPI;
-    const db = yield* Db;
-
-    const missing = new Set((yield* db.select({ id: albums.id }).from(albums)).map(({ id }) => id));
-
-    for (let offset = 0; ; offset += ALBUM_PAGE_SIZE) {
-      const { albumList2 } = yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: ALBUM_PAGE_SIZE, offset });
-      const page = albumList2.album ?? [];
-      if (page.length === 0) break;
-
-      const synced = yield* Effect.forEach(page, (album) => syncAlbum(album, mode), { concurrency: 10 });
-      for (const id of synced) missing.delete(id);
-
-      if (page.length < ALBUM_PAGE_SIZE) break;
-    }
-
-    const removed = [...missing];
-    if (removed.length === 0) return;
-    yield* write(
-      Effect.forEach(chunks(removed, STATEMENT_IDS), (ids) =>
-        Effect.gen(function* () {
-          const gone = yield* db
-            .delete(albums)
-            .where(inArray(albums.id, [...ids]))
-            .returning({ cover: albums.coverArtPath });
-          yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
-          return gone;
-        }),
-      ),
-    ).pipe(Effect.flatMap((gone) => removeCoverFiles(gone.flat().map(({ cover }) => cover))));
-  });
-
-const syncAlbum = (incoming: AlbumID3, mode: SyncMode) =>
-  Effect.gen(function* () {
-    const api = yield* SubsonicAPI;
-    const db = yield* Db;
-
-    const row = toRow(albums, incoming);
-
-    if (mode === "quick") {
-      const [existing] = yield* db.select().from(albums).where(eq(albums.id, incoming.id));
-      const songCount = yield* db.$count(songs, eq(songs.albumId, incoming.id));
-      const same =
-        existing !== undefined &&
-        existing.songCount === row.songCount &&
-        existing.duration === row.duration &&
-        existing.created === row.created &&
-        existing.name === row.name &&
-        existing.artist === row.artist &&
-        songCount === row.songCount;
-      if (same) return incoming.id;
-    }
-
-    const { album } = yield* api.getAlbum({ id: incoming.id });
-    if (!album.song && incoming.songCount > 0) {
-      return yield* new AlbumWithoutSongs({
-        id: incoming.id,
-        expectedSongCount: incoming.songCount,
-        message: `The server lists ${incoming.songCount} songs for the album "${incoming.name}" (${incoming.id}) but returned none`,
-      });
-    }
-
-    const incomingSongs = (album.song ?? []).map(toSongRow);
-    yield* write(
-      Effect.gen(function* () {
-        yield* db
-          .insert(albums)
-          .values(row)
-          .onConflictDoUpdate({ target: albums.id, set: { ...excludedSet(albums), coverArtPath: keptCoverPath(albums) } });
-        // Songs the album no longer lists are gone; the rest are updated in place.
-        const keep = new Set(incomingSongs.map(({ id }) => id));
-        const stale = (yield* db.select({ id: songs.id }).from(songs).where(eq(songs.albumId, incoming.id))).map(({ id }) => id).filter((id) => !keep.has(id));
-        for (const ids of chunks(stale, STATEMENT_IDS)) yield* db.delete(songs).where(inArray(songs.id, [...ids]));
-        for (const rows of chunks(incomingSongs, STATEMENT_ROWS)) {
-          yield* db
-            .insert(songs)
-            .values([...rows])
-            .onConflictDoUpdate({ target: songs.id, set: excludedSet(songs) });
-        }
-      }),
-    );
-
-    return incoming.id;
   });

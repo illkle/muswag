@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Db, LibrarySync } from "@muswag/backend";
+import { Db, LibrarySync, SubsonicAPI } from "@muswag/backend";
 import { NoCoverFiles } from "@muswag/backend/testing";
-import { albums, songs } from "@muswag/model";
+import { albums, artists, songs } from "@muswag/model";
 import { Effect, Layer, ManagedRuntime } from "effect";
 
 import { librarySetA, librarySetB, type AlbumFixture } from "./fixtures/library-sets.js";
@@ -32,7 +32,7 @@ function readLibrary(db: Library) {
   return db.run(
     Effect.gen(function* () {
       const database = yield* Db;
-      return { albums: yield* database.select().from(albums), songs: yield* database.select().from(songs) };
+      return { albums: yield* database.select().from(albums), artists: yield* database.select().from(artists), songs: yield* database.select().from(songs) };
     }),
   );
 }
@@ -115,5 +115,42 @@ describeIfReady("navidrome sync integration", () => {
       const afterAlbumIds = new Set(after.albums.map(({ id }) => id));
       expect(after.songs.every(({ albumId }) => albumId !== null && afterAlbumIds.has(albumId))).toBe(true);
     });
+  });
+
+  it("links every album to an artist the library has", async () => {
+    await withNavidromeLibrary(librarySetA, async ({ db, sync }) => {
+      await sync("quick");
+
+      const state = await readLibrary(db);
+      const artistIds = new Set(state.artists.map(({ id }) => id));
+      expect(state.albums.length).toBeGreaterThan(0);
+      expect(state.albums.every(({ artistId }) => artistId !== null && artistIds.has(artistId))).toBe(true);
+    });
+  });
+
+  it("takes a rescanned library in with a quick sync", async () => {
+    await withNavidromeLibrary(librarySetA, async ({ db, connection, sync }) => {
+      await sync("quick");
+      expect((await readLibrary(db)).songs).toHaveLength(countSongs(librarySetA));
+
+      await connection.replaceLibrary(librarySetB, fastLibraryGeneration);
+      await sync("quick");
+
+      const after = await readLibrary(db);
+      expect(after.albums).toHaveLength(librarySetB.length);
+      expect(after.songs).toHaveLength(countSongs(librarySetB));
+    });
+  });
+
+  it("lists every song through search3 with an empty query, which full and rescanned syncs rely on", async () => {
+    const connection = await createNavidromeTestConnection(librarySetA, fastLibraryGeneration);
+    try {
+      const { searchResult3 } = await Effect.runPromise(
+        SubsonicAPI.use((api) => api.search3({ query: "", artistCount: 0, albumCount: 0, songCount: 500, songOffset: 0 })).pipe(Effect.provide(subsonicLayerFor(connection))),
+      );
+      expect(searchResult3.song).toHaveLength(countSongs(librarySetA));
+    } finally {
+      await connection.cleanup();
+    }
   });
 });

@@ -150,25 +150,20 @@ export const albumList2Schema = Schema.Struct({
   album: Schema.optional(Schema.Array(albumID3Schema)),
 });
 
-export const indexArtistSchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  starred: Schema.optional(Schema.String),
-  userRating: Schema.optional(Schema.Finite),
-  averageRating: Schema.optional(Schema.Finite),
-  coverArt: Schema.optional(Schema.String),
-  artistImageUrl: Schema.optional(Schema.String),
-});
-
-export const indexSchema = Schema.Struct({
-  name: Schema.String,
-  artist: Schema.optional(Schema.Array(indexArtistSchema)),
-});
-
-export const indexesSchema = Schema.Struct({
-  index: Schema.optional(Schema.Array(indexSchema)),
-  lastModified: Schema.Finite,
+export const artistsID3Schema = Schema.Struct({
+  index: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, artist: Schema.optional(Schema.Array(artistID3Schema)) }))),
   ignoredArticles: Schema.optional(Schema.String),
+});
+
+/** `lastScan` is OpenSubsonic's, which Navidrome sends. */
+export const scanStatusSchema = Schema.Struct({
+  scanning: Schema.Boolean,
+  count: Schema.optional(Schema.Finite),
+  lastScan: Schema.optional(Schema.String),
+});
+
+export const searchResult3Schema = Schema.Struct({
+  song: Schema.optional(Schema.Array(childSchema)),
 });
 
 export const playlistSchema = Schema.Struct({
@@ -203,8 +198,14 @@ export const getAlbumResponseSchema = Schema.Struct({
 export const getAlbumList2ResponseSchema = Schema.Struct({
   albumList2: albumList2Schema,
 });
-export const getIndexesResponseSchema = Schema.Struct({
-  indexes: indexesSchema,
+export const getArtistsResponseSchema = Schema.Struct({
+  artists: artistsID3Schema,
+});
+export const getScanStatusResponseSchema = Schema.Struct({
+  scanStatus: scanStatusSchema,
+});
+export const search3ResponseSchema = Schema.Struct({
+  searchResult3: searchResult3Schema,
 });
 export const getPlaylistsResponseSchema = Schema.Struct({
   playlists: playlistsSchema,
@@ -234,9 +235,9 @@ export type Child = typeof childSchema.Type;
 export type AlbumID3 = typeof albumID3Schema.Type;
 export type AlbumWithSongsID3 = typeof albumWithSongsID3Schema.Type;
 export type AlbumList2 = typeof albumList2Schema.Type;
-export type IndexArtist = typeof indexArtistSchema.Type;
-export type SubsonicIndex = typeof indexSchema.Type;
-export type Indexes = typeof indexesSchema.Type;
+export type ArtistsID3 = typeof artistsID3Schema.Type;
+export type ScanStatus = typeof scanStatusSchema.Type;
+export type SearchResult3 = typeof searchResult3Schema.Type;
 export type Playlist = typeof playlistSchema.Type;
 export type PlaylistWithSongs = typeof playlistWithSongsSchema.Type;
 export type Playlists = typeof playlistsSchema.Type;
@@ -255,9 +256,19 @@ export type GetAlbumArgs = {
   id: string;
 };
 
-export type GetIndexesArgs = {
+export type GetArtistsArgs = {
   musicFolderId?: string | number;
-  ifModifiedSince?: number;
+};
+
+export type Search3Args = {
+  query: string;
+  artistCount?: number;
+  artistOffset?: number;
+  albumCount?: number;
+  albumOffset?: number;
+  songCount?: number;
+  songOffset?: number;
+  musicFolderId?: string | number;
 };
 
 export type GetCoverArtArgs = {

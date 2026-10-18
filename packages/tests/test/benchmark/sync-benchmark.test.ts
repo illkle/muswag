@@ -11,7 +11,10 @@ describe("sync storage benchmark", () => {
     const count = 5_000;
     const listed = Array.from({ length: count }, (_, index) => apiAlbum(`album-${index}`));
     const api = apiLayer({
-      getIndexes: () => Effect.succeed({ status: "ok", version: "1.16.1", indexes: { lastModified: 1 } }),
+      getScanStatus: Effect.succeed({ status: "ok", version: "1.16.1", scanStatus: { scanning: false } }),
+      getArtists: () => Effect.succeed({ status: "ok", version: "1.16.1", artists: {} }),
+      // A server that cannot list every song at once, so each album is read on its own.
+      search3: () => Effect.succeed({ status: "ok", version: "1.16.1", searchResult3: {} }),
       getAlbumList2: ({ offset = 0, size = 500 }) => Effect.succeed({ status: "ok", version: "1.16.1", albumList2: { album: listed.slice(offset, offset + size) } }),
       getAlbum: ({ id }) => Effect.succeed({ status: "ok", version: "1.16.1", album: { ...listed.find((album) => album.id === id)!, song: [apiSong(`song-${id}`, id)] } }),
     });
