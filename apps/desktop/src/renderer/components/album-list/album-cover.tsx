@@ -1,18 +1,17 @@
 import { viaDevBridge } from "#/data/dev-bridge";
 import { cn } from "#/lib/utils";
 import type { CoverTarget } from "@muswag/model";
-import { startTransition, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 /** A little longer than main remembers a failed download, so the next request starts a new one. */
 const RETRY_FAILED_COVER_AFTER_MS = 70_000;
 
+/** An image the browser loads once it is about to be seen and decodes off the main thread, over a placeholder while there is none. */
 export function AlbumCover({
-  instantLoad = false,
   thumbnail = false,
   target,
   className,
 }: {
-  instantLoad?: boolean | undefined;
   /** Loads a scaled-down copy, for covers shown small. */
   thumbnail?: boolean | undefined;
   target?: CoverTarget | undefined;
@@ -27,23 +26,9 @@ export function AlbumCover({
     return () => clearTimeout(retry);
   }, [failedSrc]);
 
-  const [loadImage, setLoadImage] = useState(instantLoad);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      startTransition(() => {
-        setLoadImage(true);
-      });
-    }, 50);
-
-    return () => {
-      clearTimeout(t);
-    };
-  }, []);
-
   return (
     <div className={cn("relative aspect-square overflow-hidden rounded", className)}>
-      {coverSrc && coverSrc !== failedSrc && loadImage && (
+      {coverSrc && coverSrc !== failedSrc && (
         <img src={coverSrc} alt={`cover art`} className="relative z-10 size-full animate-in object-cover fade-in-0" decoding="async" loading="lazy" onError={() => setFailedSrc(coverSrc)} />
       )}
       <div className="absolute top-0 size-full border border-border bg-muted"> </div>

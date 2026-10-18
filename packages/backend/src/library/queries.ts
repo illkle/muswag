@@ -1,6 +1,9 @@
 import {
   ALBUM_ORDER,
   albumOccurrenceKey,
+  albums,
+  ARTIST_ALBUM_ORDER,
+  artistOccurrenceKey,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
   playlistOccurrenceKey,
@@ -9,6 +12,7 @@ import {
   queueResume,
   queueState,
   songs,
+  type ArtistAppearances,
   type LibrarySort,
   type QueueItemRow,
   type QueueSourceRef,
@@ -17,7 +21,7 @@ import {
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { Db, position, write, type Database } from "../db/database.js";
@@ -43,6 +47,25 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
     .pipe(
       Effect.map((rows) => {
         const items = rows.map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
+        return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
+      }),
+    );
+
+/** The songs of an artist's albums, album after album, which is how the artists page lists them. A discography is small enough to read whole. */
+const openArtist = (db: Reads, artistId: string, key: string | null) =>
+  db
+    .select({ track: songs })
+    .from(songs)
+    .innerJoin(albums, eq(albums.id, songs.albumId))
+    .where(eq(albums.artistId, artistId))
+    .orderBy(
+      // SQLite puts nulls first going up and last going down, as the page asks TanStack DB to.
+      ...ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column])),
+      ...ALBUM_ORDER.map((column) => asc(songs[column])),
+    )
+    .pipe(
+      Effect.map((rows) => {
+        const items = rows.map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
         return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
       }),
     );
@@ -116,6 +139,8 @@ const openSource = (db: Reads, ref: QueueSourceRef, key: string | null) => {
   switch (ref.type) {
     case "album":
       return openAlbum(db, ref.albumId, key);
+    case "artist":
+      return openArtist(db, ref.artistId, key);
     case "playlist":
       return openPlaylist(db, ref.playlistId, key);
     case "library":
@@ -134,6 +159,21 @@ export const LibraryQueries = {
           .where(inArray(songs.id, [...chunk])),
       ),
     ).pipe(Effect.map((pages) => pages.flat())),
+
+  /**
+   * Where `artistId` appears on other artists' albums: the albums with a song that credits it. The
+   * credits are JSON on each song, so this reads every song, which SQLite does far faster than a page.
+   */
+  artistAppearances: (artistId: string) =>
+    Db.use((db) =>
+      db.all<{ albumId: string; name: string | null }>(sql`
+        SELECT DISTINCT ${songs.albumId} AS albumId, json_extract(credit.value, '$.name') AS name
+        FROM ${songs}
+        JOIN ${albums} ON ${albums.id} = ${songs.albumId}
+        JOIN json_each(${songs.artists}) AS credit
+        WHERE json_extract(credit.value, '$.id') = ${artistId} AND ${albums.artistId} IS NOT ${artistId}
+      `),
+    ).pipe(Effect.map((rows): ArtistAppearances => ({ albumIds: [...new Set(rows.map(({ albumId }) => albumId))], name: rows.find(({ name }) => name)?.name ?? null }))),
 
   /**
    * The part of a queue source around `at`: the occurrence `at.key` where the source has it, and

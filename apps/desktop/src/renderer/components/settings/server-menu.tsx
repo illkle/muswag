@@ -1,6 +1,7 @@
-import { ArrowsClockwiseIcon, CaretUpDownIcon, HardDrivesIcon, PackageIcon, SignOutIcon, SpinnerGapIcon, WarningIcon, WaveformIcon } from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, CaretUpDownIcon, CloudArrowDownIcon, HardDrivesIcon, PackageIcon, SignOutIcon, SpinnerGapIcon, WarningIcon, WaveformIcon } from "@phosphor-icons/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
+import type { SyncMode } from "@muswag/model";
 
 import { usePlayerError, usePlayerMpvBinary } from "#/player/hooks";
 import { getAppUpdateStatus, hasAppUpdate, useAppUpdate } from "#/updates/app-update";
@@ -15,6 +16,18 @@ import { SidebarMenuButton } from "#/components/ui/sidebar";
 import { cn } from "#/lib/utils";
 
 type SettingsDialog = "mpv" | "update";
+
+const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+/** How long ago `iso` was, in the largest unit that fits: "just now", "5 minutes ago", "yesterday". */
+function syncedAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.round((now - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return relativeTime.format(-minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return relativeTime.format(-hours, "hour");
+  return relativeTime.format(-Math.round(hours / 24), "day");
+}
 
 function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" | "destructive" }) {
   return (
@@ -36,8 +49,8 @@ export function ServerMenu() {
     mutationFn: () => Session.logout(),
   });
   const syncMutation = useMutation({
-    // Asked for by hand, so nothing is assumed unchanged: a quick sync skips albums that look the same.
-    mutationFn: () => LibraryActions.sync("full"),
+    // A quick sync reads every song again whenever the server has scanned its files; a full one repairs what that missed.
+    mutationFn: (mode: SyncMode) => LibraryActions.sync(mode),
   });
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -54,6 +67,8 @@ export function ServerMenu() {
   // The sync runs in main and outlives this menu, e.g. across a window reload, so follow main's status too.
   const librarySync = useLibrarySyncStatus();
   const syncRunning = syncMutation.isPending || librarySync.running !== null;
+  const { progress } = librarySync;
+  const syncLabel = progress && progress.total > 0 ? `Syncing library… ${Math.min(99, Math.floor((progress.done / progress.total) * 100))}%` : "Syncing library…";
 
   // `checking` is the startup state, so it must not paint the button red before mpv is actually missing.
   const playbackBroken = binary._tag === "Unavailable" || Boolean(playerError);
@@ -99,15 +114,20 @@ export function ServerMenu() {
 
           <MenuSeparator />
 
-          <MenuItem disabled={syncRunning} onClick={() => syncMutation.mutate()}>
+          <MenuItem disabled={syncRunning} onClick={() => syncMutation.mutate("quick")}>
             {syncRunning ? <SpinnerGapIcon className="size-4 animate-spin" /> : <ArrowsClockwiseIcon className="size-4 text-muted-foreground" />}
-            {syncRunning ? "Syncing library…" : "Sync library"}
+            <span className="flex-1 truncate">{syncRunning ? syncLabel : "Sync library"}</span>
+            {!syncRunning && librarySync.lastSyncedAt ? <span className="shrink-0 text-xs text-muted-foreground">{syncedAgo(librarySync.lastSyncedAt)}</span> : null}
           </MenuItem>
           {librarySync.error && !syncRunning ? (
             <p role="alert" title={librarySync.error} className="line-clamp-2 px-2 pb-1.5 text-xs text-destructive">
-              Last sync failed: {librarySync.error}
+              Last sync: {librarySync.error}
             </p>
           ) : null}
+          <MenuItem disabled={syncRunning} onClick={() => syncMutation.mutate("full")}>
+            <CloudArrowDownIcon className="size-4 text-muted-foreground" />
+            Sync everything again
+          </MenuItem>
 
           <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={() => setDialog("mpv")}>
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}

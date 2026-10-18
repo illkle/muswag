@@ -28,9 +28,11 @@ export function createQueueSources(db: SourceDb): QueueSources {
     subscribe: (listener) =>
       db.subscribe((batch) => {
         // Every source is made of songs: one joining or leaving moves the others, and a playlist plays only those the library has.
+        // An artist's songs are those of its albums, in the order of their years.
         const songs = batch.changes.some((change) => change.table === "songs");
+        const albums = batch.changes.some((change) => change.table === "albums");
         const playlists = new Set(batch.changes.filter((change) => change.table === "playlists").map((change) => String(change.key)));
-        if (songs || playlists.size > 0) listener((ref) => songs || (ref.type === "playlist" && playlists.has(ref.playlistId)));
+        if (songs || albums || playlists.size > 0) listener((ref) => songs || (ref.type === "artist" && albums) || (ref.type === "playlist" && playlists.has(ref.playlistId)));
       }),
   };
 }

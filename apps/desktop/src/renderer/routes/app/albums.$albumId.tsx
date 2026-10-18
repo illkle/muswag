@@ -3,11 +3,11 @@ import { DiscIcon, PlayIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { PageState } from "#/components/page-state";
 import { Button } from "#/components/ui/button";
-import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { db } from "#/data/library";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
-import { useAlbumStatsRefresh } from "#/library/stats-refresh";
+import { useAlbumRefresh } from "#/library/page-refresh";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks, getArtistCredits } from "#/components/utils/artist-links";
@@ -32,24 +32,29 @@ const creditLine = (credited: Parameters<typeof getArtistCredits>[0]) =>
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
-  useAlbumStatsRefresh(albumId);
+  useAlbumRefresh(albumId);
 
-  const albumQuery = useLiveQuery((q) =>
-    q
-      .from({ album: db.albums })
-      .where(({ album }) => eq(album.id, albumId))
-      .findOne(),
-  );
+  // The keys name what each query reads, so a render builds no query unless the album is another one.
+  const albumQuery = useLiveQuery({
+    queryKey: ["album", albumId],
+    query: (q) =>
+      q
+        .from({ album: db.albums })
+        .where(({ album }) => eq(album.id, albumId))
+        .findOne(),
+  });
 
-  const songsQuery = useLiveQuery((q) =>
-    q
-      .from({ song: db.songs })
-      .where(({ song }) => eq(song.albumId, albumId))
-      // The order main plays the album in. Nulls first is what SQLite does too.
-      .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
-  );
+  const songsQuery = useLiveQuery({
+    queryKey: ["album-songs", albumId],
+    query: (q) =>
+      q
+        .from({ song: db.songs })
+        .where(({ song }) => eq(song.albumId, albumId))
+        // The order main plays the album in. Nulls first is what SQLite does too.
+        .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
+  });
 
-  const queueState = useQueueManagerState();
+  const playingKey = usePlayingKey((ref) => ref.type === "album" && ref.albumId === albumId);
 
   const discTitles = albumQuery.data?.discTitles;
   const items = useMemo((): TrackListItem[] => {
@@ -81,8 +86,6 @@ function RouteComponent() {
   const columns = (songsQuery.data ?? []).every((song) => creditLine(song) === albumCredit) ? albumColumnsWithoutArtist : albumColumns;
   const firstKey = items.find(isTrackItem)?.key;
 
-  const playingKey = queueState.source?.ref.type === "album" && queueState.source.ref.albumId === albumId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
-
   const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));
 
   return (
@@ -103,7 +106,6 @@ function RouteComponent() {
             art={
               <AlbumCover
                 className="w-full"
-                instantLoad
                 target={{
                   type: "album",
                   id: album.id,

@@ -15,7 +15,7 @@ import { createQueue } from "../queue";
 import type { SourceDb } from "../queue/source";
 import { unplayableTracks } from "#shared/state/queue";
 import { serveAppCommands } from "./commands";
-import { COVER_DIRECTORY, MiniFsLive, safeStorageCipher } from "./platform";
+import { COVER_DIRECTORY, MiniFsLive } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
 
 export interface AppOptions {
@@ -25,7 +25,12 @@ export interface AppOptions {
   readonly player: PlayerHandle;
   /** Where renderers see the session and sync status; it must mirror `SESSION_TABLES`. */
   readonly stateMirror: MemoryMirrorService;
+  /** Calls `listener` whenever a window of the app gains focus, until the returned function is called. */
+  readonly onWindowFocus?: (listener: () => void) => () => void;
 }
+
+/** A library sync younger than this is not repeated when a window gains focus. */
+const SYNC_ON_FOCUS_AFTER_MS = 10 * 60_000;
 
 /**
  * Main's side of the app: the library database and its mirror, the session with its sync services,
@@ -71,6 +76,16 @@ const makeApp = (options: AppOptions) =>
     );
 
     yield* serveAppCommands({ ipcMain: options.ipcMain, queue, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)) });
+
+    // Coming back to the app catches up with the server, unless a sync did a moment ago.
+    const { onWindowFocus } = options;
+    if (onWindowFocus) {
+      const syncIfStale = session.use((active) => active.library.syncIfStale(SYNC_ON_FOCUS_AFTER_MS)).pipe(Effect.ignore);
+      yield* Effect.acquireRelease(
+        Effect.sync(() => onWindowFocus(() => void Effect.runFork(syncIfStale))),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      );
+    }
   });
 
 /** What SQLite says of a file that is not a database, is damaged, or was left by a build with another schema. */
@@ -108,7 +123,7 @@ const rootMessage = (error: unknown): string => {
  */
 export async function startApp(options: AppOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY, cipher: safeStorageCipher }).pipe(Layer.provide(platform)));
+  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY }).pipe(Layer.provide(platform)));
   try {
     // Building the backend opens and migrates the database; nothing else in it reaches outside the process.
     await backend.runPromise(Effect.void);

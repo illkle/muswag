@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MusicNotesIcon, WarningIcon } from "@phosphor-icons/react";
 
-import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { libraryOccurrenceKey, type LibrarySort } from "@muswag/model";
 import { useLiveQuery } from "@tanstack/react-db";
 import { libraryColumns } from "#/components/track-list/columns";
@@ -25,9 +25,8 @@ function RouteComponent() {
   const songsQuery = useLiveQuery(LIBRARY_SONGS[SORT]);
   const items = useMemo((): TrackListItem[] => songsQuery.data.map((song) => ({ type: "track", key: libraryOccurrenceKey(song.id), song })), [songsQuery.data]);
 
-  const queueState = useQueueManagerState();
   // The key is the same in every order of the library, so the row is marked whichever one is playing.
-  const playingKey = queueState.source?.ref.type === "library" && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
+  const playingKey = usePlayingKey((ref) => ref.type === "library");
 
   if (songsQuery.isLoading) return <PageState tone="quiet" title="Loading songs…" />;
   if (songsQuery.isError) return <PageState tone="error" icon={<WarningIcon />} title="Songs unavailable" description="The local song list could not be read." />;

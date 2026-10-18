@@ -3,10 +3,11 @@ import {
   Id,
   Ids,
   QueueSourceRef,
-  RefreshStatTarget,
-  SessionCredentials,
+  RefreshTarget,
+  LoginCredentials,
   SyncMode,
   Text,
+  type ArtistAppearances,
   type AuthSnapshot,
   type PlaylistEntry,
   type PlaylistRecord,
@@ -25,10 +26,11 @@ import { Schema } from "effect";
 
 /** Argument schemas; main decodes every command against them before running it. */
 export const AppCommandArgs = {
-  "session:login": Schema.Tuple([SessionCredentials]),
+  "session:login": Schema.Tuple([LoginCredentials]),
   "session:logout": Schema.Tuple([]),
   "library:sync": Schema.Tuple([SyncMode]),
-  "library:refreshStats": Schema.Tuple([RefreshStatTarget]),
+  "library:refresh": Schema.Tuple([RefreshTarget]),
+  "library:artistAppearances": Schema.Tuple([Id]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -53,7 +55,9 @@ export type AppCommandResults = {
   "session:login": AuthSnapshot;
   "session:logout": AuthSnapshot;
   "library:sync": void;
-  "library:refreshStats": void;
+  "library:refresh": void;
+  /** Read when asked, not mirrored: it is as current as the library was then. */
+  "library:artistAppearances": ArtistAppearances;
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;

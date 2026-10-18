@@ -27,6 +27,12 @@ export interface SqliteMirrorOptions {
    * server process. Pair it with `readOnly` collections on the client.
    */
   readonly readOnly?: boolean | undefined;
+  /**
+   * Columns that stay with the server, by table name, as row property names. Snapshots and changes
+   * leave them out, and an update that changes nothing else is not mirrored. Type the client's
+   * collection with the same list (`mirrorCollectionOptions`' `omit`).
+   */
+  readonly omitColumns?: { readonly [table: string]: ReadonlyArray<string> } | undefined;
 }
 
 export interface SqliteMirrorService {
@@ -70,13 +76,18 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
   const retainChanges = options.retainChanges ?? DEFAULT_RETAIN_CHANGES;
   const metaSql = quoteIdentifier(`${changeLog}_meta`);
 
-  const tables = new Map<string, MirrorTableInfo>();
+  // `info` describes the whole table, which mutations write; `mirrored` only the columns clients get.
+  const tables = new Map<string, { readonly info: MirrorTableInfo; readonly mirrored: MirrorTableInfo }>();
   for (const table of options.tables) {
     const info = yield* Effect.try({ try: () => describeTable(table), catch: (cause) => cause as MirrorSchemaError });
     if (tables.has(info.name)) {
       return yield* Effect.fail(new MirrorSchemaError(`Table "${info.name}" is registered twice`));
     }
-    tables.set(info.name, info);
+    const mirrored = yield* Effect.try({ try: () => withoutColumns(info, options.omitColumns?.[info.name] ?? []), catch: (cause) => cause as MirrorSchemaError });
+    tables.set(info.name, { info, mirrored });
+  }
+  for (const name of Object.keys(options.omitColumns ?? {})) {
+    if (!tables.has(name)) return yield* Effect.fail(new MirrorSchemaError(`Columns are omitted from "${name}", which is not mirrored`));
   }
 
   // The server's own queries always read plain numbers, whatever the caller configured.
@@ -105,8 +116,8 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
             yield* sql.unsafe(`DROP TRIGGER ${schema}.${quoteIdentifier(name)}`);
           }
         }
-        for (const info of tables.values()) {
-          for (const statement of createTriggerSql(info, changeLog)) {
+        for (const { mirrored } of tables.values()) {
+          for (const statement of createTriggerSql(mirrored, changeLog)) {
             yield* sql.unsafe(statement);
           }
         }
@@ -124,13 +135,13 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
   const fibers = yield* FiberSet.make();
 
   const requireTable = (name: string) => {
-    const info = tables.get(name);
-    if (!info) throw new MirrorRequestError({ message: `Table "${name}" is not mirrored` });
-    return info;
+    const table = tables.get(name);
+    if (!table) throw new MirrorRequestError({ message: `Table "${name}" is not mirrored` });
+    return table;
   };
 
   const decodeChange = (row: ChangeRow): MirrorChange => {
-    const info = requireTable(row.tbl);
+    const info = requireTable(row.tbl).mirrored;
     // Keys are read as JSON, formatted like the row values: node:sqlite throws on integers beyond
     // Number.MAX_SAFE_INTEGER, and a text cast would turn real keys into strings.
     if (row.key_json === null) throw new Error(`Key of type ${row.key_type} of "${row.tbl}" cannot be mirrored`);
@@ -197,7 +208,7 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
 
   const snapshot = (tableName: string) =>
     Effect.suspend(() => {
-      const info = requireTable(tableName);
+      const info = requireTable(tableName).mirrored;
       const table = quoteIdentifier(info.name);
       return internal(
         sql.withTransaction(
@@ -212,7 +223,7 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
 
   const applyMutation = (mutation: MirrorMutation) =>
     Effect.suspend(() => {
-      const info = requireTable(mutation.table);
+      const { info } = requireTable(mutation.table);
       const table = quoteIdentifier(info.name);
       const pk = info.primaryKey;
 
@@ -291,6 +302,17 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
 export class SqliteMirror extends Context.Service<SqliteMirror, SqliteMirrorService>()("@muswag/tanstack-db-mirror/SqliteMirror") {
   static readonly make = make;
   static readonly layer = (options: SqliteMirrorOptions) => Layer.effect(SqliteMirror, make(options));
+}
+
+/** `info` without the columns `omit` names. The primary key cannot be left out: changes are keyed by it. */
+function withoutColumns(info: MirrorTableInfo, omit: ReadonlyArray<string>): MirrorTableInfo {
+  if (omit.length === 0) return info;
+  for (const key of omit) {
+    if (!info.columnsByKey.has(key)) throw new MirrorSchemaError(`Table "${info.name}" has no column "${key}" to omit`);
+    if (key === info.primaryKey.key) throw new MirrorSchemaError(`The primary key of "${info.name}" cannot be omitted`);
+  }
+  const columns = info.columns.filter(({ key }) => !omit.includes(key));
+  return { ...info, columns, columnsByKey: new Map(columns.map((column) => [column.key, column])) };
 }
 
 function encodeInsert(info: MirrorTableInfo, value: MirrorRow) {

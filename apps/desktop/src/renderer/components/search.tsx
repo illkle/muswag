@@ -4,7 +4,7 @@ import { db } from "#/data/library";
 import { createSearchIndex, type SearchResult } from "#/library/search";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";
-import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
+import { useDeferredValue, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
@@ -97,7 +97,9 @@ export function MiniSearch() {
   const [searchValue, setSearchValue] = useState("");
   // The search runs behind the typing: the field shows each key at once and the results follow.
   const query = useDeferredValue(searchValue);
-  const results = useMemo(() => (query ? searchIndex.search(query, 20) : []), [query]);
+  // A search made while the library was still loading is made again once the index has been built from all of it.
+  const builds = useSyncExternalStore(searchIndex.subscribe, searchIndex.builds);
+  const results = useMemo(() => (query ? searchIndex.search(query, 20) : []), [query, builds]);
 
   const [open, setOpen] = useState(false);
 
@@ -140,7 +142,11 @@ export function MiniSearch() {
         <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 z-30 size-4 -translate-y-1/2 text-muted-foreground" />
         <Autocomplete.Input
           ref={inputRef}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            // Songs load only once something reads them; searching is about to.
+            searchIndex.prepare();
+            setOpen(true);
+          }}
           onBlur={() => setOpen(false)}
           placeholder="Search"
           className="relative z-20 h-8 w-full min-w-0 rounded-lg bg-popover pr-12 pl-9 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 transition-shadow outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60"

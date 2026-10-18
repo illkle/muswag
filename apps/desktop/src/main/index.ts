@@ -99,6 +99,10 @@ app.whenReady().then(async () => {
     ipcMain,
     player,
     stateMirror: stateMirror.mirror,
+    onWindowFocus: (listener) => {
+      app.on("browser-window-focus", listener);
+      return () => app.off("browser-window-focus", listener);
+    },
   });
   if (!mainApp) {
     app.quit();

@@ -5,7 +5,6 @@ import { and, eq } from "drizzle-orm";
 import { Cause, Context, Data, Deferred, Effect, Exit, Layer } from "effect";
 import type { HttpClientError } from "effect/http/HttpClientError";
 import { Path } from "effect/Path";
-import type { PlatformError } from "effect/PlatformError";
 
 import { SubsonicAPI } from "../api/subsonic-api.js";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
@@ -48,7 +47,7 @@ class NotAnImage extends Data.TaggedError("NotAnImage")<{
 }> {}
 
 type DatabaseError = SqlError | EffectDrizzleQueryError;
-type CoverManagerError = NotAnImage | PlatformError | FileSystemError | HttpClientError | SubsonicHttpError | DatabaseError;
+type CoverManagerError = NotAnImage | FileSystemError | HttpClientError | SubsonicHttpError | DatabaseError;
 
 /** How long a failed download answers for its cover before the server is asked again. */
 const RETRY_FAILED_AFTER = "1 minute";

@@ -1,11 +1,10 @@
 import { PauseIcon, PlayIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
-import { eq, useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
-import { db } from "#/data/library";
+import { useAlbumCoverArt } from "#/library/album-cover-art";
 import { formatDuration } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { usePlayerStatus } from "#/player/hooks";
@@ -102,19 +101,10 @@ const PositionCell = ({ item, position, isPlaying, onPlay, tabIndex }: TrackCell
   return <NumberCell number={unplayable ? <UnplayableMark /> : position + 1} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
 };
 
+/** The cover of a song's album, small. */
 export const TrackCover = ({ albumId, className }: { albumId: string; className?: string }) => {
-  const cover = useLiveQuery((q) =>
-    q
-      .from({ album: db.albums })
-      .where((a) => eq(a.album.id, albumId))
-      .findOne()
-      .select((v) => ({
-        coverArtId: v.album.coverArt,
-        albumId: v.album.id,
-      })),
-  );
-
-  return <AlbumCover thumbnail className={className} target={cover.data ? { type: "album", id: cover.data.albumId, coverArtId: cover.data.coverArtId ?? null } : undefined} />;
+  const coverArtId = useAlbumCoverArt(albumId);
+  return <AlbumCover thumbnail className={className} target={{ type: "album", id: albumId, coverArtId }} />;
 };
 
 const CoverCell = ({ item }: TrackCellProps) => (

@@ -14,11 +14,12 @@ const json = <T>() => text({ mode: "json" }).$type<T>();
 export const artists = sqliteTable("artists", {
   id: text().primaryKey(),
   name: text().notNull(),
+  albumCount: integer(),
   starred: text(),
-  userRating: real(),
-  averageRating: real(),
   coverArt: text(),
   artistImageUrl: text(),
+  musicBrainzId: text(),
+  sortName: text(),
   /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
   coverArtPath: text(),
 });
@@ -158,20 +159,24 @@ export const queueResume = sqliteTable("queue_resume", {
   positionSeconds: real().notNull(),
 });
 
+/** How the library sync left things, in a single row (`id` 1). */
 export const syncState = sqliteTable("sync_state", {
   id: integer().primaryKey(),
-  indexesLastModified: integer(),
-  lastFullSyncAt: text(),
-  lastQuickSyncAt: text(),
+  /**
+   * What the server said of its last scan when a sync last brought every song up to date. While the
+   * server says the same, no song has changed since, and a quick sync need not read them all.
+   */
+  serverScan: text(),
+  lastSyncedAt: text(),
 });
 
 export const credentials = sqliteTable("credentials", {
   id: integer().primaryKey(),
   url: text().notNull(),
   username: text().notNull(),
-  /** Encrypted with the OS keychain when `encrypted`, otherwise plain text. Empty once the server has refused it. */
-  password: text().notNull(),
-  encrypted: integer({ mode: "boolean" }).notNull(),
+  /** Subsonic's stand-in for the password: a salt and the MD5 of the password followed by it. Both empty once the server has refused them. */
+  salt: text().notNull(),
+  token: text().notNull(),
 });
 
 /** Tables the renderer mirrors. Everything else stays in main. */

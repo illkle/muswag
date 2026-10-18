@@ -1,12 +1,12 @@
 import { useElementScrollRestoration } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useId, useMemo, useRef, useState, type JSX, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import type { TrackColumn } from "#/components/track-list/columns";
 import { EMPTY_SELECTION, selectAll, selectForAction, selectOnClick, toggleSelected } from "#/components/track-list/selection";
 import { TrackRow } from "#/components/track-list/track-row";
 import { isTrackItem, type TrackItem, type TrackListItem, type TrackSelection } from "#/components/track-list/types";
-import { ContextMenu, ContextMenuContent } from "#/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "#/components/ui/context-menu";
 import { scrollMemory } from "#/lib/scroll-memory";
 import { cn } from "#/lib/utils";
 import { TOP_HEIGHT } from "#/styles";
@@ -36,6 +36,30 @@ function moveByKey(key: string, at: number, page: number, last: number): number 
     default:
       return null;
   }
+}
+
+/**
+ * The tracks of `items`, and where each is among them by its index in `items`. A list of nothing but
+ * tracks, such as the songs page, is taken as it is: nothing is copied, and a track's place is its index.
+ */
+function tracksOf(items: readonly TrackListItem[]): { tracks: readonly TrackItem[]; positions: readonly number[] | null } {
+  if (items.every(isTrackItem)) return { tracks: items, positions: null };
+  const tracks: TrackItem[] = [];
+  const positions = items.map((item) => (item.type === "track" ? tracks.push(item) - 1 : -1));
+  return { tracks, positions };
+}
+
+/** The key of the row an event happened in, or `null` outside the rows. */
+const rowKeyOf = (event: { target: EventTarget }): string | null => (event.target as Element).closest<HTMLElement>("[data-track-key]")?.dataset.trackKey ?? null;
+
+/**
+ * The menu for the selected rows. It is drawn only while the menu is open, so the selection is read
+ * from the rows, a pass over the whole list, only then.
+ */
+function SelectionMenu({ menu, tracks, keys }: { menu: (selection: TrackSelection) => ReactNode; tracks: readonly TrackItem[]; keys: ReadonlySet<string> }) {
+  // Read from the rows that are there now, so keys of rows that have left the list select nothing.
+  const selected = tracks.filter(({ key }) => keys.has(key));
+  return menu({ items: selected, songs: selected.filter(({ unavailable }) => !unavailable).map(({ song }) => song) });
 }
 
 /**
@@ -99,8 +123,8 @@ export function TrackList({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => {
-      const type = items[index]?.type;
-      return type === "track" ? TRACK_HEIGHT : type === "heading" ? HEADING_HEIGHT : NOTE_HEIGHT;
+      const item = items[index];
+      return item?.type === "track" ? TRACK_HEIGHT : item?.type === "heading" ? HEADING_HEIGHT : item?.type === "block" ? item.height : NOTE_HEIGHT;
     },
     getItemKey: (index) => items[index]?.key ?? index,
     overscan: 10,
@@ -109,24 +133,24 @@ export function TrackList({
     ...(bottomPadding === undefined ? {} : { paddingEnd: bottomPadding }),
     scrollPaddingStart,
     scrollPaddingEnd,
+    // A scroll is drawn in the next frame rather than at once, which keeps scrolling smooth through a long list.
+    useFlushSync: false,
   });
 
-  const tracks = useMemo(() => items.filter(isTrackItem), [items]);
-  const trackKeys = useMemo(() => tracks.map(({ key }) => key), [tracks]);
-  /** Each track's place among the tracks, by its index in `items`. */
-  const positions = useMemo(() => {
-    let next = 0;
-    return items.map((item) => (item.type === "track" ? next++ : -1));
-  }, [items]);
+  const { tracks, positions } = useMemo(() => tracksOf(items), [items]);
+  /** The keys of the tracks in order, which only clicks and keys need, so they are not kept between them. */
+  const trackKeys = () => tracks.map(({ key }) => key);
 
   const gridTemplateColumns = useMemo(() => columns.map(({ width }) => width).join(" "), [columns]);
 
   const [selectionState, setSelectionState] = useState(EMPTY_SELECTION);
-  // Read from the rows that are there now, so keys of rows that have left the list select nothing.
-  const selection = useMemo((): TrackSelection => {
-    const selected = tracks.filter(({ key }) => selectionState.keys.has(key));
-    return { items: selected, songs: selected.filter(({ unavailable }) => !unavailable).map(({ song }) => song) };
-  }, [tracks, selectionState]);
+
+  // The rows are given one function to play with, which stays the same whatever function the page passes, so that a new one does not draw every row again.
+  const onActivateRef = useRef(onActivate);
+  useLayoutEffect(() => {
+    onActivateRef.current = onActivate;
+  });
+  const [playRow] = useState(() => (item: TrackItem) => onActivateRef.current?.(item));
 
   /** The track the keyboard is on, by its key. A row that was clicked is where the keyboard goes on from. */
   const [cursorKey, setCursorKey] = useState<string | null>(null);
@@ -142,7 +166,7 @@ export function TrackList({
   const firstTrackInView = (): string | null => {
     const top = (rowVirtualizer.scrollOffset ?? 0) + scrollPaddingStart;
     const row = virtualRows.find(({ index, start }) => start >= top && items[index]?.type === "track");
-    return (row ? items[row.index]?.key : trackKeys[0]) ?? null;
+    return (row ? items[row.index]?.key : tracks[0]?.key) ?? null;
   };
 
   const reveal = (key: string) => rowVirtualizer.scrollToIndex(items.findIndex((item) => item.key === key));
@@ -153,13 +177,13 @@ export function TrackList({
 
     const { key, shiftKey } = event;
     const mod = event.metaKey || event.ctrlKey;
-    const at = cursorKey === null ? -1 : trackKeys.indexOf(cursorKey);
+    const at = cursorKey === null ? -1 : tracks.findIndex(({ key }) => key === cursorKey);
 
     if (key === "Escape") {
       setSelectionState(EMPTY_SELECTION);
     } else if (key === "a" && mod) {
       event.preventDefault();
-      setSelectionState(selectAll(trackKeys));
+      setSelectionState(selectAll(trackKeys()));
     } else if (key === "Enter") {
       const item = tracks[at];
       if (!item) return;
@@ -179,25 +203,60 @@ export function TrackList({
         row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: left + TRACK_HEIGHT, clientY: top + height / 2 }));
       });
     } else {
-      const last = trackKeys.length - 1;
+      const last = tracks.length - 1;
       const page = Math.max(1, Math.floor((event.currentTarget.clientHeight - scrollPaddingStart - scrollPaddingEnd) / TRACK_HEIGHT) - 1);
       const to = moveByKey(key, at, page, last);
       if (to === null) return;
       event.preventDefault();
 
       // With no row to move from, the keyboard starts on the first one in view.
-      const toKey = at === -1 && key !== "Home" && key !== "End" ? firstTrackInView() : trackKeys[Math.min(Math.max(to, 0), last)];
+      const toKey = at === -1 && key !== "Home" && key !== "End" ? firstTrackInView() : tracks[Math.min(Math.max(to, 0), last)]?.key;
       if (toKey == null) return;
       setCursorKey(toKey);
-      if (!mod) setSelectionState((state) => selectOnClick(state, trackKeys, toKey, { toggle: false, range: shiftKey }));
+      if (!mod) {
+        const order = trackKeys();
+        setSelectionState((state) => selectOnClick(state, order, toKey, { toggle: false, range: shiftKey }));
+      }
       // The first track comes with what is above it, which on a page with a header is that header.
-      if (toKey === trackKeys[0]) rowVirtualizer.scrollToOffset(0);
+      if (toKey === tracks[0]?.key) rowVirtualizer.scrollToOffset(0);
       else reveal(toKey);
     }
   };
 
+  const onClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const key = rowKeyOf(event);
+    if (key === null) {
+      setSelectionState(EMPTY_SELECTION);
+      return;
+    }
+    const modifiers = { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey };
+    const order = trackKeys();
+    setCursorKey(key);
+    setSelectionState((state) => selectOnClick(state, order, key, modifiers));
+  };
+
+  const onDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const key = rowKeyOf(event);
+    const item = key === null ? undefined : tracks.find((track) => track.key === key);
+    if (item) onActivate?.(item);
+  };
+
+  /** A right-click selects the row it is on first. Only rows have the menu, so one anywhere else in the list opens nothing. */
+  const onContextMenu = (event: ReactMouseEvent<HTMLDivElement> & { preventBaseUIHandler?: () => void }) => {
+    const key = rowKeyOf(event);
+    if (key === null) {
+      event.preventBaseUIHandler?.();
+      return;
+    }
+    setCursorKey(key);
+    setSelectionState((state) => selectForAction(state, key));
+  };
+
+  // With a menu the list is what opens it, one trigger for all its rows rather than one for each.
+  const List = menu ? ContextMenuTrigger : "div";
+
   const list = (
-    <div
+    <List
       ref={scrollRef}
       role="grid"
       aria-label="Tracks"
@@ -207,11 +266,12 @@ export function TrackList({
       data-scroll-restoration-id={scrollRestorationId}
       // The list has the focus rather than its rows, which come and go as it scrolls.
       tabIndex={0}
-      className={cn("group/list scrollbar h-full overflow-y-auto outline-none", className)}
+      // Text outside the rows stays selectable, as the trigger of a menu would not have it.
+      className={cn("group/list scrollbar h-full overflow-y-auto outline-none select-auto", className)}
       onScroll={memoryId === undefined ? undefined : (event) => scrollMemory.set(memoryId, event.currentTarget.scrollTop)}
-      onClick={(event) => {
-        if (!(event.target as Element).closest("[data-track-key]")) setSelectionState(EMPTY_SELECTION);
-      }}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={menu ? onContextMenu : undefined}
       onFocus={(event) => {
         // Reached with Tab, the list shows where the keyboard is at once. A click decides that itself.
         if (event.target === event.currentTarget && cursorKey === null && event.currentTarget.matches(":focus-visible")) setCursorKey(firstTrackInView());
@@ -242,32 +302,27 @@ export function TrackList({
               {item.type === "track" ? (
                 <TrackRow
                   id={item.key === cursorKey ? cursorRowId : undefined}
-                  aria-rowindex={rowIndex}
+                  rowIndex={rowIndex}
                   item={item}
-                  position={positions[virtualRow.index]!}
+                  position={positions ? positions[virtualRow.index]! : virtualRow.index}
                   columns={columns}
+                  gridTemplateColumns={gridTemplateColumns}
                   isSelected={selectionState.keys.has(item.key)}
                   isPlaying={item.key === playingKey}
                   isCursor={item.key === cursorKey}
-                  hasMenu={menu !== undefined}
-                  onPlay={onActivate && !item.unavailable ? () => onActivate(item) : undefined}
-                  style={{ gridTemplateColumns }}
-                  onClick={(event) => {
-                    const modifiers = { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey };
-                    setCursorKey(item.key);
-                    setSelectionState((state) => selectOnClick(state, trackKeys, item.key, modifiers));
-                  }}
-                  onDoubleClick={() => onActivate?.(item)}
-                  onContextMenu={() => {
-                    setCursorKey(item.key);
-                    setSelectionState((state) => selectForAction(state, item.key));
-                  }}
+                  onPlay={onActivate && !item.unavailable ? playRow : undefined}
                 />
               ) : item.type === "heading" ? (
                 <div role="row" aria-rowindex={rowIndex} className="flex w-full items-end gap-2 px-2 pb-1.5 text-sm">
                   <div role="gridcell" aria-colspan={columns.length} className="flex min-w-0 items-end gap-2">
                     <span className="truncate font-semibold">{item.title}</span>
                     {item.subtitle ? <span className="truncate text-muted-foreground">{item.subtitle}</span> : null}
+                  </div>
+                </div>
+              ) : item.type === "block" ? (
+                <div role="row" aria-rowindex={rowIndex} className="flex w-full">
+                  <div role="gridcell" aria-colspan={columns.length} className="min-w-0 flex-1">
+                    {item.content}
                   </div>
                 </div>
               ) : (
@@ -281,14 +336,16 @@ export function TrackList({
           );
         })}
       </div>
-    </div>
+    </List>
   );
 
   if (!menu) return list;
 
   return (
     <ContextMenu>
-      <ContextMenuContent>{menu(selection)}</ContextMenuContent>
+      <ContextMenuContent>
+        <SelectionMenu menu={menu} tracks={tracks} keys={selectionState.keys} />
+      </ContextMenuContent>
       {list}
     </ContextMenu>
   );

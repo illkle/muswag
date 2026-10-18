@@ -1,4 +1,4 @@
-import { LIBRARY_ORDERS, type LibrarySort, type Song } from "@muswag/model";
+import { LIBRARY_ORDERS, type LibrarySong, type LibrarySort } from "@muswag/model";
 import { createLiveQueryCollection, type Collection } from "@tanstack/react-db";
 
 /**
@@ -9,7 +9,7 @@ import { createLiveQueryCollection, type Collection } from "@tanstack/react-db";
  * Main reads the same columns in SQLite to play the library in this order. Its text comparison is
  * the lexical one, so the two put the songs in the same order.
  */
-export const songsInOrder = (songs: Collection<Song, string, any>, sort: LibrarySort) =>
+export const songsInOrder = <Song extends LibrarySong>(songs: Collection<Song, string, any>, sort: LibrarySort) =>
   createLiveQueryCollection({
     query: (q) => q.from({ song: songs }).orderBy(({ song }) => LIBRARY_ORDERS[sort].map((column) => song[column]), { stringSort: "lexical" }),
     // Never released: collecting it would bring the sort back on the next visit.

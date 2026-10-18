@@ -1,8 +1,9 @@
-import type { SessionCredentials } from "@muswag/model";
-import { useLiveQuery } from "@tanstack/react-db";
+import type { LoginCredentials } from "@muswag/model";
+import { useSelector } from "@tanstack/react-store";
 
 import { appCommand } from "#/data/app-command";
 import { appState } from "#/data/state";
+import { rowStore } from "#/data/stores";
 
 let startPromise: Promise<void> | undefined;
 
@@ -30,13 +31,15 @@ export const Session = {
     return startPromise;
   },
 
-  login: (credentials: SessionCredentials) => appCommand("session:login", credentials).then(() => undefined),
+  login: (credentials: LoginCredentials) => appCommand("session:login", credentials).then(() => undefined),
   /** Main stops playback, ends the session and deletes the local library. */
   logout: () => appCommand("session:logout").then(() => undefined),
 };
 
+const authRow = rowStore(appState.auth, "auth");
+
 export const useUser = () => {
-  const session = useLiveQuery((q) => q.from({ auth: appState.auth }).findOne()).data?.value;
+  const session = useSelector(authRow, (row) => row?.value);
   return {
     data: session?._tag === "LoggedIn" ? { url: session.url, username: session.username } : undefined,
     /** The account of a session main ended because the server no longer accepts its password. */

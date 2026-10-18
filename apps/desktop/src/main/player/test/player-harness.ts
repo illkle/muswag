@@ -145,4 +145,4 @@ export const until = (player: PlayerService, predicate: (state: PlayerSnapshot) 
     Stream.runCollect,
     Effect.map((states) => states[0]!),
   );
-export const login = (player: PlayerService) => player.setCredentials({ url: "https://music.test", username: "me", password: Redacted.make("secret") });
+export const login = (player: PlayerService) => player.setCredentials({ url: "https://music.test", username: "me", salt: "salt", token: Redacted.make("secret") });

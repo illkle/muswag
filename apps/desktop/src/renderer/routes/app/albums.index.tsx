@@ -12,7 +12,11 @@ export const Route = createFileRoute("/app/albums/")({
 
 function RouteComponent() {
   // Albums with no year go after the dated ones rather than ahead of the newest.
-  const albumsQuery = useLiveQuery((q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc", nulls: "last" }));
+  // The key stands for the query, so a render builds no query of its own.
+  const albumsQuery = useLiveQuery({
+    queryKey: ["albums-by-year"],
+    query: (q) => q.from({ albums: db.albums }).orderBy((v) => v.albums.year, { direction: "desc", nulls: "last" }),
+  });
   const albums = albumsQuery.data ?? [];
 
   if (albumsQuery.isLoading) return <PageState tone="quiet" title="Loading albums…" />;

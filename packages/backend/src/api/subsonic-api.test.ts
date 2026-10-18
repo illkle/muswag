@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { Crypto, Effect, Fiber, Layer } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
@@ -11,17 +11,13 @@ import { SubsonicAPILive } from "../test/index.js";
 import { locateSubsonicServer, SubsonicAPI, type SubsonicApiConfig } from "./subsonic-api.js";
 import { HttpClientError, TransportError } from "effect/http/HttpClientError";
 
-const config: SubsonicApiConfig = { url: "https://music.k.com", auth: { username: "kkkkk", password: "123456" } };
+const config: SubsonicApiConfig = { url: "https://music.k.com", auth: { username: "kkkkk", salt: "abababababababababababababababab", token: "31973b88ed20dce56f7bd58e05c149d7" } };
 const subsonic = (payload: object) => JSON.stringify({ "subsonic-response": { status: "ok", version: "1.16.1", ...payload } });
 const failed = (code: number, message: string) => JSON.stringify({ "subsonic-response": { status: "failed", version: "1.16.1", error: { code, message } } });
 const albumList = { albumList2: { album: [{ id: "album-1", name: "First Album", created: "2026-01-01T00:00:00Z", duration: 120, songCount: 1 }] } };
 
 describe("Effect SubsonicAPI", () => {
-  const testCrypto = Crypto.make({
-    randomBytes: (size) => new Uint8Array(size).fill(0xab),
-    digest: (_algorithm, data) => Effect.succeed(data),
-  });
-  const platform = (client: HttpClient.HttpClient) => Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Crypto.Crypto, testCrypto));
+  const platform = (client: HttpClient.HttpClient) => Layer.succeed(HttpClient.HttpClient, client);
   const withClient = (client: HttpClient.HttpClient, overrides: Partial<SubsonicApiConfig> = {}) => SubsonicAPILive({ ...config, ...overrides }).pipe(Layer.provide(platform(client)));
 
   it.effect("correctly makes request to getAlbumList2 and parses result", () =>
@@ -183,14 +179,6 @@ describe("Effect SubsonicAPI", () => {
 });
 
 describe("locateSubsonicServer", () => {
-  const crypto = Layer.succeed(
-    Crypto.Crypto,
-    Crypto.make({
-      randomBytes: (size) => new Uint8Array(size).fill(0xab),
-      digest: (_algorithm, data) => Effect.succeed(data),
-    }),
-  );
-
   /** A server on a free loopback port, closed with the test. */
   const listen = (handler: (request: IncomingMessage, body: string, response: ServerResponse) => void) =>
     Effect.acquireRelease(
@@ -232,7 +220,7 @@ describe("locateSubsonicServer", () => {
 
         expect(located).toBe(`${server}/music`);
         expect(seen).toEqual([{ method: "POST", body: expect.stringContaining("u=kkkkk") }]);
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(FetchHttpClient.layer, crypto))),
+      }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     );
   }
 
@@ -252,7 +240,7 @@ describe("locateSubsonicServer", () => {
 
       expect(error).toMatchObject({ _tag: "SubsonicHttpError", status: 302, location: expect.stringContaining("localhost") });
       expect(seen).toEqual([]);
-    }).pipe(Effect.scoped, Effect.provide(Layer.merge(FetchHttpClient.layer, crypto))),
+    }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
   );
 
   it.live("is what a login needs: without it, fetch turns the redirected POST into a GET with nothing in it", () =>
@@ -268,7 +256,7 @@ describe("locateSubsonicServer", () => {
 
       expect(error).toMatchObject({ _tag: "SubsonicApiError", code: 10 });
       expect(seen).toEqual([{ method: "GET", body: "" }]);
-    }).pipe(Effect.scoped, Effect.provide(Layer.merge(FetchHttpClient.layer, crypto))),
+    }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
   );
 
   it.effect("answers with the address it was given when the server is there, and stops at a redirect that leads nowhere", () =>
@@ -280,7 +268,7 @@ describe("locateSubsonicServer", () => {
         // Each address redirects to itself with one more folder, for ever.
         return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 302, headers: { location: `${url.origin}/deeper${url.pathname}` } })));
       });
-      const platform = Layer.merge(Layer.succeed(HttpClient.HttpClient, client), crypto);
+      const platform = Layer.succeed(HttpClient.HttpClient, client);
 
       expect(yield* locateSubsonicServer(config).pipe(Effect.provide(platform))).toBe("https://music.k.com");
       expect(asked).toEqual(["https://music.k.com/rest/ping.view"]);
@@ -292,12 +280,9 @@ describe("locateSubsonicServer", () => {
       const wrong = yield* Effect.flip(
         locateSubsonicServer(config).pipe(
           Effect.provide(
-            Layer.merge(
-              Layer.succeed(
-                HttpClient.HttpClient,
-                HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, new Response(failed(40, "Wrong username or password"))))),
-              ),
-              crypto,
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, new Response(failed(40, "Wrong username or password"))))),
             ),
           ),
         ),

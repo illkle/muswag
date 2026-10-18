@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { DatabaseSync } from "node:sqlite";
+
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "@effect/vitest";
@@ -14,6 +16,7 @@ import { SqlClient } from "effect/sql/SqlClient";
 import config from "../../drizzle.config.ts";
 import { renderMigrations } from "../../scripts/embed-migrations.ts";
 import { TestDatabase } from "../test/index.js";
+import { migrations } from "./migrations.generated.js";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -41,6 +44,19 @@ describe("migrations", () => {
     } finally {
       rmSync(copy, { recursive: true, force: true });
     }
+  });
+
+  it("keep whose library it is when the stored password gives way to a token", () => {
+    const db = new DatabaseSync(":memory:");
+    const [init, ...later] = migrations;
+    for (const statement of init!.sql) db.exec(statement);
+    db.exec("INSERT INTO credentials (id, url, username, password, encrypted) VALUES (1, 'https://music.example', 'alice', 'c2VjcmV0', 1)");
+
+    for (const statement of later.flatMap((migration) => migration.sql)) db.exec(statement);
+
+    // Without a token the app starts at the login form, and a login as alice keeps the library.
+    expect(db.prepare("SELECT * FROM credentials").all()).toEqual([{ id: 1, url: "https://music.example", username: "alice", salt: "", token: "" }]);
+    db.close();
   });
 
   it.effect("create every column of the schema", () =>

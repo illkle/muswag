@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { album, albums, createHarness, eventually, expectInSync, rowsOf, sleep, song, stripVirtual, unmirrored, type AlbumRow, type Harness } from "../test/harness.js";
-import { MirrorRemoteError, MirrorTimeoutError, mirrorCollectionOptions, type MirrorCollectionUtils } from "./index.js";
+import { createMirrorClient, MirrorRemoteError, MirrorTimeoutError, mirrorCollectionOptions, type MirrorCollectionUtils } from "./index.js";
 
 let harness: Harness;
 
@@ -68,6 +68,25 @@ describe("loading", () => {
     await client.albums.preload();
 
     expect(client.albums.size).toBe(5_000);
+  });
+
+  it("loads a collection that does not start on its own once something reads it, without the columns the server omits", async () => {
+    harness = await createHarness({ server: { omitColumns: { albums: ["extra", "plays"] } } });
+    await harness.insertAlbums([album("a1", { extra: { tags: ["x"] }, plays: 2 })]);
+    const connection = harness.transport.connect();
+    const client = createMirrorClient({ transport: connection });
+    const lazy = createCollection(mirrorCollectionOptions({ client, table: albums, omit: ["extra", "plays"], startSync: false }));
+    expectTypeOf(lazy.toArray[0]!).not.toHaveProperty("extra");
+
+    await sleep(20);
+    expect(connection.requests).toEqual([]);
+
+    const subscription = lazy.subscribeChanges(() => undefined);
+    await eventually(() => expect(rowsOf(lazy)).toEqual([{ id: "a1", name: "Album a1", artistId: null, starred: null, created: null, slug: null }]));
+    subscription.unsubscribe();
+    await lazy.cleanup();
+    client.dispose();
+    connection.close();
   });
 
   it("errors when the server does not mirror the table", async () => {

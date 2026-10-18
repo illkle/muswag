@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, type CSSProperties, type JSX } from "react";
 
 import { useContentSize } from "#/components/utils/app-content-size";
 import { AlbumCover } from "#/components/album-list/album-cover";
@@ -42,16 +42,8 @@ const COVER_TO_TEXT = 8;
 /** The album's name over a line of details. */
 const TEXT_HEIGHT = 20 + 16;
 
-const AlbumItem = ({
-  album,
-  instantCovers,
-  hideArtist,
-  ...props
-}: {
-  album: Album;
-  instantCovers: boolean;
-  hideArtist: boolean;
-} & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+/** A tile of the grid. The columns of its row size it and its cover keeps itself square, so a change of width reaches it through CSS alone. */
+const AlbumItem = ({ album, hideArtist }: { album: Album; hideArtist: boolean }) => {
   const navigate = useNavigate();
   const artist = hideArtist
     ? null
@@ -61,7 +53,6 @@ const AlbumItem = ({
 
   return (
     <button
-      key={album.id}
       // The scroll margins keep a tile that Tab has reached clear of the top bar and the player, which lie over the ends of the grid.
       className="box-border flex w-full cursor-pointer scroll-mt-(--top-height) scroll-mb-(--player-height) flex-col justify-start rounded-lg p-2 text-left align-bottom transition-colors duration-100 outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
       onClick={() => {
@@ -70,10 +61,8 @@ const AlbumItem = ({
           params: { albumId: album.id },
         });
       }}
-      {...props}
     >
       <AlbumCover
-        instantLoad={instantCovers}
         thumbnail
         target={{
           type: "album",
@@ -157,13 +146,6 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
 
   const contentSize = useContentSize();
   const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
-  const sizesStyle = useMemo(
-    () => ({
-      width: `${sizes.fullWidth}px`,
-      height: `${sizes.fullHeight}px`,
-    }),
-    [sizes],
-  );
   const rows = useMemo(
     () =>
       sections
@@ -176,14 +158,6 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
           })),
     [albums, sections, sizes.chunks],
   );
-  const [instantCovers, setInstantCovers] = useState(true);
-
-  useEffect(() => {
-    startTransition(() => {
-      setInstantCovers(false);
-    });
-  }, []);
-
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -193,8 +167,14 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
     ...(initialOffset === undefined ? {} : { initialOffset }),
     paddingStart: topPadding,
     paddingEnd: bottomPadding,
-    directDomUpdates: true,
+    // A scroll is drawn in the next frame rather than at once, which keeps scrolling smooth.
+    useFlushSync: false,
   });
+
+  // The rows grow and shrink with the width of the page, which the virtualizer has to be told of. The tiles in them are left alone.
+  useLayoutEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, sizes.fullHeight]);
 
   return (
     <div
@@ -204,11 +184,15 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
       onScroll={rememberScroll ? (event) => scrollMemory.set(scrollRestorationId, event.currentTarget.scrollTop) : undefined}
     >
       <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
+        style={
+          {
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+            // The columns of every row. A change of width changes only this, until it takes a column more or less.
+            "--album-columns": `repeat(${sizes.chunks}, ${sizes.fullWidth}px)`,
+          } as CSSProperties
+        }
       >
         {topContent}
 
@@ -241,9 +225,9 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
-              className="absolute top-0 left-0 flex w-full"
+              className="absolute top-0 left-0 grid w-full grid-cols-(--album-columns)"
             >
-              <AlbumItemRow albums={row.albums} hideArtist={row.hideArtist} instantCovers={instantCovers} sizesStyle={sizesStyle} />
+              <AlbumItemRow albums={row.albums} hideArtist={row.hideArtist} />
             </div>
           );
         })}
@@ -252,12 +236,13 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
   );
 }
 
-const AlbumItemRow = ({ albums, hideArtist, instantCovers, sizesStyle }: { albums: Album[]; hideArtist: boolean; instantCovers: boolean; sizesStyle: Record<string, string> }) => {
+/** The tiles of a row, which are drawn again only when the row holds other albums: scrolling or resizing moves the row, not them. */
+const AlbumItemRow = memo(function AlbumItemRow({ albums, hideArtist }: { albums: Album[]; hideArtist: boolean }) {
   return (
     <>
       {albums.map((album) => (
-        <AlbumItem key={album.id} instantCovers={instantCovers} hideArtist={hideArtist} album={album} style={sizesStyle} />
+        <AlbumItem key={album.id} hideArtist={hideArtist} album={album} />
       ))}
     </>
   );
-};
+});

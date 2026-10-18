@@ -1,5 +1,5 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
-import { MIRRORED_TABLES } from "@muswag/model";
+import { MIRROR_OMITTED_COLUMNS, MIRRORED_TABLES } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { makeWithDefaults, type EffectSQLiteNodeDatabase } from "drizzle-orm/effect-sqlite-node";
 import { migrate } from "drizzle-orm/sqlite-core/effect";
@@ -26,9 +26,11 @@ const DbLive = Layer.effect(
 
 /**
  * Mirrors `MIRRORED_TABLES` to renderers, read-only: renderers change data only through commands.
- * The interval only catches writes that bypassed `write`.
+ * Columns only main reads stay out of it. The interval only catches writes that bypassed `write`.
  */
-const MirrorLive = Layer.effect(SqliteMirror, SqliteMirror.make({ tables: MIRRORED_TABLES, autoFlushInterval: "2 seconds", readOnly: true })).pipe(Layer.provide(DbLive));
+const MirrorLive = Layer.effect(SqliteMirror, SqliteMirror.make({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS, autoFlushInterval: "2 seconds", readOnly: true })).pipe(
+  Layer.provide(DbLive),
+);
 
 /** Opens (or creates) the database at `filename`, migrates it and starts its mirror server. */
 export const DatabaseLive = (filename: string) => Layer.merge(DbLive, MirrorLive).pipe(Layer.provideMerge(SqliteClient.layer({ filename })));

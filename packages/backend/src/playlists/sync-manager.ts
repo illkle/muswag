@@ -8,6 +8,7 @@ import {
   type RemotePlaylist,
   type RemotePlaylistMutation,
   type SubsonicApiError,
+  type UpdatePlaylistArgs,
 } from "@muswag/model";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Stream, SubscriptionRef } from "effect";
@@ -186,6 +187,41 @@ function sameRemoteVersion(left: RemotePlaylist, right: RemotePlaylist): boolean
 }
 
 /**
+ * The indices of `previous` to remove to get `next`, highest first so that each removal leaves the
+ * indices after it in place. Answers `null` when `next` is not `previous` with some songs left out.
+ * Songs are matched from the start, so of a song that appears twice in a row the later copy is the one
+ * removed.
+ */
+function removedSongIndices(previous: readonly string[], next: readonly string[]): number[] | null {
+  if (next.length > previous.length) return null;
+  const removed: number[] = [];
+  let kept = 0;
+  previous.forEach((songId, index) => {
+    if (kept < next.length && songId === next[kept]) kept += 1;
+    else removed.push(index);
+  });
+  return kept === next.length ? removed.reverse() : null;
+}
+
+/**
+ * The entry changes that turn the server's `previous` songs into `next`. Subsonic removes songs by
+ * their index in the list it has and appends added songs at the end, so a list that only grew at the
+ * end or only lost songs is sent as just that. Anything else, such as a reorder, removes every song and
+ * adds the whole new list back.
+ */
+function songListUpdate(previous: readonly string[], next: readonly string[]): Pick<UpdatePlaylistArgs, "songIdToAdd" | "songIndexToRemove"> {
+  if (next.length > previous.length && sameStringArray(previous, next.slice(0, previous.length))) {
+    return { songIdToAdd: next.slice(previous.length) };
+  }
+  const removed = removedSongIndices(previous, next);
+  if (removed) return { songIndexToRemove: removed };
+  return {
+    songIndexToRemove: Array.from({ length: previous.length }, (_, index) => previous.length - index - 1),
+    songIdToAdd: [...next],
+  };
+}
+
+/**
  * Records the state we just pushed as the new `base`, because the server now holds it.
  *
  * Without this the pushed entries stay absent from `base`, so on the verification pass
@@ -223,14 +259,14 @@ function executeRemoteMutation(db: Database, api: PlaylistApi, mutation: RemoteP
       case "replace": {
         const nextSongIds = songIds(mutation.state);
         const entriesChanged = !sameStringArray(nextSongIds, mutation.expected.songIds);
-        let previousSongCount = mutation.expected.songIds.length;
+        let previousSongIds = mutation.expected.songIds;
 
         // Subsonic has no conditional update operation. Re-reading immediately before a destructive
         // replacement narrows the race and, crucially, avoids applying indices from an older version.
         if (entriesChanged) {
           const latest = toRemotePlaylist((yield* api.getPlaylist({ id: mutation.serverId })).playlist, currentUsername);
           if (!sameRemoteVersion(latest, mutation.expected)) return "stale" as const;
-          previousSongCount = latest.songIds.length;
+          previousSongIds = latest.songIds;
         }
 
         yield* api.updatePlaylist({
@@ -238,10 +274,7 @@ function executeRemoteMutation(db: Database, api: PlaylistApi, mutation: RemoteP
           name: mutation.state.name,
           comment: mutation.state.comment,
           public: mutation.state.public,
-          ...(entriesChanged && {
-            songIndexToRemove: Array.from({ length: previousSongCount }, (_, index) => previousSongCount - index - 1),
-            songIdToAdd: nextSongIds,
-          }),
+          ...(entriesChanged && songListUpdate(previousSongIds, nextSongIds)),
         });
         yield* commitPushedBase(db, mutation.localId, mutation.state);
         return "applied" as const;
@@ -369,7 +402,7 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
         }
 
         // A change the server failed on stays pending, and the pass is retried as a failed one is.
-        if (failure) return yield* Effect.fail(failure);
+        if (failure) return yield* failure;
         return { needsRerun, refused };
       });
 

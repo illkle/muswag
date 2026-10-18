@@ -11,28 +11,42 @@ export const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(
 export const Text = Schema.String.check(Schema.isMaxLength(65_536));
 export const Ids = Schema.Array(Id).check(Schema.isMaxLength(100_000));
 
-export const SessionCredentials = Schema.Struct({ url: Text, username: Text, password: Text });
-export type SessionCredentials = typeof SessionCredentials.Type;
+/** What the login form sends. The password goes no further than the login. */
+export const LoginCredentials = Schema.Struct({ url: Text, username: Text, password: Text });
+export type LoginCredentials = typeof LoginCredentials.Type;
+
+/**
+ * What a session signs its requests with, and what is stored. Subsonic takes a salt and the MD5 of the
+ * password followed by that salt in place of the password, so the password itself is never kept.
+ */
+export type SessionCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: string };
 
 export const AuthSnapshot = Schema.Union([
   Schema.TaggedStruct("Initializing", {}),
-  // `expired` names the account of a session the server ended by refusing its password.
+  // `expired` names the account of a session the server ended by refusing its credentials.
   Schema.TaggedStruct("LoggedOut", { expired: Schema.optional(Schema.Struct({ url: Schema.String, username: Schema.String })) }),
   Schema.TaggedStruct("LoggedIn", { url: Schema.String, username: Schema.String }),
 ]);
 export type AuthSnapshot = typeof AuthSnapshot.Type;
 
+/**
+ * `quick` reads the songs only of albums that look changed, unless the server has scanned its files
+ * since the last sync; `full` reads every song again, which repairs whatever a quick sync missed.
+ */
 export const SyncMode = Schema.Literals(["full", "quick"]);
 export type SyncMode = typeof SyncMode.Type;
 
 export const LibrarySyncStatus = Schema.Struct({
   /** The mode of the sync that is running, or `null` when idle. */
   running: Schema.NullOr(SyncMode),
+  /** How far the running sync has got with the songs, in albums or songs: `done` of `total`. `null` before it knows. */
+  progress: Schema.NullOr(Schema.Struct({ done: Schema.Finite, total: Schema.Finite })),
+  /** Why the last sync failed, or what it could not sync although it finished. */
   error: Schema.NullOr(Schema.String),
   lastSyncedAt: Schema.NullOr(Schema.String),
 });
 export type LibrarySyncStatus = typeof LibrarySyncStatus.Type;
-export const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, error: null, lastSyncedAt: null };
+export const IDLE_LIBRARY_SYNC: LibrarySyncStatus = { running: null, progress: null, error: null, lastSyncedAt: null };
 
 export const PlaylistSyncStatus = Schema.Struct({
   state: Schema.Literals(["idle", "scheduled", "syncing", "error"]),
@@ -43,8 +57,15 @@ export const PlaylistSyncStatus = Schema.Struct({
 export type PlaylistSyncStatus = typeof PlaylistSyncStatus.Type;
 export const IDLE_PLAYLIST_SYNC: PlaylistSyncStatus = { state: "idle", error: null, lastSyncedAt: null };
 
-export const RefreshStatTarget = Schema.Struct({ type: Schema.Literals(["album", "playlist"]), id: Id });
-export type RefreshStatTarget = typeof RefreshStatTarget.Type;
+/** What a page shows, to read again from the server when it opens: an album with its songs, or the songs of a playlist. */
+export const RefreshTarget = Schema.Struct({ type: Schema.Literals(["album", "playlist"]), id: Id });
+export type RefreshTarget = typeof RefreshTarget.Type;
+
+/**
+ * The albums of other artists that one of their songs credits an artist on, and the name such a credit
+ * gives the artist: an artist credited only on songs has no row of its own, and is known by it.
+ */
+export type ArtistAppearances = { readonly albumIds: ReadonlyArray<string>; readonly name: string | null };
 
 /** What a cover is of. `coverArtId` is the server's name for the image (`coverArt` on the row), which changes when the image does. */
 export type CoverTarget = { readonly type: "album" | "artist"; readonly id: string; readonly coverArtId: string | null };

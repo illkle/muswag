@@ -1,9 +1,8 @@
 import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
-import { FileSystemError, MiniFs, type CredentialsCipher } from "@muswag/backend";
+import { FileSystemError, MiniFs } from "@muswag/backend";
 import { Effect, Layer } from "effect";
-import { safeStorage } from "electron";
 
 import { thumbnailPathOf } from "../cover-thumbnails";
 
@@ -53,10 +52,3 @@ export const MiniFsLive = (base: string) =>
         }
       }),
   });
-
-/** Encrypts the stored password with the OS keychain through Electron's `safeStorage`. */
-export const safeStorageCipher: CredentialsCipher = {
-  isAvailable: () => safeStorage.isEncryptionAvailable(),
-  encrypt: (plain) => safeStorage.encryptString(plain).toString("base64"),
-  decrypt: (encrypted) => safeStorage.decryptString(Buffer.from(encrypted, "base64")),
-};

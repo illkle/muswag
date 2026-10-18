@@ -1,6 +1,6 @@
 import { md5 } from "@noble/hashes/legacy.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import { Context, Crypto, Effect, PlatformError, Schema } from "effect";
+import { Context, Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 import {
   type AlbumList2,
@@ -10,11 +10,14 @@ import {
   type GetAlbumArgs,
   type GetAlbumList2Args,
   type GetCoverArtArgs,
-  type GetIndexesArgs,
+  type GetArtistsArgs,
   type GetPlaylistArgs,
-  type Indexes,
+  type ArtistsID3,
   type PlaylistWithSongs,
   type Playlists,
+  type ScanStatus,
+  type Search3Args,
+  type SearchResult3,
   SubsonicApiError,
   type SubsonicBaseResponse,
   SubsonicConfigError,
@@ -25,12 +28,14 @@ import {
   createPlaylistResponseSchema,
   getAlbumList2ResponseSchema,
   getAlbumResponseSchema,
-  getIndexesResponseSchema,
+  getArtistsResponseSchema,
   getPlaylistResponseSchema,
   getPlaylistsResponseSchema,
+  getScanStatusResponseSchema,
   normalizeServerUrl,
   pingResponseSchema,
   responseEnvelopeSchema,
+  search3ResponseSchema,
   subsonicRestUrl,
 } from "@muswag/model";
 const API_VERSION = "1.16.1";
@@ -50,14 +55,16 @@ export const WRONG_CREDENTIALS = 40;
 
 type RequestParams = Record<string, string | number | boolean | Array<string | number | boolean> | null | undefined>;
 
-export type SubsonicClientError = HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
+export type SubsonicClientError = HttpClientError.HttpClientError | SubsonicHttpError | SubsonicDecodeError | SubsonicApiError;
 
 export interface SubsonicApiConfig {
   /** The server's address as `normalizeServerUrl` gives it. */
   readonly url: string;
+  /** `token` is `subsonicToken` of the password and `salt`. Every request is signed with the one pair. */
   readonly auth: {
     readonly username: string;
-    readonly password: string;
+    readonly salt: string;
+    readonly token: string;
   };
   /** Runs when the server answers a request with "wrong username or password". */
   readonly onCredentialsRejected?: Effect.Effect<void>;
@@ -68,14 +75,19 @@ export interface SubsonicApiService {
   readonly ping: Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
   readonly getAlbum: (args: GetAlbumArgs) => Effect.Effect<SubsonicBaseResponse & { album: AlbumWithSongsID3 }, SubsonicClientError>;
   readonly getAlbumList2: (args: GetAlbumList2Args) => Effect.Effect<SubsonicBaseResponse & { albumList2: AlbumList2 }, SubsonicClientError>;
-  readonly getIndexes: (args?: GetIndexesArgs) => Effect.Effect<SubsonicBaseResponse & { indexes: Indexes }, SubsonicClientError>;
-  readonly getCoverArt: (args: GetCoverArtArgs) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError | PlatformError.PlatformError | SubsonicHttpError>;
+  readonly getArtists: (args?: GetArtistsArgs) => Effect.Effect<SubsonicBaseResponse & { artists: ArtistsID3 }, SubsonicClientError>;
+  readonly getScanStatus: Effect.Effect<SubsonicBaseResponse & { scanStatus: ScanStatus }, SubsonicClientError>;
+  readonly search3: (args: Search3Args) => Effect.Effect<SubsonicBaseResponse & { searchResult3: SearchResult3 }, SubsonicClientError>;
+  readonly getCoverArt: (args: GetCoverArtArgs) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError | SubsonicHttpError>;
   readonly getPlaylists: Effect.Effect<SubsonicBaseResponse & { playlists: Playlists }, SubsonicClientError>;
   readonly getPlaylist: (args: GetPlaylistArgs) => Effect.Effect<SubsonicBaseResponse & { playlist: PlaylistWithSongs }, SubsonicClientError>;
   readonly createPlaylist: (args: CreatePlaylistArgs) => Effect.Effect<SubsonicBaseResponse & { playlist: PlaylistWithSongs }, SubsonicClientError>;
   readonly updatePlaylist: (args: UpdatePlaylistArgs) => Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
   readonly deletePlaylist: (args: DeletePlaylistArgs) => Effect.Effect<SubsonicBaseResponse, SubsonicClientError>;
 }
+
+/** What Subsonic takes in place of a password: the MD5 of the password followed by a salt, in hex. */
+export const subsonicToken = (password: string, salt: string) => bytesToHex(md5(utf8ToBytes(password + salt)));
 
 export class SubsonicAPI extends Context.Service<SubsonicAPI, SubsonicApiService>()("@muswag/backend/SubsonicAPI") {}
 
@@ -84,7 +96,7 @@ function validateConfig(config: SubsonicApiConfig): URL {
   if (!config.url) throw new Error("no url provided");
   if (!config.auth) throw new Error("no auth provided");
   if (!config.auth.username) throw new Error("no username provided");
-  if (!config.auth.password) throw new Error("no password provided");
+  if (!config.auth.salt || !config.auth.token) throw new Error("no token provided");
   return new URL(subsonicRestUrl(config.url));
 }
 
@@ -112,27 +124,20 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
       catch: (cause) => new SubsonicConfigError({ message: cause instanceof Error ? cause.message : "invalid Subsonic configuration", cause }),
     });
     const httpClient = yield* HttpClient.HttpClient;
-    const crypto = yield* Crypto.Crypto;
 
-    const requestUrl = (method: string, params: RequestParams): Effect.Effect<URL, PlatformError.PlatformError> =>
-      Effect.gen(function* () {
-        const url = new URL(`${method}.view`, baseUrl);
-        setSearchParams(url, {
-          v: API_VERSION,
-          c: CLIENT_NAME,
-          f: "json",
-          ...params,
-        });
-
-        const s = bytesToHex(yield* crypto.randomBytes(16));
-        setSearchParams(url, {
-          u: config.auth.username,
-          t: bytesToHex(md5(utf8ToBytes(config.auth.password + s))),
-          s,
-        });
-
-        return url;
+    const requestUrl = (method: string, params: RequestParams): URL => {
+      const url = new URL(`${method}.view`, baseUrl);
+      setSearchParams(url, {
+        v: API_VERSION,
+        c: CLIENT_NAME,
+        f: "json",
+        ...params,
+        u: config.auth.username,
+        t: config.auth.token,
+        s: config.auth.salt,
       });
+      return url;
+    };
 
     /**
      * Sends a request and answers once the response's headers are in. A request that changes
@@ -141,7 +146,7 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
      */
     const request = (method: string, params: RequestParams, retries: number) =>
       Effect.gen(function* () {
-        const url = yield* requestUrl(method, params);
+        const url = requestUrl(method, params);
         const outgoing = HttpClientRequest.post(new URL(url.pathname, url.origin)).pipe(HttpClientRequest.bodyUrlParams(url.searchParams));
 
         // The time limit covers every attempt, and ends with the headers: a cover or a long album
@@ -168,7 +173,7 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
         const payload = yield* response.json;
         return yield* parseResponse(method, schema, payload);
       }).pipe(
-        // The one place every decoded answer passes, so the one place a refused password is noticed.
+        // The one place every decoded answer passes, so the one place refused credentials are noticed.
         Effect.tapError((error) => (error._tag === "SubsonicApiError" && error.code === WRONG_CREDENTIALS ? (config.onCredentialsRejected ?? Effect.void) : Effect.void)),
         Effect.withSpan(`SubsonicAPI.${method}`),
       );
@@ -181,7 +186,9 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
       ping: read("ping", {}, pingResponseSchema),
       getAlbum: (args) => read("getAlbum", args, getAlbumResponseSchema),
       getAlbumList2: (args) => read("getAlbumList2", args, getAlbumList2ResponseSchema),
-      getIndexes: (args = {}) => read("getIndexes", args, getIndexesResponseSchema),
+      getArtists: (args = {}) => read("getArtists", args, getArtistsResponseSchema),
+      getScanStatus: read("getScanStatus", {}, getScanStatusResponseSchema),
+      search3: (args) => read("search3", args, search3ResponseSchema),
       getCoverArt: (args) => request("getCoverArt", args, READ_RETRIES).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
       getPlaylists: read("getPlaylists", {}, getPlaylistsResponseSchema),
       getPlaylist: (args) => read("getPlaylist", args, getPlaylistResponseSchema),

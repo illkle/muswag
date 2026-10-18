@@ -19,9 +19,7 @@ const followSession = <A>(session: Session, loggedOut: A, select: (session: Auth
 /** Sends the session's credentials to the player, which signs stream URLs with them. The player ignores the ones it already has. */
 export const makePlayerCredentialsSync = (session: Session, player: PlayerHandle) =>
   session.credentials.pipe(
-    Effect.flatMap((credentials) =>
-      Effect.promise(() => player.setCredentials(credentials ? { url: credentials.url, username: credentials.username, password: Redacted.make(credentials.password) } : null)),
-    ),
+    Effect.flatMap((credentials) => Effect.promise(() => player.setCredentials(credentials ? { ...credentials, token: Redacted.make(credentials.token) } : null))),
     Effect.asVoid,
   );
 

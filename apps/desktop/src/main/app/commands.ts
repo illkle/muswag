@@ -1,4 +1,4 @@
-import { PlaylistCommands, SessionManager } from "@muswag/backend";
+import { Db, LibraryQueries, PlaylistCommands, SessionManager } from "@muswag/backend";
 import type { Song } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Effect, Exit, Schema } from "effect";
@@ -22,6 +22,7 @@ export const serveAppCommands = (options: {
     const session = yield* SessionManager;
     const commands = yield* PlaylistCommands;
     const mirror = yield* SqliteMirror;
+    const db = yield* Db;
     const run = Effect.runPromiseWith(yield* Effect.context<never>());
     const { queue } = options;
 
@@ -42,7 +43,8 @@ export const serveAppCommands = (options: {
       "session:login": (credentials) => session.login(credentials, { beforeDataIsDeleted: clearQueue }),
       "session:logout": () => clearQueue.pipe(Effect.andThen(session.logout)),
       "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
-      "library:refreshStats": (target) => session.use((active) => active.library.refreshStats(target)),
+      "library:refresh": (target) => session.use((active) => active.library.refresh(target)),
+      "library:artistAppearances": (artistId) => LibraryQueries.artistAppearances(artistId).pipe(Effect.provideService(Db, db)),
       "playlists:create": (input) => written(commands.create(input)),
       "playlists:rename": (id, name) => written(commands.rename(id, name)),
       "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),

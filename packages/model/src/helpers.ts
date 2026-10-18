@@ -30,17 +30,16 @@ export function subsonicRestUrl(serverUrl: string): string {
 }
 
 /**
- * The URL is a pure function of its arguments: mpv recognises a prefetched track by its URL, so callers
- * reuse one salt to give a track the same URL every time.
+ * The URL is a pure function of its arguments: mpv recognises a prefetched track by its URL, and the
+ * one salt of the session gives a track the same URL every time.
  */
-export function buildSubsonicStreamUrl(md5: (v: string) => string, credentials: SessionCredentials, songId: string, salt: string): string {
-  const token = md5(`${credentials.password}${salt}`);
+export function buildSubsonicStreamUrl(credentials: SessionCredentials, songId: string): string {
   const url = new URL("stream.view", subsonicRestUrl(credentials.url));
 
   url.searchParams.set("id", songId);
   url.searchParams.set("u", credentials.username);
-  url.searchParams.set("t", token);
-  url.searchParams.set("s", salt);
+  url.searchParams.set("t", credentials.token);
+  url.searchParams.set("s", credentials.salt);
   url.searchParams.set("v", SUBSONIC_API_VERSION);
   url.searchParams.set("c", "muswag");
   // mpv can decode the source formats itself. A live transcode is commonly sent as

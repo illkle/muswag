@@ -1,5 +1,6 @@
 export * from "./contract.js";
 export * from "./db/schema.js";
+export * from "./db/mirror.js";
 export * from "./helpers.js";
 export * from "./playlists/types.js";
 export * from "./player-queue.js";

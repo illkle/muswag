@@ -11,7 +11,7 @@ import { applyQueue, currentEntry, retainsCurrent, type Correlation } from "./qu
 import { booleanProperty, command, numberProperty, type MpvCommand } from "./mpv/protocol";
 import { MpvSession, type SessionEvent, type SessionHandle } from "./mpv/session";
 import { defaultSettings, makeSettingsWriter, SettingsStore, type Settings } from "./settings";
-import { makeStreamSalt, resolveStreamUrls } from "./stream-source";
+import { resolveStreamUrls } from "./stream-source";
 
 /**
  * A backstop for loads that never finish. mpv itself gives up on a connection that stops sending data, so
@@ -34,7 +34,7 @@ export class Player extends Context.Service<Player, PlayerService>()("@muswag/pl
 
 type Operation = PlayerCommand | { readonly _tag: "Credentials"; readonly credentials: PlayerCredentials | null };
 const sameCredentials = (a: PlayerCredentials | null, b: PlayerCredentials | null) =>
-  a === b || (a !== null && b !== null && a.url === b.url && a.username === b.username && Redacted.value(a.password) === Redacted.value(b.password));
+  a === b || (a !== null && b !== null && a.url === b.url && a.username === b.username && a.salt === b.salt && Redacted.value(a.token) === Redacted.value(b.token));
 
 type Request = { readonly operation: Operation; readonly reply: Deferred.Deferred<void, CommandFailed> };
 /** Everything the worker fiber processes, one at a time, in arrival order. Sessions write their events here directly. */
@@ -99,8 +99,6 @@ export const PlayerLive = Layer.effect(
       }),
     );
     let credentials: PlayerCredentials | null = null;
-    /** Signs stream URLs while `credentials` last, so a track keeps the URL mpv may already have prefetched. */
-    let streamSalt = makeStreamSalt();
     /** The queue window mirrored into mpv. */
     let items: readonly PlaybackItem[] = [];
     /** Whether mpv's playlist is being changed: a failure then leaves it in a state nobody knows. */
@@ -275,7 +273,7 @@ export const PlayerLive = Layer.effect(
         const error = currentMedia(state)?.item.key === item.key ? state.error : null;
         yield* publish({ ...state, error, playback: { _tag: "Loading", media, targetPaused: !selection.play } });
       }
-      const urls = yield* resolveStreamUrls(credentials, streamSalt, next);
+      const urls = yield* resolveStreamUrls(credentials, next);
       applying = true;
       const active = yield* ensureEngine();
       // A load stays paused until its position is restored, so nothing before it is heard.
@@ -360,7 +358,6 @@ export const PlayerLive = Layer.effect(
       const media = currentMedia(state);
       const play = state.playback._tag === "Playing";
       credentials = next;
-      streamSalt = makeStreamSalt();
       if (credentials && state.error?.fix === "login") yield* publish(withoutError(state));
       // Stream URLs embed credentials, so a session built with the old ones must not survive.
       yield* closeEngine();

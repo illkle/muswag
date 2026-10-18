@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildSubsonicStreamUrl, normalizeServerUrl, subsonicRestUrl } from "./helpers.js";
 
-const credentials = { password: "secret", url: "https://music.example", username: "alice" };
+const credentials = { url: "https://music.example", username: "alice", salt: "salt", token: "somehash" };
 
 describe("normalizeServerUrl", () => {
   it("gives every spelling of an address one form", () => {
@@ -46,14 +46,14 @@ describe("subsonicRestUrl", () => {
     ] as const) {
       const url = normalizeServerUrl(address)!;
       expect(subsonicRestUrl(url)).toBe(rest);
-      expect(buildSubsonicStreamUrl((_v) => "somehash", { ...credentials, url }, "track-1", "salt").split("?")[0]).toBe(`${rest}stream.view`);
+      expect(buildSubsonicStreamUrl({ ...credentials, url }, "track-1").split("?")[0]).toBe(`${rest}stream.view`);
     }
   });
 });
 
 describe("buildSubsonicStreamUrl", () => {
   it("requests the original bounded stream so mpv can prefetch the next track", () => {
-    const url = new URL(buildSubsonicStreamUrl((_v) => "somehash", credentials, "track-1", "salt"));
+    const url = new URL(buildSubsonicStreamUrl(credentials, "track-1"));
 
     expect(url.pathname).toBe("/rest/stream.view");
     expect(url.searchParams.get("id")).toBe("track-1");
@@ -61,12 +61,12 @@ describe("buildSubsonicStreamUrl", () => {
     expect(url.searchParams.get("maxBitRate")).toBe("0");
     expect(url.searchParams.get("estimateContentLength")).toBe("true");
   });
-  it("signs with the given salt, so a track keeps its URL", () => {
-    const build = () => buildSubsonicStreamUrl((value) => `md5(${value})`, credentials, "track-1", "salt");
+  it("signs with the salt and token of the session, so a track keeps its URL", () => {
+    const build = () => buildSubsonicStreamUrl(credentials, "track-1");
     const url = new URL(build());
 
     expect(url.searchParams.get("s")).toBe("salt");
-    expect(url.searchParams.get("t")).toBe("md5(secretsalt)");
+    expect(url.searchParams.get("t")).toBe("somehash");
     expect(build()).toBe(url.toString());
   });
 });

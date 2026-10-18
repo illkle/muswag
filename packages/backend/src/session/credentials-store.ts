@@ -14,30 +14,25 @@ export class CredentialsStoreError extends Data.TaggedError("CredentialsStoreErr
 export type StoredAccount = Pick<SessionCredentials, "url" | "username">;
 
 export interface CredentialsStoreService {
-  /** The credentials to restore a session with. `null` also when the account's password was forgotten. */
+  /** The credentials to restore a session with. `null` also when the account's token was forgotten. */
   readonly load: Effect.Effect<SessionCredentials | null, CredentialsStoreError>;
-  /** The account last logged in with, also when its password was forgotten or cannot be decrypted. */
+  /** The account last logged in with, also when its token was forgotten. */
   readonly account: Effect.Effect<StoredAccount | null, CredentialsStoreError>;
   readonly save: (credentials: SessionCredentials) => Effect.Effect<void, CredentialsStoreError>;
-  /** Drops a password the server refused and keeps whose data this is, so it is not tried on every start. */
-  readonly forgetPassword: Effect.Effect<void, CredentialsStoreError>;
+  /** Drops a token the server refused and keeps whose data this is, so it is not tried on every start. */
+  readonly forgetToken: Effect.Effect<void, CredentialsStoreError>;
   readonly clear: Effect.Effect<void, CredentialsStoreError>;
 }
 
 export class CredentialsStore extends Context.Service<CredentialsStore, CredentialsStoreService>()("@muswag/backend/CredentialsStore") {}
 
-/** Encrypts the stored password, e.g. with Electron's `safeStorage`. */
-export interface CredentialsCipher {
-  /** False when the platform has no usable keychain; the password is then stored as is. */
-  readonly isAvailable: () => boolean;
-  readonly encrypt: (plain: string) => string;
-  readonly decrypt: (encrypted: string) => string;
-}
-
 const ROW_ID = 1;
 
-/** Keeps the credentials in the database's `credentials` table, which is never mirrored. */
-export const CredentialsStoreSql = (cipher?: CredentialsCipher) =>
+/**
+ * Keeps the credentials in the database's `credentials` table, which is never mirrored. What is stored
+ * logs in to the one server and is not the password, so it needs no keychain to be kept in.
+ */
+export const CredentialsStoreSql = () =>
   Layer.effect(
     CredentialsStore,
     Effect.gen(function* () {
@@ -50,32 +45,31 @@ export const CredentialsStoreSql = (cipher?: CredentialsCipher) =>
         .pipe(Effect.map((rows) => rows[0]));
 
       return {
-        load: Effect.gen(function* () {
-          const stored = yield* storedRow;
-          // A forgotten password is stored as an empty one, which no login saves.
-          if (!stored || stored.password === "") return null;
-          const password = stored.encrypted ? yield* Effect.try(() => cipher!.decrypt(stored.password)) : stored.password;
-          return { url: stored.url, username: stored.username, password };
-        }).pipe(Effect.mapError(failure("load", "Failed to load stored credentials"))),
+        load: storedRow.pipe(
+          // A forgotten token is stored as an empty one, which no login saves.
+          Effect.map((stored) => (stored && stored.token !== "" ? { url: stored.url, username: stored.username, salt: stored.salt, token: stored.token } : null)),
+          Effect.mapError(failure("load", "Failed to load stored credentials")),
+        ),
 
         account: storedRow.pipe(
           Effect.map((stored) => (stored ? { url: stored.url, username: stored.username } : null)),
           Effect.mapError(failure("load", "Failed to load the stored account")),
         ),
 
-        save: (credentials) =>
-          Effect.gen(function* () {
-            const encrypted = cipher?.isAvailable() ?? false;
-            const password = encrypted ? yield* Effect.try(() => cipher!.encrypt(credentials.password)) : credentials.password;
-            const row = { id: ROW_ID, url: credentials.url, username: credentials.username, password, encrypted };
-            yield* db.insert(credentialsTable).values(row).onConflictDoUpdate({ target: credentialsTable.id, set: row });
-          }).pipe(Effect.mapError(failure("save", "Failed to save credentials"))),
+        save: (credentials) => {
+          const row = { id: ROW_ID, url: credentials.url, username: credentials.username, salt: credentials.salt, token: credentials.token };
+          return db
+            .insert(credentialsTable)
+            .values(row)
+            .onConflictDoUpdate({ target: credentialsTable.id, set: row })
+            .pipe(Effect.asVoid, Effect.mapError(failure("save", "Failed to save credentials")));
+        },
 
-        forgetPassword: db
+        forgetToken: db
           .update(credentialsTable)
-          .set({ password: "", encrypted: false })
+          .set({ salt: "", token: "" })
           .where(eq(credentialsTable.id, ROW_ID))
-          .pipe(Effect.asVoid, Effect.mapError(failure("save", "Failed to forget the stored password"))),
+          .pipe(Effect.asVoid, Effect.mapError(failure("save", "Failed to forget the stored token"))),
 
         clear: db.delete(credentialsTable).pipe(Effect.asVoid, Effect.mapError(failure("clear", "Failed to clear credentials"))),
       } satisfies CredentialsStoreService;

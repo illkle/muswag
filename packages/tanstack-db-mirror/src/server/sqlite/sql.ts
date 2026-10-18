@@ -7,7 +7,7 @@ const quoteLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 // and would be embedded by json_object() as JSON instead of as a string; concatenation drops it.
 const plainValue = (expression: string) => `CASE WHEN typeof(${expression}) = 'text' THEN ${expression} || '' ELSE ${expression} END`;
 
-/** `json_object('col', <ref>."col", ...)` over every column of the table. */
+/** `json_object('col', <ref>."col", ...)` over the columns of `info`. */
 export const rowJson = (info: MirrorTableInfo, ref: string) => `json_object(${info.columns.map(({ name }) => `${quoteLiteral(name)}, ${plainValue(`${ref}.${quoteIdentifier(name)}`)}`).join(", ")})`;
 
 // `key` has no declared type so SQLite keeps integer and text keys as they were stored.
@@ -29,8 +29,9 @@ export const triggerNames = (info: MirrorTableInfo, changeLog: string) => ({
 });
 
 /**
- * The capture triggers of a table. They are temporary: they belong to the server's connection and are
- * gone with it, so a migration never meets a trigger that names a column it is changing.
+ * The capture triggers of a table, which capture the columns of `info`. They are temporary: they belong
+ * to the server's connection and are gone with it, so a migration never meets a trigger that names a
+ * column it is changing.
  */
 export function createTriggerSql(info: MirrorTableInfo, changeLog: string): ReadonlyArray<string> {
   const names = triggerNames(info, changeLog);
@@ -38,14 +39,17 @@ export function createTriggerSql(info: MirrorTableInfo, changeLog: string): Read
   const log = `main.${quoteIdentifier(changeLog)}`;
   const tableLiteral = quoteLiteral(info.name);
   const pk = quoteIdentifier(info.primaryKey.name);
+  const changed = info.columns.map(({ name }) => `OLD.${quoteIdentifier(name)} IS NOT NEW.${quoteIdentifier(name)} COLLATE BINARY`).join(" OR ");
 
   return [
     `CREATE TEMP TRIGGER ${quoteIdentifier(names.insert)} AFTER INSERT ON ${table} BEGIN
   INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, 'u', NEW.${pk}, ${rowJson(info, "NEW")});
 END`,
-    // A primary-key change is mirrored as a delete of the old key followed by an upsert of the new
-    // one. BINARY so a case-only change of a NOCASE key still counts as a new key.
-    `CREATE TEMP TRIGGER ${quoteIdentifier(names.update)} AFTER UPDATE ON ${table} BEGIN
+    // An update that leaves every mirrored column as it was, such as an upsert of an unchanged row or a
+    // change to omitted columns only, is not mirrored. A primary-key change is mirrored as a delete of
+    // the old key followed by an upsert of the new one. BINARY so that a case-only change of a NOCASE
+    // column, the key among them, still counts as a change.
+    `CREATE TEMP TRIGGER ${quoteIdentifier(names.update)} AFTER UPDATE ON ${table} WHEN ${changed} BEGIN
   INSERT INTO ${log} (tbl, op, key, value) SELECT ${tableLiteral}, 'd', OLD.${pk}, NULL WHERE OLD.${pk} IS NOT NEW.${pk} COLLATE BINARY;
   INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, 'u', NEW.${pk}, ${rowJson(info, "NEW")});
 END`,

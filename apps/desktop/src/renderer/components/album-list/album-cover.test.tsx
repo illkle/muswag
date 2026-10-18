@@ -12,44 +12,44 @@ const src = () => screen.getByAltText("cover art").getAttribute("src");
 
 describe("AlbumCover", () => {
   it("addresses the cover by what it is of", () => {
-    render(<AlbumCover instantLoad target={album} />);
+    render(<AlbumCover target={album} />);
     expect(src()).toBe("muswag-cover://album/album%201?v=cover-1");
 
     cleanup();
-    render(<AlbumCover instantLoad target={{ ...album, type: "artist" }} />);
+    render(<AlbumCover target={{ ...album, type: "artist" }} />);
     expect(src()).toBe("muswag-cover://artist/album%201?v=cover-1");
   });
 
   it("asks for the scaled-down cover only when shown as a thumbnail", () => {
-    const { rerender } = render(<AlbumCover instantLoad thumbnail target={album} />);
+    const { rerender } = render(<AlbumCover thumbnail target={album} />);
     expect(src()).toContain("thumbnail");
 
-    rerender(<AlbumCover instantLoad target={album} />);
+    rerender(<AlbumCover target={album} />);
     expect(src()).not.toContain("thumbnail");
   });
 
   it("asks for nothing when there is no cover", () => {
-    const { rerender } = render(<AlbumCover instantLoad target={{ ...album, coverArtId: null }} />);
+    const { rerender } = render(<AlbumCover target={{ ...album, coverArtId: null }} />);
     expect(screen.queryByAltText("cover art")).toBeNull();
 
-    rerender(<AlbumCover instantLoad />);
+    rerender(<AlbumCover />);
     expect(screen.queryByAltText("cover art")).toBeNull();
   });
 
   it("shows the placeholder for a cover that did not load, and does not ask again", () => {
-    const { rerender } = render(<AlbumCover instantLoad target={album} />);
+    const { rerender } = render(<AlbumCover target={album} />);
     fireEvent.error(screen.getByAltText("cover art"));
     expect(screen.queryByAltText("cover art")).toBeNull();
 
-    rerender(<AlbumCover instantLoad target={{ ...album }} />);
+    rerender(<AlbumCover target={{ ...album }} />);
     expect(screen.queryByAltText("cover art")).toBeNull();
   });
 
   it("loads again when the cover is another one", () => {
-    const { rerender } = render(<AlbumCover instantLoad target={album} />);
+    const { rerender } = render(<AlbumCover target={album} />);
     fireEvent.error(screen.getByAltText("cover art"));
 
-    rerender(<AlbumCover instantLoad target={{ ...album, coverArtId: "cover-2" }} />);
+    rerender(<AlbumCover target={{ ...album, coverArtId: "cover-2" }} />);
     expect(src()).toBe("muswag-cover://album/album%201?v=cover-2");
   });
 });

@@ -7,11 +7,11 @@ import { PageState } from "#/components/page-state";
 import { PlaylistArt } from "#/components/playlist/playlist-art";
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
-import { QueueActions, useQueueManagerState } from "#/queue/queue";
+import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { PlaylistActions } from "#/playlists/actions";
 import { totalDuration } from "#/playlists/rows";
 import { usePlaylist } from "#/playlists/queries";
-import { usePlaylistSongStatsRefresh } from "#/library/stats-refresh";
+import { usePlaylistSongsRefresh } from "#/library/page-refresh";
 import { libraryColumns } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
@@ -29,8 +29,8 @@ export const Route = createFileRoute("/app/playlists/$playlistId")({
 function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const navigate = useNavigate();
   const { record, state, rows, isLoading, isError } = usePlaylist(playlistId);
-  usePlaylistSongStatsRefresh(record?.serverId ?? null);
-  const queueState = useQueueManagerState();
+  usePlaylistSongsRefresh(record?.serverId ?? null);
+  const playingKey = usePlayingKey((ref) => ref.type === "playlist" && ref.playlistId === playlistId);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   /** Deleting this playlist has been confirmed. The page is left once it is gone, and until then shows nothing rather than that it is missing. */
@@ -39,8 +39,6 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
   const firstPlayableEntryId = useMemo(() => rows.find(({ song }) => song)?.entryId ?? null, [rows]);
   /** The first four albums the playlist draws on, for its artwork. */
   const artAlbumIds = useMemo(() => [...new Set(rows.flatMap(({ song }) => (song?.albumId ? [song.albumId] : [])))].slice(0, 4), [rows]);
-
-  const playingKey = queueState.source?.ref.type === "playlist" && queueState.source.ref.playlistId === playlistId && queueState.nowPlaying?.origin === "source" ? queueState.nowPlaying.key : null;
 
   const items = useMemo(
     (): TrackListItem[] =>
