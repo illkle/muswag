@@ -26,9 +26,9 @@ export const db = {
 export type LibraryCollections = typeof db;
 
 // Without an index a lookup scans its table, and a page makes one for every row it shows: the album of
-// each track in a list, the song of each playlist entry.
+// each track in a list. An index keeps a set of keys for each value, so a song is looked up by its key
+// with `get` instead, rather than with an index on `id` costing a set for every song.
 db.albums.createIndex(({ id }) => id);
 db.albums.createIndex(({ artistId }) => artistId);
-db.songs.createIndex(({ id }) => id);
 db.songs.createIndex(({ albumId }) => albumId);
 db.playlists.createIndex(({ id }) => id);

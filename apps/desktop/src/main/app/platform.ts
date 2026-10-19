@@ -4,7 +4,7 @@ import { dirname, resolve, sep } from "node:path";
 import { FileSystemError, MiniFs } from "@muswag/backend";
 import { Effect, Layer } from "effect";
 
-import { thumbnailPathOf } from "../cover-thumbnails";
+import { thumbnailPathsOf } from "../cover-thumbnails";
 
 /** Where cover files are kept, relative to the app data directory. */
 export const COVER_DIRECTORY = "covers";
@@ -38,7 +38,7 @@ export const MiniFsLive = (base: string) =>
       Effect.tryPromise({
         try: async () => {
           const target = resolveInside(base, path);
-          await Promise.all([rm(target, { recursive: true, force: true }), rm(thumbnailPathOf(target), { force: true })]);
+          await Promise.all([rm(target, { recursive: true, force: true }), ...thumbnailPathsOf(target).map((path) => rm(path, { force: true }))]);
         },
         catch: (cause) => new FileSystemError({ cause: String(cause), message: `Failed to remove ${path}` }),
       }),

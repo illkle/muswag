@@ -5,7 +5,12 @@ directories:
 icon: icon.png
 files:
   - out/**
+  # Sourcemaps are for debugging a build here, and are as large as the rest of the app.
+  - "!out/**/*.map"
   - package.json
+# The UI is in English. `en-US` also keeps macOS's `en.lproj`.
+electronLanguages:
+  - en-US
 asar:
   smartUnpack: false
 win:

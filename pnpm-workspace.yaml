@@ -20,7 +20,6 @@ catalog:
   "@tanstack/react-hotkeys": ^0.14.3
   "@tanstack/react-query": ^5.104.3
   "@tanstack/react-router": ^1.170.44
-  "@tanstack/react-router-ssr-query": ^1.167.3
   "@tanstack/react-store": ^0.11.2
   "@tanstack/react-virtual": ^3.14.20
   "@tanstack/router-plugin": ^1.168.46

@@ -4,6 +4,7 @@ import { json } from "node:stream/consumers";
 import type { WebContentsLike } from "@muswag/tanstack-db-mirror/electron/main";
 import type { IpcMain } from "electron";
 
+import { coverSizeOf } from "#shared/cover";
 import type { ServeCover } from "./cover-protocol";
 
 type Handler = (event: { readonly sender: WebContentsLike }, ...args: Array<unknown>) => unknown;
@@ -82,7 +83,7 @@ export function startDevBridge({ ipcMain, port, serveCover }: DevBridgeOptions):
 
     const cover = request.method === "GET" && /^\/__bridge\/cover\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if (cover) {
-      const served = await serveCover({ type: cover[1]!, id: decodeURIComponent(cover[2]!), thumbnail: url.searchParams.has("thumbnail") });
+      const served = await serveCover({ type: cover[1]!, id: decodeURIComponent(cover[2]!), size: coverSizeOf(url.searchParams.get("size")) });
       const contentType = served.headers.get("content-type");
       response.writeHead(served.status, contentType ? { "content-type": contentType } : {}).end(Buffer.from(await served.arrayBuffer()));
       return;

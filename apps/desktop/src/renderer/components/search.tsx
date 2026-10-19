@@ -44,7 +44,7 @@ const ArtistResult = ({ artist }: { artist: Found<"artist">["artist"] }) => {
   return (
     <Autocomplete.Item
       render={
-        <InnerResult kind="Artist" title={artist.name} cover={<AlbumCover thumbnail className="rounded-full" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />} />
+        <InnerResult kind="Artist" title={artist.name} cover={<AlbumCover size="icon" className="rounded-full" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />} />
       }
       onClick={() =>
         n({
@@ -62,7 +62,7 @@ const SongResult = ({ song }: { song: Found<"song">["song"] }) => {
   return (
     <Autocomplete.Item
       // The cover is the album's, which is read here rather than kept with every song of the index.
-      render={<InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={song.albumId ? <TrackCover albumId={song.albumId} /> : <AlbumCover thumbnail />} />}
+      render={<InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={song.albumId ? <TrackCover albumId={song.albumId} /> : <AlbumCover size="icon" />} />}
       onClick={() =>
         n({
           to: "/app/albums/$albumId",
@@ -78,7 +78,7 @@ const AlbumResult = ({ album }: { album: Found<"album">["album"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={<InnerResult kind="Album" title={album.name} subtitle={album.artist} cover={<AlbumCover thumbnail target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />} />}
+      render={<InnerResult kind="Album" title={album.name} subtitle={album.artist} cover={<AlbumCover size="icon" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />} />}
       onClick={() =>
         n({
           to: "/app/albums/$albumId",

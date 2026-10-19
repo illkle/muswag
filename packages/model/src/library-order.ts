@@ -48,5 +48,5 @@ export function titleSortKey(title: string): string {
     .replace(/\p{M}/gu, "")
     .toLowerCase()
     .trim()
-    .replace(/[\uD800-￿]/gu, (char) => String.fromCodePoint(0xf0000 + char.charCodeAt(0) - 0xd800));
+    .replace(/[\uD800-\uFFFF]/gu, (char) => String.fromCodePoint(0xf0000 + char.charCodeAt(0) - 0xd800));
 }

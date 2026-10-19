@@ -2,6 +2,7 @@ import type { BaseCollectionConfig, CollectionConfig, SyncConfig, UtilsRecord } 
 
 import type { MirrorChangeBatch, MirrorPosition, MirrorRow } from "../protocol.js";
 import { tableAccess, type AnyMirrorTable, type MirrorKeyOf, type MirrorRowOf } from "../table.js";
+import { internStrings, type Interned } from "./intern.js";
 import { attachCollectionHandle, MirrorClientDisposedError, MirrorTimeoutError, type MirrorClient } from "./mirror-client.js";
 
 const RETRY_BASE_DELAY_MS = 500;
@@ -62,8 +63,12 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
   const info = tableAccess(table);
   const primaryKey = info.primaryKey;
   const id = config.id ?? `mirror:${info.name}`;
-  /** Memory rows arrive encoded. One that does not decode is skipped rather than allowed to break the collection. */
-  const decode = (value: MirrorRow): Row | undefined => {
+  /**
+   * Memory rows arrive encoded. One that does not decode is skipped rather than allowed to break the collection.
+   * The strings of a row share one copy with the equal strings of the other rows `interned` has seen.
+   */
+  const decode = (value: MirrorRow, interned: Interned): Row | undefined => {
+    internStrings(value, interned);
     if (!info.decode) return value as Row;
     try {
       return info.decode(value) as Row;
@@ -93,6 +98,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
         const changes = batch.changes.filter((change) => change.table === info.name && change.seq > position.seq);
         try {
           if (changes.length === 0) return;
+          const interned: Interned = new Map();
           begin();
           for (const change of changes) {
             // Upserts are written as full-row updates: `update` on a missing key inserts it, which
@@ -101,7 +107,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
               write({ type: "delete", key: change.key as Key });
               syncedKeys.delete(change.key as Key);
             } else {
-              const value = decode(change.value);
+              const value = decode(change.value, interned);
               if (value === undefined) continue;
               write({ type: "update", value });
               syncedKeys.add(change.key as Key);
@@ -138,9 +144,11 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
           // restores optimistic state captured when it is called, which can outlive the
           // transactions that produced it.
           const keys = new Set<Key>();
+          // Only for the rows of this snapshot: kept longer, it would keep the strings of rows deleted since.
+          const interned: Interned = new Map();
           begin();
           for (const row of snapshot.rows) {
-            const value = decode(row);
+            const value = decode(row, interned);
             if (value === undefined) continue;
             const key = getKey(value);
             keys.add(key);

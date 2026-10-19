@@ -262,7 +262,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
     );
   }
 
-  const cover = <AlbumCover thumbnail className="w-10 shrink-0" target={currentTrack.albumId ? { type: "album", id: currentTrack.albumId, coverArtId } : undefined} />;
+  const cover = <AlbumCover size="icon" className="w-10 shrink-0" target={currentTrack.albumId ? { type: "album", id: currentTrack.albumId, coverArtId } : undefined} />;
 
   return (
     <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>

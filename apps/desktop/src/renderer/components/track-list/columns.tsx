@@ -2,6 +2,7 @@ import { PauseIcon, PlayIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icon
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import type { CoverSize } from "#shared/cover";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
@@ -101,10 +102,10 @@ const PositionCell = ({ item, position, isPlaying, onPlay, tabIndex }: TrackCell
   return <NumberCell number={unplayable ? <UnplayableMark /> : position + 1} isPlaying={isPlaying} onPlay={onPlay} tabIndex={tabIndex} />;
 };
 
-/** The cover of a song's album, small. */
-export const TrackCover = ({ albumId, className }: { albumId: string; className?: string }) => {
+/** The cover of a song's album, the size of a list row's unless `size` says otherwise. */
+export const TrackCover = ({ albumId, className, size = "icon" }: { albumId: string; className?: string; size?: CoverSize }) => {
   const coverArtId = useAlbumCoverArt(albumId);
-  return <AlbumCover thumbnail className={className} target={{ type: "album", id: albumId, coverArtId }} />;
+  return <AlbumCover size={size} className={className} target={{ type: "album", id: albumId, coverArtId }} />;
 };
 
 const CoverCell = ({ item }: TrackCellProps) => (

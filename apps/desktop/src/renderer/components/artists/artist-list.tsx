@@ -23,7 +23,7 @@ const ArtistRow = memo(function ArtistRow({ artist, id, selected, onSelect }: { 
       )}
       onClick={() => onSelect(artist.id)}
     >
-      <AlbumCover className="size-8 shrink-0 rounded-full" thumbnail target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />
+      <AlbumCover className="size-8 shrink-0 rounded-full" size="icon" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />
       <span className="truncate">{artist.name}</span>
     </div>
   );

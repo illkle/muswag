@@ -2,8 +2,7 @@
 import "#/data/dev-bridge";
 import { createHashHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
-import { QueryClient } from "@tanstack/react-query";
-import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ReactDOM from "react-dom/client";
 import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
@@ -26,18 +25,15 @@ const router = createTanStackRouter({
   history: createHashHistory(),
 });
 
-setupRouterSsrQueryIntegration({
-  router,
-  queryClient,
-});
-
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 void Session.start().then(() => {
   root.render(
     <StrictMode>
-      <ThemeProvider>
-        <RouterProvider router={router} />
-      </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <RouterProvider router={router} />
+        </ThemeProvider>
+      </QueryClientProvider>
     </StrictMode>,
   );
 });

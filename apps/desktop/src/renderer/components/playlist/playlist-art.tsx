@@ -9,12 +9,12 @@ import { TrackCover } from "#/components/track-list/columns";
  */
 export function PlaylistArt({ albumIds }: { albumIds: readonly string[] }) {
   if (albumIds.length === 0) return <DetailHeaderPlaceholder icon={<PlaylistIcon />} />;
-  if (albumIds.length < 4) return <TrackCover albumId={albumIds[0]!} />;
+  if (albumIds.length < 4) return <TrackCover albumId={albumIds[0]!} size="thumbnail" />;
 
   return (
     <div className="grid aspect-square w-full grid-cols-2 overflow-hidden rounded">
       {albumIds.slice(0, 4).map((albumId) => (
-        <TrackCover key={albumId} albumId={albumId} className="rounded-none" />
+        <TrackCover key={albumId} albumId={albumId} className="rounded-none" size="thumbnail" />
       ))}
     </div>
   );

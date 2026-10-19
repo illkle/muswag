@@ -37,7 +37,7 @@ describe("handleCoverProtocol", () => {
     handleCoverProtocol({ userDataPath, coverPath });
     const fetchCover = electron.handlers.get("muswag-cover")!;
 
-    const response = await fetchCover({ url: "muswag-cover://album/a%201?v=cover-1&thumbnail" });
+    const response = await fetchCover({ url: "muswag-cover://album/a%201?v=cover-1&size=thumbnail" });
 
     expect(coverPath).toHaveBeenCalledWith({ type: "album", id: "a 1" });
     expect(response.status).toBe(200);
@@ -55,14 +55,14 @@ describe("handleCoverProtocol", () => {
       },
     });
 
-    for (const id of ["none", "gone", "failing"]) expect((await serveCover({ type: "album", id, thumbnail: false })).status).toBe(404);
+    for (const id of ["none", "gone", "failing"]) expect((await serveCover({ type: "album", id, size: "full" })).status).toBe(404);
   });
 
   it("asks for no cover of anything but an album or an artist", async () => {
     const coverPath = vi.fn(async () => "covers/album_3a_a1");
     const serveCover = handleCoverProtocol({ userDataPath, coverPath });
 
-    expect((await serveCover({ type: "local", id: "a1", thumbnail: false })).status).toBe(404);
+    expect((await serveCover({ type: "local", id: "a1", size: "full" })).status).toBe(404);
     expect(coverPath).not.toHaveBeenCalled();
   });
 });

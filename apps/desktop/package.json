@@ -35,7 +35,6 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "effect": "catalog:",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
@@ -58,7 +57,6 @@
     "@tanstack/react-hotkeys": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
-    "@tanstack/react-router-ssr-query": "catalog:",
     "@tanstack/react-store": "catalog:",
     "@tanstack/react-virtual": "catalog:",
     "@tanstack/router-plugin": "catalog:",
@@ -76,6 +74,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "catalog:",
+    "effect": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",
     "electron-to-chromium": "catalog:",

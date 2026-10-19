@@ -63,7 +63,7 @@ const AlbumItem = ({ album, hideArtist }: { album: Album; hideArtist: boolean })
       }}
     >
       <AlbumCover
-        thumbnail
+        size="thumbnail"
         target={{
           type: "album",
           id: album.id,

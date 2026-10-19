@@ -20,12 +20,15 @@ describe("AlbumCover", () => {
     expect(src()).toBe("muswag-cover://artist/album%201?v=cover-1");
   });
 
-  it("asks for the scaled-down cover only when shown as a thumbnail", () => {
-    const { rerender } = render(<AlbumCover thumbnail target={album} />);
-    expect(src()).toContain("thumbnail");
+  it("asks for a scaled-down cover only when shown smaller", () => {
+    const { rerender } = render(<AlbumCover size="thumbnail" target={album} />);
+    expect(src()).toBe("muswag-cover://album/album%201?v=cover-1&size=thumbnail");
+
+    rerender(<AlbumCover size="icon" target={album} />);
+    expect(src()).toBe("muswag-cover://album/album%201?v=cover-1&size=icon");
 
     rerender(<AlbumCover target={album} />);
-    expect(src()).not.toContain("thumbnail");
+    expect(src()).not.toContain("size");
   });
 
   it("asks for nothing when there is no cover", () => {

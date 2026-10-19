@@ -1,9 +1,9 @@
 import { db } from "#/data/library";
 import { appState } from "#/data/state";
-import { rowStore } from "#/data/stores";
+import { rowStore, useCollectionRows } from "#/data/stores";
 import type { PlaylistRow } from "#/playlists/rows";
 import { IDLE_PLAYLIST_SYNC, type PlaylistEntry, type PlaylistSyncStatus } from "@muswag/model";
-import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
+import { eq, useLiveQuery } from "@tanstack/react-db";
 import { useSelector } from "@tanstack/react-store";
 import { useMemo } from "react";
 
@@ -62,26 +62,18 @@ export function usePlaylist(playlistId: string) {
   const state = recordQuery.data?.local ?? null;
   const entries = state?.entries ?? EMPTY_ENTRIES;
 
-  // Resolve only the songs this playlist references rather than reading the whole library.
-  // An empty playlist would hand `inArray` an empty list, so match an id that cannot exist instead.
-  const songIds = useMemo(() => {
-    const unique = [...new Set(entries.map(({ songId }) => songId))];
-    return unique.length > 0 ? unique : [" "];
-  }, [entries]);
+  // Each song is looked up by its key: an index on the key would cost the whole library a set per song.
+  const songIds = useMemo(() => entries.map(({ songId }) => songId), [entries]);
+  const songs = useCollectionRows(db.songs, songIds);
 
-  const songsQuery = useLiveQuery({ queryKey: ["playlist-songs", songIds], query: (q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds)) });
-
-  const rows = useMemo((): PlaylistRow[] => {
-    const byId = new Map((songsQuery.data ?? []).map((song) => [song.id, song]));
-    return entries.map(({ id, songId }) => ({ entryId: id, songId, song: byId.get(songId) ?? null }));
-  }, [entries, songsQuery.data]);
+  const rows = useMemo((): PlaylistRow[] => entries.map(({ id, songId }, index) => ({ entryId: id, songId, song: songs.rows[index] ?? null })), [entries, songs.rows]);
 
   return {
     record: recordQuery.data ?? null,
     state,
     rows,
-    isLoading: recordQuery.isLoading || songsQuery.isLoading,
-    isError: recordQuery.isError || songsQuery.isError,
+    isLoading: recordQuery.isLoading || !songs.isReady,
+    isError: recordQuery.isError || songs.isError,
   };
 }
 

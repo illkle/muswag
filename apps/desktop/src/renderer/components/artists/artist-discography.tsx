@@ -50,7 +50,7 @@ function AlbumBlock({ album, onPlay }: { album: Album; onPlay: () => void }) {
         className="shrink-0 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         style={{ width: COVER_SIZE }}
       >
-        <AlbumCover className="w-full" thumbnail target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />
+        <AlbumCover className="w-full" size="thumbnail" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />
       </Link>
 
       <div className="flex min-w-0 flex-col items-start gap-1">
