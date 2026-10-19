@@ -96,6 +96,7 @@ app.whenReady().then(async () => {
     // A development checkout keeps its library next to itself, so several can run side by side.
     databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
     userDataPath,
+    searchWorkerPath: join(__dirname, "search-worker.cjs"),
     ipcMain,
     player,
     stateMirror: stateMirror.mirror,

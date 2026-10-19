@@ -1,15 +1,14 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { TrackCover } from "#/components/track-list/columns";
-import { db } from "#/data/library";
-import { createSearchIndex, type SearchResult } from "#/library/search";
+import { LibraryActions } from "#/library/actions";
+import type { SearchResult } from "@muswag/model";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";
-import { useDeferredValue, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
-
-const searchIndex = createSearchIndex(db);
 
 type Found<Type extends SearchResult["type"]> = Extract<SearchResult, { type: Type }>;
 
@@ -95,11 +94,21 @@ const SEARCH_SHORTCUT = navigator.userAgent.includes("Mac") ? "⌘F" : "Ctrl F";
 
 export function MiniSearch() {
   const [searchValue, setSearchValue] = useState("");
-  // The search runs behind the typing: the field shows each key at once and the results follow.
-  const query = useDeferredValue(searchValue);
-  // A search made while the library was still loading is made again once the index has been built from all of it.
-  const builds = useSyncExternalStore(searchIndex.subscribe, searchIndex.builds);
-  const results = useMemo(() => (query ? searchIndex.search(query, 20) : []), [query, builds]);
+  // Main searches, behind the typing: the field shows each key at once, and the results of the last
+  // search stay until the next one's arrive.
+  const { data } = useQuery({
+    queryKey: ["search", searchValue],
+    queryFn: async () => ({ query: searchValue, results: await LibraryActions.search(searchValue, 20) }),
+    enabled: searchValue !== "",
+    placeholderData: keepPreviousData,
+    // Every search is asked of main again: the library may have changed since.
+    gcTime: 0,
+  });
+  // A search that a later one took the place of answers with nothing, and the one before it stays.
+  const [shown, setShown] = useState<{ query: string; results: SearchResult[] }>({ query: "", results: [] });
+  if (data?.results && data.results !== shown.results) setShown({ query: data.query, results: data.results });
+  const query = searchValue ? shown.query : "";
+  const results = searchValue ? shown.results : [];
 
   const [open, setOpen] = useState(false);
 
@@ -143,8 +152,6 @@ export function MiniSearch() {
         <Autocomplete.Input
           ref={inputRef}
           onFocus={() => {
-            // Songs load only once something reads them; searching is about to.
-            searchIndex.prepare();
             setOpen(true);
           }}
           onBlur={() => setOpen(false)}

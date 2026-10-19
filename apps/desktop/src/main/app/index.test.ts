@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 import type { IpcMain } from "electron";
@@ -20,7 +21,8 @@ let stateMirror: Awaited<ReturnType<typeof startStateMirror>>;
 const ipcMain = { handle: () => {}, removeHandler: () => {} } as unknown as IpcMain;
 // A player that never answers: nothing here plays.
 const player = { execute: () => new Promise(() => {}), setCredentials: () => new Promise(() => {}), snapshot: () => new Promise(() => {}), subscribe: () => () => {} } as unknown as PlayerHandle;
-const options = () => ({ databasePath, userDataPath, ipcMain, player, stateMirror: stateMirror.mirror });
+const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
+const options = () => ({ databasePath, userDataPath, ipcMain, player, stateMirror: stateMirror.mirror, searchWorkerPath });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));

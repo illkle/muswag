@@ -12,6 +12,7 @@ import type { IpcMain } from "electron";
 
 import type { PlayerHandle } from "../player/ipc";
 import { createQueue } from "../queue";
+import { startLibrarySearch } from "../search/library-search";
 import type { SourceDb } from "../queue/source";
 import { unplayableTracks } from "#shared/state/queue";
 import { serveAppCommands } from "./commands";
@@ -25,6 +26,8 @@ export interface AppOptions {
   readonly player: PlayerHandle;
   /** Where renderers see the session and sync status; it must mirror `SESSION_TABLES`. */
   readonly stateMirror: MemoryMirrorService;
+  /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
+  readonly searchWorkerPath: string;
   /** Calls `listener` whenever a window of the app gains focus, until the returned function is called. */
   readonly onWindowFocus?: (listener: () => void) => () => void;
 }
@@ -75,7 +78,12 @@ const makeApp = (options: AppOptions) =>
       Effect.forkScoped,
     );
 
-    yield* serveAppCommands({ ipcMain: options.ipcMain, queue, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)) });
+    const search = yield* Effect.acquireRelease(
+      Effect.sync(() => startLibrarySearch({ databasePath: options.databasePath, workerPath: options.searchWorkerPath, subscribe: (listener) => mirror.subscribe(listener) })),
+      (search) => Effect.promise(() => search.dispose()),
+    );
+
+    yield* serveAppCommands({ ipcMain: options.ipcMain, queue, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)), search: search.search });
 
     // Coming back to the app catches up with the server, unless a sync did a moment ago.
     const { onWindowFocus } = options;
