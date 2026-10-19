@@ -170,7 +170,7 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
     const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T, retries: number) =>
       Effect.gen(function* () {
         const response = yield* request(method, params, retries);
-        const payload = yield* response.json;
+        const payload = withoutNulls(yield* response.json);
         return yield* parseResponse(method, schema, payload);
       }).pipe(
         // The one place every decoded answer passes, so the one place refused credentials are noticed.
@@ -234,6 +234,18 @@ function redirectedServer(from: string, location: string | undefined): string | 
   return normalizeServerUrl(new URL(".", new URL(location, requested)).href);
 }
 
+/**
+ * `value` without the fields it has as `null`, at any depth. gonic writes a field it has no value for
+ * as `null`, as `"replayGain": null` on a song without ReplayGain tags, where others leave it out.
+ */
+function withoutNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutNulls);
+  if (typeof value !== "object" || value === null) return value;
+  const kept: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(value)) if (field !== null) kept[key] = withoutNulls(field);
+  return kept;
+}
+
 function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
   method: string,
   payloadSchema: T,
@@ -251,6 +263,7 @@ function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
       return yield* new SubsonicApiError({
         method,
         ...(response.error?.code === undefined ? {} : { code: response.error.code }),
+        ...(response.type === undefined ? {} : { server: response.type }),
         ...(response.error?.helpUrl === undefined ? {} : { helpUrl: response.error.helpUrl }),
         message: response.error?.message ?? `${method} failed: Subsonic status ${response.status}`,
       });
