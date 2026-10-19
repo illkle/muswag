@@ -1,21 +1,25 @@
 import { randomBytes } from "node:crypto";
 
-import { PlaylistCommands, PlaylistEdits, subsonicToken } from "@muswag/backend";
-import { SubsonicAPILive, TestDatabase } from "@muswag/backend/testing";
+import { LibrarySync, PlaylistCommands, PlaylistEdits, subsonicToken } from "@muswag/backend";
+import { NoCoverFiles, SubsonicAPILive, TestDatabase } from "@muswag/backend/testing";
+import type { SyncMode } from "@muswag/model";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { FetchHttpClient } from "effect/http";
 
-export function subsonicLayerFor(connection: { baseUrl: string; username: string; password: string }) {
+import type { Account, TestServer } from "../servers/index.js";
+
+/** muswag's Subsonic client, signed in to `server` as `account` the way the app signs in. */
+export function subsonicLayerFor(server: TestServer, account: Account = server.admin) {
   const salt = randomBytes(16).toString("hex");
   return SubsonicAPILive({
-    url: connection.baseUrl,
-    auth: { username: connection.username, salt, token: subsonicToken(connection.password, salt) },
+    url: server.url,
+    auth: { username: account.username, salt, token: subsonicToken(account.password, salt) },
   }).pipe(Layer.provide(FetchHttpClient.layer));
 }
 
 const libraryLayer = () => PlaylistCommands.layer.pipe(Layer.provideMerge(PlaylistEdits.layer), Layer.provideMerge(TestDatabase()));
 
-/** An in-memory library database with playlist commands, outliving any one server connection. */
+/** An in-memory library database with playlist commands. */
 export function createLibrary() {
   const runtime = ManagedRuntime.make(libraryLayer());
   return {
@@ -28,3 +32,20 @@ export function createLibrary() {
 }
 
 export type Library = ReturnType<typeof createLibrary>;
+
+/** Syncs `library` with `server` as the app does, and answers with the problem the sync reports. */
+export async function syncLibrary(library: Library, server: TestServer, mode: SyncMode): Promise<string | null> {
+  const runtime = ManagedRuntime.make(LibrarySync.layer.pipe(Layer.provide(Layer.mergeAll(library.layer, subsonicLayerFor(server), NoCoverFiles))));
+  try {
+    return await runtime.runPromise(
+      LibrarySync.use((sync) =>
+        sync.sync(mode).pipe(
+          Effect.andThen(sync.status),
+          Effect.map(({ error }) => error),
+        ),
+      ),
+    );
+  } finally {
+    await runtime.dispose();
+  }
+}

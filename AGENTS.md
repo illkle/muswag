@@ -64,3 +64,12 @@ commits them in one transaction and then sends the changes to renderers.
 
 Backend tests get an in-memory database (`TestDatabase`), an API stub (`makeApi`) and Subsonic fixtures from
 `@muswag/backend/testing`.
+
+## Testing against the servers people use
+
+`pnpm test:integration` runs the tests of `packages/tests` against Navidrome, gonic and LMS in Docker;
+`packages/tests/README.md` says how they work and how they differ. A change to the Subsonic client or
+the syncs is done when they pass on all three.
+
+The Docker engine on the development machine is shared with other services. Copy files into test
+containers or use tmpfs; a database on a bind mount from `/tmp` once hung the engine.

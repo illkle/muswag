@@ -321,6 +321,8 @@ export class SubsonicDecodeError extends Data.TaggedError("SubsonicDecodeError")
 export class SubsonicApiError extends Data.TaggedError("SubsonicApiError")<{
   readonly method: string;
   readonly code?: number;
+  /** The server's software as its answer names it, such as `navidrome`, `gonic` or `lms`. */
+  readonly server?: string;
   readonly helpUrl?: string;
   readonly message: string;
 }> {}

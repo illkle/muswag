@@ -226,6 +226,8 @@ describe("SessionManager", () => {
         if (url.host === "slow.example") return Effect.never;
         if (url.host === "web.example") return respond(new Response("<html>Welcome</html>", { headers: { "content-type": "text/html" } }));
         if (url.host === "other.example") return respond(new Response("Not found", { status: 404 }));
+        if (url.host === "lms.example")
+          return respond(new Response(JSON.stringify({ "subsonic-response": { status: "failed", version: "1.16.1", type: "lms", error: { code: 40, message: "Wrong username or password" } } })));
         if (url.host === "old.example")
           return respond(new Response(JSON.stringify({ "subsonic-response": { status: "failed", version: "1.16.1", error: { code: 41, message: "Token authentication not supported" } } })));
         return undefined;
@@ -242,6 +244,7 @@ describe("SessionManager", () => {
 
       const messages = {
         password: yield* failure("https://music.example", "bad"),
+        apiKey: yield* failure("https://lms.example"),
         address: yield* failure("ftp://music.example"),
         unreachable: yield* failure("https://down.example"),
         slow: yield* Fiber.join(slow),
@@ -252,6 +255,7 @@ describe("SessionManager", () => {
 
       expect(messages).toEqual({
         password: "Wrong username or password",
+        apiKey: "Wrong username or API key: LMS takes an API key from its settings in place of the password",
         address: "The server address is not a valid http or https address",
         unreachable: "The server could not be reached: getaddrinfo ENOTFOUND down.example",
         slow: "The server could not be reached: no answer within 30 seconds",

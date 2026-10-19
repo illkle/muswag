@@ -158,6 +158,18 @@ describe("Effect SubsonicAPI", () => {
     }),
   );
 
+  it.effect("reads a field the server sends as null as one it left out", () =>
+    Effect.gen(function* () {
+      // A song as gonic 0.22 sends it without ReplayGain tags.
+      const song = { id: "tr-1", title: "Track 1", isDir: false, albumId: "al-3", genres: [], replayGain: null, musicBrainzId: "" };
+      const fakeHttpClient = HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, new Response(subsonic({ searchResult3: { song: [song] } })))));
+
+      const result = yield* SubsonicAPI.use((api) => api.search3({ query: "" })).pipe(Effect.provide(withClient(fakeHttpClient)));
+
+      expect(result.searchResult3.song).toEqual([{ id: "tr-1", title: "Track 1", isDir: false, albumId: "al-3", genres: [], musicBrainzId: "" }]);
+    }),
+  );
+
   it.effect("reports a refused password, and only that", () =>
     Effect.gen(function* () {
       let rejected = 0;
