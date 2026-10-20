@@ -24,6 +24,9 @@ export type TrackCellProps = {
   tabIndex: 0 | -1;
 };
 
+/** A shape in a cell of a row that has not loaded: across in percent of the column, down in pixels of the row. */
+export type GhostShape = { x?: number; y: number; width: number; height: number; radius?: number };
+
 /** One column of a track list. A list's columns decide both its grid and what each row shows. */
 export type TrackColumn = {
   id: string;
@@ -33,6 +36,8 @@ export type TrackColumn = {
   label?: string;
   className?: string;
   Cell: (props: TrackCellProps) => ReactNode;
+  /** What the cell shows in a row that has not loaded, for each of a few rows in turn, so that rows next to each other differ. */
+  ghost?: readonly (readonly GhostShape[])[];
 };
 
 // ---- Cells ----
@@ -194,13 +199,42 @@ export const albumColumns: readonly TrackColumn[] = [
 /** The same for an album whose tracks are all credited as the album is, where the artist would only repeat. */
 export const albumColumnsWithoutArtist: readonly TrackColumn[] = albumColumns.filter(({ id }) => id !== "artist");
 
+// Where the text of a cell is in a row that has not loaded: a line of small text, the title over the
+// artists, and a line of text.
+const SMALL_LINE = { y: 20, height: 8 };
+const TITLE_LINE = { y: 11, height: 10 };
+const ARTISTS_LINE = { y: 30, height: 8 };
+const LINE = { y: 19, height: 10 };
+
 /** Tracks from across the library, as the songs list and playlists show them. */
 export const libraryColumns: readonly TrackColumn[] = [
-  { id: "position", width: "32px", label: "#", className: NUMBER, Cell: PositionCell },
-  { id: "cover", width: "40px", Cell: CoverCell },
-  { id: "title", width: "minmax(0,1fr)", label: "Title", Cell: TitleArtistCell },
-  { id: "album", width: "minmax(0,1fr)", label: "Album", className: "truncate text-sm text-muted-foreground", Cell: AlbumCell },
-  { id: "duration", width: "48px", label: "Time", className: DURATION, Cell: DurationCell },
+  { id: "position", width: "32px", label: "#", className: NUMBER, Cell: PositionCell, ghost: [[{ ...SMALL_LINE, width: 80 }]] },
+  { id: "cover", width: "40px", Cell: CoverCell, ghost: [[{ y: 4, width: 100, height: 40, radius: 4 }]] },
+  {
+    id: "title",
+    width: "minmax(0,1fr)",
+    label: "Title",
+    Cell: TitleArtistCell,
+    ghost: [
+      [44, 24],
+      [30, 16],
+      [56, 30],
+      [38, 20],
+      [26, 14],
+    ].map(([title, artists]) => [
+      { ...TITLE_LINE, width: title! },
+      { ...ARTISTS_LINE, width: artists! },
+    ]),
+  },
+  {
+    id: "album",
+    width: "minmax(0,1fr)",
+    label: "Album",
+    className: "truncate text-sm text-muted-foreground",
+    Cell: AlbumCell,
+    ghost: [34, 48, 26, 40].map((width) => [{ ...LINE, width }]),
+  },
+  { id: "duration", width: "48px", label: "Time", className: DURATION, Cell: DurationCell, ghost: [[{ ...SMALL_LINE, x: 50, width: 50 }]] },
 ];
 
 /** Tracks in a narrow panel. */
