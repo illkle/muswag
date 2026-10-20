@@ -3,8 +3,10 @@ import { Cause, Data, Effect, Scope } from "effect";
 import {
   MIRROR_PROTOCOL_VERSION,
   type MirrorChangeBatch,
+  type MirrorExpression,
   type MirrorKey,
   type MirrorMutation,
+  type MirrorOrder,
   type MirrorRequest,
   type MirrorResponse,
   type MirrorResults,
@@ -79,6 +81,24 @@ export function parseRequest(raw: unknown): MirrorRequest {
     case "pull":
       if (typeof raw.fromSeq !== "number") throw invalid("pull.fromSeq must be a number");
       return { v: MIRROR_PROTOCOL_VERSION, type: "pull", fromSeq: raw.fromSeq };
+    case "query":
+      if (typeof raw.table !== "string") throw invalid("query.table must be a string");
+      if (raw.orderBy !== undefined && !Array.isArray(raw.orderBy)) throw invalid("query.orderBy must be an array");
+      for (const name of ["limit", "offset"] as const) {
+        if (raw[name] !== undefined && !(Number.isInteger(raw[name]) && (raw[name] as number) >= 0)) throw invalid(`query.${name} must be a whole number`);
+      }
+      return {
+        v: MIRROR_PROTOCOL_VERSION,
+        type: "query",
+        table: raw.table,
+        where: raw.where as MirrorExpression | undefined,
+        orderBy: raw.orderBy as Array<MirrorOrder> | undefined,
+        limit: raw.limit as number | undefined,
+        offset: raw.offset as number | undefined,
+      };
+    case "count":
+      if (typeof raw.table !== "string") throw invalid("count.table must be a string");
+      return { v: MIRROR_PROTOCOL_VERSION, type: "count", table: raw.table, where: raw.where as MirrorExpression | undefined };
     case "mutate": {
       if (!Array.isArray(raw.mutations)) throw invalid("mutate.mutations must be an array");
       for (const mutation of raw.mutations as Array<unknown>) {

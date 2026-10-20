@@ -17,11 +17,17 @@ let search: ReturnType<typeof startLibrarySearch>;
 const listeners = new Set<(batch: MirrorChangeBatch) => void>();
 let seq = 0;
 
-/** Writes a song as main would, and tells the search of it as the mirror would. */
+/** Tells the search of changes as the mirror would. */
+const broadcast = (...changes: Array<{ table: string; type: "changed" | "delete"; key: string } | { table: string; type: "upsert"; key: string; value: Record<string, unknown> }>) => {
+  const fromSeq = seq;
+  const batch = { epoch: 1, fromSeq, toSeq: (seq += changes.length), changes: changes.map((change, index) => ({ ...change, seq: fromSeq + index + 1 })) };
+  for (const listener of listeners) listener(batch);
+};
+
+/** Writes a song as main would, and tells the search of it as the mirror would: by its id alone. */
 const insertSong = (id: string, title: string) => {
   database.prepare(`INSERT INTO songs (id, title, artist, album, year, playCount) VALUES (?, ?, NULL, NULL, NULL, 0)`).run(id, title);
-  const change = { seq: ++seq, table: "songs", type: "upsert", key: id, value: { id, title, artist: null, album: null, year: null, playCount: 0 } } as const;
-  for (const listener of listeners) listener({ epoch: 1, fromSeq: seq, toSeq: seq, changes: [change] });
+  broadcast({ table: "songs", type: "changed", key: id });
 };
 
 beforeEach(async () => {
@@ -66,6 +72,42 @@ describe("the library search", () => {
     insertSong("song-b", "Cortez the Killer");
 
     expect(found(await search.search("cortez", 20))).toEqual(["song:song-b"]);
+  });
+
+  it("reads the songs whose ids the mirror sends, and drops those that have gone", async () => {
+    insertSong("song-b", "Cortez the Killer");
+    await search.search("harvest", 20);
+
+    database.prepare(`UPDATE songs SET title = 'Like a Hurricane' WHERE id = 'song-a'`).run();
+    broadcast({ table: "songs", type: "changed", key: "song-a" });
+    expect(found(await search.search("hurricane", 20))).toEqual(["song:song-a"]);
+
+    // Written and then deleted before the worker reads it, as when both are in one batch.
+    database.prepare(`DELETE FROM songs WHERE id = 'song-b'`).run();
+    broadcast({ table: "songs", type: "changed", key: "song-b" });
+    expect(found(await search.search("cortez", 20))).toEqual([]);
+  });
+
+  it("reads the albums whose ids the mirror sends, and drops those that have gone", async () => {
+    await search.search("harvest", 20);
+
+    database.prepare(`INSERT INTO albums VALUES ('album-b', 'Zuma', 'Someone', 1975)`).run();
+    database.prepare(`DELETE FROM albums WHERE id = 'album-a'`).run();
+    broadcast({ table: "albums", type: "changed", key: "album-b" }, { table: "albums", type: "changed", key: "album-a" });
+
+    expect(found(await search.search("zuma", 20))).toEqual(["album:album-b"]);
+    expect(found(await search.search("harvest", 20))).toEqual(["artist:artist-a", "song:song-a"]);
+  });
+
+  it("takes artists from the rows the mirror sends", async () => {
+    await search.search("harvest", 20);
+
+    database.prepare(`INSERT INTO artists VALUES ('artist-b', 'Crazy Horse')`).run();
+    database.prepare(`DELETE FROM artists WHERE id = 'artist-a'`).run();
+    broadcast({ table: "artists", type: "upsert", key: "artist-b", value: { id: "artist-b", name: "Crazy Horse" } }, { table: "artists", type: "delete", key: "artist-a" });
+
+    expect(found(await search.search("crazy horse", 20))).toEqual(["artist:artist-b"]);
+    expect(found(await search.search("harvest", 20))).toEqual(["album:album-a", "song:song-a"]);
   });
 
   it("runs one search at a time, and skips the ones a later search took the place of before they ran", async () => {

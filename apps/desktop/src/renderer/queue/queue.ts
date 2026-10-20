@@ -1,4 +1,4 @@
-import type { QueueSourceRef, Song } from "@muswag/model";
+import type { QueueSourceRef } from "@muswag/model";
 import { useSelector } from "@tanstack/react-store";
 
 import { appCommand } from "#/data/app-command";
@@ -13,11 +13,7 @@ export const QueueActions = {
   select: (key: string) => appCommand("queue:select", key),
   /** Starts the queue when the player holds nothing. */
   play: () => appCommand("queue:play"),
-  enqueue: (tracks: readonly Pick<Song, "id">[]) =>
-    appCommand(
-      "queue:enqueue",
-      tracks.map(({ id }) => id),
-    ),
+  enqueue: (songIds: readonly string[]) => appCommand("queue:enqueue", songIds),
   removeQueued: (key: string) => appCommand("queue:removeQueued", key),
   next: () => appCommand("queue:next"),
   previous: () => appCommand("queue:previous"),

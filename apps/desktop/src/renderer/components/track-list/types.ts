@@ -1,6 +1,8 @@
 import type { LibrarySong } from "@muswag/model";
 import type { ReactNode } from "react";
 
+import type { Span } from "#/components/track-list/selection";
+
 /** One occurrence of a song in a list. The same song can appear in several rows, each with its own key. */
 export type TrackItem = {
   type: "track";
@@ -20,9 +22,27 @@ export type TrackListItem =
 
 export const isTrackItem = (item: TrackListItem): item is TrackItem => item.type === "track";
 
+/**
+ * The rows of a list too long to hold, such as the songs page: how many there are, and those it has
+ * loaded. The list says which rows it shows so that they load, and draws a row that has not loaded yet
+ * as a placeholder. Every row is a track.
+ */
+export type TrackRows = {
+  readonly count: number;
+  /** The track at `position`, or `undefined` while it loads. */
+  at(position: number): TrackItem | undefined;
+  /** The positions the list draws, from `start` up to `end`. */
+  show(start: number, end: number): void;
+  /** The songs at the positions of `spans`, in list order, loaded or not. */
+  songIds(spans: readonly Span[]): Promise<readonly string[]>;
+};
+
 /** The selected rows of a track list, in list order. This is what its menu acts on. */
 export type TrackSelection = {
+  /** The selected rows the list holds: every one of them, except in a list of `TrackRows`, which holds only those it has loaded. */
   items: readonly TrackItem[];
-  /** The songs of the selected rows that are in the library. A song selected in two rows is here twice. */
-  songs: readonly LibrarySong[];
+  /** How many of the selected rows have a song in the library. */
+  count: number;
+  /** The songs of those rows, in list order. A song selected in two rows is here twice. */
+  songIds: () => Promise<readonly string[]>;
 };

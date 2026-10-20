@@ -227,6 +227,9 @@ export const make = Effect.fnUntraced(function* (options: MemoryMirrorOptions) {
         return options.readOnly ? Effect.fail(readOnlyError()) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
+      case "query":
+      case "count":
+        return Effect.fail(new MirrorRequestError({ message: "Memory mirrors load whole tables; they do not answer queries" }));
     }
   };
 

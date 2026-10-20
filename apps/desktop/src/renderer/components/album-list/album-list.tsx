@@ -5,7 +5,8 @@ import { AlbumCover } from "#/components/album-list/album-cover";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { scrollMemory } from "#/lib/scroll-memory";
 import { cn } from "#/lib/utils";
-import type { Album } from "@muswag/model";
+import type { LibraryAlbum as Album } from "@muswag/model";
+import type { AlbumRows } from "#/library/album-rows";
 import { useElementScrollRestoration, useNavigate } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { chunk } from "lodash-es";
@@ -43,7 +44,7 @@ const COVER_TO_TEXT = 8;
 const TEXT_HEIGHT = 20 + 16;
 
 /** A tile of the grid. The columns of its row size it and its cover keeps itself square, so a change of width reaches it through CSS alone. */
-const AlbumItem = ({ album, hideArtist }: { album: Album; hideArtist: boolean }) => {
+const AlbumItem = memo(function AlbumItem({ album, hideArtist }: { album: Album; hideArtist: boolean }) {
   const navigate = useNavigate();
   const artist = hideArtist
     ? null
@@ -81,7 +82,15 @@ const AlbumItem = ({ album, hideArtist }: { album: Album; hideArtist: boolean })
       </div>
     </button>
   );
-};
+});
+
+/** Stands in for a tile of a grid of `AlbumRows` whose album has not loaded yet. */
+const LoadingItem = () => (
+  <div className="p-2">
+    <div className="aspect-square rounded border border-border bg-muted" />
+    <div className="mt-3 h-3 w-2/3 rounded bg-muted" />
+  </div>
+);
 
 const calcSize = (totalSpace: number) => {
   const chunks = Math.max(1, Math.floor(totalSpace / MIN_TILE_WIDTH));
@@ -128,14 +137,22 @@ type AlbumListProps = {
   | {
       albums: Album[];
       sections?: never;
+      rows?: never;
     }
   | {
       albums?: never;
       sections: AlbumListSection[];
+      rows?: never;
+    }
+  /** The albums of a grid too long to hold, which loads them as it shows them. */
+  | {
+      albums?: never;
+      sections?: never;
+      rows: AlbumRows;
     }
 );
 
-export function AlbumList({ albums, sections, scrollId, rememberScroll = false, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
+export function AlbumList({ albums, sections, rows: albumRows, scrollId, rememberScroll = false, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   const scrollRestorationId = "album-list-" + scrollId;
@@ -148,21 +165,25 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
   const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
   const rows = useMemo(
     () =>
-      sections
-        ? createAlbumListRows(sections, sizes.chunks)
-        : chunk(albums, sizes.chunks).map((rowAlbums, index) => ({
-            albums: rowAlbums,
-            hideArtist: false,
-            id: `albums-${index}`,
-            type: "albums" as const,
-          })),
-    [albums, sections, sizes.chunks],
+      albumRows
+        ? []
+        : sections
+          ? createAlbumListRows(sections, sizes.chunks)
+          : chunk(albums, sizes.chunks).map((rowAlbums, index) => ({
+              albums: rowAlbums,
+              hideArtist: false,
+              id: `albums-${index}`,
+              type: "albums" as const,
+            })),
+    [albums, sections, albumRows, sizes.chunks],
   );
+  const rowCount = albumRows ? Math.ceil(albumRows.count / sizes.chunks) : rows.length;
   const rowVirtualizer = useVirtualizer({
-    count: rows.length,
+    count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => (rows[index]?.type === "section" ? SECTION_HEIGHT : sizes.fullHeight),
-    getItemKey: (index) => rows[index]?.id ?? index,
+    // A row of `AlbumRows` is its position, whether or not its albums have loaded.
+    getItemKey: (index) => (albumRows ? index : (rows[index]?.id ?? index)),
     overscan: 4,
     ...(initialOffset === undefined ? {} : { initialOffset }),
     paddingStart: topPadding,
@@ -175,6 +196,14 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
   useLayoutEffect(() => {
     rowVirtualizer.measure();
   }, [rowVirtualizer, sizes.fullHeight]);
+
+  // The albums of the rows that are drawn, so that those not loaded yet load.
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const firstDrawn = (virtualRows[0]?.index ?? 0) * sizes.chunks;
+  const lastDrawn = ((virtualRows.at(-1)?.index ?? -1) + 1) * sizes.chunks;
+  useLayoutEffect(() => {
+    if (albumRows && lastDrawn > firstDrawn) albumRows.show(firstDrawn, Math.min(lastDrawn, albumRows.count));
+  }, [albumRows, firstDrawn, lastDrawn]);
 
   return (
     <div
@@ -196,7 +225,28 @@ export function AlbumList({ albums, sections, scrollId, rememberScroll = false, 
       >
         {topContent}
 
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+        {virtualRows.map((virtualRow) => {
+          if (albumRows) {
+            const start = virtualRow.index * sizes.chunks;
+            const end = Math.min(start + sizes.chunks, albumRows.count);
+            return (
+              <div
+                key={virtualRow.key}
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="absolute top-0 left-0 grid w-full grid-cols-(--album-columns)"
+              >
+                {Array.from({ length: end - start }, (_, offset) => {
+                  const album = albumRows.at(start + offset);
+                  // By position: while pages are read again after a change, an album can be at two positions for a moment.
+                  return album ? <AlbumItem key={start + offset} album={album} hideArtist={false} /> : <LoadingItem key={start + offset} />;
+                })}
+              </div>
+            );
+          }
+
           const row = rows[virtualRow.index];
 
           if (!row) {

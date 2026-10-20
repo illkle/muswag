@@ -1,7 +1,7 @@
 import { getColumns, type InferSelectModel } from "drizzle-orm";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 
-import { titleSortKey } from "../library-order.js";
+import { albumOrderKey, artistOrderKey, sortKey } from "../library-order.js";
 import { songs, type Song } from "./schema.js";
 
 /**
@@ -15,8 +15,11 @@ export function toRow<TTable extends SQLiteTable>(table: TTable, value: object):
   return row as InferSelectModel<TTable>;
 }
 
-/** A complete song row from an object keyed like the table, with what the row is sorted by made from it. */
-export const toSongRow = (value: { title: string }): Song => ({ ...toRow(songs, value), titleSortKey: titleSortKey(value.title) });
+/** A complete song row from an object keyed like the table, with the keys the library's orders sort by made from it. */
+export const toSongRow = (value: { title: string }): Song => {
+  const row = toRow(songs, value);
+  return { ...row, titleSortKey: sortKey(value.title), artistOrderKey: artistOrderKey(row), albumOrderKey: albumOrderKey(row) };
+};
 
 /** A song row with only the given fields set. */
 export const songRow = (fields: Pick<Song, "id" | "title"> & Partial<Song>): Song => toSongRow({ isDir: false, ...fields });

@@ -59,6 +59,27 @@ describe("migrations", () => {
     db.close();
   });
 
+  it("give the songs already stored the order keys a sync would, as far as SQLite can make them", () => {
+    const db = new DatabaseSync(":memory:");
+    const at = migrations.findIndex((migration) => migration.name.endsWith("_songs_order_keys"));
+    for (const statement of migrations.slice(0, at).flatMap((migration) => migration.sql)) db.exec(statement);
+    // Text SQLite lowercases and trims as `sortKey` does: ASCII, with spaces around it.
+    const stored = [
+      { id: "a", title: "A", artist: " The Band ", album: "First LP", albumId: "al-1", discNumber: 1, track: 12 },
+      { id: "b", title: "B", artist: null, album: null, albumId: null, discNumber: null, track: null },
+      { id: "c", title: "C", artist: "x", album: "y", albumId: "al-2", discNumber: -1, track: 1234567 },
+    ];
+    const insert = db.prepare("INSERT INTO songs (id, title, isDir, artist, album, albumId, discNumber, track) VALUES (?, ?, 0, ?, ?, ?, ?, ?)");
+    for (const song of stored) insert.run(song.id, song.title, song.artist, song.album, song.albumId, song.discNumber, song.track);
+
+    for (const statement of migrations.slice(at).flatMap((migration) => migration.sql)) db.exec(statement);
+
+    expect(db.prepare("SELECT id, artistOrderKey, albumOrderKey FROM songs ORDER BY id").all()).toEqual(
+      stored.map((song) => ({ id: song.id, artistOrderKey: Schema.artistOrderKey(song), albumOrderKey: Schema.albumOrderKey(song) })),
+    );
+    db.close();
+  });
+
   it.effect("create every column of the schema", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;

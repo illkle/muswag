@@ -420,12 +420,21 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/sql-sqlite-node':
+        specifier: 'catalog:'
+        version: 4.0.5(effect@4.0.5)
       '@muswag/backend':
         specifier: workspace:*
         version: link:../backend
       '@muswag/model':
         specifier: workspace:*
         version: link:../model
+      '@muswag/tanstack-db-mirror':
+        specifier: workspace:*
+        version: link:../tanstack-db-mirror
+      '@tanstack/db':
+        specifier: 'catalog:'
+        version: 0.15.0(typescript@7.0.2)
       effect:
         specifier: 'catalog:'
         version: 4.0.5

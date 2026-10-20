@@ -1,6 +1,6 @@
 import { PlayIcon, WarningIcon } from "@phosphor-icons/react";
-import { ALBUM_ORDER, ARTIST_ALBUM_ORDER, artistOccurrenceKey, type Album } from "@muswag/model";
-import { eq, useLiveQuery } from "@tanstack/react-db";
+import { ALBUM_ORDER, ARTIST_ALBUM_ORDER, artistOccurrenceKey, type LibraryAlbum as Album } from "@muswag/model";
+import { eq, isUndefined, not, useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 
@@ -77,25 +77,29 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
       ),
   });
 
-  // The order main plays the artist in (`openArtist` in the backend's queries).
+  // The order main plays the artist in (`openArtist` in the backend's queries). The songs are joined to
+  // the albums rather than the other way round: an inner join reads the smaller collection whole, and the
+  // songs, read on demand, start out empty. Joined this way only the songs of these albums are read.
   const songsQuery = useLiveQuery({
     queryKey: ["discography-songs", artistId],
     query: (q) =>
       ARTIST_ALBUM_ORDER.reduce(
         (query, { column, direction }) => query.orderBy(({ album }) => album[column], { direction, nulls: "last", stringSort: "lexical" }),
         q
-          .from({ song: db.songs })
-          .innerJoin({ album: db.albums }, ({ song, album }) => eq(song.albumId, album.id))
-          .where(({ album }) => eq(album.artistId, artistId)),
+          .from({ album: db.albums })
+          .where(({ album }) => eq(album.artistId, artistId))
+          .leftJoin({ song: db.songs }, ({ song, album }) => eq(song.albumId, album.id))
+          .where(({ song }) => not(isUndefined(song))),
       )
-        .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" })
+        .orderBy(({ song }) => ALBUM_ORDER.map((column) => song![column]), { stringSort: "lexical", nulls: "first" })
         .select(({ song }) => song),
   });
 
   const playingKey = usePlayingKey((ref) => ref.type === "artist" && ref.artistId === artistId);
 
   const albums = albumsQuery.data;
-  const songs = songsQuery.data;
+  // The join leaves out albums without songs, but its rows are typed as though it kept them.
+  const songs = useMemo(() => songsQuery.data.filter((song) => song !== undefined), [songsQuery.data]);
 
   const items = useMemo((): TrackListItem[] => {
     const albumsById = new Map(albums.map((album) => [album.id, album]));

@@ -6,14 +6,18 @@ import { QueueActions } from "#/queue/queue";
 
 /** The menu items every track list has: adding the selected songs to a playlist or to the queue. */
 export function TrackMenuAddItems({ selection }: { selection: TrackSelection }) {
-  const { songs } = selection;
+  const { count, songIds } = selection;
 
   return (
     <ContextMenuGroup>
-      <AddToPlaylistMenu songIds={songs.map(({ id }) => id)} />
+      <AddToPlaylistMenu count={count} songIds={songIds} />
       <ContextMenuItem
-        disabled={songs.length === 0}
-        onClick={() => void QueueActions.enqueue(songs).catch(failureNotice(`The ${songs.length === 1 ? "song" : "songs"} could not be added to the queue.`))}
+        disabled={count === 0}
+        onClick={() =>
+          void songIds()
+            .then(QueueActions.enqueue)
+            .catch(failureNotice(`The ${count === 1 ? "song" : "songs"} could not be added to the queue.`))
+        }
       >
         Add to queue
       </ContextMenuItem>

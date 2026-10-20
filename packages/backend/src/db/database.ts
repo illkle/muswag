@@ -26,11 +26,14 @@ const DbLive = Layer.effect(
 
 /**
  * Mirrors `MIRRORED_TABLES` to renderers, read-only: renderers change data only through commands.
- * Columns only main reads stay out of it. The interval only catches writes that bypassed `write`.
+ * Columns only main reads stay out of it. The library has too many songs and albums for a renderer to
+ * hold, so renderers read them by the page and a change of either carries only its id. The interval
+ * only catches writes that bypassed `write`.
  */
-const MirrorLive = Layer.effect(SqliteMirror, SqliteMirror.make({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS, autoFlushInterval: "2 seconds", readOnly: true })).pipe(
-  Layer.provide(DbLive),
-);
+const MirrorLive = Layer.effect(
+  SqliteMirror,
+  SqliteMirror.make({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS, keyOnlyTables: ["songs", "albums"], autoFlushInterval: "2 seconds", readOnly: true }),
+).pipe(Layer.provide(DbLive));
 
 /** Opens (or creates) the database at `filename`, migrates it and starts its mirror server. */
 export const DatabaseLive = (filename: string) => Layer.merge(DbLive, MirrorLive).pipe(Layer.provideMerge(SqliteClient.layer({ filename })));

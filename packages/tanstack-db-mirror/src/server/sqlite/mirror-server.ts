@@ -3,9 +3,23 @@ import { Context, Duration, Effect, FiberSet, Layer, Option, Schedule, Scope, Se
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
-import type { MirrorChange, MirrorChangeBatch, MirrorKey, MirrorMutation, MirrorPosition, MirrorRequest, MirrorResponse, MirrorResults, MirrorRow, MirrorServerTransport } from "../../protocol.js";
+import type {
+  MirrorChange,
+  MirrorChangeBatch,
+  MirrorExpression,
+  MirrorKey,
+  MirrorMutation,
+  MirrorPosition,
+  MirrorQuery,
+  MirrorRequest,
+  MirrorResponse,
+  MirrorResults,
+  MirrorRow,
+  MirrorServerTransport,
+} from "../../protocol.js";
 import { decodeRow, decodeValue, describeTable, encodeValue, MirrorSchemaError, type SqliteMirrorTable, type MirrorTableInfo } from "../../drizzle.js";
 import { handleRequest, makeListeners, MirrorRequestError, readOnlyError, serveWith } from "../shared.js";
+import { orderBySql, whereSql } from "./query-sql.js";
 import { createChangeLogSql, createTriggerSql, quoteIdentifier, rowJson, triggerPrefix } from "./sql.js";
 
 export { MirrorSchemaError };
@@ -33,6 +47,13 @@ export interface SqliteMirrorOptions {
    * collection with the same list (`mirrorCollectionOptions`' `omit`).
    */
   readonly omitColumns?: { readonly [table: string]: ReadonlyArray<string> } | undefined;
+  /**
+   * Tables whose changes carry only the key: an insert or update is a `changed` change, without the
+   * row. As for any table, a change to columns `omitColumns` leaves out only is not one; a column the
+   * clients' queries filter or sort by has to be mirrored. For a table clients read on demand, which hold a few of its rows and read again those they
+   * need, rather than one they mirror whole. Clients cannot snapshot such a table.
+   */
+  readonly keyOnlyTables?: ReadonlyArray<string> | undefined;
 }
 
 export interface SqliteMirrorService {
@@ -77,17 +98,21 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
   const metaSql = quoteIdentifier(`${changeLog}_meta`);
 
   // `info` describes the whole table, which mutations write; `mirrored` only the columns clients get.
-  const tables = new Map<string, { readonly info: MirrorTableInfo; readonly mirrored: MirrorTableInfo }>();
+  const tables = new Map<string, { readonly info: MirrorTableInfo; readonly mirrored: MirrorTableInfo; readonly keyOnly: boolean }>();
+  const keyOnlyTables = new Set(options.keyOnlyTables ?? []);
   for (const table of options.tables) {
     const info = yield* Effect.try({ try: () => describeTable(table), catch: (cause) => cause as MirrorSchemaError });
     if (tables.has(info.name)) {
       return yield* Effect.fail(new MirrorSchemaError(`Table "${info.name}" is registered twice`));
     }
     const mirrored = yield* Effect.try({ try: () => withoutColumns(info, options.omitColumns?.[info.name] ?? []), catch: (cause) => cause as MirrorSchemaError });
-    tables.set(info.name, { info, mirrored });
+    tables.set(info.name, { info, mirrored, keyOnly: keyOnlyTables.has(info.name) });
   }
   for (const name of Object.keys(options.omitColumns ?? {})) {
     if (!tables.has(name)) return yield* Effect.fail(new MirrorSchemaError(`Columns are omitted from "${name}", which is not mirrored`));
+  }
+  for (const name of keyOnlyTables) {
+    if (!tables.has(name)) return yield* Effect.fail(new MirrorSchemaError(`"${name}" is listed as key-only, but it is not mirrored`));
   }
 
   // The server's own queries always read plain numbers, whatever the caller configured.
@@ -116,8 +141,8 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
             yield* sql.unsafe(`DROP TRIGGER ${schema}.${quoteIdentifier(name)}`);
           }
         }
-        for (const { mirrored } of tables.values()) {
-          for (const statement of createTriggerSql(mirrored, changeLog)) {
+        for (const { mirrored, keyOnly } of tables.values()) {
+          for (const statement of createTriggerSql(mirrored, changeLog, keyOnly)) {
             yield* sql.unsafe(statement);
           }
         }
@@ -149,6 +174,7 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
     if (row.key_type === "integer" && !Number.isSafeInteger(rawKey)) throw new Error(`Key ${row.key_json} of "${row.tbl}" is outside the safe integer range`);
     const key = decodeValue(info.primaryKey.column, rawKey) as MirrorKey;
     if (row.op === "d") return { seq: row.seq, table: row.tbl, type: "delete", key };
+    if (row.op === "c") return { seq: row.seq, table: row.tbl, type: "changed", key };
     return { seq: row.seq, table: row.tbl, type: "upsert", key, value: decodeRow(info, row.value ?? "{}") };
   };
 
@@ -208,7 +234,8 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
 
   const snapshot = (tableName: string) =>
     Effect.suspend(() => {
-      const info = requireTable(tableName).mirrored;
+      const { mirrored: info, keyOnly } = requireTable(tableName);
+      if (keyOnly) throw new MirrorRequestError({ message: `Table "${info.name}" is key-only: clients read it on demand, with queries, not from a snapshot` });
       const table = quoteIdentifier(info.name);
       return internal(
         sql.withTransaction(
@@ -216,6 +243,41 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
             const rows = yield* sql.unsafe<{ value: string }>(`SELECT ${rowJson(info, table)} AS value FROM ${table}`);
             const seq = yield* currentSeq;
             return { epoch, seq, rows: rows.map((row) => decodeRow(info, row.value)) };
+          }),
+        ),
+      );
+    });
+
+  // A query reads the rows and the position in one transaction, so a client knows which changes the rows already have.
+  const query = (request: MirrorQuery) =>
+    Effect.suspend(() => {
+      const info = requireTable(request.table).mirrored;
+      const table = quoteIdentifier(info.name);
+      const where = request.where ? whereSql(info, request.where) : undefined;
+      const orderBy = request.orderBy?.length ? ` ORDER BY ${orderBySql(info, request.orderBy)}` : "";
+      const window = request.limit !== undefined ? ` LIMIT ${request.limit} OFFSET ${request.offset ?? 0}` : request.offset ? ` LIMIT -1 OFFSET ${request.offset}` : "";
+      const statement = `SELECT ${rowJson(info, table)} AS value FROM ${table}${where ? ` WHERE ${where.sql}` : ""}${orderBy}${window}`;
+      return internal(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const rows = yield* sql.unsafe<{ value: string }>(statement, where?.params ?? []);
+            const seq = yield* currentSeq;
+            return { epoch, seq, rows: rows.map((row) => decodeRow(info, row.value)) };
+          }),
+        ),
+      );
+    });
+
+  const count = (tableName: string, expression: MirrorExpression | undefined) =>
+    Effect.suspend(() => {
+      const info = requireTable(tableName).mirrored;
+      const where = expression ? whereSql(info, expression) : undefined;
+      return internal(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const [row] = yield* sql.unsafe<{ count: number }>(`SELECT count(*) AS count FROM ${quoteIdentifier(info.name)}${where ? ` WHERE ${where.sql}` : ""}`, where?.params ?? []);
+            const seq = yield* currentSeq;
+            return { epoch, seq, count: row?.count ?? 0 };
           }),
         ),
       );
@@ -280,6 +342,10 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
         return options.readOnly ? Effect.fail(readOnlyError()) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
+      case "query":
+        return query(request);
+      case "count":
+        return count(request.table, request.where);
     }
   };
 

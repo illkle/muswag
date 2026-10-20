@@ -47,6 +47,12 @@ export const serveAppCommands = (options: {
       "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
       "library:refresh": (target) => session.use((active) => active.library.refresh(target)),
       "library:artistAppearances": (artistId) => LibraryQueries.artistAppearances(artistId).pipe(Effect.provideService(Db, db)),
+      "library:songPage": (sort, request, withTotal) => LibraryQueries.songPage(sort, request, withTotal).pipe(Effect.provideService(Db, db)),
+      "library:songIds": (sort, ranges) => LibraryQueries.songIds(sort, ranges).pipe(Effect.provideService(Db, db)),
+      "library:songPosition": (sort, text) => LibraryQueries.songPosition(sort, text).pipe(Effect.provideService(Db, db)),
+      "library:albumPage": (request, withTotal) => LibraryQueries.albumPage(request, withTotal).pipe(Effect.provideService(Db, db)),
+      "library:artistsWithAlbums": () => LibraryQueries.artistsWithAlbums().pipe(Effect.provideService(Db, db)),
+      "library:albumCoverArts": (ids) => LibraryQueries.albumCoverArts(ids).pipe(Effect.provideService(Db, db)),
       // The worker finds the rows, and their current contents are read here.
       "library:search": (query, limit) =>
         Effect.tryPromise(() => options.search(query, limit)).pipe(Effect.flatMap((hits) => (hits ? LibraryQueries.searchResults(hits).pipe(Effect.provideService(Db, db)) : Effect.succeed(null)))),

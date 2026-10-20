@@ -14,6 +14,9 @@ import {
   queueResume,
   queueState,
   songs,
+  sortKey,
+  type AlbumPage,
+  type AlbumPageRequest,
   type ArtistAppearances,
   type LibrarySort,
   type QueueItemRow,
@@ -21,11 +24,14 @@ import {
   type QueueStateRow,
   type SearchHit,
   type SearchResult,
+  type SongPage,
+  type SongPageRequest,
+  type SongRange,
   type SourceCursor,
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, getTableColumns, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { Db, position, write, type Database } from "../db/database.js";
@@ -33,6 +39,21 @@ import { chunks, STATEMENT_IDS } from "../db/upsert.js";
 
 /** The columns an order of the library sorts by, all ascending. */
 const orderColumns = (sort: LibrarySort) => LIBRARY_ORDERS[sort].map((key) => songs[key]);
+
+/** Where a song is in an order: its values of the order's columns. `undefined` when the library does not have it. */
+const placeOf = (db: Pick<Database, "select">, sort: LibrarySort, id: string) =>
+  db
+    .select({ key: songs[LIBRARY_ORDERS[sort][0]], id: songs.id })
+    .from(songs)
+    .where(eq(songs.id, id))
+    .pipe(Effect.map(([place]) => place));
+
+/**
+ * The songs before or after a place in an order, as a row value comparison, which SQLite answers from
+ * the index the order sorts by. Spelled out as `key < ? OR (key = ? AND id < ?)` it reads every song.
+ */
+const beside = (sort: LibrarySort, operator: "<" | ">", place: { readonly key: string; readonly id: string }) =>
+  sql`(${sql.join(orderColumns(sort), sql`, `)}) ${sql.raw(operator)} (${place.key}, ${place.id})`;
 
 // ---- Queue sources ----
 // A source is read as a whole in one transaction: where its cursor is and the occurrences around it
@@ -113,21 +134,10 @@ const openPlaylist = (db: Reads, playlistId: string, key: string | null) =>
 const openLibrary = (db: Reads, sort: LibrarySort, key: string | null) =>
   Effect.gen(function* () {
     const prefix = libraryOccurrenceKey("");
-    const [song] = key?.startsWith(prefix)
-      ? yield* db
-          .select()
-          .from(songs)
-          .where(eq(songs.id, key.slice(prefix.length)))
-      : [];
-    // A row value comparison, which SQLite answers from the index the order sorts by.
-    const columns = sql.join(orderColumns(sort), sql`, `);
-    const values = sql.join(
-      LIBRARY_ORDERS[sort].map((column) => sql`${song?.[column]}`),
-      sql`, `,
-    );
+    const place = key?.startsWith(prefix) ? yield* placeOf(db, sort, key.slice(prefix.length)) : undefined;
     return {
       length: yield* db.$count(songs),
-      offset: song ? yield* db.$count(songs, sql`(${columns}) < (${values})`) : null,
+      offset: place ? yield* db.$count(songs, beside(sort, "<", place)) : null,
       read: (start: number, end: number) =>
         db
           .select()
@@ -159,7 +169,19 @@ const LIBRARY_SONG_COLUMNS = Object.fromEntries(Object.entries(getTableColumns(s
   (typeof MAIN_ONLY_SONG_COLUMNS)[number]
 >;
 
-/** Reads main itself needs, such as the playback queue's sources. */
+/** Ranges in order, those that overlap or meet made one, empty ones left out. */
+const merged = (ranges: ReadonlyArray<SongRange>) =>
+  [...ranges]
+    .filter(({ start, end }) => start < end)
+    .sort((left, right) => left.start - right.start)
+    .reduce<Array<{ start: number; end: number }>>((result, { start, end }) => {
+      const last = result.at(-1);
+      if (last && start <= last.end) last.end = Math.max(last.end, end);
+      else result.push({ start, end });
+      return result;
+    }, []);
+
+/** Reads main itself needs, such as the playback queue's sources, and the songs and albums lists, which renderers read by the page. */
 export const LibraryQueries = {
   songsByIds: (ids: ReadonlyArray<string>) =>
     Db.use((db) =>
@@ -168,6 +190,99 @@ export const LibraryQueries = {
           .select()
           .from(songs)
           .where(inArray(songs.id, [...chunk])),
+      ),
+    ).pipe(Effect.map((pages) => pages.flat())),
+
+  /**
+   * A page of the songs list in an order, songs as renderers mirror them, and how many songs there are
+   * when `withTotal`; both from one transaction, so they agree. A page after or before a song is found
+   * from where that song is through the order's index, and is `null` when the library no longer has it.
+   */
+  songPage: (sort: LibrarySort, request: SongPageRequest, withTotal: boolean) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.gen(function* () {
+          const columns = orderColumns(sort);
+          const select = () => tx.select(LIBRARY_SONG_COLUMNS).from(songs);
+          let rows;
+          if ("offset" in request) {
+            rows = yield* select()
+              .orderBy(...columns.map((column) => asc(column)))
+              .limit(request.limit)
+              .offset(request.offset);
+          } else {
+            const place = yield* placeOf(tx, sort, "after" in request ? request.after : request.before);
+            if (!place) return null;
+            // The songs before a place are read from it backwards, so the nearest are the ones the limit keeps.
+            rows =
+              "after" in request
+                ? yield* select()
+                    .where(beside(sort, ">", place))
+                    .orderBy(...columns.map((column) => asc(column)))
+                    .limit(request.limit)
+                : (yield* select()
+                    .where(beside(sort, "<", place))
+                    .orderBy(...columns.map((column) => desc(column)))
+                    .limit(request.limit)).reverse();
+          }
+          const page: SongPage = { songs: rows, total: withTotal ? yield* tx.$count(songs) : null };
+          return page;
+        }),
+      ),
+    ),
+
+  /** The ids of the songs at `ranges` of the songs list in an order, in list order, from one transaction. Overlapping ranges read their songs once. */
+  songIds: (sort: LibrarySort, ranges: ReadonlyArray<SongRange>) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.forEach(merged(ranges), ({ start, end }) =>
+          tx
+            .select({ id: songs.id })
+            .from(songs)
+            .orderBy(...orderColumns(sort).map((column) => asc(column)))
+            .limit(end - start)
+            .offset(start),
+        ),
+      ),
+    ).pipe(Effect.map((pages) => pages.flat().map(({ id }) => id))),
+
+  /**
+   * Where songs whose title, artist or album, as the order goes by, starts at or after `text` begin:
+   * how many come before. The key of each order begins with the sort key of what it goes by, so one
+   * comparison with the sort key of the text answers it for all of them.
+   */
+  songPosition: (sort: LibrarySort, text: string) => Db.use((db) => db.$count(songs, lt(songs[LIBRARY_ORDERS[sort][0]], sortKey(text)))),
+
+  /**
+   * A page of the albums page, newest first, those without a year last and albums of a year by id,
+   * which the `albums_year` index holds in that order; with how many albums there are when
+   * `withTotal`, from the same transaction.
+   */
+  albumPage: (request: AlbumPageRequest, withTotal: boolean) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.gen(function* () {
+          const rows = yield* tx.select().from(albums).orderBy(desc(albums.year), asc(albums.id)).limit(request.limit).offset(request.offset);
+          const page: AlbumPage = { albums: rows, total: withTotal ? yield* tx.$count(albums) : null };
+          return page;
+        }),
+      ),
+    ),
+
+  /** The ids of the artists with an album of their own, which are those the artists page lists. */
+  artistsWithAlbums: () =>
+    Db.use((db) => db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId))).pipe(
+      Effect.map((rows) => rows.flatMap(({ artistId }) => (artistId === null ? [] : [artistId]))),
+    ),
+
+  /** The cover art ids of the albums in `ids` that the library has, which a song shows its album's cover by. */
+  albumCoverArts: (ids: ReadonlyArray<string>) =>
+    Db.use((db) =>
+      Effect.forEach(chunks([...new Set(ids)], STATEMENT_IDS), (chunk) =>
+        db
+          .select({ id: albums.id, coverArt: albums.coverArt })
+          .from(albums)
+          .where(inArray(albums.id, [...chunk])),
       ),
     ).pipe(Effect.map((pages) => pages.flat())),
 

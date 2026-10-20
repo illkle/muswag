@@ -3,11 +3,11 @@ import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData } from "node:worker_threads";
 
 import { createSearchIndex } from "./search-index.ts";
-import { SEARCHED_COLUMNS, type SearchedChange, type SearchedLibrary, type SearchedRow } from "./searched-fields.ts";
+import { SEARCHED_COLUMNS, type SearchedChange, type SearchedLibrary, type SearchedRow, type SearchWorkerChange } from "./searched-fields.ts";
 
 /** What main sends the worker. */
 export type SearchWorkerRequest =
-  | { readonly type: "changed"; readonly changes: ReadonlyArray<SearchedChange> }
+  | { readonly type: "changed"; readonly changes: ReadonlyArray<SearchWorkerChange> }
   | { readonly type: "search"; readonly id: number; readonly query: string; readonly limit: number };
 
 /** What the worker answers a search with. */
@@ -25,8 +25,35 @@ const { databasePath } = workerData as SearchWorkerData;
 const database = new DatabaseSync(databasePath, { readOnly: true });
 const port = parentPort!;
 
-const readAll = (table: keyof SearchedLibrary) =>
-  database.prepare(`SELECT ${["id", ...SEARCHED_COLUMNS[table]].map((column) => `"${column}"`).join(", ")} FROM "${table}"`).all() as unknown as SearchedRow[];
+const selectFrom = (table: keyof SearchedLibrary) => `SELECT ${["id", ...SEARCHED_COLUMNS[table]].map((column) => `"${column}"`).join(", ")} FROM "${table}"`;
+const readAll = (table: keyof SearchedLibrary) => database.prepare(selectFrom(table)).all() as unknown as SearchedRow[];
+const readIds = (table: keyof SearchedLibrary, ids: ReadonlyArray<string>) =>
+  database.prepare(`${selectFrom(table)} WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as unknown as SearchedRow[];
+
+/**
+ * The changes as the index takes them. Those that carry only an id, as songs' and albums' do, are
+ * read here as the rows are now, which is after main committed them; a row that has gone since is a
+ * delete.
+ */
+const withRows = (changes: ReadonlyArray<SearchWorkerChange>): SearchedChange[] => {
+  const written = new Map<keyof SearchedLibrary, Set<string>>();
+  const result: SearchedChange[] = [];
+  for (const change of changes) {
+    if (change.type !== "changed") result.push(change);
+    else {
+      const table = change.table as keyof SearchedLibrary;
+      written.set(table, (written.get(table) ?? new Set()).add(change.key));
+    }
+  }
+  for (const [table, ids] of written) {
+    const rows = new Map(readIds(table, [...ids]).map((row) => [row.id, row]));
+    for (const id of ids) {
+      const value = rows.get(id);
+      result.push(value ? { table, type: "upsert", value } : { table, type: "delete", key: id });
+    }
+  }
+  return result;
+};
 
 // The three reads are one transaction, so they see the library as it was at one moment.
 const read = (): SearchedLibrary => {
@@ -41,7 +68,7 @@ const read = (): SearchedLibrary => {
 const index = createSearchIndex(read);
 
 port.on("message", (request: SearchWorkerRequest) => {
-  if (request.type === "changed") return index.changed(request.changes);
+  if (request.type === "changed") return index.changed(withRows(request.changes));
   try {
     port.postMessage({ id: request.id, ok: true, hits: index.search(request.query, request.limit) } satisfies SearchWorkerReply);
   } catch (cause) {

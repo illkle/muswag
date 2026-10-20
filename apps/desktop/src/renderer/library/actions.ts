@@ -1,4 +1,4 @@
-import type { RefreshTarget, SyncMode } from "@muswag/model";
+import type { AlbumPageRequest, LibrarySort, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
 
 import { appCommand } from "#/data/app-command";
 
@@ -10,4 +10,16 @@ export const LibraryActions = {
   artistAppearances: (artistId: string) => appCommand("library:artistAppearances", artistId),
   /** The best matches for `query` among the albums, artists and songs, which main searches; `null` when a later search took its place. */
   search: (query: string, limit: number) => appCommand("library:search", query, limit),
+  /** A page of the songs list in `sort` order, which main reads from SQLite, with how many songs there are when `withTotal`; `null` for a page around a song that has gone. */
+  songPage: (sort: LibrarySort, request: SongPageRequest, withTotal: boolean) => appCommand("library:songPage", sort, request, withTotal),
+  /** The ids of the songs at `ranges` of the songs list in `sort` order, in list order. */
+  songIds: (sort: LibrarySort, ranges: ReadonlyArray<SongRange>) => appCommand("library:songIds", sort, ranges),
+  /** Where the songs whose title, artist or album, as `sort` goes by, starts at or after `text` begin in the songs list. */
+  songPosition: (sort: LibrarySort, text: string) => appCommand("library:songPosition", sort, text),
+  /** A page of the albums page, newest first, which main reads from SQLite, with how many albums there are when `withTotal`. */
+  albumPage: (request: AlbumPageRequest, withTotal: boolean) => appCommand("library:albumPage", request, withTotal),
+  /** The ids of the artists with an album of their own, which are those the artists page lists. */
+  artistsWithAlbums: () => appCommand("library:artistsWithAlbums"),
+  /** The cover art ids of the albums in `ids` that the library has, for the covers of their songs. */
+  albumCoverArts: (ids: ReadonlyArray<string>) => appCommand("library:albumCoverArts", ids),
 };

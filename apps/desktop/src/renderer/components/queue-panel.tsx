@@ -10,6 +10,7 @@ import type { TrackListItem, TrackSelection } from "#/components/track-list/type
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { db } from "#/data/library";
+import { eq, useLiveQuery } from "@tanstack/react-db";
 import { useCollectionRow } from "#/data/stores";
 import { failureNotice } from "#/lib/notify";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
@@ -27,7 +28,19 @@ function togglePanel() {
 
 /** What to call the album, playlist, artist or library the queue is playing through. */
 function useSourceName(ref: QueueSourceRef | null): string | null {
-  const album = useCollectionRow(db.albums, ref?.type === "album" ? ref.albumId : null, ({ name }) => name);
+  // The albums are read on demand, so the album playing is asked for rather than looked up.
+  const albumId = ref?.type === "album" ? ref.albumId : null;
+  const albumQuery = useLiveQuery({
+    queryKey: ["queue-source-album", albumId],
+    query: (q) =>
+      albumId === null
+        ? undefined
+        : q
+            .from({ album: db.albums })
+            .where(({ album }) => eq(album.id, albumId))
+            .findOne(),
+  });
+  const album = albumQuery.data?.name;
   const playlist = useCollectionRow(db.playlists, ref?.type === "playlist" ? ref.playlistId : null, ({ local }) => local?.name);
   const artist = useCollectionRow(db.artists, ref?.type === "artist" ? ref.artistId : null, ({ name }) => name);
 

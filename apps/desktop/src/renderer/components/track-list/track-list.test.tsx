@@ -163,7 +163,7 @@ describe("TrackList", () => {
     expect(screen.getByText("Live")).toBeTruthy();
   });
 
-  it("gives the menu the selection, and a right-click keeps a selection the row is part of", () => {
+  it("gives the menu the selection, and a right-click keeps a selection the row is part of", async () => {
     const seen = renderWithMenu(duplicates);
 
     fireEvent.click(row("entry-1"));
@@ -172,7 +172,8 @@ describe("TrackList", () => {
 
     expect(seen.selection?.items.map(({ key }) => key)).toEqual(["entry-1", "entry-3"]);
     // The song is selected in two rows, so an action on the selection applies to it twice.
-    expect(seen.selection?.songs.map(({ id }) => id)).toEqual(["song-a", "song-a"]);
+    expect(seen.selection?.count).toBe(2);
+    expect(await seen.selection?.songIds()).toEqual(["song-a", "song-a"]);
   });
 
   it("selects only the row under a right-click outside the selection", () => {
@@ -197,7 +198,7 @@ describe("TrackList", () => {
     expect(seen.selection?.items.map(({ key }) => key)).toEqual(["entry-1"]);
   });
 
-  it("leaves songs that are not in the library out of what the menu acts on", () => {
+  it("leaves songs that are not in the library out of what the menu acts on", async () => {
     const seen = renderWithMenu([track("entry-1", "song-a", "Here"), track("entry-2", "song-gone", "song-gone", true)]);
 
     fireEvent.click(row("entry-1"));
@@ -205,14 +206,15 @@ describe("TrackList", () => {
     fireEvent.contextMenu(row("entry-2"));
 
     expect(seen.selection?.items).toHaveLength(2);
-    expect(seen.selection?.songs.map(({ id }) => id)).toEqual(["song-a"]);
+    expect(seen.selection?.count).toBe(1);
+    expect(await seen.selection?.songIds()).toEqual(["song-a"]);
   });
 });
 
 describe("TrackList with the keyboard", () => {
   const letters = [track("a", "a", "A"), track("b", "b", "B"), track("c", "c", "C"), track("d", "d", "D")];
 
-  const renderList = (items: TrackListItem[] = letters, props: Partial<React.ComponentProps<typeof TrackList>> = {}) => {
+  const renderList = (items: TrackListItem[] = letters, props: Partial<Pick<React.ComponentProps<typeof TrackList>, "onActivate" | "menu">> = {}) => {
     const { container } = render(<TrackList items={items} columns={columns} {...props} />);
     return container.firstElementChild as HTMLElement;
   };
@@ -439,5 +441,129 @@ describe("track list columns", () => {
     expect(row("a").querySelector(".playing-indicator")).toBeNull();
     expect(row("a").querySelector("svg")).toBeTruthy();
     expect(row("a").textContent).not.toContain("7");
+  });
+});
+
+describe("TrackList of rows it loads as they are shown", () => {
+  type TrackRows = import("#/components/track-list/types").TrackRows;
+  const loadedTrack = (position: number) => track(`library:s${position}`, `s${position}`, `Song ${position}`) as import("#/components/track-list/types").TrackItem;
+
+  /** A list of `count` rows of which those below `loaded` have loaded. */
+  const rowsOf = (count: number, loaded: number) => {
+    const shown: Array<[number, number]> = [];
+    const songIds = vi.fn(async (spans: readonly { start: number; end: number }[]) => spans.flatMap(({ start, end }) => Array.from({ length: end - start }, (_, index) => `s${start + index}`)));
+    const rows: TrackRows = {
+      count,
+      at: (position) => (position < loaded ? loadedTrack(position) : undefined),
+      show: (start, end) => void shown.push([start, end]),
+      songIds,
+    };
+    return { rows, shown, songIds };
+  };
+  const positionRow = (position: number) => document.querySelector<HTMLElement>(`[data-track-position="${position}"]`)!;
+  const selectedPositions = () => [...document.querySelectorAll<HTMLElement>('[aria-selected="true"]')].map((element) => Number(element.dataset.trackPosition));
+
+  it("draws a row that has not loaded as a placeholder, and says which rows it draws", () => {
+    const { rows, shown } = rowsOf(250_000, 3);
+    render(<TrackList rows={rows} columns={columns} />);
+
+    expect(row("library:s2").textContent).toContain("Song 2");
+    expect(positionRow(3).getAttribute("aria-busy")).toBe("true");
+    expect(shown.at(-1)?.[0]).toBe(0);
+    expect(document.querySelector('[role="grid"]')!.getAttribute("aria-rowcount")).toBe("250000");
+  });
+
+  it("selects by position, all of it as one span, and asks for the ids of what it does not hold", async () => {
+    const { rows, songIds } = rowsOf(250_000, 5);
+    const seen: { selection: TrackSelection | null } = { selection: null };
+    const { container } = render(
+      <TrackList
+        rows={rows}
+        columns={columns}
+        menu={(selection) => {
+          seen.selection = selection;
+          return null;
+        }}
+      />,
+    );
+
+    fireEvent.click(positionRow(1));
+    fireEvent.click(positionRow(6), { shiftKey: true });
+    expect(selectedPositions()).toEqual([1, 2, 3, 4, 5, 6]);
+
+    fireEvent.keyDown(container.firstElementChild!, { key: "a", metaKey: true });
+    fireEvent.contextMenu(positionRow(2));
+    expect(seen.selection?.count).toBe(250_000);
+    // Only the rows it has loaded are items; the rest are asked for.
+    expect(seen.selection?.items).toHaveLength(5);
+    await seen.selection?.songIds();
+    expect(songIds).toHaveBeenCalledWith([{ start: 0, end: 250_000 }]);
+  });
+
+  it("starts the selection and the keyboard over when rows come or go", () => {
+    const { rows } = rowsOf(100, 10);
+    const { container, rerender } = render(<TrackList rows={rows} columns={columns} />);
+    const list = container.firstElementChild as HTMLElement;
+    fireEvent.click(positionRow(8));
+    expect(selectedPositions()).toEqual([8]);
+
+    rerender(<TrackList rows={{ ...rows, count: 5 }} columns={columns} />);
+    expect(selectedPositions()).toEqual([]);
+    expect(list.hasAttribute("aria-activedescendant")).toBe(false);
+    // The keyboard starts again from the first row in view rather than from past the end.
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(selectedPositions()).toEqual([0]);
+  });
+
+  it("acts on the songs the selected rows show when it holds them all, without asking", async () => {
+    const { rows, songIds } = rowsOf(1_000, 10);
+    const seen: { selection: TrackSelection | null } = { selection: null };
+    render(
+      <TrackList
+        rows={rows}
+        columns={columns}
+        menu={(selection) => {
+          seen.selection = selection;
+          return null;
+        }}
+      />,
+    );
+
+    fireEvent.click(positionRow(2));
+    fireEvent.click(positionRow(4), { shiftKey: true });
+    fireEvent.contextMenu(positionRow(3));
+    expect(await seen.selection?.songIds()).toEqual(["s2", "s3", "s4"]);
+    expect(songIds).not.toHaveBeenCalled();
+  });
+
+  it("jumps to where what is typed starts, and lets Space go on it while typing", async () => {
+    const { rows } = rowsOf(1_000, 1_000);
+    const findPosition = vi.fn(async (text: string) => (text === "b" ? 2 : text === "b c" ? 3 : null));
+    const { container } = render(<TrackList rows={rows} columns={columns} findPosition={findPosition} />);
+    const list = container.firstElementChild as HTMLElement;
+
+    await act(async () => {
+      fireEvent.keyDown(list, { key: "b" });
+    });
+    expect(selectedPositions()).toEqual([2]);
+
+    // Space goes on what is being typed rather than playing.
+    expect(fireEvent.keyDown(list, { key: " " })).toBe(false);
+    await act(async () => {
+      fireEvent.keyDown(list, { key: "c" });
+    });
+    expect(findPosition).toHaveBeenLastCalledWith("b c");
+    expect(selectedPositions()).toEqual([3]);
+  });
+
+  it("activates a loaded row on a double-click, and not one still loading", () => {
+    const { rows } = rowsOf(100, 2);
+    const onActivate = vi.fn();
+    render(<TrackList rows={rows} columns={columns} onActivate={onActivate} />);
+
+    fireEvent.doubleClick(positionRow(5));
+    expect(onActivate).not.toHaveBeenCalled();
+    fireEvent.doubleClick(positionRow(1));
+    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ key: "library:s1" }));
   });
 });

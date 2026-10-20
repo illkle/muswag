@@ -20,6 +20,8 @@ export type MirrorRow = Record<string, unknown>;
 
 export type MirrorChange =
   | { readonly seq: number; readonly table: string; readonly type: "upsert"; readonly key: MirrorKey; readonly value: MirrorRow }
+  /** A row of a key-only table was inserted or updated; it is not sent, so a client that needs it reads it again. */
+  | { readonly seq: number; readonly table: string; readonly type: "changed"; readonly key: MirrorKey }
   | { readonly seq: number; readonly table: string; readonly type: "delete"; readonly key: MirrorKey };
 
 export type MirrorChangeBatch = {
@@ -41,6 +43,30 @@ export type MirrorRequestPayloads = {
   readonly mutate: { readonly mutations: ReadonlyArray<MirrorMutation> };
   /** Fetches every change after `fromSeq`, used to recover from a gap in the stream. */
   readonly pull: { readonly fromSeq: number };
+  /** Reads the rows of a table that `where` matches, in `orderBy`, a window of them when `limit` is given. */
+  readonly query: MirrorQuery;
+  /** Counts the rows of a table that `where` matches. */
+  readonly count: { readonly table: string; readonly where?: MirrorExpression | undefined };
+};
+
+/**
+ * A filter over a row's properties, in the shape of TanStack DB's expressions: a property, a constant,
+ * or an operator applied to others (`eq`, `gt`, `gte`, `lt`, `lte`, `in`, `and`, `or`, `not`, `isNull`,
+ * `isUndefined`, `ilike`).
+ */
+export type MirrorExpression =
+  | { readonly type: "ref"; readonly path: ReadonlyArray<string> }
+  | { readonly type: "val"; readonly value: unknown }
+  | { readonly type: "func"; readonly name: string; readonly args: ReadonlyArray<MirrorExpression> };
+
+export type MirrorOrder = { readonly property: string; readonly direction: "asc" | "desc"; readonly nulls: "first" | "last" };
+
+export type MirrorQuery = {
+  readonly table: string;
+  readonly where?: MirrorExpression | undefined;
+  readonly orderBy?: ReadonlyArray<MirrorOrder> | undefined;
+  readonly limit?: number | undefined;
+  readonly offset?: number | undefined;
 };
 
 export type MirrorResults = {
@@ -52,6 +78,9 @@ export type MirrorResults = {
     | { readonly epoch: number; readonly kind: "changes"; readonly batch: MirrorChangeBatch }
     /** The requested range is no longer retained; the client must reload its collections. */
     | { readonly epoch: number; readonly kind: "reset" };
+  /** The rows as of `seq`: a change after it may have changed them. */
+  readonly query: { readonly epoch: number; readonly seq: number; readonly rows: ReadonlyArray<MirrorRow> };
+  readonly count: { readonly epoch: number; readonly seq: number; readonly count: number };
 };
 
 export type MirrorRequestType = keyof MirrorRequestPayloads;

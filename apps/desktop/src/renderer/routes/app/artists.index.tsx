@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MicrophoneStageIcon, WarningIcon } from "@phosphor-icons/react";
-import { eq, useLiveQuery } from "@tanstack/react-db";
+import { inArray, useLiveQuery } from "@tanstack/react-db";
 import { useDeferredValue, useState } from "react";
 
 import { ArtistDiscography } from "#/components/artists/artist-discography";
@@ -8,6 +8,10 @@ import { ArtistList } from "#/components/artists/artist-list";
 import { followAddress, pickInList, startPicking } from "#/components/artists/artist-picking";
 import { PageState } from "#/components/page-state";
 import { db } from "#/data/library";
+import { useArtistsWithAlbums } from "#/library/artists-with-albums";
+
+// `inArray` with an empty list is not a query TanStack DB can run, so an id no artist has stands in for none.
+const NO_ARTISTS = [" "];
 
 export const Route = createFileRoute("/app/artists/")({
   // The artist picked, which going back to the page picks again.
@@ -25,21 +29,23 @@ function RouteComponent() {
   // The albums come after the list, so holding an arrow key goes through the artists without drawing the albums of each on the way.
   const shownPick = useDeferredValue(picked);
   // Only the artists with albums of their own: one credited only on tracks of others' albums has nothing to show here.
-  // The key stands for the query, so a render, one for each artist picked, builds no query of its own.
+  // Main knows which they are; the artists themselves are mirrored. The key stands for the query, so a render,
+  // one for each artist picked, builds no query of its own.
+  const withAlbums = useArtistsWithAlbums();
+  const artistIds = withAlbums.data?.length ? withAlbums.data : NO_ARTISTS;
   const artistsQuery = useLiveQuery({
-    queryKey: ["artists-with-albums"],
+    // When the ids were read stands for them, so a render, one for each artist picked, does not compare every id.
+    queryKey: ["artists-with-albums", withAlbums.dataUpdatedAt],
     query: (q) =>
       q
         .from({ artist: db.artists })
-        .innerJoin({ album: db.albums }, ({ artist, album }) => eq(artist.id, album.artistId))
-        .select(({ artist }) => ({ ...artist }))
-        .distinct()
+        .where(({ artist }) => inArray(artist.id, [...artistIds]))
         .orderBy(({ artist }) => artist.name, { stringSort: "locale", localeOptions: { sensitivity: "base", numeric: true } }),
   });
   const artists = artistsQuery.data;
 
-  if (artistsQuery.isLoading) return <PageState tone="quiet" title="Loading artists…" />;
-  if (artistsQuery.isError) return <PageState tone="error" icon={<WarningIcon />} title="Artists unavailable" description="The local artist list could not be read." />;
+  if (withAlbums.isPending || artistsQuery.isLoading) return <PageState tone="quiet" title="Loading artists…" />;
+  if (withAlbums.isError || artistsQuery.isError) return <PageState tone="error" icon={<WarningIcon />} title="Artists unavailable" description="The local artist list could not be read." />;
   if (artists.length === 0) {
     return <PageState icon={<MicrophoneStageIcon />} title="No artists yet" description="Use the server control in the sidebar to fetch your server library." />;
   }

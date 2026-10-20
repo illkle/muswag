@@ -8,12 +8,16 @@
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:sync-benchmark": "vitest run --config vitest.sync-benchmark.config.ts"
+    "test:sync-benchmark": "vitest run --config vitest.sync-benchmark.config.ts",
+    "test:songs-benchmark": "vitest run --config vitest.songs-benchmark.config.ts"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
+    "@effect/sql-sqlite-node": "catalog:",
     "@muswag/backend": "workspace:*",
     "@muswag/model": "workspace:*",
+    "@muswag/tanstack-db-mirror": "workspace:*",
+    "@tanstack/db": "catalog:",
     "effect": "catalog:",
     "testcontainers": "^12.2.1",
     "vitest": "catalog:"
