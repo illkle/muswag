@@ -1,0 +1,1607 @@
+[
+  {
+    "method": "ping",
+    "params": {},
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1"
+      }
+    }
+  },
+  {
+    "method": "getScanStatus",
+    "params": {},
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "scanStatus": {
+          "scanning": false
+        }
+      }
+    }
+  },
+  {
+    "method": "getArtists",
+    "params": {},
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "artists": {
+          "ignoredArticles": "",
+          "lastModified": 946684800000,
+          "index": [
+            {
+              "name": "#",
+              "artist": [
+                {
+                  "albumCount": 1,
+                  "id": "ar-4",
+                  "mediaType": "artist",
+                  "musicBrainzId": "",
+                  "name": "夜の街",
+                  "sortName": "",
+                  "roles": [
+                    "artist",
+                    "albumartist"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "A",
+              "artist": [
+                {
+                  "albumCount": 1,
+                  "id": "ar-3",
+                  "mediaType": "artist",
+                  "musicBrainzId": "",
+                  "name": "Ada Reel",
+                  "sortName": "",
+                  "roles": [
+                    "artist"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "S",
+              "artist": [
+                {
+                  "albumCount": 1,
+                  "coverArt": "art-1",
+                  "id": "ar-1",
+                  "mediaType": "artist",
+                  "musicBrainzId": "",
+                  "name": "Sigur Rós",
+                  "sortName": "",
+                  "roles": [
+                    "artist",
+                    "albumartist"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "T",
+              "artist": [
+                {
+                  "albumCount": 1,
+                  "coverArt": "art-2",
+                  "id": "ar-2",
+                  "mediaType": "artist",
+                  "musicBrainzId": "",
+                  "name": "The Projectionists",
+                  "sortName": "",
+                  "roles": [
+                    "artist",
+                    "albumartist"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "getAlbumList2",
+    "params": {
+      "type": "alphabeticalByArtist",
+      "size": 500,
+      "offset": 0
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "albumList2": {
+          "album": [
+            {
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "displayArtist": "Sigur Rós",
+              "duration": 3,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "al-1",
+              "isCompilation": false,
+              "mediaType": "album",
+              "musicBrainzId": "5f9cc4a5-0bd7-4a49-9d6b-2b3e1c1b1f01",
+              "name": "Ágætis byrjun",
+              "playCount": 0,
+              "played": "",
+              "songCount": 2,
+              "sortName": "",
+              "version": "",
+              "year": 1999,
+              "originalReleaseDate": {},
+              "releaseDate": {
+                "year": 1999
+              },
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "discTitles": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "recordLabels": [],
+              "groupings": [],
+              "moods": [],
+              "releaseTypes": []
+            },
+            {
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "displayArtist": "The Projectionists",
+              "duration": 4,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "al-2",
+              "isCompilation": false,
+              "mediaType": "album",
+              "musicBrainzId": "",
+              "name": "Double Feature",
+              "playCount": 0,
+              "played": "",
+              "songCount": 4,
+              "sortName": "",
+              "version": "",
+              "year": 2010,
+              "originalReleaseDate": {},
+              "releaseDate": {
+                "year": 2010
+              },
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "discTitles": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "recordLabels": [],
+              "groupings": [],
+              "moods": [],
+              "releaseTypes": []
+            },
+            {
+              "artist": "夜の街",
+              "artistId": "ar-4",
+              "created": "2026-10-19T21:37:34.000Z",
+              "displayArtist": "夜の街",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "J-Pop",
+              "id": "al-3",
+              "isCompilation": false,
+              "mediaType": "album",
+              "musicBrainzId": "",
+              "name": "東京の夜",
+              "playCount": 0,
+              "played": "",
+              "songCount": 1,
+              "sortName": "",
+              "version": "",
+              "year": 2015,
+              "originalReleaseDate": {},
+              "releaseDate": {
+                "year": 2015
+              },
+              "artists": [
+                {
+                  "id": "ar-4",
+                  "name": "夜の街"
+                }
+              ],
+              "discTitles": [],
+              "genres": [
+                {
+                  "name": "J-Pop"
+                }
+              ],
+              "recordLabels": [],
+              "groupings": [],
+              "moods": [],
+              "releaseTypes": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "getAlbum",
+    "params": {
+      "id": "al-1"
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "album": {
+          "artist": "Sigur Rós",
+          "artistId": "ar-1",
+          "coverArt": "art-1",
+          "created": "2026-10-19T21:37:34.000Z",
+          "displayArtist": "Sigur Rós",
+          "duration": 3,
+          "explicitStatus": "",
+          "genre": "Post-Rock",
+          "id": "al-1",
+          "isCompilation": false,
+          "mediaType": "album",
+          "musicBrainzId": "5f9cc4a5-0bd7-4a49-9d6b-2b3e1c1b1f01",
+          "name": "Ágætis byrjun",
+          "playCount": 0,
+          "played": "",
+          "songCount": 2,
+          "sortName": "",
+          "version": "",
+          "year": 1999,
+          "originalReleaseDate": {},
+          "releaseDate": {
+            "year": 1999
+          },
+          "artists": [
+            {
+              "id": "ar-1",
+              "name": "Sigur Rós"
+            }
+          ],
+          "discTitles": [],
+          "genres": [
+            {
+              "name": "Post-Rock"
+            }
+          ],
+          "recordLabels": [],
+          "song": [
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 2,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-1",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "0a7c1f7e-6a43-4b8e-9a51-6f0d1f1b2c01",
+              "path": "Sigur Rós/Ágætis byrjun/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 33745,
+              "suffix": "mp3",
+              "title": "Svefn-g-englar",
+              "track": 1,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {
+                "trackGain": -7.25
+              },
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-2",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "Sigur Rós/Ágætis byrjun/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 25667,
+              "suffix": "mp3",
+              "title": "Starálfur",
+              "track": 2,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ],
+          "groupings": [],
+          "moods": [],
+          "releaseTypes": []
+        }
+      }
+    }
+  },
+  {
+    "method": "getAlbum",
+    "params": {
+      "id": "al-2"
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "album": {
+          "artist": "The Projectionists",
+          "artistId": "ar-2",
+          "coverArt": "art-2",
+          "created": "2026-10-19T21:37:34.000Z",
+          "displayArtist": "The Projectionists",
+          "duration": 4,
+          "explicitStatus": "",
+          "genre": "Rock",
+          "id": "al-2",
+          "isCompilation": false,
+          "mediaType": "album",
+          "musicBrainzId": "",
+          "name": "Double Feature",
+          "playCount": 0,
+          "played": "",
+          "songCount": 4,
+          "sortName": "",
+          "version": "",
+          "year": 2010,
+          "originalReleaseDate": {},
+          "releaseDate": {
+            "year": 2010
+          },
+          "artists": [
+            {
+              "id": "ar-2",
+              "name": "The Projectionists"
+            }
+          ],
+          "discTitles": [],
+          "genres": [
+            {
+              "name": "Rock"
+            }
+          ],
+          "recordLabels": [],
+          "song": [
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-3",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 19356,
+              "suffix": "mp3",
+              "title": "Opening Reel",
+              "track": 1,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-4",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 17688,
+              "suffix": "mp3",
+              "title": "Intermission",
+              "track": 2,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 2,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-5",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/2-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 22691,
+              "suffix": "mp3",
+              "title": "Second Reel",
+              "track": 1,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists, Ada Reel",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 2,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists, Ada Reel",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-6",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/2-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 19365,
+              "suffix": "mp3",
+              "title": "Duet for Two",
+              "track": 2,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                },
+                {
+                  "id": "ar-3",
+                  "name": "Ada Reel"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ],
+          "groupings": [],
+          "moods": [],
+          "releaseTypes": []
+        }
+      }
+    }
+  },
+  {
+    "method": "getAlbum",
+    "params": {
+      "id": "al-3"
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "album": {
+          "artist": "夜の街",
+          "artistId": "ar-4",
+          "created": "2026-10-19T21:37:34.000Z",
+          "displayArtist": "夜の街",
+          "duration": 1,
+          "explicitStatus": "",
+          "genre": "J-Pop",
+          "id": "al-3",
+          "isCompilation": false,
+          "mediaType": "album",
+          "musicBrainzId": "",
+          "name": "東京の夜",
+          "playCount": 0,
+          "played": "",
+          "songCount": 1,
+          "sortName": "",
+          "version": "",
+          "year": 2015,
+          "originalReleaseDate": {},
+          "releaseDate": {
+            "year": 2015
+          },
+          "artists": [
+            {
+              "id": "ar-4",
+              "name": "夜の街"
+            }
+          ],
+          "discTitles": [],
+          "genres": [
+            {
+              "name": "J-Pop"
+            }
+          ],
+          "recordLabels": [],
+          "song": [
+            {
+              "album": "東京の夜",
+              "albumId": "al-3",
+              "artist": "夜の街",
+              "artistId": "ar-4",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "夜の街",
+              "displayArtist": "夜の街",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "J-Pop",
+              "id": "tr-7",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "夜の街/東京の夜/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 21002,
+              "suffix": "mp3",
+              "title": "ネオン",
+              "track": 1,
+              "type": "music",
+              "year": 2015,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-4",
+                  "name": "夜の街"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-4",
+                  "name": "夜の街"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "J-Pop"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ],
+          "groupings": [],
+          "moods": [],
+          "releaseTypes": []
+        }
+      }
+    }
+  },
+  {
+    "method": "search3",
+    "params": {
+      "query": "",
+      "artistCount": 0,
+      "albumCount": 0,
+      "songCount": 500,
+      "songOffset": 0
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "searchResult3": {
+          "song": [
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 2,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-1",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "0a7c1f7e-6a43-4b8e-9a51-6f0d1f1b2c01",
+              "path": "Sigur Rós/Ágætis byrjun/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 33745,
+              "suffix": "mp3",
+              "title": "Svefn-g-englar",
+              "track": 1,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {
+                "trackGain": -7.25
+              },
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-2",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "Sigur Rós/Ágætis byrjun/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 25667,
+              "suffix": "mp3",
+              "title": "Starálfur",
+              "track": 2,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-3",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 19356,
+              "suffix": "mp3",
+              "title": "Opening Reel",
+              "track": 1,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-4",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 17688,
+              "suffix": "mp3",
+              "title": "Intermission",
+              "track": 2,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists",
+              "artistId": "ar-2",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 2,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-5",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/2-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 22691,
+              "suffix": "mp3",
+              "title": "Second Reel",
+              "track": 1,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Double Feature",
+              "albumId": "al-2",
+              "artist": "The Projectionists, Ada Reel",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-2",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 2,
+              "displayAlbumArtist": "The Projectionists",
+              "displayArtist": "The Projectionists, Ada Reel",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Rock",
+              "id": "tr-6",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "The Projectionists/Double Feature/2-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 19365,
+              "suffix": "mp3",
+              "title": "Duet for Two",
+              "track": 2,
+              "type": "music",
+              "year": 2010,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-2",
+                  "name": "The Projectionists"
+                },
+                {
+                  "id": "ar-3",
+                  "name": "Ada Reel"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "東京の夜",
+              "albumId": "al-3",
+              "artist": "夜の街",
+              "artistId": "ar-4",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "夜の街",
+              "displayArtist": "夜の街",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "J-Pop",
+              "id": "tr-7",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "夜の街/東京の夜/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 21002,
+              "suffix": "mp3",
+              "title": "ネオン",
+              "track": 1,
+              "type": "music",
+              "year": 2015,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-4",
+                  "name": "夜の街"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-4",
+                  "name": "夜の街"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "J-Pop"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "createPlaylist",
+    "params": {
+      "name": "Recorded",
+      "songId": [
+        "tr-1",
+        "tr-2"
+      ]
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "playlist": {
+          "changed": "2026-10-19T21:37:34.000Z",
+          "coverArt": "art-1",
+          "created": "2026-10-19T21:37:34.000Z",
+          "duration": 3,
+          "id": "pl-2",
+          "name": "Recorded",
+          "owner": "admin",
+          "public": false,
+          "readonly": false,
+          "songCount": 2,
+          "entry": [
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 2,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-1",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "0a7c1f7e-6a43-4b8e-9a51-6f0d1f1b2c01",
+              "path": "Sigur Rós/Ágætis byrjun/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 33745,
+              "suffix": "mp3",
+              "title": "Svefn-g-englar",
+              "track": 1,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {
+                "trackGain": -7.25
+              },
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-2",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "Sigur Rós/Ágætis byrjun/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 25667,
+              "suffix": "mp3",
+              "title": "Starálfur",
+              "track": 2,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "updatePlaylist",
+    "params": {
+      "playlistId": "pl-2",
+      "comment": "recorded",
+      "public": false,
+      "songIndexToRemove": [
+        0
+      ],
+      "songIdToAdd": [
+        "tr-1"
+      ]
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1"
+      }
+    }
+  },
+  {
+    "method": "getPlaylists",
+    "params": {},
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "playlists": {
+          "playlist": [
+            {
+              "changed": "2026-10-19T21:37:34.000Z",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "duration": 3,
+              "id": "pl-2",
+              "name": "Recorded",
+              "owner": "admin",
+              "public": false,
+              "readonly": false,
+              "songCount": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "getPlaylist",
+    "params": {
+      "id": "pl-2"
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1",
+        "playlist": {
+          "changed": "2026-10-19T21:37:34.000Z",
+          "coverArt": "art-1",
+          "created": "2026-10-19T21:37:34.000Z",
+          "duration": 3,
+          "id": "pl-2",
+          "name": "Recorded",
+          "owner": "admin",
+          "public": false,
+          "readonly": false,
+          "songCount": 2,
+          "entry": [
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 1,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-2",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "",
+              "path": "Sigur Rós/Ágætis byrjun/1-02.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 25667,
+              "suffix": "mp3",
+              "title": "Starálfur",
+              "track": 2,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {},
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            },
+            {
+              "album": "Ágætis byrjun",
+              "albumId": "al-1",
+              "artist": "Sigur Rós",
+              "artistId": "ar-1",
+              "bitDepth": 0,
+              "bitRate": 128,
+              "channelCount": 1,
+              "comment": "",
+              "contentType": "audio/mpeg",
+              "coverArt": "art-1",
+              "created": "2026-10-19T21:37:34.000Z",
+              "discNumber": 1,
+              "displayAlbumArtist": "Sigur Rós",
+              "displayArtist": "Sigur Rós",
+              "duration": 2,
+              "explicitStatus": "",
+              "genre": "Post-Rock",
+              "id": "tr-1",
+              "isDir": false,
+              "mediaType": "song",
+              "musicBrainzId": "0a7c1f7e-6a43-4b8e-9a51-6f0d1f1b2c01",
+              "path": "Sigur Rós/Ágætis byrjun/1-01.mp3",
+              "playCount": 0,
+              "played": "",
+              "samplingRate": 44100,
+              "size": 33745,
+              "suffix": "mp3",
+              "title": "Svefn-g-englar",
+              "track": 1,
+              "type": "music",
+              "year": 1999,
+              "replayGain": {
+                "trackGain": -7.25
+              },
+              "albumArtists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "artists": [
+                {
+                  "id": "ar-1",
+                  "name": "Sigur Rós"
+                }
+              ],
+              "contributors": [],
+              "genres": [
+                {
+                  "name": "Post-Rock"
+                }
+              ],
+              "movements": [],
+              "works": [],
+              "groupings": [],
+              "moods": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "deletePlaylist",
+    "params": {
+      "id": "pl-2"
+    },
+    "response": {
+      "subsonic-response": {
+        "openSubsonic": true,
+        "serverVersion": "v3.81.0",
+        "status": "ok",
+        "type": "lms",
+        "version": "1.16.1"
+      }
+    }
+  }
+]

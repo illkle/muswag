@@ -122,7 +122,11 @@ const loginFailureMessage = (error: { readonly _tag: string }): string => {
     return NOT_A_SUBSONIC_SERVER;
   }
   if (error instanceof InvalidServerUrl) return "The server address is not a valid http or https address";
-  if (error instanceof SubsonicApiError) return error.code === WRONG_CREDENTIALS ? "Wrong username or password" : `The server refused the login: ${error.message}`;
+  if (error instanceof SubsonicApiError && error.code === WRONG_CREDENTIALS) {
+    // LMS checks a login against an API key its user made, which people take for their password.
+    return error.server === "lms" ? "Wrong username or API key: LMS takes an API key from its settings in place of the password" : "Wrong username or password";
+  }
+  if (error instanceof SubsonicApiError) return `The server refused the login: ${error.message}`;
   // A redirect that was not followed: it leads to another host, or nowhere.
   if (error instanceof SubsonicHttpError && error.location !== undefined) return `This address redirects to ${error.location}. If that is your server, enter its address`;
   if (error instanceof SubsonicHttpError) return `${NOT_A_SUBSONIC_SERVER} (HTTP ${error.status})`;

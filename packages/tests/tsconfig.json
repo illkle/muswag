@@ -5,6 +5,6 @@
     "types": ["node"],
     "customConditions": ["source"]
   },
-  "include": ["test"],
+  "include": ["test", "scripts"],
   "exclude": ["node_modules"]
 }
