@@ -32,18 +32,22 @@ export const triggerNames = (info: MirrorTableInfo, changeLog: string) => ({
  * The capture triggers of a table, which capture the columns of `info`. They are temporary: they belong
  * to the server's connection and are gone with it, so a migration never meets a trigger that names a
  * column it is changing.
+ *
+ * Those of a key-only table log an insert or update as op 'c' with the key alone. Building the row's
+ * JSON is most of what a trigger costs, and the log holds it until main has read it back.
  */
-export function createTriggerSql(info: MirrorTableInfo, changeLog: string): ReadonlyArray<string> {
+export function createTriggerSql(info: MirrorTableInfo, changeLog: string, keyOnly = false): ReadonlyArray<string> {
   const names = triggerNames(info, changeLog);
   const table = `main.${quoteIdentifier(info.name)}`;
   const log = `main.${quoteIdentifier(changeLog)}`;
   const tableLiteral = quoteLiteral(info.name);
   const pk = quoteIdentifier(info.primaryKey.name);
   const changed = info.columns.map(({ name }) => `OLD.${quoteIdentifier(name)} IS NOT NEW.${quoteIdentifier(name)} COLLATE BINARY`).join(" OR ");
+  const upsert = keyOnly ? `'c', NEW.${pk}, NULL` : `'u', NEW.${pk}, ${rowJson(info, "NEW")}`;
 
   return [
     `CREATE TEMP TRIGGER ${quoteIdentifier(names.insert)} AFTER INSERT ON ${table} BEGIN
-  INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, 'u', NEW.${pk}, ${rowJson(info, "NEW")});
+  INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, ${upsert});
 END`,
     // An update that leaves every mirrored column as it was, such as an upsert of an unchanged row or a
     // change to omitted columns only, is not mirrored. A primary-key change is mirrored as a delete of
@@ -51,7 +55,7 @@ END`,
     // column, the key among them, still counts as a change.
     `CREATE TEMP TRIGGER ${quoteIdentifier(names.update)} AFTER UPDATE ON ${table} WHEN ${changed} BEGIN
   INSERT INTO ${log} (tbl, op, key, value) SELECT ${tableLiteral}, 'd', OLD.${pk}, NULL WHERE OLD.${pk} IS NOT NEW.${pk} COLLATE BINARY;
-  INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, 'u', NEW.${pk}, ${rowJson(info, "NEW")});
+  INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, ${upsert});
 END`,
     `CREATE TEMP TRIGGER ${quoteIdentifier(names.delete)} AFTER DELETE ON ${table} BEGIN
   INSERT INTO ${log} (tbl, op, key, value) VALUES (${tableLiteral}, 'd', OLD.${pk}, NULL);

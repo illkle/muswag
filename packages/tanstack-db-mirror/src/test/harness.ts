@@ -131,6 +131,9 @@ export async function createHarness(options: HarnessOptions = {}) {
 
   const clients: Array<ConnectedClient> = [];
 
+  // A key-only table cannot be loaded whole, so its whole-table collection is not started.
+  const keyOnly = new Set(serverOptions.keyOnlyTables ?? []);
+
   const connect = (clientOptions: Partial<Omit<MirrorClientOptions, "transport">> & { latency?: MemoryTransportOptions["latency"] } = {}): ConnectedClient => {
     const { latency, ...rest } = clientOptions;
     const connection = transport.connect({ latency });
@@ -138,8 +141,8 @@ export async function createHarness(options: HarnessOptions = {}) {
     const connected: ConnectedClient = {
       connection,
       client,
-      albums: createCollection(mirrorCollectionOptions({ client, table: albums })),
-      songs: createCollection(mirrorCollectionOptions({ client, table: songs })),
+      albums: createCollection(mirrorCollectionOptions({ client, table: albums, startSync: !keyOnly.has("albums") })),
+      songs: createCollection(mirrorCollectionOptions({ client, table: songs, startSync: !keyOnly.has("songs") })),
     };
     clients.push(connected);
     return connected;
@@ -168,9 +171,9 @@ export async function createHarness(options: HarnessOptions = {}) {
   const insertSongs = (rows: ReadonlyArray<SongRow>) =>
     write(Effect.forEach(rows, (row) => sql.unsafe(`INSERT INTO songs (id, album_id, title, rating, updated_at) VALUES (?, ?, ?, ?, ?)`, [row.id, row.albumId, row.title, row.rating, row.updatedAt])));
 
-  /** Decoded table contents, read through the server's own snapshot path. */
+  /** Decoded table contents, read through the server's own query path, which key-only tables answer too. */
   const dbRows = async (table: "albums" | "songs"): Promise<Array<MirrorRow>> => {
-    const response = await run(server.handle({ v: 1, type: "snapshot", table }));
+    const response = await run(server.handle({ v: 1, type: "query", table }));
     if (!response.ok) throw new Error(response.error.message);
     return sortRows([...(response.result as unknown as { rows: Array<MirrorRow> }).rows]);
   };

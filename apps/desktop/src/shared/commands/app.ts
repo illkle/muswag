@@ -1,18 +1,24 @@
 import {
+  AlbumPageRequest,
   CreatePlaylistInput,
   Id,
   Ids,
+  LibrarySort,
   QueueSourceRef,
   RefreshTarget,
+  SongPageRequest,
+  SongRanges,
   LoginCredentials,
   SyncMode,
   Text,
+  type AlbumPage,
   type ArtistAppearances,
   type AuthSnapshot,
   type PlaylistEntry,
   type PlaylistRecord,
   type PlaylistSyncStatus,
   type SearchResult,
+  type SongPage,
 } from "@muswag/model";
 import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
@@ -33,6 +39,12 @@ export const AppCommandArgs = {
   "library:refresh": Schema.Tuple([RefreshTarget]),
   "library:artistAppearances": Schema.Tuple([Id]),
   "library:search": Schema.Tuple([Text, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 }))]),
+  "library:songPage": Schema.Tuple([LibrarySort, SongPageRequest, Schema.Boolean]),
+  "library:songIds": Schema.Tuple([LibrarySort, SongRanges]),
+  "library:songPosition": Schema.Tuple([LibrarySort, Text]),
+  "library:albumPage": Schema.Tuple([AlbumPageRequest, Schema.Boolean]),
+  "library:artistsWithAlbums": Schema.Tuple([]),
+  "library:albumCoverArts": Schema.Tuple([Ids]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -62,6 +74,18 @@ export type AppCommandResults = {
   "library:artistAppearances": ArtistAppearances;
   /** The best matches for a query, best first; `null` when a later search took its place before it ran. */
   "library:search": SearchResult[] | null;
+  /** A page of the songs list in an order, with how many songs there are when the last argument asks. */
+  "library:songPage": SongPage;
+  /** The ids of the songs at the given positions of the songs list, in list order. */
+  "library:songIds": string[];
+  /** Where in the songs list the first song is whose title, artist or album, as the order goes by, starts at or after the text. */
+  "library:songPosition": number;
+  /** A page of the albums page, newest first, with how many albums there are when the last argument asks. */
+  "library:albumPage": AlbumPage;
+  /** The ids of the artists with an album of their own, which the artists page lists. */
+  "library:artistsWithAlbums": string[];
+  /** The cover art ids of the given albums, leaving out those the library does not have, in no particular order. */
+  "library:albumCoverArts": Array<{ id: string; coverArt: string | null }>;
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;

@@ -3,6 +3,7 @@ import type { BaseCollectionConfig, CollectionConfig, SyncConfig, UtilsRecord } 
 import type { MirrorChangeBatch, MirrorPosition, MirrorRow } from "../protocol.js";
 import { tableAccess, type AnyMirrorTable, type MirrorKeyOf, type MirrorRowOf } from "../table.js";
 import { internStrings, type Interned } from "./intern.js";
+import { onDemandSync } from "./on-demand.js";
 import { attachCollectionHandle, MirrorClientDisposedError, MirrorTimeoutError, type MirrorClient } from "./mirror-client.js";
 
 const RETRY_BASE_DELAY_MS = 500;
@@ -21,7 +22,7 @@ export type MirroredRowOf<TTable extends AnyMirrorTable, TOmit extends keyof Mir
 
 export type MirrorCollectionConfig<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never> = Omit<
   BaseCollectionConfig<MirroredRowOf<TTable, TOmit>, MirrorKeyOf<TTable>, never, MirrorCollectionUtils>,
-  "getKey" | "onInsert" | "onUpdate" | "onDelete" | "syncMode" | "schema" | "utils"
+  "getKey" | "onInsert" | "onUpdate" | "onDelete" | "schema" | "utils"
 > & {
   readonly client: MirrorClient;
   readonly table: TTable;
@@ -60,6 +61,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
   type Key = MirrorKeyOf<TTable>;
 
   const { client, table, readOnly = false, omit: _omit, ...collectionConfig } = config;
+  const onDemand = config.syncMode === "on-demand";
   const info = tableAccess(table);
   const primaryKey = info.primaryKey;
   const id = config.id ?? `mirror:${info.name}`;
@@ -78,6 +80,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
     }
   };
   const tracker = new PositionTracker();
+  let reportedKeyOnly = false;
 
   const sync: SyncConfig<Row, Key> = {
     rowUpdateMode: "full",
@@ -106,6 +109,11 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
             if (change.type === "delete") {
               write({ type: "delete", key: change.key as Key });
               syncedKeys.delete(change.key as Key);
+            } else if (change.type === "changed") {
+              // The server sends this table's changes without their rows, which a whole mirror cannot
+              // apply: the table is meant to be read on demand.
+              if (!reportedKeyOnly) console.error(`[tanstack-db-mirror] "${id}" mirrors "${info.name}" whole, but the server sends its changes as keys only; use syncMode "on-demand"`);
+              reportedKeyOnly = true;
             } else {
               const value = decode(change.value, interned);
               if (value === undefined) continue;
@@ -209,6 +217,20 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
   };
 
   const getKey = (row: Row) => (row as Record<string, unknown>)[primaryKey] as Key;
+  const onDemandConfig = onDemand
+    ? onDemandSync<Row, Key>({
+        client,
+        table: info.name,
+        getKey,
+        decode,
+        onPosition: (position) => (tracker.current ? tracker.advance(position.seq) : tracker.loaded(position)),
+        onInvalidate: () => tracker.invalidate(),
+        onCleanup: () => {
+          tracker.invalidate();
+          tracker.rejectAll(new MirrorClientDisposedError());
+        },
+      })
+    : undefined;
   const persist = (params: { transaction: { mutations: ReadonlyArray<any> } }) => client.applyTransaction(params.transaction);
   const awaitPosition: MirrorCollectionUtils["awaitPosition"] = (position, timeoutMs) => {
     // The position may come from a restarted server, or its last batch may have been lost.
@@ -222,7 +244,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
     ...collectionConfig,
     id,
     getKey,
-    sync,
+    sync: onDemandConfig ?? sync,
     startSync: collectionConfig.startSync ?? true,
     ...(!readOnly && { onInsert: persist, onUpdate: persist, onDelete: persist }),
     utils: { awaitPosition },

@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 import type { SearchHit } from "@muswag/model";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 
-import { SEARCHED_COLUMNS, SEARCHED_TABLES, type SearchedChange, type SearchedLibrary, type SearchedRow } from "./searched-fields";
+import { SEARCHED_COLUMNS, SEARCHED_TABLES, type SearchedLibrary, type SearchedRow, type SearchWorkerChange } from "./searched-fields";
 import type { SearchWorkerData, SearchWorkerReply, SearchWorkerRequest } from "./search-worker";
 
 export interface LibrarySearchOptions {
@@ -16,10 +16,13 @@ export interface LibrarySearchOptions {
 
 type Search = { readonly query: string; readonly limit: number; readonly resolve: (hits: SearchHit[] | null) => void; readonly reject: (cause: unknown) => void };
 
-/** The fields of a change that the index looks at, or nothing for a change to another table. */
-const searchedChange = (change: MirrorChangeBatch["changes"][number]): SearchedChange[] => {
+/**
+ * The fields of a change that the index looks at, or nothing for a change to another table. A change
+ * of a song or an album carries only its id, which goes to the worker as it is: the worker reads the row.
+ */
+const searchedChange = (change: MirrorChangeBatch["changes"][number]): SearchWorkerChange[] => {
   if (!SEARCHED_TABLES.has(change.table)) return [];
-  if (change.type === "delete") return [{ table: change.table, type: "delete", key: String(change.key) }];
+  if (change.type !== "upsert") return [{ table: change.table, type: change.type, key: String(change.key) }];
   const columns = SEARCHED_COLUMNS[change.table as keyof SearchedLibrary];
   const value = Object.fromEntries(["id", ...columns].map((column) => [column, change.value[column]])) as SearchedRow;
   return [{ table: change.table, type: "upsert", value }];

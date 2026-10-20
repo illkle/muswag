@@ -50,5 +50,29 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1792319159000,
     "hash": "cb47d9a722b58c06a76771ef75c21be300397795447c45dc8825a60c25d9f5ae",
     "name": "20261018102559_library_sync_rework"
+  },
+  {
+    "sql": [
+      "ALTER TABLE `songs` ADD `artistOrderKey` text DEFAULT '' NOT NULL;",
+      "\nALTER TABLE `songs` ADD `albumOrderKey` text DEFAULT '' NOT NULL;",
+      "\n-- The songs already stored get keys as near to `albumOrderKey` and `artistOrderKey` as SQLite comes: it\n-- lowercases only ASCII, keeps accents and trims only spaces. Until the next full sync rewrites each song\n-- whose key differs, a few are out of place. The keys are written before the indexes are built.\nUPDATE `songs` SET `albumOrderKey` = lower(trim(ifnull(`album`, ''))) || char(1) || ifnull(`albumId`, '') || char(1)\n  || CASE WHEN `discNumber` IS NULL THEN '' ELSE printf('%06d', max(0, `discNumber`)) END || char(1)\n  || CASE WHEN `track` IS NULL THEN '' ELSE printf('%06d', max(0, `track`)) END;",
+      "\nUPDATE `songs` SET `artistOrderKey` = lower(trim(ifnull(`artist`, ''))) || char(1) || `albumOrderKey`;",
+      "\nCREATE INDEX `songs_artist_sort` ON `songs` (`artistOrderKey`,`id`);",
+      "\nCREATE INDEX `songs_album_sort` ON `songs` (`albumOrderKey`,`id`);"
+    ],
+    "bps": true,
+    "folderMillis": 1792442434000,
+    "hash": "841e3e88b8b02cd69d10ec2cae2c1db48d65fbfc3809343bd6036b81095b7a27",
+    "name": "20261019204034_songs_order_keys"
+  },
+  {
+    "sql": [
+      "CREATE INDEX `albums_year` ON `albums` (\"year\" desc,`id`);",
+      "\nCREATE INDEX `albums_artist_id` ON `albums` (`artistId`);"
+    ],
+    "bps": true,
+    "folderMillis": 1792446728000,
+    "hash": "a4aa2c61bbf14262121742ab0bd91c89596e8a8022c37496c8e8671fb2b7a6e5",
+    "name": "20261019215208_albums_orders"
   }
 ];

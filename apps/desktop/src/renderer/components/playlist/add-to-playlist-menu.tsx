@@ -6,18 +6,19 @@ import { openNewPlaylistDialog } from "#/components/playlist/new-playlist-dialog
 import { ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { failureNotice } from "#/lib/notify";
 
-export function AddToPlaylistMenu({ songIds }: { songIds: readonly string[] }) {
+/** Adds `count` songs to a playlist. Their ids are asked for once one is picked: a list that holds only the rows in view has to ask main for them. */
+export function AddToPlaylistMenu({ count, songIds }: { count: number; songIds: () => Promise<readonly string[]> }) {
   const { playlists } = usePlaylists();
 
   const writable = playlists.filter(({ readonly }) => !readonly);
-  const nothingToAdd = songIds.length === 0;
-  const what = songIds.length === 1 ? "song" : "songs";
+  const nothingToAdd = count === 0;
+  const what = count === 1 ? "song" : "songs";
 
   return (
     <>
       <ContextMenuGroup>
         <ContextMenuLabel>
-          Add {songIds.length} {what} to
+          Add {count} {what} to
         </ContextMenuLabel>
 
         {writable.length === 0 ? (
@@ -28,7 +29,11 @@ export function AddToPlaylistMenu({ songIds }: { songIds: readonly string[] }) {
               key={playlist.id}
               disabled={nothingToAdd}
               // The menu is gone by the time this can fail, so the failure is a notice.
-              onClick={() => void PlaylistActions.addSongs(playlist.id, songIds).catch(failureNotice(`The ${what} could not be added to “${playlist.name}”.`))}
+              onClick={() =>
+                void songIds()
+                  .then((ids) => PlaylistActions.addSongs(playlist.id, ids))
+                  .catch(failureNotice(`The ${what} could not be added to “${playlist.name}”.`))
+              }
             >
               <span className="truncate">{playlist.name}</span>
             </ContextMenuItem>
@@ -37,7 +42,7 @@ export function AddToPlaylistMenu({ songIds }: { songIds: readonly string[] }) {
       </ContextMenuGroup>
 
       <ContextMenuSeparator />
-      <ContextMenuItem disabled={nothingToAdd} onClick={() => openNewPlaylistDialog(songIds)}>
+      <ContextMenuItem disabled={nothingToAdd} onClick={() => void songIds().then(openNewPlaylistDialog, failureNotice(`The ${what} could not be read.`))}>
         <PlusIcon className="size-4" />
         New playlist...
       </ContextMenuItem>

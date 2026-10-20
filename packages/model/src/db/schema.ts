@@ -1,3 +1,4 @@
+import { desc } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import type { ArtistID3, Contributor, DiscTitle, ItemDate, ItemGenre, MediaType, RecordLabel, ReplayGain } from "../api/subsonic-api-schema.js";
@@ -24,46 +25,59 @@ export const artists = sqliteTable("artists", {
   coverArtPath: text(),
 });
 
-export const albums = sqliteTable("albums", {
-  id: text().primaryKey(),
-  name: text().notNull(),
-  artist: text(),
-  artistId: text(),
-  coverArt: text(),
-  created: text().notNull(),
-  duration: real().notNull(),
-  genre: text(),
-  playCount: real(),
-  songCount: integer().notNull(),
-  starred: text(),
-  year: integer(),
-  version: text(),
-  played: text(),
-  userRating: real(),
-  recordLabels: json<ReadonlyArray<RecordLabel>>(),
-  musicBrainzId: text(),
-  genres: json<ReadonlyArray<ItemGenre>>(),
-  artists: json<ReadonlyArray<ArtistID3>>(),
-  displayArtist: text(),
-  releaseTypes: json<ReadonlyArray<string>>(),
-  moods: json<ReadonlyArray<string>>(),
-  sortName: text(),
-  originalReleaseDate: json<ItemDate>(),
-  releaseDate: json<ItemDate>(),
-  isCompilation: integer({ mode: "boolean" }),
-  explicitStatus: text(),
-  discTitles: json<ReadonlyArray<DiscTitle>>(),
-  /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
-  coverArtPath: text(),
-});
+export const albums = sqliteTable(
+  "albums",
+  {
+    id: text().primaryKey(),
+    name: text().notNull(),
+    artist: text(),
+    artistId: text(),
+    coverArt: text(),
+    created: text().notNull(),
+    duration: real().notNull(),
+    genre: text(),
+    playCount: real(),
+    songCount: integer().notNull(),
+    starred: text(),
+    year: integer(),
+    version: text(),
+    played: text(),
+    userRating: real(),
+    recordLabels: json<ReadonlyArray<RecordLabel>>(),
+    musicBrainzId: text(),
+    genres: json<ReadonlyArray<ItemGenre>>(),
+    artists: json<ReadonlyArray<ArtistID3>>(),
+    displayArtist: text(),
+    releaseTypes: json<ReadonlyArray<string>>(),
+    moods: json<ReadonlyArray<string>>(),
+    sortName: text(),
+    originalReleaseDate: json<ItemDate>(),
+    releaseDate: json<ItemDate>(),
+    isCompilation: integer({ mode: "boolean" }),
+    explicitStatus: text(),
+    discTitles: json<ReadonlyArray<DiscTitle>>(),
+    /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
+    coverArtPath: text(),
+  },
+  (table) => [
+    // The order of the albums page, which renderers read by the page: newest first, and SQLite puts a missing year last going down.
+    index("albums_year").on(desc(table.year), table.id),
+    // An artist's page, its discography and the artists that have albums.
+    index("albums_artist_id").on(table.artistId),
+  ],
+);
 
 export const songs = sqliteTable(
   "songs",
   {
     id: text().primaryKey(),
     title: text().notNull(),
-    /** What the alphabetical order of the library sorts by, made from the title by `titleSortKey`. */
+    /** What the library's order by title sorts by, made from the title by `sortKey`. */
     titleSortKey: text().notNull().default(""),
+    /** What the order by artist sorts by: `artistOrderKey`. */
+    artistOrderKey: text().notNull().default(""),
+    /** What the order by album sorts by: `albumOrderKey`. */
+    albumOrderKey: text().notNull().default(""),
     isDir: integer({ mode: "boolean" }).notNull(),
     album: text(),
     albumId: text(),
@@ -109,7 +123,12 @@ export const songs = sqliteTable(
     replayGain: json<ReplayGain>(),
     explicitStatus: text(),
   },
-  (table) => [index("songs_album_id").on(table.albumId), index("songs_title_sort").on(table.titleSortKey, table.id)],
+  (table) => [
+    index("songs_album_id").on(table.albumId),
+    index("songs_title_sort").on(table.titleSortKey, table.id),
+    index("songs_artist_sort").on(table.artistOrderKey, table.id),
+    index("songs_album_sort").on(table.albumOrderKey, table.id),
+  ],
 );
 
 /**

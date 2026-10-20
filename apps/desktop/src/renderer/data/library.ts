@@ -1,4 +1,4 @@
-import { albums, artists, MAIN_ONLY_SONG_COLUMNS, playlists, queueItems, queueState, songs } from "@muswag/model";
+import { albums, artists, MAIN_ONLY_ALBUM_COLUMNS, MAIN_ONLY_SONG_COLUMNS, playlists, queueItems, queueState, songs } from "@muswag/model";
 import { createMirrorClient, mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
 import { createElectronRendererTransport } from "@muswag/tanstack-db-mirror/electron/renderer";
 import { BasicIndex, createCollection } from "@tanstack/react-db";
@@ -10,13 +10,19 @@ export const mirrorClient = createMirrorClient({ transport: createElectronRender
 const options = { client: mirrorClient, defaultIndexType: BasicIndex, readOnly: true, gcTime: 0 } as const;
 
 export const db = {
-  albums: createCollection(mirrorCollectionOptions({ ...options, table: albums })),
+  /**
+   * Only the albums the pages that are open ask for, read from main as they ask and read again when
+   * albums change, as the songs are. The albums page reads its own pages (`library/album-rows.ts`).
+   */
+  albums: createCollection(mirrorCollectionOptions({ ...options, table: albums, omit: MAIN_ONLY_ALBUM_COLUMNS, syncMode: "on-demand", autoIndex: "eager" })),
   artists: createCollection(mirrorCollectionOptions({ ...options, table: artists })),
   /**
-   * Without the columns only main reads (`LibrarySong`). The largest table by far, so it loads when
-   * something first reads it, a page or the search, rather than with the window.
+   * Only the songs the pages that are open ask for: an album's, an artist's, a playlist's, read from main
+   * as they ask and read again when songs change. The library is far too large to hold, and the songs
+   * page reads its own pages (`library/song-rows.ts`). Without the columns only main reads (`LibrarySong`).
+   * Its indexes are made by the queries, which make them compare as they do.
    */
-  songs: createCollection(mirrorCollectionOptions({ ...options, table: songs, omit: MAIN_ONLY_SONG_COLUMNS, startSync: false })),
+  songs: createCollection(mirrorCollectionOptions({ ...options, table: songs, omit: MAIN_ONLY_SONG_COLUMNS, syncMode: "on-demand", autoIndex: "eager" })),
   playlists: createCollection(mirrorCollectionOptions({ ...options, table: playlists })),
   /** The playback queue; read it through the hooks in `queue/queue.ts`. */
   queueItems: createCollection(mirrorCollectionOptions({ ...options, table: queueItems })),
@@ -25,10 +31,5 @@ export const db = {
 
 export type LibraryCollections = typeof db;
 
-// Without an index a lookup scans its table, and a page makes one for every row it shows: the album of
-// each track in a list. An index keeps a set of keys for each value, so a song is looked up by its key
-// with `get` instead, rather than with an index on `id` costing a set for every song.
-db.albums.createIndex(({ id }) => id);
-db.albums.createIndex(({ artistId }) => artistId);
-db.songs.createIndex(({ albumId }) => albumId);
+// Without an index a lookup scans its table.
 db.playlists.createIndex(({ id }) => id);

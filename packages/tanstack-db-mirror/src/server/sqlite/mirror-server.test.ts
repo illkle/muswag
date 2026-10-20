@@ -316,6 +316,85 @@ describe("omitted columns", () => {
   });
 });
 
+describe("key-only tables", () => {
+  it("capture inserts and updates as keys without values, and deletes as before", async () => {
+    harness = await createHarness({ server: { keyOnlyTables: ["songs"] } });
+    await harness.insertAlbums([album("a1")]);
+    const { seq } = await harness.run(harness.server.position);
+    const log = record(harness);
+
+    await harness.insertSongs([song(1, "a1"), song(2, "a1")]);
+    await harness.exec(`UPDATE songs SET title = 'Renamed' WHERE id = 1`);
+    await harness.exec(`UPDATE songs SET id = 3 WHERE id = 2`);
+    await harness.exec(`INSERT INTO songs (id, album_id, title, rating) VALUES (1, 'a1', 'Upserted', 3) ON CONFLICT(id) DO UPDATE SET title = excluded.title`);
+    await harness.exec(`DELETE FROM songs WHERE id = 1`);
+    await harness.exec(`UPDATE albums SET name = 'Renamed' WHERE id = 'a1'`);
+
+    const expected = [
+      { table: "songs", type: "changed", key: 1 },
+      { table: "songs", type: "changed", key: 2 },
+      { table: "songs", type: "changed", key: 1 },
+      { table: "songs", type: "delete", key: 2 },
+      { table: "songs", type: "changed", key: 3 },
+      { table: "songs", type: "changed", key: 1 },
+      { table: "songs", type: "delete", key: 1 },
+      // Other tables still carry their rows.
+      { table: "albums", type: "upsert", key: "a1", value: album("a1", { name: "Renamed" }) },
+    ];
+    expect(withoutSeq(log.changes())).toEqual(expected);
+    expect(withoutSeq(pulledBatch(await request(harness, { type: "pull", fromSeq: seq })).changes)).toEqual(expected);
+    // Nothing of the songs' rows is written to the log.
+    expect(await harness.run(harness.sql.unsafe(`SELECT count(*) AS count FROM __mirror_changes WHERE tbl = 'songs' AND value IS NOT NULL`))).toEqual([{ count: 0 }]);
+  });
+
+  it("capture nothing for an update that leaves every mirrored column as it was", async () => {
+    harness = await createHarness({ server: { keyOnlyTables: ["songs"], omitColumns: { songs: ["updatedAt"] } } });
+    await harness.insertAlbums([album("a1")]);
+    await harness.insertSongs([song(1, "a1")]);
+    const log = record(harness);
+
+    await harness.exec(`UPDATE songs SET title = title, rating = rating`);
+    await harness.exec(`UPDATE songs SET updated_at = 5`);
+    expect(log.batches).toEqual([]);
+
+    await harness.exec(`UPDATE songs SET title = 'SONG 1'`);
+    expect(withoutSeq(log.changes())).toEqual([{ table: "songs", type: "changed", key: 1 }]);
+  });
+
+  it("are refused as snapshots but answer queries and counts", async () => {
+    harness = await createHarness({ server: { keyOnlyTables: ["songs"] } });
+    await harness.insertAlbums([album("a1"), album("a2")]);
+    await harness.insertSongs([song(1, "a1", { title: "C" }), song(2, "a2", { title: "B" }), song(3, "a1", { title: "A" }), song(4, "a1", { title: "D" })]);
+    const position = await harness.run(harness.server.position);
+
+    expectError(await request(harness, { type: "snapshot", table: "songs" }), "MirrorRequestError", /key-only: clients read it on demand/);
+    const where = {
+      type: "func",
+      name: "eq",
+      args: [
+        { type: "ref", path: ["albumId"] },
+        { type: "val", value: "a1" },
+      ],
+    };
+    expect(await request(harness, { type: "query", table: "songs", where, orderBy: [{ property: "title", direction: "asc", nulls: "last" }], limit: 2, offset: 1 })).toEqual({
+      ok: true,
+      result: { ...position, rows: [song(1, "a1", { title: "C" }), song(4, "a1", { title: "D" })] },
+    });
+    expect(await request(harness, { type: "count", table: "songs", where })).toEqual({ ok: true, result: { ...position, count: 3 } });
+    // A row read from the table holds null, never undefined, for a missing value, as the client sees it too.
+    const undefinedRating = { type: "func", name: "isUndefined", args: [{ type: "ref", path: ["updatedAt"] }] };
+    expect(await request(harness, { type: "count", table: "songs", where: undefinedRating })).toEqual({ ok: true, result: { ...position, count: 0 } });
+  });
+
+  it("must be mirrored", async () => {
+    harness = await createHarness();
+    const exit = await harness.run(Effect.exit(Effect.scoped(SqliteMirror.make({ tables: [albums], keyOnlyTables: ["songs"], changeLogTable: "key_only_changes" }))));
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+    expect(error).toBeInstanceOf(MirrorSchemaError);
+    expect((error as Error).message).toMatch(/"songs" is listed as key-only, but it is not mirrored/);
+  });
+});
+
 describe("write", () => {
   it("broadcasts nothing for a rolled-back write", async () => {
     harness = await createHarness();

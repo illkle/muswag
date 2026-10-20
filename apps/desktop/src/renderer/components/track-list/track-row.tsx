@@ -46,6 +46,7 @@ export const TrackRow = memo(function TrackRow({
       aria-rowindex={rowIndex}
       aria-selected={isSelected}
       data-track-key={item.key}
+      data-track-position={position}
       data-selected={isSelected || undefined}
       data-playing={isPlaying || undefined}
       data-cursor={isCursor || undefined}
