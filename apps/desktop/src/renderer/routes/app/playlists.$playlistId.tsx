@@ -13,13 +13,14 @@ import { totalDuration } from "#/playlists/rows";
 import { usePlaylist } from "#/playlists/queries";
 import { usePlaylistSongsRefresh } from "#/library/page-refresh";
 import { libraryColumns } from "#/components/track-list/columns";
-import { TrackList } from "#/components/track-list/track-list";
+import { songDragOf, TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
+import type { SongDrag } from "#/lib/song-drag";
 import { songRow, playlistOccurrenceKey } from "@muswag/model";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -67,12 +68,27 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
 
   const playFrom = (key: string) => void QueueActions.playSource({ type: "playlist", playlistId }, key).catch(failureNotice("The playlist could not be played."));
 
+  /** The entries of the selected rows, in playlist order. */
+  const entryIdsOf = (selection: TrackSelection) => {
+    const keys = new Set(selection.items.map(({ key }) => key));
+    return rows.flatMap(({ entryId }) => (keys.has(playlistOccurrenceKey(playlistId, entryId)) ? [entryId] : []));
+  };
+  // What the playlist is called in `SongDrag.rows`: its own rows dropped back in it move.
+  const list = `playlist:${playlistId}`;
+  /** Puts dragged songs before the entry `beforeEntryId`, or at the end: the playlist's own entries move there, and anything else is added there. */
+  const dropAt = (drag: SongDrag, beforeEntryId: string | null) => {
+    const placed =
+      drag.rows?.list === list
+        ? PlaylistActions.moveEntries(playlistId, drag.rows.keys, beforeEntryId)
+        : drag.songIds().then((songIds) => PlaylistActions.addSongs(playlistId, songIds, beforeEntryId));
+    void placed.catch(failureNotice("The songs could not be put in the playlist."));
+  };
+
   const removeEntries = async (entryIds: readonly string[]) => {
     for (const entryId of entryIds) await PlaylistActions.removeEntry(playlistId, entryId);
   };
   const removeSelected = (selection: TrackSelection) => {
-    const keys = new Set(selection.items.map(({ key }) => key));
-    const entryIds = rows.flatMap(({ entryId }) => (keys.has(playlistOccurrenceKey(playlistId, entryId)) ? [entryId] : []));
+    const entryIds = entryIdsOf(selection);
     // The row may be far from the header and the menu is closed, so a failure is a notice.
     void removeEntries(entryIds).catch(failureNotice(`The ${entryIds.length === 1 ? "song" : "songs"} could not be removed from the playlist.`));
   };
@@ -88,6 +104,18 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           onActivate={(item) => {
             if (!item.unavailable) playFrom(item.key);
           }}
+          {...(canEdit
+            ? {
+                dragOf: (selection: TrackSelection) => ({ ...songDragOf(selection), rows: { list, keys: entryIdsOf(selection) } }),
+                drop: {
+                  list,
+                  // Not into itself.
+                  accepts: (drag: SongDrag) => drag.playlistId !== playlistId,
+                  gapAt: (index: number, after: boolean) => (after ? index + 1 : index),
+                  onDrop: (drag: SongDrag, gap: number) => dropAt(drag, rows[gap]?.entryId ?? null),
+                },
+              }
+            : {})}
           menu={(selection) => (
             <>
               <TrackMenuAddItems selection={selection} />

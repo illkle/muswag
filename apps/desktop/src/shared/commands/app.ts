@@ -45,18 +45,21 @@ export const AppCommandArgs = {
   "library:albumPage": Schema.Tuple([AlbumPageRequest, Schema.Boolean]),
   "library:artistsWithAlbums": Schema.Tuple([]),
   "library:albumCoverArts": Schema.Tuple([Ids]),
+  "library:albumSongIds": Schema.Tuple([Ids]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
   "playlists:setVisibility": Schema.Tuple([Id, Schema.Boolean]),
   "playlists:addEntries": Schema.Tuple([Id, Ids, Schema.NullOr(Id)]),
   "playlists:removeEntry": Schema.Tuple([Id, Id]),
+  "playlists:moveEntries": Schema.Tuple([Id, Ids, Schema.NullOr(Id)]),
   "playlists:delete": Schema.Tuple([Id]),
   "playlists:sync": Schema.Tuple([]),
   "queue:playSource": Schema.Tuple([QueueSourceRef, Id]),
   "queue:select": Schema.Tuple([Id]),
   "queue:play": Schema.Tuple([]),
-  "queue:enqueue": Schema.Tuple([Ids]),
+  "queue:enqueue": Schema.Tuple([Ids, Schema.NullOr(Id)]),
+  "queue:moveQueued": Schema.Tuple([Ids, Schema.NullOr(Id)]),
   "queue:removeQueued": Schema.Tuple([Id]),
   "queue:next": Schema.Tuple([]),
   "queue:previous": Schema.Tuple([]),
@@ -86,18 +89,22 @@ export type AppCommandResults = {
   "library:artistsWithAlbums": string[];
   /** The cover art ids of the given albums, leaving out those the library does not have, in no particular order. */
   "library:albumCoverArts": Array<{ id: string; coverArt: string | null }>;
+  /** The songs of the given albums, album after album in the order given, each album's in the order its page lists them. */
+  "library:albumSongIds": string[];
   "playlists:create": Written<PlaylistRecord>;
   "playlists:rename": Written;
   "playlists:setComment": Written;
   "playlists:setVisibility": Written;
   "playlists:addEntries": Written<PlaylistEntry[]>;
   "playlists:removeEntry": Written;
+  "playlists:moveEntries": Written;
   "playlists:delete": Written;
   "playlists:sync": PlaylistSyncStatus;
   "queue:playSource": void;
   "queue:select": void;
   "queue:play": void;
   "queue:enqueue": void;
+  "queue:moveQueued": void;
   "queue:removeQueued": void;
   "queue:next": void;
   "queue:previous": void;

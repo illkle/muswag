@@ -425,6 +425,18 @@ describe("LibraryQueries albums list", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("reads the songs of albums, album after album as asked, each in the order its page lists them", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [apiAlbum("one"), apiAlbum("two")],
+        songs: [apiSong("one-2", "one", { track: 2 }), apiSong("two-1", "two", { track: 1 }), apiSong("one-1", "one", { track: 1 })],
+      });
+
+      expect(yield* LibraryQueries.albumSongIds(["two", "gone", "one"])).toEqual(["two-1", "one-1", "one-2"]);
+      expect(yield* LibraryQueries.albumSongIds([])).toEqual([]);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("reads the cover art ids of the albums asked for that the library has", () =>
     Effect.gen(function* () {
       yield* seed({ albums: [apiAlbum("covered", { coverArt: "al-covered" }), apiAlbum("bare"), apiAlbum("other", { coverArt: "al-other" })] });

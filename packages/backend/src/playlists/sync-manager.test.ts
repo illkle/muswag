@@ -153,7 +153,7 @@ async function createDb(records: PlaylistRecord[] = []) {
     rename: (id: string, name: string) => run(commands.rename(id, name)),
     addEntry: (id: string, songId: string) => run(commands.addEntries(id, [songId])).then(([entry]) => entry!),
     removeEntry: (id: string, entryId: string) => run(commands.removeEntry(id, entryId)),
-    moveEntry: (id: string, entryId: string, beforeEntryId: string | null) => run(commands.moveEntry(id, entryId, beforeEntryId)),
+    moveEntries: (id: string, entryIds: readonly string[], beforeEntryId: string | null) => run(commands.moveEntries(id, entryIds, beforeEntryId)),
     delete: (id: string) => run(commands.delete(id)),
     get: (id: string) => run(rowOf(playlists, id)),
     all: () => run(Db.use((db) => db.select().from(playlists))),
@@ -987,7 +987,7 @@ describe("playlist sync manager", () => {
     api.updatePlaylistCalls.length = 0;
 
     const entries = (await db.get("server-1"))!.local!.entries;
-    await db.moveEntry("server-1", entries[2]!.id, entries[0]!.id);
+    await db.moveEntries("server-1", [entries[2]!.id], entries[0]!.id);
     await manager.sync();
 
     expect(api.updatePlaylistCalls).toHaveLength(1);

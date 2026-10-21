@@ -5,14 +5,55 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { openNewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { Button } from "#/components/ui/button";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "#/components/ui/sidebar";
+import { db } from "#/data/library";
 import { getErrorMessage } from "#/lib/err";
+import { failureNotice } from "#/lib/notify";
+import { startSongDrag, useSongDrop } from "#/lib/song-drag";
+import { cn } from "#/lib/utils";
 import { PlaylistActions } from "#/playlists/actions";
-import { usePlaylists, usePlaylistSyncStatus } from "#/playlists/queries";
+import { usePlaylists, usePlaylistSyncStatus, type PlaylistSummary } from "#/playlists/queries";
+
+/** A playlist of the sidebar: it opens the playlist, takes songs dropped on it unless it is read-only, and drags its songs. */
+function SidebarPlaylist({ playlist }: { playlist: PlaylistSummary }) {
+  const matchRoute = useMatchRoute();
+  const navigate = useNavigate();
+  const active = Boolean(matchRoute({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } }));
+  const drop = useSongDrop(
+    (drag) =>
+      void drag
+        .songIds()
+        .then((songIds) => PlaylistActions.addSongs(playlist.id, songIds))
+        .catch(failureNotice(`The songs could not be added to “${playlist.name}”.`)),
+    // A whole playlist goes into another only on that playlist's page, where it lands where it is dropped.
+    { disabled: playlist.readonly, accepts: (drag) => drag.playlistId === undefined },
+  );
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={active}
+        onClick={() => navigate({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } })}
+        draggable={playlist.songCount > 0}
+        onDragStart={(event) =>
+          startSongDrag(event, {
+            label: playlist.name,
+            playlistId: playlist.id,
+            // The entries as they are when the songs are dropped.
+            songIds: () => Promise.resolve(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId) ?? []),
+          })
+        }
+        className={cn(drop.over && "bg-sidebar-accent ring-2 ring-brand ring-inset")}
+        {...drop.props}
+      >
+        <PlaylistIcon weight={active ? "fill" : "regular"} />
+        <span>{playlist.name}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
 
 /** The library's playlists, as a scrollable list filling whatever height is left below the nav. */
 export function SidebarPlaylists() {
-  const matchRoute = useMatchRoute();
-  const navigate = useNavigate();
   const { playlists, isLoading, isError } = usePlaylists();
   const syncStatus = usePlaylistSyncStatus();
 
@@ -44,18 +85,9 @@ export function SidebarPlaylists() {
         {!isLoading && !isError && playlists.length === 0 ? <p className="px-2 py-1 text-xs text-sidebar-foreground/60">No playlists yet.</p> : null}
 
         <SidebarMenu>
-          {playlists.map((playlist) => {
-            const active = Boolean(matchRoute({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } }));
-
-            return (
-              <SidebarMenuItem key={playlist.id}>
-                <SidebarMenuButton isActive={active} onClick={() => navigate({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id } })}>
-                  <PlaylistIcon weight={active ? "fill" : "regular"} />
-                  <span>{playlist.name}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            );
-          })}
+          {playlists.map((playlist) => (
+            <SidebarPlaylist key={playlist.id} playlist={playlist} />
+          ))}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>

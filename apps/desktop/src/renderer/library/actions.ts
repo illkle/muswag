@@ -22,4 +22,6 @@ export const LibraryActions = {
   artistsWithAlbums: () => appCommand("library:artistsWithAlbums"),
   /** The cover art ids of the albums in `ids` that the library has, for the covers of their songs. */
   albumCoverArts: (ids: ReadonlyArray<string>) => appCommand("library:albumCoverArts", ids),
+  /** The songs of the albums `ids`, album after album, each album's as its page lists them. */
+  albumSongIds: (ids: ReadonlyArray<string>) => appCommand("library:albumSongIds", ids),
 };
