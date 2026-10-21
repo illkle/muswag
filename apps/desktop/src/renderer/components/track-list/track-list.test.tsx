@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { songRow } from "@muswag/model";
@@ -565,5 +565,44 @@ describe("TrackList of rows it loads as they are shown", () => {
     expect(onActivate).not.toHaveBeenCalled();
     fireEvent.doubleClick(positionRow(1));
     expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ key: "library:s1" }));
+  });
+
+  it("drags the selection from a selected row, and only the row from another, and drops between the rows", async () => {
+    const items = [track("a", "song-a", "A"), track("b", "song-b", "B"), track("c", "song-c", "C")];
+    const onDrop = vi.fn();
+    const { container } = render(<TrackList items={items} columns={columns} drop={{ gapAt: (index, after) => (after ? index + 1 : index), onDrop }} />);
+    const list = container.firstElementChild as HTMLElement;
+    // jsdom has no DataTransfer; this carries the types from the start of a drag to its drop, as the browser's would.
+    const dataTransfer = { types: [] as string[], setData: (type: string) => dataTransfer.types.push(type), setDragImage: () => {}, clearData: () => {}, effectAllowed: "", dropEffect: "" };
+
+    fireEvent.click(row("a"));
+    fireEvent.click(row("b"), { shiftKey: true });
+    fireEvent.dragStart(row("c"), { dataTransfer });
+    expect(selectedKeys()).toEqual(["c"]);
+
+    fireEvent.click(row("a"));
+    fireEvent.click(row("b"), { shiftKey: true });
+    fireEvent.dragStart(row("b"), { dataTransfer });
+    expect(selectedKeys()).toEqual(["a", "b"]);
+
+    // Rows are 48 pixels high: 60 is in the upper half of the second. jsdom has no DragEvent to carry where the pointer is.
+    const at60 = (event: Event) => Object.defineProperty(event, "clientY", { value: 60 });
+    fireEvent(list, at60(createEvent.dragOver(list, { dataTransfer })));
+    expect(container.querySelector(".bg-brand")).not.toBeNull();
+    // Dragend bubbles from the source, even when that is outside the drop target.
+    fireEvent.dragEnd(window);
+    expect(container.querySelector(".bg-brand")).toBeNull();
+    fireEvent(list, at60(createEvent.dragOver(list, { dataTransfer })));
+    // Leaving the list takes the line away; moving onto a row does not.
+    const leaveTo = (to: Element | null) => fireEvent(list, Object.defineProperty(createEvent.dragLeave(list, { dataTransfer }), "relatedTarget", { value: to }));
+    leaveTo(row("a"));
+    expect(container.querySelector(".bg-brand")).not.toBeNull();
+    leaveTo(null);
+    expect(container.querySelector(".bg-brand")).toBeNull();
+    fireEvent(list, at60(createEvent.dragOver(list, { dataTransfer })));
+    fireEvent(list, at60(createEvent.drop(list, { dataTransfer })));
+    expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ label: "2 songs" }), 1);
+    await expect(onDrop.mock.calls[0]![0].songIds()).resolves.toEqual(["song-a", "song-b"]);
+    expect(container.querySelector(".bg-brand")).toBeNull();
   });
 });

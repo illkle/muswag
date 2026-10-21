@@ -285,6 +285,30 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("queues songs before a queued occurrence, and moves queued occurrences among the rest", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
+    const queued = () => manager.store.state.userQueue.map(({ track }) => track.id);
+
+    await manager.enqueue([song("a"), song("d")]);
+    const [a, d] = manager.store.state.userQueue;
+    await manager.enqueue([song("b"), song("c")], d!.key);
+    expect(queued()).toEqual(["a", "b", "c", "d"]);
+    // A key no longer queued puts them last.
+    await manager.enqueue([song("e")], "gone");
+    expect(queued()).toEqual(["a", "b", "c", "d", "e"]);
+
+    const [, b, c, , e] = manager.store.state.userQueue;
+    await manager.moveQueued([e!.key, a!.key], c!.key);
+    expect(queued()).toEqual(["b", "a", "e", "c", "d"]);
+    // Dropped onto one of the rows that moves, they go before the next that stays.
+    await manager.moveQueued([a!.key, e!.key], e!.key);
+    expect(queued()).toEqual(["b", "a", "e", "c", "d"]);
+    await manager.moveQueued([b!.key], null);
+    expect(queued()).toEqual(["a", "e", "c", "d", "b"]);
+    manager.dispose();
+  });
+
   it("gives duplicate user songs unique occurrences and restarts Previous past five seconds", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });

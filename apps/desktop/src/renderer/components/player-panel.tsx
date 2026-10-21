@@ -24,6 +24,7 @@ import {
 } from "#/player/hooks";
 import { formatDuration } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
+import { startSongDrag } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
@@ -265,7 +266,13 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const cover = <AlbumCover size="icon" className="w-10 shrink-0" target={currentTrack.albumId ? { type: "album", id: currentTrack.albumId, coverArtId } : undefined} />;
 
   return (
-    <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>
+    <div
+      {...props}
+      // The track playing can be dragged to a playlist or the queue, from its cover or its title.
+      draggable
+      onDragStart={(event) => startSongDrag(event, { label: currentTrack.title, songIds: () => Promise.resolve([currentTrack.id]) })}
+      className={cn("flex min-w-0 items-center gap-2.5", props.className)}
+    >
       {currentTrack.albumId ? (
         // The title next to it is the same link, so this one stays out of the tab order.
         <Link to="/app/albums/$albumId" params={{ albumId: currentTrack.albumId }} tabIndex={-1} aria-hidden className="shrink-0">

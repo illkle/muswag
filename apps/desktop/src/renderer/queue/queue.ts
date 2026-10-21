@@ -13,7 +13,10 @@ export const QueueActions = {
   select: (key: string) => appCommand("queue:select", key),
   /** Starts the queue when the player holds nothing. */
   play: () => appCommand("queue:play"),
-  enqueue: (songIds: readonly string[]) => appCommand("queue:enqueue", songIds),
+  /** Queues songs before the queued occurrence `beforeKey`, or after the last. */
+  enqueue: (songIds: readonly string[], beforeKey: string | null = null) => appCommand("queue:enqueue", songIds, beforeKey),
+  /** Moves queued occurrences before the queued occurrence `beforeKey`, or to the end. */
+  moveQueued: (keys: readonly string[], beforeKey: string | null) => appCommand("queue:moveQueued", keys, beforeKey),
   removeQueued: (key: string) => appCommand("queue:removeQueued", key),
   next: () => appCommand("queue:next"),
   previous: () => appCommand("queue:previous"),

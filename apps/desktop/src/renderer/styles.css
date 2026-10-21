@@ -200,6 +200,11 @@
   @apply bg-popover/85 text-popover-foreground shadow-lg ring-1 ring-foreground/10 backdrop-blur-xl;
 }
 
+/* Stale hover after a drag of songs, which `lib/song-drag.ts` marks until the pointer moves. */
+:root[data-song-drag] :is([role="row"]:not([data-selected]), [data-album-id]:not([aria-pressed="true"])) {
+  background-color: transparent;
+}
+
 /* A native range input drawn as a thin track filled up to its value. `--slider-fill` is that value, from 0 to 1. */
 .slider {
   --slider-color: var(--foreground);

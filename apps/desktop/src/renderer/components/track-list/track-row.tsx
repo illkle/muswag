@@ -45,6 +45,7 @@ export const TrackRow = memo(function TrackRow({
       role="row"
       aria-rowindex={rowIndex}
       aria-selected={isSelected}
+      draggable={!item.unavailable}
       data-track-key={item.key}
       data-track-position={position}
       data-selected={isSelected || undefined}
@@ -52,7 +53,7 @@ export const TrackRow = memo(function TrackRow({
       data-cursor={isCursor || undefined}
       style={{ gridTemplateColumns }}
       className={cn(
-        "group/row grid h-12 w-full items-center gap-3 rounded-md px-2 text-left transition-colors duration-100 select-none",
+        "group/row grid h-12 w-full items-center gap-3 rounded-lg border-2 border-transparent bg-clip-padding px-1.5 text-left transition-colors duration-100 select-none",
         "hover:bg-muted/50 group-focus-visible/list:data-cursor:ring-2 group-focus-visible/list:data-cursor:ring-ring/60 group-focus-visible/list:data-cursor:ring-inset",
         isSelected && "bg-muted hover:bg-muted",
         item.unavailable && "opacity-50",

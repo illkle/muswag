@@ -27,6 +27,9 @@ export const PlaylistActions = {
 
   removeEntry: (playlistId: string, entryId: string): Promise<void> => synced(appCommand("playlists:removeEntry", playlistId, entryId)),
 
+  /** Moves entries, in playlist order, before the entry `beforeEntryId`, or to the end. */
+  moveEntries: (playlistId: string, entryIds: readonly string[], beforeEntryId: string | null): Promise<void> => synced(appCommand("playlists:moveEntries", playlistId, [...entryIds], beforeEntryId)),
+
   remove: (playlistId: string): Promise<void> => synced(appCommand("playlists:delete", playlistId)),
 
   syncNow: () => appCommand("playlists:sync"),

@@ -4,7 +4,7 @@ import { createStore, useStore } from "@tanstack/react-store";
 import { useMemo } from "react";
 
 import { compactColumns } from "#/components/track-list/columns";
-import { TrackList } from "#/components/track-list/track-list";
+import { songDragOf, TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
@@ -13,6 +13,8 @@ import { db } from "#/data/library";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { useCollectionRow } from "#/data/stores";
 import { failureNotice } from "#/lib/notify";
+import { useSongDrop, type SongDrag } from "#/lib/song-drag";
+import { cn } from "#/lib/utils";
 import { QueueActions, useQueueManagerState } from "#/queue/queue";
 import { TOP_HEIGHT } from "#/styles";
 
@@ -54,6 +56,8 @@ const rowKey = (section: string, item: PlaybackItem) => `${section}:${item.key}`
 /** The key of the occurrence the row `key` shows. */
 const occurrenceKey = (key: string) => key.slice(key.indexOf(":") + 1);
 const USER_SECTION = "user";
+/** What the queue is called in `SongDrag.rows`. */
+const QUEUE_LIST = "queue";
 
 /** The queue keys of the selected rows that the user queued, which are the ones that can be removed. */
 const queuedKeys = (selection: TrackSelection) => selection.items.flatMap(({ key }) => (key.startsWith(`${USER_SECTION}:`) ? [occurrenceKey(key)] : []));
@@ -62,8 +66,22 @@ async function removeQueued(keys: readonly string[]) {
   for (const key of keys) await QueueActions.removeQueued(key);
 }
 
+/**
+ * Puts dragged songs into the user queue before its occurrence `beforeKey`, or after the last. Occurrences
+ * dragged from the user queue itself move there; anything else is queued, again if it is queued already.
+ */
+function dropInQueue(drag: SongDrag, beforeKey: string | null) {
+  const placed = drag.rows?.list === QUEUE_LIST ? QueueActions.moveQueued(drag.rows.keys, beforeKey) : drag.songIds().then((songIds) => QueueActions.enqueue(songIds, beforeKey));
+  void placed.catch(failureNotice("The songs could not be added to the queue."));
+}
+
 /** What is playing and what follows it, in playback order: the user queue plays before the source resumes. */
-function useQueueItems(): { items: TrackListItem[]; playingKey: string | null } {
+function useQueueItems(): {
+  items: TrackListItem[];
+  playingKey: string | null;
+  /** Where the user queue's rows start and end among the items, which is where songs dropped on the queue go. Both are where they would be when it is empty. */
+  queued: { start: number; end: number };
+} {
   const queue = useQueueManagerState();
   const sourceName = useSourceName(queue.source?.ref ?? null);
 
@@ -76,21 +94,34 @@ function useQueueItems(): { items: TrackListItem[]; playingKey: string | null } 
     };
 
     section("now", "Now playing", queue.nowPlaying ? [queue.nowPlaying] : []);
+    const start = queue.userQueue.length === 0 ? items.length : items.length + 1;
     section(USER_SECTION, "Next in queue", queue.userQueue);
+    const queued = { start, end: items.length };
     section("source", sourceName ? `Next from ${sourceName}` : "Next up", queue.source?.window.next ?? []);
     // Main keeps only a window of the source loaded and moves it along with playback.
     if (queue.source?.window.hasMore) items.push({ type: "note", key: "source-more", label: "More tracks load as playback continues." });
 
-    return { items, playingKey: queue.nowPlaying ? rowKey("now", queue.nowPlaying) : null };
+    return { items, playingKey: queue.nowPlaying ? rowKey("now", queue.nowPlaying) : null, queued };
   }, [queue, sourceName]);
 }
 
 /** Shows or hides the queue panel. */
 export function QueuePanelToggle() {
   const open = useStore(panelOpen);
+  // With the panel closed, songs dropped on its button go to the end of the queue.
+  const drop = useSongDrop((drag) => dropInQueue(drag, null), { disabled: open });
 
   return (
-    <Button size="icon-sm" variant="ghost" onClick={togglePanel} aria-label={open ? "Hide queue" : "Show queue"} aria-expanded={open} title="Queue">
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      onClick={togglePanel}
+      aria-label={open ? "Hide queue" : "Show queue"}
+      aria-expanded={open}
+      title="Queue"
+      className={cn(drop.over && "bg-muted ring-2 ring-brand ring-inset")}
+      {...drop.props}
+    >
       <QueueIcon weight={open ? "fill" : "regular"} className="size-4" />
     </Button>
   );
@@ -103,7 +134,8 @@ export function QueuePanel() {
 }
 
 function QueuePanelContent() {
-  const { items, playingKey } = useQueueItems();
+  const { items, playingKey, queued } = useQueueItems();
+  const emptyDrop = useSongDrop((drag) => dropInQueue(drag, null));
 
   return (
     <aside aria-label="Queue" className="scrollbar-area relative h-(--main-height) w-72 shrink-0 animate-in border-l bg-sidebar text-sidebar-foreground duration-200 fade-in-0 slide-in-from-right-4">
@@ -111,13 +143,25 @@ function QueuePanelContent() {
       <div className="app-drag-region absolute top-0 z-10 h-(--top-height) w-full bg-sidebar [-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_100%)]" />
 
       {items.length === 0 ? (
-        <p className="px-4 pt-(--top-height) text-xs text-sidebar-foreground/60">Nothing is playing.</p>
+        <div {...emptyDrop.props} className={cn("h-full px-4 pt-(--top-height) text-xs text-sidebar-foreground/60", emptyDrop.over && "bg-muted/50 ring-2 ring-brand ring-inset")}>
+          {emptyDrop.over ? "Drop to add to the queue." : "Nothing is playing."}
+        </div>
       ) : (
         <TrackList
           items={items}
           columns={compactColumns}
           playingKey={playingKey}
           onActivate={(item) => void QueueActions.select(occurrenceKey(item.key)).catch(failureNotice("The track could not be played."))}
+          // Rows the user queued move when they are dragged within the queue, as long as nothing else is dragged with them.
+          dragOf={(selection) => {
+            const keys = queuedKeys(selection);
+            return { ...songDragOf(selection), ...(keys.length === selection.items.length ? { rows: { list: QUEUE_LIST, keys } } : {}) };
+          }}
+          drop={{
+            list: QUEUE_LIST,
+            gapAt: (index, after) => Math.min(Math.max(after ? index + 1 : index, queued.start), queued.end),
+            onDrop: (drag, gap) => dropInQueue(drag, gap < queued.end ? occurrenceKey(items[gap]!.key) : null),
+          }}
           className="scrollbar-slim"
           topPadding={TOP_HEIGHT}
           bottomPadding={8}

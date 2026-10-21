@@ -156,10 +156,31 @@ export class QueueManager {
     });
   }
 
-  enqueue(tracks: readonly Song[]): Promise<void> {
+  /** Queues `tracks` before the queued occurrence `beforeKey`, or after the last when it is `null` or no longer queued. */
+  enqueue(tracks: readonly Song[], beforeKey: string | null = null): Promise<void> {
     return this.serial.run(async () => {
       if (tracks.length === 0) return;
-      const next = [...this.store.state.userQueue, ...tracks.map(createUserPlaybackItem)];
+      const next = placeBefore(this.store.state.userQueue, tracks.map(createUserPlaybackItem), beforeKey);
+      await this.commitQueueEdit({ ...this.store.state, userQueue: next });
+    });
+  }
+
+  /** Moves the queued occurrences `keys`, in queue order, before the queued occurrence `beforeKey`, or to the end when it is `null`. */
+  moveQueued(keys: readonly string[], beforeKey: string | null): Promise<void> {
+    return this.serial.run(async () => {
+      const moving = new Set(keys);
+      const { userQueue } = this.store.state;
+      const moved = userQueue.filter(({ key }) => moving.has(key));
+      if (moved.length === 0) return;
+      // Dropped onto a row that moves itself, the rows go before the first after it that stays.
+      const from = beforeKey === null ? -1 : userQueue.findIndex(({ key }) => key === beforeKey);
+      const before = from === -1 ? null : (userQueue.slice(from).find(({ key }) => !moving.has(key))?.key ?? null);
+      const next = placeBefore(
+        userQueue.filter(({ key }) => !moving.has(key)),
+        moved,
+        before,
+      );
+      if (next.every((item, index) => item.key === userQueue[index]!.key)) return;
       await this.commitQueueEdit({ ...this.store.state, userQueue: next });
     });
   }
@@ -414,6 +435,12 @@ export function composeMpvQueue(state: QueueManagerState): PlaybackItem[] {
     keys.add(item.key);
   }
   return candidates.map(clonePlaybackItem);
+}
+
+/** `items` with `placed` before the item `beforeKey`, or at the end when it is `null` or not there. */
+function placeBefore(items: readonly PlaybackItem[], placed: readonly PlaybackItem[], beforeKey: string | null): PlaybackItem[] {
+  const at = beforeKey === null ? -1 : items.findIndex(({ key }) => key === beforeKey);
+  return at === -1 ? [...items, ...placed] : [...items.slice(0, at), ...placed, ...items.slice(at)];
 }
 
 const anchorOf = (cursor: SourceCursor): SourceAnchor => ({ key: cursor.type === "item" ? cursor.key : null, offset: cursor.offset });

@@ -168,16 +168,24 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
           return { record, result: undefined };
         }).pipe(Effect.asVoid),
 
-      /** Moves an entry to just before `beforeEntryId`, or to the end for `null`. Not reachable from renderers yet: it waits for drag and drop. */
-      moveEntry: (playlistId: string, entryId: string, beforeEntryId: string | null) =>
+      /**
+       * Moves entries, in playlist order, to just before `beforeEntryId`, or to the end for `null`, as one
+       * revision. Moved before one of themselves, they go before the first entry after it that stays.
+       * Moving them where they already are is no edit.
+       */
+      moveEntries: (playlistId: string, entryIds: readonly string[], beforeEntryId: string | null) =>
         change(playlistId, (current) => {
           const playlist = requireWritable(current, playlistId);
-          if (entryId === beforeEntryId) return null;
-          const sourceIndex = requireEntryIndex(playlist.local.entries, entryId);
-          if (beforeEntryId !== null) requireEntryIndex(playlist.local.entries, beforeEntryId);
+          const { entries } = playlist.local;
+          for (const entryId of entryIds) requireEntryIndex(entries, entryId);
+          const moving = new Set(entryIds);
+          const before = entries.slice(requireAnchorIndex(entries, beforeEntryId)).find(({ id }) => !moving.has(id))?.id ?? null;
+          const staying = entries.filter(({ id }) => !moving.has(id));
+          const insertAt = requireAnchorIndex(staying, before);
+          const next = [...staying.slice(0, insertAt), ...entries.filter(({ id }) => moving.has(id)), ...staying.slice(insertAt)];
+          if (next.every((entry, index) => entry.id === entries[index]!.id)) return null;
           const record = edit(playlist, (state) => {
-            const [entry] = state.entries.splice(sourceIndex, 1);
-            state.entries.splice(requireAnchorIndex(state.entries, beforeEntryId), 0, entry!);
+            state.entries = next;
           });
           return { record, result: undefined };
         }).pipe(Effect.asVoid),

@@ -286,6 +286,28 @@ export const LibraryQueries = {
       ),
     ).pipe(Effect.map((pages) => pages.flat())),
 
+  /** The songs of the albums `ids`, album after album in that order, each album's in `ALBUM_ORDER`, as its page lists them. */
+  albumSongIds: (ids: ReadonlyArray<string>) =>
+    Db.use((db) =>
+      Effect.forEach(chunks([...new Set(ids)], STATEMENT_IDS), (chunk) =>
+        db
+          .select({ id: songs.id, albumId: songs.albumId })
+          .from(songs)
+          .where(inArray(songs.albumId, [...chunk]))
+          .orderBy(...ALBUM_ORDER.map((column) => asc(songs[column]))),
+      ),
+    ).pipe(
+      Effect.map((pages) => {
+        const byAlbum = new Map<string | null, string[]>();
+        for (const { id, albumId } of pages.flat()) {
+          const album = byAlbum.get(albumId);
+          if (album) album.push(id);
+          else byAlbum.set(albumId, [id]);
+        }
+        return ids.flatMap((id) => byAlbum.get(id) ?? []);
+      }),
+    ),
+
   /** The rows of what a search found, in the order it found them, leaving out any that have gone since. Songs come as renderers mirror them. */
   searchResults: (hits: ReadonlyArray<SearchHit>) =>
     Db.use((db) => {

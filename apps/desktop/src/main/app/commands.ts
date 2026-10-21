@@ -53,6 +53,7 @@ export const serveAppCommands = (options: {
       "library:albumPage": (request, withTotal) => LibraryQueries.albumPage(request, withTotal).pipe(Effect.provideService(Db, db)),
       "library:artistsWithAlbums": () => LibraryQueries.artistsWithAlbums().pipe(Effect.provideService(Db, db)),
       "library:albumCoverArts": (ids) => LibraryQueries.albumCoverArts(ids).pipe(Effect.provideService(Db, db)),
+      "library:albumSongIds": (ids) => LibraryQueries.albumSongIds(ids).pipe(Effect.provideService(Db, db)),
       // The worker finds the rows, and their current contents are read here.
       "library:search": (query, limit) =>
         Effect.tryPromise(() => options.search(query, limit)).pipe(Effect.flatMap((hits) => (hits ? LibraryQueries.searchResults(hits).pipe(Effect.provideService(Db, db)) : Effect.succeed(null)))),
@@ -62,12 +63,14 @@ export const serveAppCommands = (options: {
       "playlists:setVisibility": (id, isPublic) => written(commands.setVisibility(id, isPublic)),
       "playlists:addEntries": (id, songIds, beforeEntryId) => written(commands.addEntries(id, songIds, beforeEntryId)),
       "playlists:removeEntry": (id, entryId) => written(commands.removeEntry(id, entryId)),
+      "playlists:moveEntries": (id, entryIds, beforeEntryId) => written(commands.moveEntries(id, entryIds, beforeEntryId)),
       "playlists:delete": (id) => written(commands.delete(id)),
       "playlists:sync": () => session.use((active) => active.playlists.sync),
       "queue:playSource": (ref, key) => Effect.promise(() => queue.playSource({ ...ref }, key)),
       "queue:select": (key) => Effect.promise(() => queue.select(key)),
       "queue:play": () => Effect.promise(() => queue.play()),
-      "queue:enqueue": (songIds) => Effect.promise(() => songsInOrder(songIds).then((tracks) => queue.enqueue(tracks))),
+      "queue:enqueue": (songIds, beforeKey) => Effect.promise(() => songsInOrder(songIds).then((tracks) => queue.enqueue(tracks, beforeKey))),
+      "queue:moveQueued": (keys, beforeKey) => Effect.promise(() => queue.moveQueued(keys, beforeKey)),
       "queue:removeQueued": (key) => Effect.promise(() => queue.removeQueued(key)),
       "queue:next": () => Effect.promise(() => queue.next()),
       "queue:previous": () => Effect.promise(() => queue.previous()),
