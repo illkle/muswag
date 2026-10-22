@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { VinylRecordIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { AlbumList } from "#/components/album-list/album-list";
+import { CoverPaletteDebug } from "#/components/cover-palette-debug";
 import { PageState } from "#/components/page-state";
 import { useAlbumRows } from "#/library/album-rows";
 
@@ -19,5 +20,10 @@ function RouteComponent() {
     return <PageState icon={<VinylRecordIcon />} title="No albums yet" description="Use the server control in the sidebar to fetch your server library." />;
   }
 
-  return <AlbumList rows={albums} scrollId="library-screen-albums" rememberScroll className="h-full" />;
+  return (
+    <>
+      <AlbumList rows={albums} scrollId="library-screen-albums" rememberScroll className="h-full" />
+      {import.meta.env.DEV ? <CoverPaletteDebug /> : null}
+    </>
+  );
 }

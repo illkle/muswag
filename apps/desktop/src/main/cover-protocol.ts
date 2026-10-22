@@ -77,7 +77,8 @@ export function handleCoverProtocol({ userDataPath, coverPath }: CoverProtocolOp
       const absolutePath = join(userDataPath, relativePath);
       // A cover that cannot be scaled down is served as it is.
       const image = (size !== "full" ? await thumbnailOf(absolutePath, size).catch(() => null) : null) ?? (await readFile(absolutePath));
-      return new Response(image, { headers: { "content-type": coverMediaType(image) ?? "application/octet-stream" } });
+      // The renderer reads covers' pixels for their colours, which a page from another origin may do only when allowed.
+      return new Response(image, { headers: { "content-type": coverMediaType(image) ?? "application/octet-stream", "access-control-allow-origin": "*" } });
     } catch {
       // No session, a download that failed or a file that went: the renderer shows its placeholder for each.
       return notFound();

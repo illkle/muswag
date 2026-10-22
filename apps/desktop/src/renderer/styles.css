@@ -31,6 +31,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -62,6 +63,7 @@
   --input: oklch(0.923 0.003 48.717);
   --ring: oklch(0.709 0.01 56.259);
   --brand: var(--color-lime-600);
+  --brand-foreground: var(--color-white);
   --sidebar: oklch(0.985 0.001 106.423);
   --sidebar-foreground: oklch(0.147 0.004 49.25);
   --sidebar-primary: oklch(0.216 0.006 56.043);
@@ -92,6 +94,7 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.553 0.013 58.071);
   --brand: var(--color-lime-500);
+  --brand-foreground: var(--color-black);
   --sidebar: oklch(0.116 0 56.043);
   --sidebar-foreground: oklch(0.985 0.001 106.423);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -100,6 +103,22 @@
   --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.55 0 58);
+}
+
+/*
+ * The accent a cover gives what shows it (`library/cover-palette.ts`). Registered, so that `cover-palette`
+ * can fade it from one cover's to the next.
+ */
+@property --brand {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --brand-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
 }
 
 /*
@@ -196,6 +215,18 @@
 }
 
 /* A surface floating over the page: the player bar and the popups anchored to the top bar. */
+/* What takes its colours from a cover, fading to the next cover's. */
+@utility cover-palette {
+  transition:
+    --brand 600ms ease,
+    --brand-foreground 600ms ease;
+}
+
+/* A soft glow of the accent around a control, for the play buttons. */
+@utility glow-brand {
+  box-shadow: 0 0 12px 2px color-mix(in oklch, var(--brand) 55%, transparent);
+}
+
 @utility surface-raised {
   @apply bg-popover/85 text-popover-foreground shadow-lg ring-1 ring-foreground/10 backdrop-blur-xl;
 }

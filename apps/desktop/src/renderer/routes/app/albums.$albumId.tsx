@@ -18,7 +18,10 @@ import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
 import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
 import { useMemo } from "react";
-import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { DETAIL_ART_ROOM, DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { CoverGlow } from "#/components/cover-glow";
+import { CoverPaletteDebug } from "#/components/cover-palette-debug";
+import { paletteStyle, useCoverPalette } from "#/library/cover-palette";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -53,6 +56,9 @@ function RouteComponent() {
         // The order main plays the album in. Nulls first is what SQLite does too.
         .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
   });
+
+  const cover = albumQuery.data ? ({ type: "album", id: albumQuery.data.id, coverArtId: albumQuery.data.coverArt ?? null } as const) : null;
+  const palette = useCoverPalette(cover);
 
   const playingKey = usePlayingKey((ref) => ref.type === "album" && ref.albumId === albumId);
 
@@ -89,7 +95,8 @@ function RouteComponent() {
   const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));
 
   return (
-    <>
+    // The cover's colours reach the playing row, the play button and the glow through the custom properties set here.
+    <div className="contents cover-palette" style={paletteStyle(palette)}>
       <TrackList
         items={items}
         columns={columns}
@@ -104,14 +111,10 @@ function RouteComponent() {
           <DetailHeader
             title={album.name}
             art={
-              <AlbumCover
-                className="w-full"
-                target={{
-                  type: "album",
-                  id: album.id,
-                  coverArtId: album.coverArt ?? null,
-                }}
-              />
+              <div className="relative rounded">
+                <CoverGlow palette={palette} room={DETAIL_ART_ROOM} />
+                <AlbumCover className="w-full" target={cover ?? undefined} />
+              </div>
             }
           >
             <ArtistLinks
@@ -125,7 +128,7 @@ function RouteComponent() {
             {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
 
             <div className="mt-2 flex items-center gap-1">
-              <Button className="h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
+              <Button className="h-10 w-32 gap-2 border-brand text-base glow-brand" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
                 <PlayIcon weight="fill" className="size-5" />
                 Play
               </Button>
@@ -133,6 +136,7 @@ function RouteComponent() {
           </DetailHeader>
         }
       />
-    </>
+      {import.meta.env.DEV ? <CoverPaletteDebug /> : null}
+    </div>
   );
 }

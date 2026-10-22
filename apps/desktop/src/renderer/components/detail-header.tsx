@@ -8,6 +8,9 @@ const HEADER_HEIGHT = 200;
 /** Between the top bar and the header. */
 const HEADER_GAP = 12;
 
+/** How far the artwork is from the top and the left of the page, which cuts off whatever is drawn past them. */
+export const DETAIL_ART_ROOM = { top: TOP_HEIGHT + HEADER_GAP, left: 16 };
+
 /** Room a virtualized list has to reserve so its first row clears the floating header. */
 export const DETAIL_TOP_PADDING = TOP_HEIGHT + HEADER_GAP + HEADER_HEIGHT + 16;
 export const DETAIL_BOTTOM_PADDING = PLAYER_HEIGHT + 16;
