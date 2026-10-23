@@ -9,7 +9,8 @@ import { registerPlayerIpc, type PlayerHandle } from "./player/ipc";
 import { startStateMirror } from "./state-mirror";
 import { LibraryDatabaseError, resetLibrary, startApp, type AppOptions } from "./app";
 import { initializeAutoUpdater, registerAppUpdater } from "./app-updater";
-import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
+import { readCoverColoursIn } from "./cover-colours";
+import { coverThumbnails, handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
 import { startDevBridge } from "./dev-bridge";
 import { createWindow } from "./window";
 
@@ -79,7 +80,8 @@ app.whenReady().then(async () => {
 
   const userDataPath = app.getPath("userData");
   // Covers come from the session, which is there once the app has started.
-  const serveCover = handleCoverProtocol({ userDataPath, coverPath: async (owner) => mainApp?.coverPath(owner) ?? null });
+  const thumbnailOf = coverThumbnails();
+  const serveCover = handleCoverProtocol({ userDataPath, coverPath: async (owner) => mainApp?.coverPath(owner) ?? null, thumbnailOf });
   // Before any handler is registered: the bridge only knows the handlers registered after it starts.
   const devBridgePort = Number(process.env.MUSWAG_DEV_BRIDGE_PORT);
   if (is.dev && devBridgePort) startDevBridge({ ipcMain, port: devBridgePort, serveCover });
@@ -97,6 +99,7 @@ app.whenReady().then(async () => {
     databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
     userDataPath,
     searchWorkerPath: join(__dirname, "search-worker.cjs"),
+    readCoverColours: readCoverColoursIn(userDataPath, thumbnailOf),
     ipcMain,
     player,
     stateMirror: stateMirror.mirror,

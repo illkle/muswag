@@ -31,6 +31,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -62,6 +63,7 @@
   --input: oklch(0.923 0.003 48.717);
   --ring: oklch(0.709 0.01 56.259);
   --brand: var(--color-lime-600);
+  --brand-foreground: var(--color-white);
   --sidebar: oklch(0.985 0.001 106.423);
   --sidebar-foreground: oklch(0.147 0.004 49.25);
   --sidebar-primary: oklch(0.216 0.006 56.043);
@@ -92,6 +94,7 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.553 0.013 58.071);
   --brand: var(--color-lime-500);
+  --brand-foreground: var(--color-black);
   --sidebar: oklch(0.116 0 56.043);
   --sidebar-foreground: oklch(0.985 0.001 106.423);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -100,6 +103,35 @@
   --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.55 0 58);
+}
+
+/*
+ * The colours a cover gives what shows it (`components/cover-colours.tsx`): its accent, as `--brand`, and the
+ * two more colours its glow is made of. Registered, so that `cover-colours` can fade them from one cover's
+ * to the next.
+ */
+@property --brand {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --brand-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --cover-glow-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --cover-glow-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
 }
 
 /*
@@ -192,6 +224,86 @@
 @layer utilities {
   .app-drag-region {
     -webkit-app-region: drag;
+  }
+}
+
+/* What takes its colours from a cover, fading to the next cover's. */
+@utility cover-colours {
+  transition:
+    --brand 600ms ease,
+    --brand-foreground 600ms ease,
+    --cover-glow-1 600ms ease,
+    --cover-glow-2 600ms ease;
+}
+
+/*
+ * Light catching the top-left corner of a control, in the accent of a cover: React Bits' BorderGlow held
+ * still (`components/brand-glow.tsx`). A line of the accent along the control's edge, glowing out from it and
+ * in over the control in ever wider and fainter shadows, strongest at the corner and down to a quarter at the
+ * opposite one. Placed in a control that is positioned and isolated, under its content; it takes the
+ * control's corners. `--brand-glow-scale` scales how far the glow reaches.
+ */
+.brand-glow {
+  --brand-glow-scale: 1;
+  /* As far past the control as the widest shadow reaches. */
+  --brand-glow-reach: calc(52px * var(--brand-glow-scale));
+  /* The control's own width or height, inside the glow's box. */
+  --brand-glow-across: calc(100% - 2 * var(--brand-glow-reach));
+
+  position: absolute;
+  inset: calc(var(--brand-glow-reach) * -1);
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  /*
+   * Easing from the top-left corner to half towards the right edge and to half towards the bottom one: the two
+   * multiply, to a quarter at the bottom-right corner. A radial gradient would take fewer lines, but its size
+   * cannot mix units.
+   */
+  mask-image:
+    linear-gradient(
+      to right,
+      black var(--brand-glow-reach),
+      rgb(0 0 0 / 82%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.25),
+      rgb(0 0 0 / 68%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.5),
+      rgb(0 0 0 / 56%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.75),
+      rgb(0 0 0 / 50%) calc(100% - var(--brand-glow-reach))
+    ),
+    linear-gradient(
+      to bottom,
+      black var(--brand-glow-reach),
+      rgb(0 0 0 / 82%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.25),
+      rgb(0 0 0 / 68%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.5),
+      rgb(0 0 0 / 56%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.75),
+      rgb(0 0 0 / 50%) calc(100% - var(--brand-glow-reach))
+    );
+  mask-composite: intersect;
+
+  /*
+   * Shadows rather than a border, since they follow the control's rounded corners exactly: a mask cut out of a
+   * box is not rounded inside, and thickens a border at the corners. The line lies just outside the control:
+   * on its edge, the control's background showed through the line's own soft edge as a dark rim at the corners.
+   */
+  &::before {
+    --s: var(--brand-glow-scale);
+    content: "";
+    position: absolute;
+    inset: calc(var(--brand-glow-reach) - 1px);
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px var(--brand),
+      inset 0 0 calc(1px * var(--s)) 0 color-mix(in srgb, var(--brand) 60%, transparent),
+      inset 0 0 calc(3px * var(--s)) 0 color-mix(in srgb, var(--brand) 50%, transparent),
+      inset 0 0 calc(6px * var(--s)) 0 color-mix(in srgb, var(--brand) 40%, transparent),
+      inset 0 0 calc(15px * var(--s)) 0 color-mix(in srgb, var(--brand) 30%, transparent),
+      inset 0 0 calc(25px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 20%, transparent),
+      inset 0 0 calc(50px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 10%, transparent),
+      0 0 calc(1px * var(--s)) 0 color-mix(in srgb, var(--brand) 60%, transparent),
+      0 0 calc(3px * var(--s)) 0 color-mix(in srgb, var(--brand) 50%, transparent),
+      0 0 calc(6px * var(--s)) 0 color-mix(in srgb, var(--brand) 40%, transparent),
+      0 0 calc(15px * var(--s)) 0 color-mix(in srgb, var(--brand) 30%, transparent),
+      0 0 calc(25px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 20%, transparent),
+      0 0 calc(50px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 10%, transparent);
   }
 }
 

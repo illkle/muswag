@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { BackendLive, LibraryQueries, SessionManager, type CoverOwner, type Db } from "@muswag/backend";
+import { BackendLive, LibraryQueries, SessionManager, type CoverOwner, type Db, type ReadCoverColours } from "@muswag/backend";
 import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
 import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
@@ -28,6 +28,8 @@ export interface AppOptions {
   readonly stateMirror: MemoryMirrorService;
   /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
   readonly searchWorkerPath: string;
+  /** How albums' colours are read from their cover files, which are relative to `userDataPath`. */
+  readonly readCoverColours: ReadCoverColours;
   /** Calls `listener` whenever a window of the app gains focus, until the returned function is called. */
   readonly onWindowFocus?: (listener: () => void) => () => void;
 }
@@ -131,7 +133,7 @@ const rootMessage = (error: unknown): string => {
  */
 export async function startApp(options: AppOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY }).pipe(Layer.provide(platform)));
+  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY, readCoverColours: options.readCoverColours }).pipe(Layer.provide(platform)));
   try {
     // Building the backend opens and migrates the database; nothing else in it reaches outside the process.
     await backend.runPromise(Effect.void);

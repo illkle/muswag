@@ -23,7 +23,7 @@ import { HttpClient, HttpClientError } from "effect/http";
 import { Path } from "effect/Path";
 
 import { locateSubsonicServer, makeSubsonicAPI, SubsonicAPI, subsonicToken, WRONG_CREDENTIALS, type SubsonicApiConfig } from "../api/subsonic-api.js";
-import { CoverManager, CoverManagerLive, MiniFs } from "../covers/cover-manager.js";
+import { CoverManager, CoverManagerLive, MiniFs, type ReadCoverColours } from "../covers/cover-manager.js";
 import { Db } from "../db/database.js";
 import { LibrarySync } from "../library/library-sync.js";
 import { PlaylistEdits } from "../playlists/commands.js";
@@ -75,6 +75,8 @@ export class SessionManager extends Context.Service<SessionManager, SessionManag
 export interface SessionManagerOptions {
   /** Directory for cover files, relative to `MiniFs`. */
   readonly coverSaveLocation: string;
+  /** How albums' colours are read from their cover files; left unread without it. */
+  readonly readCoverColours?: ReadCoverColours;
 }
 
 type SessionDependencies = Db | SqliteMirror | PlaylistEdits | MiniFs | Path | HttpClient.HttpClient | Crypto.Crypto | CredentialsStore;
@@ -192,7 +194,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
 
     const acquire = (credentials: SessionCredentials) => {
       const apiLayer = Layer.effect(SubsonicAPI, makeSubsonicAPI({ ...toApiConfig(credentials), onCredentialsRejected: expire(credentials) }));
-      const authenticatedLayer = Layer.mergeAll(LibrarySync.layer, CoverManagerLive(options.coverSaveLocation), PlaylistSyncManagerLive()).pipe(Layer.provideMerge(apiLayer));
+      const authenticatedLayer = Layer.mergeAll(LibrarySync.layer, CoverManagerLive(options.coverSaveLocation, options.readCoverColours), PlaylistSyncManagerLive()).pipe(Layer.provideMerge(apiLayer));
 
       return Layer.build(authenticatedLayer).pipe(
         Effect.provide(dependencies),

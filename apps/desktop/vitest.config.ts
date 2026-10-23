@@ -7,7 +7,8 @@ export default defineConfig({
   resolve: { conditions, tsconfigPaths: true },
   ssr: { resolve: { conditions, externalConditions: ["source"] } },
   test: {
-    server: { deps: { inline: [/@muswag\//] } },
+    // Material's colour utilities import some of their own modules without the extension, which only a bundler resolves.
+    server: { deps: { inline: [/@muswag\//, "@material/material-color-utilities"] } },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
