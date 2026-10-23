@@ -1,7 +1,7 @@
-import { albums, artists, type CoverTarget, type SubsonicHttpError } from "@muswag/model";
+import { albums, artists, type CoverColours, type CoverTarget, type SubsonicHttpError } from "@muswag/model";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Cause, Context, Data, Deferred, Effect, Exit, Layer } from "effect";
 import type { HttpClientError } from "effect/http/HttpClientError";
 import { Path } from "effect/Path";
@@ -39,7 +39,14 @@ export interface CoverManagerService {
 
 export class CoverManager extends Context.Service<CoverManager, CoverManagerService>()("@muswag/backend/covers/CoverManager") {}
 
-export const CoverManagerLive = (coverSaveLocation: string) => Layer.effect(CoverManager, make(coverSaveLocation));
+/**
+ * The colours of the cover in a file, its path relative to `MiniFs`. The platform's to give: reading an image's
+ * pixels takes a decoder the backend does not have.
+ */
+export type ReadCoverColours = (coverPath: string) => Promise<CoverColours>;
+
+/** Without `readColours`, albums' colours are left unread. */
+export const CoverManagerLive = (coverSaveLocation: string, readColours?: ReadCoverColours) => Layer.effect(CoverManager, make(coverSaveLocation, readColours));
 
 class NotAnImage extends Data.TaggedError("NotAnImage")<{
   readonly id: string;
@@ -52,7 +59,7 @@ type CoverManagerError = NotAnImage | FileSystemError | HttpClientError | Subson
 /** How long a failed download answers for its cover before the server is asked again. */
 const RETRY_FAILED_AFTER = "1 minute";
 
-const make = (coverSaveLocation: string) =>
+const make = (coverSaveLocation: string, readColours: ReadCoverColours | undefined) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const fs = yield* MiniFs;
@@ -68,12 +75,41 @@ const make = (coverSaveLocation: string) =>
 
     const rowOf = (owner: CoverOwner) => {
       const table = tableOf(owner);
+      // Only albums have colours.
+      const coverColours = (owner.type === "album" ? albums.coverColours : sql`NULL`) as typeof albums.coverColours;
       return db
-        .select({ coverArt: table.coverArt, coverArtPath: table.coverArtPath })
+        .select({ coverArt: table.coverArt, coverArtPath: table.coverArtPath, coverColours })
         .from(table)
         .where(eq(table.id, owner.id))
         .pipe(Effect.map((rows) => rows[0]));
     };
+
+    /** Albums whose cover's colours are being read. */
+    const readingColours = new Set<string>();
+
+    /**
+     * Reads the colours of an album's cover file, once, in the background: the cover is served meanwhile. They
+     * are stored for as long as the album names the image they were read from.
+     */
+    const readColoursOf = (owner: CoverOwner, coverArt: string, coverPath: string) =>
+      Effect.gen(function* () {
+        if (!readColours || owner.type !== "album" || readingColours.has(owner.id)) return;
+        readingColours.add(owner.id);
+        const read = Effect.tryPromise(() => readColours(coverPath)).pipe(
+          Effect.flatMap((coverColours) =>
+            mirror.write(
+              db
+                .update(albums)
+                .set({ coverColours })
+                .where(and(eq(albums.id, owner.id), eq(albums.coverArt, coverArt))),
+            ),
+          ),
+          Effect.tapError((error) => Effect.logWarning(`Failed to read the colours of the cover of album:${owner.id}`, error)),
+          Effect.ignore,
+          Effect.ensuring(Effect.sync(() => readingColours.delete(owner.id))),
+        );
+        yield* Effect.forkIn(read, scope);
+      });
 
     const download = (owner: CoverOwner): Effect.Effect<string | null, CoverManagerError> =>
       Effect.gen(function* () {
@@ -100,7 +136,10 @@ const make = (coverSaveLocation: string) =>
             .where(and(eq(table.id, owner.id), eq(table.coverArt, row.coverArt)))
             .returning({ id: table.id }),
         );
-        if (stored.length > 0) return coverPath;
+        if (stored.length > 0) {
+          yield* readColoursOf(owner, row.coverArt, coverPath);
+          return coverPath;
+        }
         // A sync gave the row another cover while this one was on its way.
         return yield* download(owner);
       });
@@ -109,7 +148,11 @@ const make = (coverSaveLocation: string) =>
       Effect.gen(function* () {
         const row = yield* rowOf(owner);
         if (!row?.coverArt) return null;
-        if (row.coverArtPath && (yield* fs.exists(row.coverArtPath))) return row.coverArtPath;
+        if (row.coverArtPath && (yield* fs.exists(row.coverArtPath))) {
+          // A cover downloaded before its colours were read, or whose reading failed, is read now.
+          if (!row.coverColours) yield* readColoursOf(owner, row.coverArt, row.coverArtPath);
+          return row.coverArtPath;
+        }
 
         const key = `${owner.type}:${owner.id}`;
         const current = downloads.get(key);

@@ -106,8 +106,9 @@
 }
 
 /*
- * The accent a cover gives what shows it (`library/cover-palette.ts`). Registered, so that `cover-palette`
- * can fade it from one cover's to the next.
+ * The colours a cover gives what shows it (`components/cover-colours.tsx`): the accent, as `--brand` too, and
+ * the colours that glow behind the cover. Registered, so that `cover-colours` can fade them from one cover's
+ * to the next.
  */
 @property --brand {
   syntax: "<color>";
@@ -116,6 +117,24 @@
 }
 
 @property --brand-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --cover-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --cover-glow-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --cover-glow-2 {
   syntax: "<color>";
   inherits: true;
   initial-value: transparent;
@@ -214,12 +233,14 @@
   }
 }
 
-/* A surface floating over the page: the player bar and the popups anchored to the top bar. */
 /* What takes its colours from a cover, fading to the next cover's. */
-@utility cover-palette {
+@utility cover-colours {
   transition:
     --brand 600ms ease,
-    --brand-foreground 600ms ease;
+    --brand-foreground 600ms ease,
+    --cover-accent 600ms ease,
+    --cover-glow-1 600ms ease,
+    --cover-glow-2 600ms ease;
 }
 
 /* A soft glow of the accent around a control, for the play buttons. */
@@ -227,6 +248,7 @@
   box-shadow: 0 0 12px 2px color-mix(in oklch, var(--brand) 55%, transparent);
 }
 
+/* A surface floating over the page: the player bar and the popups anchored to the top bar. */
 @utility surface-raised {
   @apply bg-popover/85 text-popover-foreground shadow-lg ring-1 ring-foreground/10 backdrop-blur-xl;
 }

@@ -1,10 +1,7 @@
-import { CoverPaletteSwatches } from "#/components/cover-palette-debug";
-import { paletteDebug } from "#/library/cover-palette";
-import { toCoverArtUrl } from "#/library/cover-url";
+import { viaDevBridge } from "#/data/dev-bridge";
 import { cn } from "#/lib/utils";
 import type { CoverSize } from "#shared/cover";
 import type { CoverTarget } from "@muswag/model";
-import { useStore } from "@tanstack/react-store";
 import { useEffect, useState } from "react";
 
 /** A little longer than main remembers a failed download, so the next request starts a new one. */
@@ -29,8 +26,6 @@ export function AlbumCover({
     const retry = setTimeout(() => setFailedSrc(null), RETRY_FAILED_COVER_AFTER_MS);
     return () => clearTimeout(retry);
   }, [failedSrc]);
-  // List rows' covers are too small to draw the colours over.
-  const showPalette = useStore(paletteDebug) && import.meta.env.DEV && size !== "icon";
 
   return (
     <div className={cn("relative aspect-square overflow-hidden rounded", className)}>
@@ -38,7 +33,16 @@ export function AlbumCover({
         <img src={coverSrc} alt={`cover art`} className="relative z-10 size-full animate-in object-cover fade-in-0" decoding="async" loading="lazy" onError={() => setFailedSrc(coverSrc)} />
       )}
       <div className="absolute top-0 size-full border border-border bg-muted"> </div>
-      {showPalette && target?.coverArtId ? <CoverPaletteSwatches target={target} /> : null}
     </div>
   );
+}
+
+/**
+ * Main serves a cover by what it is of, downloading it first when it has to
+ * (`main/cover-protocol.ts`). A browser cannot load `muswag-cover:`, so there the dev bridge serves it.
+ * The address carries the id the server gives the image, so that a changed cover is loaded again.
+ */
+function toCoverArtUrl(type: CoverTarget["type"], id: string, coverArtId: string, size: CoverSize): string {
+  const cover = `${type}/${encodeURIComponent(id)}?v=${encodeURIComponent(coverArtId)}${size === "full" ? "" : `&size=${size}`}`;
+  return viaDevBridge ? `/__bridge/cover/${cover}` : `muswag-cover://${cover}`;
 }

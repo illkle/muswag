@@ -41,6 +41,12 @@ const resizeCover: ResizeCover = (cover, pixels) => {
   return isPng(cover) ? resized.toPNG() : resized.toJPEG(90);
 };
 
+/** Thumbnails of cover files, made on first use and kept next to them: `makeThumbnails`. */
+export type CoverThumbnails = ReturnType<typeof makeThumbnails>;
+
+/** One per app: what serves covers and what reads their colours share it, so that they do not make a thumbnail twice at once. */
+export const coverThumbnails = (): CoverThumbnails => makeThumbnails(resizeCover);
+
 /** What a cover address names: `<type>/<id>`, and the size asked for. */
 export interface CoverRequest {
   readonly type: string;
@@ -57,6 +63,7 @@ export interface CoverProtocolOptions {
    * not there. Null when there is no cover; rejects when it cannot be had.
    */
   readonly coverPath: (owner: CoverOwner) => Promise<string | null>;
+  readonly thumbnailOf?: CoverThumbnails;
 }
 
 /**
@@ -65,8 +72,7 @@ export interface CoverProtocolOptions {
  * The rest of the query is theirs: they put the cover's id there, so a changed cover has a new address.
  * Returns the function that answers a request, for the dev bridge to serve the same to a browser.
  */
-export function handleCoverProtocol({ userDataPath, coverPath }: CoverProtocolOptions): ServeCover {
-  const thumbnailOf = makeThumbnails(resizeCover);
+export function handleCoverProtocol({ userDataPath, coverPath, thumbnailOf = coverThumbnails() }: CoverProtocolOptions): ServeCover {
   const notFound = () => new Response(null, { status: 404 });
 
   const serveCover: ServeCover = async ({ type, id, size }) => {
@@ -77,8 +83,7 @@ export function handleCoverProtocol({ userDataPath, coverPath }: CoverProtocolOp
       const absolutePath = join(userDataPath, relativePath);
       // A cover that cannot be scaled down is served as it is.
       const image = (size !== "full" ? await thumbnailOf(absolutePath, size).catch(() => null) : null) ?? (await readFile(absolutePath));
-      // The renderer reads covers' pixels for their colours, which a page from another origin may do only when allowed.
-      return new Response(image, { headers: { "content-type": coverMediaType(image) ?? "application/octet-stream", "access-control-allow-origin": "*" } });
+      return new Response(image, { headers: { "content-type": coverMediaType(image) ?? "application/octet-stream" } });
     } catch {
       // No session, a download that failed or a file that went: the renderer shows its placeholder for each.
       return notFound();

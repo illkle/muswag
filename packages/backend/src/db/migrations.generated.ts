@@ -74,5 +74,14 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1792446728000,
     "hash": "a4aa2c61bbf14262121742ab0bd91c89596e8a8022c37496c8e8671fb2b7a6e5",
     "name": "20261019215208_albums_orders"
+  },
+  {
+    "sql": [
+      "ALTER TABLE `albums` ADD `coverColours` text;"
+    ],
+    "bps": true,
+    "folderMillis": 1792705233000,
+    "hash": "c121917665814e7af3c371061b6bc2ba29e92ad3bb665afa453e8a8106097ef1",
+    "name": "20261022214033_albums_cover_colours"
   }
 ];

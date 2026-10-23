@@ -5,8 +5,6 @@ import { Button, buttonVariants } from "#/components/ui/button";
 import { Slider } from "#/components/ui-custom/slider";
 import { MpvIPC, PlayerIPC } from "#/player/commands";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
-import { paletteStyle, useCoverPalette } from "#/library/cover-palette";
-import type { CoverPalette } from "#shared/cover-palette";
 import { QueueActions } from "#/queue/queue";
 import {
   usePlayerCanGoBack,
@@ -29,6 +27,7 @@ import { failureNotice } from "#/lib/notify";
 import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
+import { CoverColoursScope, useAlbumCoverColours } from "#/components/cover-colours";
 import { CoverGlow } from "#/components/cover-glow";
 import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
@@ -250,7 +249,7 @@ const PlayerSeek = (props: React.HTMLAttributes<HTMLDivElement>) => {
   );
 };
 
-const CurrentTrack = ({ palette, ...props }: React.HTMLAttributes<HTMLDivElement> & { palette: CoverPalette | null }) => {
+const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const currentTrack = usePlayerCurrentTrack();
   const coverArtId = useAlbumCoverArt(currentTrack?.albumId);
 
@@ -268,7 +267,7 @@ const CurrentTrack = ({ palette, ...props }: React.HTMLAttributes<HTMLDivElement
   const target = currentTrack.albumId ? ({ type: "album", id: currentTrack.albumId, coverArtId } as const) : undefined;
   const cover = (
     <div className="relative w-10 shrink-0 rounded">
-      <CoverGlow palette={palette} strength={0.6} />
+      <CoverGlow strength={0.6} />
       <AlbumCover size="icon" className="w-full" target={target} />
     </div>
   );
@@ -511,24 +510,24 @@ function PlayerErrorBanner() {
 }
 
 export function PlayerPanel() {
-  const albumId = usePlayerCurrentTrack()?.albumId ?? null;
-  const coverArtId = useAlbumCoverArt(albumId);
   // The current track's cover colours the sliders, the play button's ring and the glow around the cover.
-  const palette = useCoverPalette(albumId ? { type: "album", id: albumId, coverArtId } : null);
+  const colours = useAlbumCoverColours(usePlayerCurrentTrack()?.albumId ?? null);
 
   return (
     // As wide as the list above it, up to a width past which the bar would only gain empty space.
     <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-[min(calc(100%-2rem),60rem)] -translate-x-1/2 pb-1.5">
       <PlayerErrorBanner />
-      <section aria-label="Player" style={paletteStyle(palette)} className="cover-palette grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
-        <CurrentTrack palette={palette} />
-        <PlayerButtonControls />
-        <div className="flex min-w-0 items-center justify-end gap-1">
-          <PlayerVolume className="flex-1" />
-          <QueuePanelToggle />
-        </div>
-        <PlayerSeek className="col-span-3" />
-      </section>
+      <CoverColoursScope colours={colours}>
+        <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
+          <CurrentTrack />
+          <PlayerButtonControls />
+          <div className="flex min-w-0 items-center justify-end gap-1">
+            <PlayerVolume className="flex-1" />
+            <QueuePanelToggle />
+          </div>
+          <PlayerSeek className="col-span-3" />
+        </section>
+      </CoverColoursScope>
     </div>
   );
 }

@@ -5,12 +5,12 @@ import type { HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
-import { albums, artists, SubsonicHttpError, type AlbumID3 } from "@muswag/model";
+import { albums, artists, SubsonicHttpError, type AlbumID3, type CoverColours } from "@muswag/model";
 
 import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
 import { Db, write } from "../db/database.js";
 import { rowOf, seed, TestDatabase } from "../test/index.js";
-import { coverFileName, CoverManager, CoverManagerLive, coverMediaType, MiniFs } from "./cover-manager.js";
+import { coverFileName, CoverManager, CoverManagerLive, coverMediaType, MiniFs, type ReadCoverColours } from "./cover-manager.js";
 
 const owner = { type: "album", id: "album-1" } as const;
 const coverPath = "covers/album_3a_album-1";
@@ -26,17 +26,32 @@ const album: AlbumID3 = {
 };
 
 /** A cover manager over files kept in `files`, by path. */
-function managerLayer(getCoverArt: SubsonicApiService["getCoverArt"], files = new Map<string, Uint8Array>()) {
+function managerLayer(getCoverArt: SubsonicApiService["getCoverArt"], files = new Map<string, Uint8Array>(), readColours?: ReadCoverColours) {
   const api = { getCoverArt } as SubsonicApiService;
   const fs = Layer.succeed(MiniFs, {
     writeFile: (path, data) => Effect.sync(() => void files.set(path, data)),
     remove: (path) => Effect.sync(() => void files.delete(path)),
     exists: (path) => Effect.sync(() => files.has(path)),
   });
-  return CoverManagerLive("covers").pipe(Layer.provideMerge(Layer.mergeAll(Layer.succeed(SubsonicAPI, api), fs, PathLayer)), Layer.provideMerge(TestDatabase()));
+  return CoverManagerLive("covers", readColours).pipe(Layer.provideMerge(Layer.mergeAll(Layer.succeed(SubsonicAPI, api), fs, PathLayer)), Layer.provideMerge(TestDatabase()));
 }
 
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0x00]);
+
+const colours: CoverColours = { accent: "#ed0505", glow: ["#ced4ce", null] };
+
+/** A reader that gives `colours` and keeps the files it was asked to read. */
+function readingColours() {
+  const read: string[] = [];
+  const readColours: ReadCoverColours = async (path) => {
+    read.push(path);
+    return colours;
+  };
+  return { read, readColours };
+}
+
+/** Lets colours read in the background be stored. */
+const coloursStored = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 const imageResponse = (bytes = JPEG) => ({ status: 200, arrayBuffer: Effect.succeed(bytes.buffer) }) as unknown as HttpClientResponse.HttpClientResponse;
 
@@ -207,6 +222,82 @@ describe("CoverManager", () => {
       expect(requested).toEqual(["cover-1", "cover-2"]);
       expect(yield* rowOf(albums, owner.id)).toMatchObject({ coverArt: "cover-2", coverArtPath: coverPath });
     }).pipe(Effect.provide(managerLayer(getCoverArt)));
+  });
+});
+
+describe("CoverManager colours", () => {
+  it.effect("reads an album's colours once its cover is downloaded, and not again", () => {
+    const { getCoverArt } = servingCovers();
+    const { read, readColours } = readingColours();
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album] });
+      const manager = yield* CoverManager;
+
+      yield* manager.ensure(owner);
+      yield* coloursStored;
+      expect((yield* rowOf(albums, owner.id))?.coverColours).toEqual(colours);
+
+      yield* manager.ensure(owner);
+      yield* coloursStored;
+      expect(read).toEqual([coverPath]);
+    }).pipe(Effect.provide(managerLayer(getCoverArt, new Map(), readColours)));
+  });
+
+  it.effect("reads the colours of a cover downloaded before they were read", () => {
+    const { requested, getCoverArt } = servingCovers();
+    const { read, readColours } = readingColours();
+    const files = new Map([[coverPath, JPEG]]);
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album] });
+      const db = yield* Db;
+      yield* write(db.update(albums).set({ coverArtPath: coverPath }));
+      const manager = yield* CoverManager;
+
+      expect(yield* manager.ensure(owner)).toBe(coverPath);
+      yield* coloursStored;
+      expect(requested).toEqual([]);
+      expect(read).toEqual([coverPath]);
+      expect((yield* rowOf(albums, owner.id))?.coverColours).toEqual(colours);
+    }).pipe(Effect.provide(managerLayer(getCoverArt, files, readColours)));
+  });
+
+  it.effect("keeps no colours read from an image the album no longer names", () => {
+    const { getCoverArt } = servingCovers();
+    const reading = Deferred.makeUnsafe<void>();
+    const changed = Deferred.makeUnsafe<CoverColours>();
+    // The colours are held until a sync has given the album another cover.
+    const readColours: ReadCoverColours = () => Effect.runPromise(Deferred.succeed(reading, undefined).pipe(Effect.andThen(Deferred.await(changed))));
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album] });
+      const db = yield* Db;
+      const manager = yield* CoverManager;
+
+      yield* manager.ensure(owner);
+      yield* Deferred.await(reading);
+      yield* write(db.update(albums).set({ coverArt: "cover-2" }));
+      yield* Deferred.succeed(changed, colours);
+      yield* coloursStored;
+
+      expect((yield* rowOf(albums, owner.id))?.coverColours).toBeNull();
+    }).pipe(Effect.provide(managerLayer(getCoverArt, new Map(), readColours)));
+  });
+
+  it.effect("reads no colours of an artist's cover", () => {
+    const { getCoverArt } = servingCovers();
+    const { read, readColours } = readingColours();
+
+    return Effect.gen(function* () {
+      const db = yield* Db;
+      yield* db.insert(artists).values({ id: "artist-1", name: "Artist", coverArt: "artist-cover" });
+      const manager = yield* CoverManager;
+
+      yield* manager.ensure({ type: "artist", id: "artist-1" });
+      yield* coloursStored;
+      expect(read).toEqual([]);
+    }).pipe(Effect.provide(managerLayer(getCoverArt, new Map(), readColours)));
   });
 });
 

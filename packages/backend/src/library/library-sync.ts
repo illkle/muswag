@@ -15,6 +15,7 @@ import {
   type SyncMode,
 } from "@muswag/model";
 import { count, eq, inArray, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
@@ -135,12 +136,16 @@ const ALBUM_WRITE_GROUP = 50;
 const ALBUM_FETCH_CONCURRENCY = 10;
 
 /**
- * The cover file is the cover manager's. An update keeps it for as long as the server names the same
- * image, and forgets it when the image is another one, so that it is downloaded again.
+ * The cover file, and the colours read from it, are the cover manager's. An update keeps them for as long as
+ * the server names the same image, and forgets them when the image is another one, so that it is downloaded
+ * and read again.
  */
-const keptCoverPath = (table: typeof albums | typeof artists) => sql`CASE WHEN excluded.${sql.identifier(table.coverArt.name)} IS ${table.coverArt} THEN ${table.coverArtPath} END`;
-const upsertAlbums = upsertChanged(albums, { keep: ["coverArtPath"], set: { coverArtPath: keptCoverPath(albums) } });
-const upsertArtists = upsertChanged(artists, { keep: ["coverArtPath"], set: { coverArtPath: keptCoverPath(artists) } });
+const keptWithCover = (table: typeof albums | typeof artists, column: SQLiteColumn) => sql`CASE WHEN excluded.${sql.identifier(table.coverArt.name)} IS ${table.coverArt} THEN ${column} END`;
+const upsertAlbums = upsertChanged(albums, {
+  keep: ["coverArtPath", "coverColours"],
+  set: { coverArtPath: keptWithCover(albums, albums.coverArtPath), coverColours: keptWithCover(albums, albums.coverColours) },
+});
+const upsertArtists = upsertChanged(artists, { keep: ["coverArtPath"], set: { coverArtPath: keptWithCover(artists, artists.coverArtPath) } });
 const upsertSongs = upsertChanged(songs);
 
 const writeSongs = (rows: ReadonlyArray<Song>) =>

@@ -19,9 +19,8 @@ import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
 import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
 import { useMemo } from "react";
 import { DETAIL_ART_ROOM, DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { CoverColoursScope } from "#/components/cover-colours";
 import { CoverGlow } from "#/components/cover-glow";
-import { CoverPaletteDebug } from "#/components/cover-palette-debug";
-import { paletteStyle, useCoverPalette } from "#/library/cover-palette";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -56,9 +55,6 @@ function RouteComponent() {
         // The order main plays the album in. Nulls first is what SQLite does too.
         .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
   });
-
-  const cover = albumQuery.data ? ({ type: "album", id: albumQuery.data.id, coverArtId: albumQuery.data.coverArt ?? null } as const) : null;
-  const palette = useCoverPalette(cover);
 
   const playingKey = usePlayingKey((ref) => ref.type === "album" && ref.albumId === albumId);
 
@@ -96,7 +92,7 @@ function RouteComponent() {
 
   return (
     // The cover's colours reach the playing row, the play button and the glow through the custom properties set here.
-    <div className="contents cover-palette" style={paletteStyle(palette)}>
+    <CoverColoursScope colours={album.coverColours}>
       <TrackList
         items={items}
         columns={columns}
@@ -112,8 +108,8 @@ function RouteComponent() {
             title={album.name}
             art={
               <div className="relative rounded">
-                <CoverGlow palette={palette} room={DETAIL_ART_ROOM} />
-                <AlbumCover className="w-full" target={cover ?? undefined} />
+                <CoverGlow room={DETAIL_ART_ROOM} />
+                <AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />
               </div>
             }
           >
@@ -136,7 +132,6 @@ function RouteComponent() {
           </DetailHeader>
         }
       />
-      {import.meta.env.DEV ? <CoverPaletteDebug /> : null}
-    </div>
+    </CoverColoursScope>
   );
 }

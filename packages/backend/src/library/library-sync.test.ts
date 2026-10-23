@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { albums, artists, songs, SubsonicApiError, SubsonicHttpError, syncState, type AlbumWithSongsID3, type ArtistID3, type Child } from "@muswag/model";
+import { albums, artists, songs, SubsonicApiError, SubsonicHttpError, syncState, type AlbumWithSongsID3, type ArtistID3, type Child, type CoverColours } from "@muswag/model";
 import { eq } from "drizzle-orm";
 import type { MirrorChange } from "@muswag/tanstack-db-mirror/protocol";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
@@ -18,6 +18,8 @@ const layer = (api: Partial<SubsonicApiService>, removed: string[] = []) => {
 };
 
 const ok = { status: "ok", version: "1.16.1" } as const;
+
+const coverColours: CoverColours = { accent: "#ed0505", glow: [null, null] };
 
 interface Server {
   artists?: ArtistID3[];
@@ -351,22 +353,22 @@ describe("LibrarySync.sync", () => {
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("keeps the cover file of an unchanged cover and clears server fields the album no longer has", () => {
+  it.effect("keeps the cover file and colours of an unchanged cover and clears server fields the album no longer has", () => {
     const listed = withSongs("covered", 0, { coverArt: "c1" });
     const { api } = fakeServer({ albums: [listed] });
 
     return Effect.gen(function* () {
       yield* seed({ albums: [{ ...album("covered", { songCount: 0, coverArt: "c1" }), starred: "2026-01-01" }] });
       const db = yield* Db;
-      yield* db.update(albums).set({ coverArtPath: "covers/a" });
+      yield* db.update(albums).set({ coverArtPath: "covers/a", coverColours });
 
       yield* (yield* LibrarySync).sync("full");
 
-      expect(yield* rowOf(albums, listed.id)).toMatchObject({ starred: null, coverArt: "c1", coverArtPath: "covers/a" });
+      expect(yield* rowOf(albums, listed.id)).toMatchObject({ starred: null, coverArt: "c1", coverArtPath: "covers/a", coverColours });
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("forgets the cover file of an album or artist whose cover is another one on the server", () => {
+  it.effect("forgets the cover file and colours of an album or artist whose cover is another one on the server", () => {
     const changed = withSongs("changed", 0, { coverArt: "c2" });
     const coverless = withSongs("coverless", 0);
     const { api } = fakeServer({
@@ -380,7 +382,7 @@ describe("LibrarySync.sync", () => {
     return Effect.gen(function* () {
       yield* seed({ albums: [album("changed", { songCount: 0, coverArt: "c1" }), album("coverless", { songCount: 0 })] });
       const db = yield* Db;
-      yield* db.update(albums).set({ coverArtPath: "covers/a" });
+      yield* db.update(albums).set({ coverArtPath: "covers/a", coverColours });
       yield* db.insert(artists).values([
         { id: "artist-changed", name: "Changed", coverArt: "ar-1", coverArtPath: "covers/changed" },
         { id: "artist-same", name: "Same", coverArt: "ar-1", coverArtPath: "covers/same" },
@@ -388,9 +390,9 @@ describe("LibrarySync.sync", () => {
 
       yield* (yield* LibrarySync).sync("full");
 
-      expect(yield* rowOf(albums, changed.id)).toMatchObject({ coverArt: "c2", coverArtPath: null });
+      expect(yield* rowOf(albums, changed.id)).toMatchObject({ coverArt: "c2", coverArtPath: null, coverColours: null });
       // No cover before and none now is no change either.
-      expect(yield* rowOf(albums, coverless.id)).toMatchObject({ coverArt: null, coverArtPath: "covers/a" });
+      expect(yield* rowOf(albums, coverless.id)).toMatchObject({ coverArt: null, coverArtPath: "covers/a", coverColours });
       expect(yield* rowOf(artists, "artist-changed")).toMatchObject({ coverArt: "ar-2", coverArtPath: null });
       expect(yield* rowOf(artists, "artist-same")).toMatchObject({ coverArt: "ar-1", coverArtPath: "covers/same" });
     }).pipe(Effect.provide(layer(api)));
