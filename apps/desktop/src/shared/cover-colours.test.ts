@@ -19,25 +19,60 @@ const black: Rgb = [10, 10, 10];
 
 describe("coverColours", () => {
   it("takes the accent from the colour, not the larger greys", () => {
-    expect(coverColours(cover([[grey, 0.5], [black, 0.3], [red, 0.2]])).accent).toBe("#c81e1e");
+    expect(
+      coverColours(
+        cover([
+          [grey, 0.5],
+          [black, 0.3],
+          [red, 0.2],
+        ]),
+      ).accent,
+    ).toBe("#c81e1e");
   });
 
   it("gives a grey cover no colours", () => {
-    expect(coverColours(cover([[grey, 0.7], [black, 0.3]]))).toEqual(NO_COVER_COLOURS);
+    expect(
+      coverColours(
+        cover([
+          [grey, 0.7],
+          [black, 0.3],
+        ]),
+      ),
+    ).toEqual(NO_COVER_COLOURS);
   });
 
   it("leaves out a hue of under 1% of the cover", () => {
-    expect(coverColours(cover([[grey, 0.995], [red, 0.005]])).accent).toBeNull();
+    expect(
+      coverColours(
+        cover([
+          [grey, 0.995],
+          [red, 0.005],
+        ]),
+      ).accent,
+    ).toBeNull();
   });
 
   it("glows in the other colours of hues of their own", () => {
-    const colours = coverColours(cover([[red, 0.5], [blue, 0.3], [green, 0.2]]));
+    const colours = coverColours(
+      cover([
+        [red, 0.5],
+        [blue, 0.3],
+        [green, 0.2],
+      ]),
+    );
     expect(colours.accent).toBe("#c81e1e");
     expect(colours.glow).toEqual(expect.arrayContaining(["#1e3cc8", "#28aa3c"]));
   });
 
   it("gives a one-colour cover no glow colours", () => {
-    expect(coverColours(cover([[blue, 0.6], [black, 0.4]])).glow).toEqual([null, null]);
+    expect(
+      coverColours(
+        cover([
+          [blue, 0.6],
+          [black, 0.4],
+        ]),
+      ).glow,
+    ).toEqual([null, null]);
   });
 
   it("gives the same colours each time it reads a cover", () => {
@@ -50,7 +85,10 @@ describe("coverColours", () => {
   });
 
   it("reads BGRA", () => {
-    const { data } = cover([[grey, 0.6], [red, 0.4]]);
+    const { data } = cover([
+      [grey, 0.6],
+      [red, 0.4],
+    ]);
     const bgra = data.map((_, i) => data[i % 4 === 0 ? i + 2 : i % 4 === 2 ? i - 2 : i]!);
     expect(coverColours({ data: bgra, order: "bgra" }).accent).toBe("#c81e1e");
   });

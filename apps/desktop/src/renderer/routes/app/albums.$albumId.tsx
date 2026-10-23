@@ -18,9 +18,9 @@ import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
 import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
 import { useMemo } from "react";
-import { DETAIL_ART_ROOM, DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 import { CoverColoursScope } from "#/components/cover-colours";
-import { CoverGlow } from "#/components/cover-glow";
+import { BrandGlow } from "#/components/brand-glow";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -104,15 +104,7 @@ function RouteComponent() {
         topPadding={DETAIL_TOP_PADDING}
         bottomPadding={DETAIL_BOTTOM_PADDING}
         topContent={
-          <DetailHeader
-            title={album.name}
-            art={
-              <div className="relative rounded">
-                <CoverGlow room={DETAIL_ART_ROOM} />
-                <AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />
-              </div>
-            }
-          >
+          <DetailHeader title={album.name} art={<AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />}>
             <ArtistLinks
               artist={album.artist}
               artists={album.artists}
@@ -124,7 +116,8 @@ function RouteComponent() {
             {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
 
             <div className="mt-2 flex items-center gap-1">
-              <Button className="h-10 w-32 gap-2 border-brand text-base glow-brand" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
+              <Button className="relative isolate h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
+                <BrandGlow />
                 <PlayIcon weight="fill" className="size-5" />
                 Play
               </Button>

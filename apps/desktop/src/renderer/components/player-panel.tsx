@@ -28,7 +28,7 @@ import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { CoverColoursScope, useAlbumCoverColours } from "#/components/cover-colours";
-import { CoverGlow } from "#/components/cover-glow";
+import { BrandGlow } from "#/components/brand-glow";
 import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
@@ -94,7 +94,8 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         <SkipBackIcon weight="fill" className="size-4" />
       </Button>
 
-      <Button size="icon-sm" className="mx-1 rounded-full border-brand glow-brand" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+      <Button size="icon-sm" className="relative isolate mx-1 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+        <BrandGlow scale={0.7} />
         {status === "loading" || buffering ? (
           <SpinnerGapIcon className="size-4 animate-spin" />
         ) : status === "playing" ? (
@@ -265,12 +266,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
   }
 
   const target = currentTrack.albumId ? ({ type: "album", id: currentTrack.albumId, coverArtId } as const) : undefined;
-  const cover = (
-    <div className="relative w-10 shrink-0 rounded">
-      <CoverGlow strength={0.6} />
-      <AlbumCover size="icon" className="w-full" target={target} />
-    </div>
-  );
+  const cover = <AlbumCover size="icon" className="w-10 shrink-0" target={target} />;
 
   return (
     <div {...props} className={cn("flex min-w-0 items-center gap-2.5", props.className)}>

@@ -6,17 +6,16 @@ import { cn } from "#/lib/utils";
 import { foregroundOn } from "#shared/cover-colours";
 
 /**
- * Gives what is inside the colours of a cover as custom properties: `--cover-accent`, `--cover-glow-1` and
- * `--cover-glow-2`, transparent where the cover has none; a glow colour the cover lacks is its accent. The
- * accent is also `--brand`, which the interface draws its accent with: a cover too grey for one, or whose
- * colours main has not read yet, leaves that to the text colour. The properties fade from one cover's to the
- * next. Takes no room of its own unless a class says otherwise.
+ * Gives what is inside the colours of a cover as custom properties. Its accent is `--brand`, which the
+ * interface draws its accent with: a cover too grey for one, or whose colours main has not read yet, leaves
+ * that to the text colour. Its glow takes two more, `--cover-glow-1` and `--cover-glow-2`: a glow colour the
+ * cover lacks is its accent, and transparent without one. The properties fade from one cover's to the next.
+ * Takes no room of its own unless a class says otherwise.
  */
 export function CoverColoursScope({ colours, className, style, ...props }: { colours: CoverColours | null | undefined } & React.ComponentProps<"div">) {
   const accent = colours?.accent ?? null;
   const [first, second] = colours?.glow ?? [null, null];
   const properties = {
-    "--cover-accent": accent ?? "transparent",
     "--cover-glow-1": first ?? accent ?? "transparent",
     "--cover-glow-2": second ?? accent ?? "transparent",
     "--brand": accent ?? "var(--foreground)",
