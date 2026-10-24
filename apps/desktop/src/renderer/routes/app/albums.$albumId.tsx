@@ -104,7 +104,17 @@ function RouteComponent() {
         topPadding={DETAIL_TOP_PADDING}
         bottomPadding={DETAIL_BOTTOM_PADDING}
         topContent={
-          <DetailHeader title={album.name} art={<AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />}>
+          <DetailHeader
+            title={album.name}
+            className="relative z-10"
+            art={
+              <>
+                <AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}></AlbumCover>
+                <div className="pointer-events-none absolute top-20 left-20 size-[400px] -translate-x-1/2 -translate-y-1/2 blob-glow [--glow:var(--brand)] glow-start-[0.8]" />
+                <div className="pointer-events-none absolute right-20 bottom-20 size-[240px] translate-x-1/2 translate-y-1/2 blob-glow [--glow:var(--cover-glow-1)] glow-start-[1]" />{" "}
+              </>
+            }
+          >
             <ArtistLinks
               artist={album.artist}
               artists={album.artists}

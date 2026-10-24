@@ -34,9 +34,9 @@ export function DetailHeader({
       className={cn("absolute grid h-(--header-height) grid-cols-[var(--header-height)_minmax(0,1fr)] gap-5 px-4", className)}
       style={{ top: TOP_HEIGHT + HEADER_GAP, "--header-height": HEADER_HEIGHT + "px" } as React.CSSProperties}
     >
-      {art}
+      <div className="relative">{art}</div>
 
-      <div className="flex min-w-0 flex-col gap-1 self-end">
+      <div className="relative z-10 flex min-w-0 flex-col gap-1 self-end">
         <h1 className="line-clamp-2 text-2xl font-semibold tracking-tight md:text-4xl">{title}</h1>
         {children}
       </div>

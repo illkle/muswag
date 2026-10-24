@@ -44,7 +44,7 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: oklch(0.98 0 0);
   --foreground: oklch(0.147 0.004 49.25);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.147 0.004 49.25);
@@ -262,7 +262,7 @@
    */
   mask-image:
     linear-gradient(
-      to right,
+      to left,
       black var(--brand-glow-reach),
       rgb(0 0 0 / 82%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.25),
       rgb(0 0 0 / 68%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.5),
@@ -270,7 +270,7 @@
       rgb(0 0 0 / 50%) calc(100% - var(--brand-glow-reach))
     ),
     linear-gradient(
-      to bottom,
+      to top,
       black var(--brand-glow-reach),
       rgb(0 0 0 / 82%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.25),
       rgb(0 0 0 / 68%) calc(var(--brand-glow-reach) + var(--brand-glow-across) * 0.5),
@@ -292,18 +292,10 @@
     border-radius: inherit;
     box-shadow:
       inset 0 0 0 1px var(--brand),
-      inset 0 0 calc(1px * var(--s)) 0 color-mix(in srgb, var(--brand) 60%, transparent),
-      inset 0 0 calc(3px * var(--s)) 0 color-mix(in srgb, var(--brand) 50%, transparent),
-      inset 0 0 calc(6px * var(--s)) 0 color-mix(in srgb, var(--brand) 40%, transparent),
-      inset 0 0 calc(15px * var(--s)) 0 color-mix(in srgb, var(--brand) 30%, transparent),
-      inset 0 0 calc(25px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 20%, transparent),
-      inset 0 0 calc(50px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 10%, transparent),
-      0 0 calc(1px * var(--s)) 0 color-mix(in srgb, var(--brand) 60%, transparent),
-      0 0 calc(3px * var(--s)) 0 color-mix(in srgb, var(--brand) 50%, transparent),
-      0 0 calc(6px * var(--s)) 0 color-mix(in srgb, var(--brand) 40%, transparent),
-      0 0 calc(15px * var(--s)) 0 color-mix(in srgb, var(--brand) 30%, transparent),
-      0 0 calc(25px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 20%, transparent),
-      0 0 calc(50px * var(--s)) calc(2px * var(--s)) color-mix(in srgb, var(--brand) 10%, transparent);
+      0 0 calc(1px * var(--s)) 0 color-mix(in oklab, var(--brand) 100%, transparent),
+      0 0 calc(3px * var(--s)) 0 color-mix(in oklab, var(--brand) 50%, transparent),
+      0 0 calc(6px * var(--s)) 0 color-mix(in oklab, var(--brand) 40%, transparent),
+      0 0 calc(15px * var(--s)) 0 color-mix(in oklab, var(--brand) 30%, transparent);
   }
 }
 
@@ -425,4 +417,29 @@
   &:nth-child(4) {
     animation-delay: -5s;
   }
+}
+
+@utility blob-glow {
+  --_s: var(--glow-start, 0.22);
+  --_e: var(--glow-end, 0);
+  --_d: calc(var(--_s) - var(--_e));
+
+  background: radial-gradient(
+    closest-side in oklab,
+    oklch(from var(--glow) l c h / var(--_s)) 0%,
+    oklch(from var(--glow) l c h / calc(var(--_e) + var(--_d) * 0.8636)) 17%,
+    oklch(from var(--glow) l c h / calc(var(--_e) + var(--_d) * 0.5909)) 34%,
+    oklch(from var(--glow) l c h / calc(var(--_e) + var(--_d) * 0.3182)) 51%,
+    oklch(from var(--glow) l c h / calc(var(--_e) + var(--_d) * 0.1364)) 68%,
+    oklch(from var(--glow) l c h / calc(var(--_e) + var(--_d) * 0.0455)) 85%,
+    oklch(from var(--glow) l c h / var(--_e)) 100%
+  );
+}
+
+/* optional: set them from class names, e.g. glow-start-[0.4] glow-end-[0.05] */
+@utility glow-start-* {
+  --glow-start: --value([number]);
+}
+@utility glow-end-* {
+  --glow-end: --value([number]);
 }
