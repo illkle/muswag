@@ -44,6 +44,7 @@
     "@effect/vitest": "catalog:",
     "@electron-toolkit/typed-ipc": "catalog:",
     "@electron-toolkit/utils": "catalog:",
+    "@material/material-color-utilities": "^0.4.0",
     "@muswag/backend": "workspace:*",
     "@muswag/model": "workspace:*",
     "@muswag/tanstack-db-mirror": "workspace:*",

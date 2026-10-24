@@ -9,7 +9,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { ThemeProvider } from "#/components/utils/theme-provider";
 import { Session } from "#/session/session";
-if (import.meta.env.DEV) {
+// Opt in with `VITE_REACT_SCAN=1`: its outlines get in the way when looking at the interface itself.
+if (import.meta.env.DEV && import.meta.env.VITE_REACT_SCAN) {
   void import("react-scan").then(({ scan }) => scan({ enabled: true }));
 }
 

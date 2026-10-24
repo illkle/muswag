@@ -12,6 +12,15 @@ import type { NowPlaying, QueueSourceRef, SourceCursor } from "../player-queue.j
 
 const json = <T>() => text({ mode: "json" }).$type<T>();
 
+/**
+ * The colours the interface takes from an album's cover, as `#rrggbb`: an accent and two colours that glow
+ * behind the cover, each null where the cover has none. A cover too grey for any has them all null.
+ */
+export interface CoverColours {
+  readonly accent: string | null;
+  readonly glow: readonly [string | null, string | null];
+}
+
 export const artists = sqliteTable("artists", {
   id: text().primaryKey(),
   name: text().notNull(),
@@ -58,6 +67,8 @@ export const albums = sqliteTable(
     discTitles: json<ReadonlyArray<DiscTitle>>(),
     /** The file holding the image `coverArt` names, relative to the app data directory. Null until it is downloaded. */
     coverArtPath: text(),
+    /** The colours taken from that image, once main has read them from the file. Null until then. */
+    coverColours: json<CoverColours>(),
   },
   (table) => [
     // The order of the albums page, which renderers read by the page: newest first, and SQLite puts a missing year last going down.

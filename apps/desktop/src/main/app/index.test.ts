@@ -10,6 +10,7 @@ import type { IpcMain } from "electron";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { PlayerHandle } from "../player/ipc";
+import { NO_COVER_COLOURS } from "#shared/cover-colours";
 import { startStateMirror } from "../state-mirror";
 
 const { LibraryDatabaseError, resetLibrary, startApp } = await import("./index");
@@ -22,7 +23,8 @@ const ipcMain = { handle: () => {}, removeHandler: () => {} } as unknown as IpcM
 // A player that never answers: nothing here plays.
 const player = { execute: () => new Promise(() => {}), setCredentials: () => new Promise(() => {}), snapshot: () => new Promise(() => {}), subscribe: () => () => {} } as unknown as PlayerHandle;
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
-const options = () => ({ databasePath, userDataPath, ipcMain, player, stateMirror: stateMirror.mirror, searchWorkerPath });
+const readCoverColours = async () => NO_COVER_COLOURS;
+const options = () => ({ databasePath, userDataPath, ipcMain, player, stateMirror: stateMirror.mirror, searchWorkerPath, readCoverColours });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));

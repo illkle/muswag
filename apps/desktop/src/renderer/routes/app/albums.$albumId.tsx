@@ -19,6 +19,8 @@ import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
 import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
 import { useMemo } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { CoverColoursScope } from "#/components/cover-colours";
+import { BrandGlow } from "#/components/brand-glow";
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -89,7 +91,8 @@ function RouteComponent() {
   const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));
 
   return (
-    <>
+    // The cover's colours reach the playing row, the play button and the glow through the custom properties set here.
+    <CoverColoursScope colours={album.coverColours}>
       <TrackList
         items={items}
         columns={columns}
@@ -103,15 +106,13 @@ function RouteComponent() {
         topContent={
           <DetailHeader
             title={album.name}
+            className="relative z-10"
             art={
-              <AlbumCover
-                className="w-full"
-                target={{
-                  type: "album",
-                  id: album.id,
-                  coverArtId: album.coverArt ?? null,
-                }}
-              />
+              <>
+                <AlbumCover className="w-full" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }}></AlbumCover>
+                <div className="pointer-events-none absolute top-20 left-20 size-[400px] -translate-x-1/2 -translate-y-1/2 blob-glow [--glow:var(--brand)] glow-start-[0.8]" />
+                <div className="pointer-events-none absolute right-20 bottom-20 size-[240px] translate-x-1/2 translate-y-1/2 blob-glow [--glow:var(--cover-glow-1)] glow-start-[1]" />{" "}
+              </>
             }
           >
             <ArtistLinks
@@ -125,7 +126,8 @@ function RouteComponent() {
             {albumMeta ? <p className="text-sm text-muted-foreground">{albumMeta}</p> : null}
 
             <div className="mt-2 flex items-center gap-1">
-              <Button className="h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
+              <Button className="relative isolate h-10 w-32 gap-2 text-base" disabled={!firstKey} onClick={() => firstKey && playFrom(firstKey)}>
+                <BrandGlow />
                 <PlayIcon weight="fill" className="size-5" />
                 Play
               </Button>
@@ -133,6 +135,6 @@ function RouteComponent() {
           </DetailHeader>
         }
       />
-    </>
+    </CoverColoursScope>
   );
 }

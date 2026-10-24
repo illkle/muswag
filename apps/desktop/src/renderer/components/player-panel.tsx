@@ -28,6 +28,8 @@ import { startSongDrag } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
+import { CoverColoursScope, useAlbumCoverColours } from "#/components/cover-colours";
+import { BrandGlow } from "#/components/brand-glow";
 import { QueuePanelToggle } from "#/components/queue-panel";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { Link } from "@tanstack/react-router";
@@ -93,7 +95,8 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
         <SkipBackIcon weight="fill" className="size-4" />
       </Button>
 
-      <Button size="icon-sm" className="mx-1 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+      <Button size="icon-sm" className="relative isolate mx-1 rounded-full" onClick={togglePlay} disabled={!canPlay} aria-label={status === "playing" ? "Pause playback" : "Play track"}>
+        <BrandGlow scale={0.7} />
         {status === "loading" || buffering ? (
           <SpinnerGapIcon className="size-4 animate-spin" />
         ) : status === "playing" ? (
@@ -263,7 +266,8 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
     );
   }
 
-  const cover = <AlbumCover size="icon" className="w-10 shrink-0" target={currentTrack.albumId ? { type: "album", id: currentTrack.albumId, coverArtId } : undefined} />;
+  const target = currentTrack.albumId ? ({ type: "album", id: currentTrack.albumId, coverArtId } as const) : undefined;
+  const cover = <AlbumCover size="icon" className="w-10 shrink-0" target={target} />;
 
   return (
     <div
@@ -509,19 +513,24 @@ function PlayerErrorBanner() {
 }
 
 export function PlayerPanel() {
+  // The current track's cover colours the sliders, the play button's ring and the glow around the cover.
+  const colours = useAlbumCoverColours(usePlayerCurrentTrack()?.albumId ?? null);
+
   return (
     // As wide as the list above it, up to a width past which the bar would only gain empty space.
     <div className="absolute bottom-0 left-1/2 z-40 h-(--player-height) w-[min(calc(100%-2rem),60rem)] -translate-x-1/2 pb-1.5">
       <PlayerErrorBanner />
-      <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
-        <CurrentTrack />
-        <PlayerButtonControls />
-        <div className="flex min-w-0 items-center justify-end gap-1">
-          <PlayerVolume className="flex-1" />
-          <QueuePanelToggle />
-        </div>
-        <PlayerSeek className="col-span-3" />
-      </section>
+      <CoverColoursScope colours={colours}>
+        <section aria-label="Player" className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] content-between gap-x-4 rounded-lg surface-raised p-2">
+          <CurrentTrack />
+          <PlayerButtonControls />
+          <div className="flex min-w-0 items-center justify-end gap-1">
+            <PlayerVolume className="flex-1" />
+            <QueuePanelToggle />
+          </div>
+          <PlayerSeek className="col-span-3" />
+        </section>
+      </CoverColoursScope>
     </div>
   );
 }
