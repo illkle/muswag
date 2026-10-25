@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
   if (is.dev && devBridgePort) startDevBridge({ ipcMain: appIpc, port: devBridgePort, serveCover });
 
   stateMirror = await startStateMirror(appIpc);
-  publishAppUpdates(stateMirror.mirror);
+  publishAppUpdates(stateMirror.mirror, join(userDataPath, "update-settings.json"));
   player = startPlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     settingsPath: join(userDataPath, "player-settings.json"),

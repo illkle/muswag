@@ -38,4 +38,3 @@ publish:
   provider: github
   owner: illkle
   repo: muswag
-  releaseType: draft

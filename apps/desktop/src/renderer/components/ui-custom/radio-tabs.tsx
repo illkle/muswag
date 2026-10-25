@@ -14,7 +14,7 @@ function RadioTabItem({ className, children, ...props }: React.ComponentProps<ty
         "relative inline-flex items-center justify-center rounded-md px-3 text-sm",
         "font-medium whitespace-nowrap transition-all",
         "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
-        "data-[state=checked]:text-foreground data-[state=checked]:shadow-sm",
+        "data-checked:text-foreground data-checked:shadow-sm",
         className,
       )}
       {...props}

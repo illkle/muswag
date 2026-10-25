@@ -3,11 +3,12 @@ import { useSelector } from "@tanstack/react-store";
 import { appCommand } from "#/data/app-command";
 import { appState } from "#/data/state";
 import { rowStore } from "#/data/stores";
-import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
+import type { AppUpdateState, AppUpdateStatus, UpdateChannel } from "#shared/state/app-update";
 
 export const AppUpdateIPC = {
   check: () => appCommand("appUpdate:check"),
   install: () => appCommand("appUpdate:install"),
+  setChannel: (channel: UpdateChannel) => appCommand("appUpdate:setChannel", channel),
 };
 
 const appUpdateRow = rowStore(appState.appUpdate, "app_update");
