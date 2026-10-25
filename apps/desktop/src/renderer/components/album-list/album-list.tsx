@@ -4,7 +4,7 @@ import { useContentSize } from "#/components/utils/app-content-size";
 import { XIcon } from "@phosphor-icons/react";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { EMPTY_SELECTION, selectForAction, selectOnClick } from "#/components/track-list/selection";
+import { EMPTY_SELECTION, selectOnClick } from "#/components/track-list/selection";
 import { LibraryActions } from "#/library/actions";
 import { startSongDrag } from "#/lib/song-drag";
 import { getArtistCredits } from "#/components/utils/artist-links";
@@ -222,7 +222,7 @@ export function AlbumList({ albums, sections, rows: albumRows, scrollId, remembe
   // The tiles are given one function to select with, so that selecting draws again only the tiles whose selection changed.
   const [selectAlbum] = useState((): SelectAlbum => (id, modifiers) => selectRef.current(id, modifiers));
 
-  /** Dragging a tile drags the selection when the tile is part of it, and otherwise the tile's album alone, which it selects. */
+  /** Dragging a tile drags the selection when the tile is part of it, and otherwise the tile's album alone. Dragging leaves the selection as it is. */
   const onDragStart = (event: DragEvent<HTMLDivElement>) => {
     const id = (event.target as Element).closest<HTMLElement>("[data-album-id]")?.dataset.albumId;
     if (id === undefined) return;
@@ -230,7 +230,6 @@ export function AlbumList({ albums, sections, rows: albumRows, scrollId, remembe
     // In grid order. A paged grid keeps selected albums whose pages it has let go of.
     const selected = held.flatMap((album) => (selection.keys.has(album.id) ? [album.id] : []));
     const dragged = selection.keys.has(id) ? [...new Set(albumRows ? [...selected, ...selection.keys] : selected)] : [id];
-    setSelection((state) => selectForAction(state, id));
     const label = dragged.length === 1 ? (held.find((album) => album.id === id)?.name ?? "1 album") : `${dragged.length} albums`;
     startSongDrag(event, { label, songIds: () => LibraryActions.albumSongIds(dragged) });
   };
@@ -270,7 +269,8 @@ export function AlbumList({ albums, sections, rows: albumRows, scrollId, remembe
     <div
       ref={parentRef}
       data-scroll-restoration-id={scrollRestorationId}
-      className={cn("scrollbar overflow-y-auto px-2", className)}
+      // Never sideways: the columns are sized in pixels and, for a frame after the page narrows, are still as wide as before.
+      className={cn("scrollbar overflow-x-hidden overflow-y-auto px-2", className)}
       onScroll={rememberScroll ? (event) => scrollMemory.set(scrollRestorationId, event.currentTarget.scrollTop) : undefined}
       onClick={onClick}
       onKeyDown={(event) => {

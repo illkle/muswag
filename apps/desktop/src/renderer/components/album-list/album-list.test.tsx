@@ -78,10 +78,10 @@ describe("AlbumList selection", () => {
     await drag.songIds();
     expect(albumSongIds).toHaveBeenCalledWith(["al1", "al3"]);
 
-    // A tile outside the selection is dragged alone, and selected.
+    // A tile outside the selection is dragged alone, and the selection stays as it was.
     fireEvent.dragStart(tile(4));
     expect(startSongDrag.mock.calls.at(-1)![1].label).toBe("Album 4");
-    expect(selected()).toEqual(["al4"]);
+    expect(selected()).toEqual(["al1", "al3"]);
 
     fireEvent.keyDown(tile(4), { key: "Escape" });
     expect(selected()).toEqual([]);

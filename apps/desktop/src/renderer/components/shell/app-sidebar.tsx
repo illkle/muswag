@@ -73,8 +73,9 @@ export const AppSidebarWrapper = ({ children }: { children: React.ReactNode }) =
         The queue has a column of its own while the window is wide enough to leave the page a usable one.
         In a narrower window it lies over the right of the page instead, between the top bar and the player,
         so the search and the player's controls stay in reach.
+        It clips the panel sliding in, which would otherwise reach past the window for a moment and scroll it sideways.
       */}
-      <div className="shrink-0 empty:hidden max-lg:absolute max-lg:top-(--top-height) max-lg:right-0 max-lg:z-10 max-lg:border-y max-lg:shadow-xl max-lg:[--main-height:calc(100vh-var(--top-height)-var(--player-height))]">
+      <div className="shrink-0 overflow-clip empty:hidden max-lg:absolute max-lg:top-(--top-height) max-lg:right-0 max-lg:z-10 max-lg:border-y max-lg:shadow-xl max-lg:[--main-height:calc(100vh-var(--top-height)-var(--player-height))]">
         <QueuePanel />
       </div>
     </SidebarProvider>
