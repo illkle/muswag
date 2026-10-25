@@ -10,10 +10,11 @@ name: Release desktop app
 # Either way the release is published only once the checks and the integration tests have passed.
 #
 # The macOS app is signed with muswag's own certificate, kept in 1Password and in the
-# MACOS_SIGNING_P12 and MACOS_SIGNING_PASSWORD secrets. macOS does not know it, so it does not make
-# the first install any easier, but it stays the same from release to release, which is what
-# Squirrel.Mac checks before it installs an update. A build signed with another certificate could not
-# update the installed apps, so the build fails unless the app is signed with this one.
+# MACOS_SIGNING_P12 and MACOS_SIGNING_PASSWORD secrets of the release environment. macOS does not
+# know it, so it does not make the first install any easier, but it stays the same from release to
+# release, which is what Squirrel.Mac checks before it installs an update. A build signed with another
+# certificate could not update the installed apps, so the build fails unless the app is signed with
+# this one.
 
 on:
   push:
@@ -175,6 +176,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.skip != 'true'
     runs-on: ${{ matrix.os }}
+    # The signing secrets are the release environment's, which only master and `v*` tags can use.
+    environment: release
     strategy:
       fail-fast: false
       matrix:

@@ -93,7 +93,8 @@ passed on its commit:
 The app chooses between them in its update dialog (`main/app-updater.ts`).
 
 The macOS app is signed with muswag's own self-signed certificate, which is in 1Password and in the
-`MACOS_SIGNING_P12` and `MACOS_SIGNING_PASSWORD` secrets; `release.yml` pins its fingerprint. macOS
+`MACOS_SIGNING_P12` and `MACOS_SIGNING_PASSWORD` secrets of the `release` environment, which only
+master and `v*` tags can use; `release.yml` pins its fingerprint. macOS
 installs an update only when it is signed like the app it replaces, so this certificate must never
 change: lose it, and every Mac install has to be replaced by hand. The Windows and Linux builds are
 not signed.
