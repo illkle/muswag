@@ -1,7 +1,7 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
-import { initialSnapshot, type Media, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
+import { initialSnapshot, type Media, type MpvInstallMethod, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
 import { player as playerTable, playerPosition, playerPositionRow, playerRow } from "#shared/state/player";
 import { Binaries } from "./binary/binaries";
 import { BinaryUnavailable, CommandFailed, describeFailure, EngineError, InternalError, InvalidCommand, PlaybackFailed, SettingsFailed, safeCause, safeFailure, type PlayerFailure } from "./errors";
@@ -31,7 +31,8 @@ export interface PlayerService {
 }
 export class Player extends Context.Service<Player, PlayerService>()("@muswag/player/Player") {}
 
-type Operation = PlayerCommand | { readonly _tag: "Credentials"; readonly credentials: PlayerCredentials | null };
+/** What the worker runs, one at a time. Opening a terminal is not among them: see `openInstallTerminal`. */
+type Operation = Exclude<PlayerCommand, { readonly _tag: "OpenInstallTerminal" }> | { readonly _tag: "Credentials"; readonly credentials: PlayerCredentials | null };
 const sameCredentials = (a: PlayerCredentials | null, b: PlayerCredentials | null) =>
   a === b || (a !== null && b !== null && a.url === b.url && a.username === b.username && a.salt === b.salt && Redacted.value(a.token) === Redacted.value(b.token));
 
@@ -385,8 +386,6 @@ export const PlayerLive = Layer.effect(
             return setBinaryPath(operation.path);
           case "ClearBinaryPath":
             return setBinaryPath(null);
-          case "OpenInstallTerminal":
-            return binaries.openTerminal(operation.method);
           case "DismissError":
             return publish(withoutError(state));
         }
@@ -576,6 +575,11 @@ export const PlayerLive = Layer.effect(
 
     // ---- Public API ----
 
+    /**
+     * Opening a terminal changes nothing of the player's, so it does not wait behind playback, which it
+     * could hold up for seconds, nor become the player's error: the one who asked is told what went wrong.
+     */
+    const openInstallTerminal = (method: MpvInstallMethod) => binaries.openTerminal(method).pipe(Effect.mapError((error) => new CommandFailed({ message: error.message })));
     const submit = Effect.fn("Player.submit")(function* (operation: Operation) {
       if (closing) return yield* new CommandFailed({ message: "The player is unavailable." });
       const reply = yield* Deferred.make<void, CommandFailed>();
@@ -596,7 +600,7 @@ export const PlayerLive = Layer.effect(
     yield* Effect.addFinalizer(() => shutdown);
 
     return {
-      execute: submit,
+      execute: (command) => (command._tag === "OpenInstallTerminal" ? openInstallTerminal(command.method) : submit(command)),
       setCredentials: (next) => submit({ _tag: "Credentials", credentials: next }),
       snapshot: SubscriptionRef.get(published),
       changes: SubscriptionRef.changes(published),

@@ -134,19 +134,6 @@ describe("MpvSetup", () => {
     await waitFor(() => expect(mocks.recheck).toHaveBeenCalledOnce());
   });
 
-  it("looks again when the window comes back to the front, while mpv is missing", () => {
-    mocks.playerState.binary = missingState;
-    const view = render(<MpvSetup />);
-
-    act(() => void window.dispatchEvent(new Event("focus")));
-    expect(mocks.recheck).toHaveBeenCalledOnce();
-
-    mocks.playerState.binary = readyState;
-    view.rerender(<MpvSetup />);
-    act(() => void window.dispatchEvent(new Event("focus")));
-    expect(mocks.recheck).toHaveBeenCalledOnce();
-  });
-
   it("lets the user go back to automatic discovery from a binary they picked", async () => {
     mocks.playerState.binary = { ...readyState, source: "manual" };
 

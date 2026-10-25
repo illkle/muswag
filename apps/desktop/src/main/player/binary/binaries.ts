@@ -64,9 +64,9 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
   openTerminal: Effect.fn("Binaries.openTerminal")(function* (method: MpvInstallMethod) {
     const candidate = (yield* detectInstallCandidates(environment)).find((candidate) => candidate.option.method === method);
     if (!candidate?.managerPath) return yield* new InstallFailed({ operation: "install", message: "That package manager is not installed." });
-    const launch = yield* planTerminal({ method, managerPath: candidate.managerPath, args: candidate.args }, environment);
-    if (!launch) return yield* new InstallFailed({ operation: "install", message: "No terminal could be found. Copy the command and run it in a terminal." });
-    yield* launchTerminal(launch);
+    const launches = yield* planTerminal({ method, managerPath: candidate.managerPath, args: candidate.args }, environment);
+    if (launches.length === 0) return yield* new InstallFailed({ operation: "install", message: "No terminal could be found. Copy the command and run it in a terminal." });
+    yield* launchTerminal(launches);
   }),
 });
 export const BinariesLive = Layer.effect(Binaries, createMpvLocatorDeps.pipe(Effect.map(makeBinaries)));

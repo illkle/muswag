@@ -1,5 +1,5 @@
 import { ArrowsClockwiseIcon, CheckCircleIcon, CopyIcon, FolderOpenIcon, SpinnerGapIcon, TerminalWindowIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "#/components/ui/button";
 import { MpvIPC } from "#/player/commands";
@@ -135,6 +135,7 @@ function CopyButton({ text }: { text: string }) {
 
 function InstallOption({ option, primary }: { option: MpvInstallOption; primary: boolean }) {
   const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   return (
     <div className="space-y-2">
       <div className="text-sm font-medium">{managerNames[option.method]}</div>
@@ -142,9 +143,13 @@ function InstallOption({ option, primary }: { option: MpvInstallOption; primary:
       <div className="flex flex-wrap gap-2">
         {option.terminal ? (
           <Button
+            disabled={opening}
             onClick={() => {
               setError(null);
-              void MpvIPC.openTerminal(option.method).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The terminal could not be opened."));
+              setOpening(true);
+              void MpvIPC.openTerminal(option.method)
+                .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The terminal could not be opened."))
+                .finally(() => setOpening(false));
             }}
             variant={primary ? "default" : "outline"}
           >
@@ -176,19 +181,6 @@ function InstallOption({ option, primary }: { option: MpvInstallOption; primary:
   );
 }
 
-/** Looks for mpv again whenever the window is back in front: after a terminal install, say. */
-function useRecheckOnFocus(missing: boolean) {
-  const missingRef = useRef(missing);
-  missingRef.current = missing;
-  useEffect(() => {
-    const recheck = () => {
-      if (missingRef.current) void MpvIPC.recheck().catch(() => {});
-    };
-    window.addEventListener("focus", recheck);
-    return () => window.removeEventListener("focus", recheck);
-  }, []);
-}
-
 /** Runs one of the user's commands at a time, and says whether one is running. */
 function useBusy() {
   const [busy, setBusy] = useState(false);
@@ -203,12 +195,10 @@ function useBusy() {
 
 /**
  * The automatic search: what it found, and a way to look again. `action` takes the other half of the
- * row: the setup page's way on. It also looks again whenever the window comes back to the front.
+ * row: the setup page's way on.
  */
 export function MpvSearch({ action }: { action?: ReactNode }) {
-  const binary = usePlayerMpvBinary();
   const [busy, run] = useBusy();
-  useRecheckOnFocus(binary._tag === "Unavailable");
 
   return (
     <Section
