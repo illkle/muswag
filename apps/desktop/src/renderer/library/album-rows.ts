@@ -3,7 +3,8 @@ import { useMemo } from "react";
 
 import { LibraryActions } from "#/library/actions";
 import type { PagedWindowSource } from "#/library/paged-window";
-import { onTableChange, usePagedWindow } from "#/library/use-paged-window";
+import { onTableChange } from "#/data/library-changes";
+import { usePagedWindow } from "#/library/use-paged-window";
 
 /** The albums of the library as a grid holds them: how many there are, those read, and which it draws. */
 export type AlbumRows = {

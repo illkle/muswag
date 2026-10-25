@@ -1,32 +1,24 @@
 import { Worker } from "node:worker_threads";
 
+import type { LibraryChange } from "@muswag/backend";
 import type { SearchHit } from "@muswag/model";
-import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 
-import { SEARCHED_COLUMNS, SEARCHED_TABLES, type SearchedLibrary, type SearchedRow, type SearchWorkerChange } from "./searched-fields";
+import { SEARCHED_TABLES, type SearchWorkerChange } from "./searched-fields";
 import type { SearchWorkerData, SearchWorkerReply, SearchWorkerRequest } from "./search-worker";
 
 export interface LibrarySearchOptions {
   readonly databasePath: string;
   /** The worker's script: `search-worker.ts`, as built next to main's. */
   readonly workerPath: string;
-  /** Hears every change to the library, as the mirror sends it to renderers. */
-  readonly subscribe: (listener: (batch: MirrorChangeBatch) => void) => () => void;
+  /** Hears the rows each write to the library changes. */
+  readonly subscribe: (listener: (changes: ReadonlyArray<LibraryChange>) => void) => () => void;
 }
 
 type Search = { readonly query: string; readonly limit: number; readonly resolve: (hits: SearchHit[] | null) => void; readonly reject: (cause: unknown) => void };
 
-/**
- * The fields of a change that the index looks at, or nothing for a change to another table. A change
- * of a song or an album carries only its id, which goes to the worker as it is: the worker reads the row.
- */
-const searchedChange = (change: MirrorChangeBatch["changes"][number]): SearchWorkerChange[] => {
-  if (!SEARCHED_TABLES.has(change.table)) return [];
-  if (change.type !== "upsert") return [{ table: change.table, type: change.type, key: String(change.key) }];
-  const columns = SEARCHED_COLUMNS[change.table as keyof SearchedLibrary];
-  const value = Object.fromEntries(["id", ...columns].map((column) => [column, change.value[column]])) as SearchedRow;
-  return [{ table: change.table, type: "upsert", value }];
-};
+/** A change the index cares about, or nothing for a change to another table. Changes carry only ids: the worker reads the rows. */
+const searchedChange = (change: LibraryChange): SearchWorkerChange[] =>
+  SEARCHED_TABLES.has(change.table) ? [{ table: change.table, type: change.type === "deleted" ? "delete" : "changed", key: String(change.key) }] : [];
 
 /**
  * The library's search, which runs in a worker (`search-worker.ts`) and answers here.
@@ -76,8 +68,8 @@ export function startLibrarySearch(options: LibrarySearchOptions) {
     ensureWorker().postMessage({ type: "search", id: running.id, query: search.query, limit: search.limit } satisfies SearchWorkerRequest);
   };
 
-  const unsubscribe = options.subscribe((batch) => {
-    const changes = batch.changes.flatMap(searchedChange);
+  const unsubscribe = options.subscribe((written) => {
+    const changes = written.flatMap(searchedChange);
     if (changes.length) worker?.postMessage({ type: "changed", changes } satisfies SearchWorkerRequest);
   });
 

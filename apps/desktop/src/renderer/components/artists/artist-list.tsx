@@ -1,4 +1,4 @@
-import type { Artist } from "@muswag/model";
+import type { LibraryArtist as Artist } from "@muswag/model";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useId, useRef, type KeyboardEvent } from "react";
 

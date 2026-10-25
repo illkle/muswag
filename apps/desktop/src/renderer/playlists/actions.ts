@@ -1,15 +1,14 @@
 import { appCommand } from "#/data/app-command";
-import { db } from "#/data/library";
-import type { Written } from "#shared/commands/app";
+import { invalidateTables } from "#/data/main-read";
 import type { CreatePlaylistInput, PlaylistEntry, PlaylistRecord } from "@muswag/model";
 
 /**
  * Playlist edits run in main, which saves them locally and syncs them to the server. Each resolves
- * once the change has reached the playlists collection, so the UI can read it right away.
+ * once the playlists have been read again, so the UI can read the change right away.
  */
-const synced = async <T>(write: Promise<Written<T>>): Promise<T> => {
-  const { value, position } = await write;
-  await db.playlists.utils.awaitPosition(position);
+const synced = async <T>(write: Promise<T>): Promise<T> => {
+  const value = await write;
+  await invalidateTables(["playlists"]);
   return value;
 };
 

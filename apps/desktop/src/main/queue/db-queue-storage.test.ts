@@ -54,7 +54,7 @@ describe("DbQueueStorage", () => {
     expect(tables.resumePositionSeconds).toBe(12);
   });
 
-  it("writes no mirrored row when only the resume position changed", async () => {
+  it("writes no queue row when only the resume position changed", async () => {
     const tables = new FakeTables();
     const storage = new DbQueueStorage(tables);
     await storage.save(queued("a"), 0);

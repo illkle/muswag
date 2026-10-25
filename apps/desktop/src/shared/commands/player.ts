@@ -69,15 +69,10 @@ export type PlayerCommand =
 export type PlayerCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: Redacted.Redacted<string> };
 
 /**
- * Where the state mirror stood once the command was handled; renderers await it to see its outcome.
- * The mirror's protocol does not depend on Effect, so its position is declared again as a schema here.
+ * How a command went, and the version the app state had once it was handled, which renderers wait for
+ * to see its outcome. The message of a failure is also what the player's state says went wrong.
  */
-const MirrorPosition = Schema.Struct({ epoch: Schema.Finite, seq: Count });
-/** How a command went. The message of a failure is also what the player's state says went wrong. */
-export const CommandResult = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), position: MirrorPosition }),
-  Schema.Struct({ ok: Schema.Literal(false), message: Schema.String, position: MirrorPosition }),
-]);
+export const CommandResult = Schema.Union([Schema.Struct({ ok: Schema.Literal(true), version: Count }), Schema.Struct({ ok: Schema.Literal(false), message: Schema.String, version: Count })]);
 export type CommandResult = typeof CommandResult.Type;
 
 // ---- State ----

@@ -1,9 +1,8 @@
 import type { AuthenticatedSession, SessionManager } from "@muswag/backend";
 import { IDLE_LIBRARY_SYNC, IDLE_PLAYLIST_SYNC, type AuthSnapshot } from "@muswag/model";
-import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
 import { Effect, Redacted, Stream } from "effect";
 
-import { auth, librarySync, playlistSync } from "#shared/state/session";
+import type { AppStateHub } from "../app-state";
 import type { PlayerHandle } from "../player/ipc";
 
 type Session = typeof SessionManager.Service;
@@ -24,29 +23,27 @@ export const makePlayerCredentialsSync = (session: Session, player: PlayerHandle
   );
 
 /**
- * Publishes the session and its sync status to `state`, which must mirror `SESSION_TABLES`, for as long
- * as the scope lasts. `onSessionChange` runs after every session change is published.
+ * Publishes the session and its sync status to `state` for as long as the scope lasts.
+ * `onSessionChange` runs after every session change is published.
  */
-export const publishSession = (session: Session, state: MemoryMirrorService, onSessionChange: Effect.Effect<void>) =>
+export const publishSession = (session: Session, state: AppStateHub, onSessionChange: Effect.Effect<void>) =>
   Effect.gen(function* () {
     // Renderers wait for the session to leave Initializing before they show anything.
-    yield* state.write(
-      Effect.all([
-        state.upsert(auth, { id: "auth", value: { _tag: "Initializing" } }),
-        state.upsert(librarySync, { id: "library_sync", value: IDLE_LIBRARY_SYNC }),
-        state.upsert(playlistSync, { id: "playlist_sync", value: IDLE_PLAYLIST_SYNC }),
-      ]),
-    );
+    yield* Effect.sync(() => {
+      state.set("auth", { _tag: "Initializing" });
+      state.set("librarySync", IDLE_LIBRARY_SYNC);
+      state.set("playlistSync", IDLE_PLAYLIST_SYNC);
+    });
     yield* session.changes.pipe(
-      Stream.runForEach((snapshot) => state.upsert(auth, { id: "auth", value: snapshot }).pipe(Effect.andThen(onSessionChange))),
+      Stream.runForEach((snapshot) => Effect.sync(() => state.set("auth", snapshot)).pipe(Effect.andThen(onSessionChange))),
       Effect.forkScoped,
     );
     yield* followSession(session, IDLE_LIBRARY_SYNC, (active) => active.library.changes).pipe(
-      Stream.runForEach((status) => state.upsert(librarySync, { id: "library_sync", value: status })),
+      Stream.runForEach((status) => Effect.sync(() => state.set("librarySync", status))),
       Effect.forkScoped,
     );
     yield* followSession(session, IDLE_PLAYLIST_SYNC, (active) => active.playlists.changes).pipe(
-      Stream.runForEach((status) => state.upsert(playlistSync, { id: "playlist_sync", value: status })),
+      Stream.runForEach((status) => Effect.sync(() => state.set("playlistSync", status))),
       Effect.forkScoped,
     );
   });

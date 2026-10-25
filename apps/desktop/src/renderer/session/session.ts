@@ -2,21 +2,20 @@ import type { LoginCredentials } from "@muswag/model";
 import { useSelector } from "@tanstack/react-store";
 
 import { appCommand } from "#/data/app-command";
-import { appState } from "#/data/state";
-import { rowStore } from "#/data/stores";
+import { appState, connectToMain } from "#/data/app-state";
 
 let startPromise: Promise<void> | undefined;
 
 /** Whether main has restored the session, logged in or not. */
 const initialized = () => {
-  const row = appState.auth.get("auth");
-  return row !== undefined && row.value._tag !== "Initializing";
+  const auth = appState.auth.get();
+  return auth !== undefined && auth._tag !== "Initializing";
 };
 
 const whenInitialized = () =>
   new Promise<void>((resolve) => {
     if (initialized()) return resolve();
-    const subscription = appState.auth.subscribeChanges(() => {
+    const subscription = appState.auth.subscribe(() => {
       if (!initialized()) return;
       subscription.unsubscribe();
       resolve();
@@ -25,9 +24,9 @@ const whenInitialized = () =>
 
 /** The session, which main runs. Its state is in `appState.auth`. */
 export const Session = {
-  /** Resolves once main has restored the session, logged in or not. */
+  /** Connects to main, and resolves once main has restored the session, logged in or not. */
   start(): Promise<void> {
-    startPromise ??= appState.auth.preload().then(whenInitialized);
+    startPromise ??= connectToMain().then(whenInitialized);
     return startPromise;
   },
 
@@ -36,10 +35,8 @@ export const Session = {
   logout: () => appCommand("session:logout").then(() => undefined),
 };
 
-const authRow = rowStore(appState.auth, "auth");
-
 export const useUser = () => {
-  const session = useSelector(authRow, (row) => row?.value);
+  const session = useSelector(appState.auth, (auth) => auth);
   return {
     data: session?._tag === "LoggedIn" ? { url: session.url, username: session.username } : undefined,
     /** The account of a session main ended because the server no longer accepts its password. */

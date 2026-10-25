@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import type { TrackItem, TrackRows } from "#/components/track-list/types";
 import { LibraryActions } from "#/library/actions";
 import type { PagedWindowSource } from "#/library/paged-window";
-import { onTableChange, usePagedWindow } from "#/library/use-paged-window";
+import { onTableChange } from "#/data/library-changes";
+import { usePagedWindow } from "#/library/use-paged-window";
 
 /** Main reads the pages of the songs in `sort` order, and finds the songs around one by its id. */
 const sourceFor = (sort: LibrarySort): PagedWindowSource<LibrarySong> => ({

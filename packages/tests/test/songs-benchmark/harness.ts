@@ -4,13 +4,8 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { deserialize, serialize } from "node:v8";
 
-import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
-import { DatabaseLive } from "@muswag/backend";
-import { MIRROR_OMITTED_COLUMNS, MIRRORED_TABLES } from "@muswag/model";
-import type { MirrorChangeBatch, MirrorClientTransport, MirrorResponse } from "@muswag/tanstack-db-mirror/protocol";
-import { createMirrorClient, type MirrorClient } from "@muswag/tanstack-db-mirror/client";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { DatabaseLive, LibraryChanges } from "@muswag/backend";
+import { Effect, type Layer, ManagedRuntime } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { libraryWithSongs } from "./library-fixture.js";
@@ -18,36 +13,24 @@ import { libraryWithSongs } from "./library-fixture.js";
 /** The library sizes to measure, from `MUSWAG_BENCH_SIZES` (comma-separated). */
 export const SIZES = (process.env.MUSWAG_BENCH_SIZES ?? "4358,25000,100000,250000").split(",").map(Number);
 
-/** Added to every request and every pushed batch, standing in for the hop between processes. */
-const LATENCY_MS = Number(process.env.MUSWAG_BENCH_LATENCY_MS ?? 0);
-
 export type TransportStats = { requests: number; bytes: number; serverMs: number; serializeMs: number; deserializeMs: number };
 
 /**
- * A library of `songCount` songs served by the app's own database layer and mirror server, and a
- * mirror client connected to it through a transport that copies every message the way Electron's IPC
- * does: serialized by V8 on one side, deserialized on the other.
- *
- * With `fullRows` the mirror sends songs whole in its change stream, as it did before songs were
- * key-only; the library is migrated by the app's layer first, and then has no `Db` to run queries with.
+ * A library of `songCount` songs served by the app's own database layer, with what main's reads
+ * return copied the way Electron's IPC copies it: serialized by V8 on one side, deserialized on the other.
  */
-export async function openLibrary(songCount: number, options: { readonly fullRows?: boolean } = {}) {
+export async function openLibrary(songCount: number) {
   const dir = join(tmpdir(), "muswag-songs-benchmark", "runs");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `run-${process.pid}-${songCount}.db`);
   copyFileSync(libraryWithSongs(songCount), file);
 
-  if (options.fullRows) await ManagedRuntime.make(DatabaseLive(file)).dispose();
-  const layer = options.fullRows
-    ? SqliteMirror.layer({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS, readOnly: true }).pipe(Layer.provideMerge(SqliteClient.layer({ filename: file })))
-    : DatabaseLive(file);
-  const runtime = ManagedRuntime.make(layer as ReturnType<typeof DatabaseLive>);
-  const mirror = await runtime.runPromise(Effect.service(SqliteMirror));
+  const runtime = ManagedRuntime.make(DatabaseLive(file));
+  const changes = await runtime.runPromise(Effect.service(LibraryChanges));
   const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient));
 
   const stats: TransportStats = { requests: 0, bytes: 0, serverMs: 0, serializeMs: 0, deserializeMs: 0 };
   const resetStats = () => Object.assign(stats, { requests: 0, bytes: 0, serverMs: 0, serializeMs: 0, deserializeMs: 0 });
-  const delay = () => (LATENCY_MS > 0 ? new Promise<void>((resolve) => setTimeout(resolve, LATENCY_MS)) : Promise.resolve());
 
   const copy = <T>(value: T): T => {
     const started = performance.now();
@@ -60,38 +43,26 @@ export async function openLibrary(songCount: number, options: { readonly fullRow
     return result;
   };
 
-  const transport: MirrorClientTransport = {
-    request: async (request) => {
-      await delay();
-      stats.requests++;
-      const started = performance.now();
-      const response = await runtime.runPromise(mirror.handle(copy(request)));
-      stats.serverMs += performance.now() - started;
-      await delay();
-      return copy(response) as MirrorResponse<typeof request.type>;
-    },
-    subscribe: (listener) =>
-      mirror.subscribe((batch) => {
-        void delay().then(() => listener(copy(batch) as MirrorChangeBatch));
-      }),
-  };
-  const client: MirrorClient = createMirrorClient({ transport, heartbeatMs: 0, requestTimeoutMs: 10 * 60_000 });
-
-  /** Runs `statement` through the mirror's `write`, so its changes are pushed the way the app's are. */
-  const exec = (statement: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(mirror.write(sql.unsafe(statement, params)));
+  /** Runs `statement` through `LibraryChanges.write`, so its changes are announced the way the app's are. */
+  const exec = (statement: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(changes.write(sql.unsafe(statement, params)));
   const query = <Row extends object>(statement: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(sql.unsafe<Row>(statement, params));
-  /** Runs one of main's own reads, such as `LibraryQueries.songPage`. */
-  const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<ReturnType<typeof DatabaseLive>>>) => runtime.runPromise(effect);
+  /** Runs one of main's own reads, such as `LibraryQueries.songPage`, counting it as a request. */
+  const run = async <A, E>(effect: Effect.Effect<A, E, Layer.Success<ReturnType<typeof DatabaseLive>>>) => {
+    stats.requests++;
+    const started = performance.now();
+    const result = await runtime.runPromise(effect);
+    stats.serverMs += performance.now() - started;
+    return result;
+  };
 
   const dispose = async () => {
-    client.dispose();
     await runtime.dispose();
     rmSync(file, { force: true });
     rmSync(`${file}-wal`, { force: true });
     rmSync(`${file}-shm`, { force: true });
   };
 
-  return { file, runtime, mirror, client, transport, stats, resetStats, copy, exec, query, run, dispose };
+  return { file, runtime, changes, stats, resetStats, copy, exec, query, run, dispose };
 }
 
 export type Library = Awaited<ReturnType<typeof openLibrary>>;

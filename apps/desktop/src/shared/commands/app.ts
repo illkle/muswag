@@ -11,22 +11,28 @@ import {
   LoginCredentials,
   SyncMode,
   Text,
+  type AlbumDetail,
   type AlbumPage,
   type ArtistAppearances,
+  type ArtistDetail,
+  type Discography,
+  type LibraryAlbum,
+  type LibraryArtist,
+  type PlaylistDetail,
   type AuthSnapshot,
   type PlaylistEntry,
   type PlaylistRecord,
+  type PlaylistRow,
   type PlaylistSyncStatus,
   type SearchResult,
   type SongPage,
 } from "@muswag/model";
-import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
 
 /**
  * The contract between the renderer and main, which owns the library, the session and the queue.
- * The renderer reads library data and the queue from mirrored collections, and main's in-memory state
- * from the state mirror (`state/mirror.ts`); it changes anything only through the commands below.
+ * The renderer reads the library through the commands below, and main's state, the queue among it,
+ * as main publishes it (`state/app-state.ts`); it changes anything only through these commands.
  */
 
 // ---- Commands ----
@@ -46,6 +52,13 @@ export const AppCommandArgs = {
   "library:artistsWithAlbums": Schema.Tuple([]),
   "library:albumCoverArts": Schema.Tuple([Ids]),
   "library:albumSongIds": Schema.Tuple([Ids]),
+  "library:album": Schema.Tuple([Id]),
+  "library:artist": Schema.Tuple([Id]),
+  "library:discography": Schema.Tuple([Id]),
+  "library:albumsByIds": Schema.Tuple([Ids]),
+  "library:sourceName": Schema.Tuple([QueueSourceRef]),
+  "playlists:list": Schema.Tuple([]),
+  "playlists:get": Schema.Tuple([Id]),
   "playlists:create": Schema.Tuple([CreatePlaylistInput]),
   "playlists:rename": Schema.Tuple([Id, Text]),
   "playlists:setComment": Schema.Tuple([Id, Text]),
@@ -65,15 +78,12 @@ export const AppCommandArgs = {
   "queue:previous": Schema.Tuple([]),
 } as const;
 
-/** A library write that renderers can wait for with `collection.utils.awaitPosition`. */
-export type Written<T = void> = { readonly value: T; readonly position: MirrorPosition };
-
 export type AppCommandResults = {
   "session:login": AuthSnapshot;
   "session:logout": AuthSnapshot;
   "library:sync": void;
   "library:refresh": void;
-  /** Read when asked, not mirrored: it is as current as the library was then. */
+  /** Read when asked: it is as current as the library was then. */
   "library:artistAppearances": ArtistAppearances;
   /** The best matches for a query, best first; `null` when a later search took its place before it ran. */
   "library:search": SearchResult[] | null;
@@ -85,20 +95,34 @@ export type AppCommandResults = {
   "library:songPosition": number;
   /** A page of the albums page, newest first, with how many albums there are when the last argument asks. */
   "library:albumPage": AlbumPage;
-  /** The ids of the artists with an album of their own, which the artists page lists. */
-  "library:artistsWithAlbums": string[];
+  /** The artists with an album of their own, which the artists page lists, by name. */
+  "library:artistsWithAlbums": LibraryArtist[];
   /** The cover art ids of the given albums, leaving out those the library does not have, in no particular order. */
   "library:albumCoverArts": Array<{ id: string; coverArt: string | null }>;
   /** The songs of the given albums, album after album in the order given, each album's in the order its page lists them. */
   "library:albumSongIds": string[];
-  "playlists:create": Written<PlaylistRecord>;
-  "playlists:rename": Written;
-  "playlists:setComment": Written;
-  "playlists:setVisibility": Written;
-  "playlists:addEntries": Written<PlaylistEntry[]>;
-  "playlists:removeEntry": Written;
-  "playlists:moveEntries": Written;
-  "playlists:delete": Written;
+  /** An album and its songs, in the order it plays in. */
+  "library:album": AlbumDetail;
+  /** An artist's row and its own albums, newest first. */
+  "library:artist": ArtistDetail;
+  /** An artist's albums and their songs, in the order the artist plays in. */
+  "library:discography": Discography;
+  /** The given albums that the library has, newest first. */
+  "library:albumsByIds": LibraryAlbum[];
+  /** What the album, artist or playlist a queue plays from is called; `null` for the library or one it does not have. */
+  "library:sourceName": string | null;
+  /** Every playlist, those awaiting deletion on the server among them. */
+  "playlists:list": PlaylistRow[];
+  /** A playlist as stored, `null` when there is none, and the songs of its entries that the library has. */
+  "playlists:get": PlaylistDetail;
+  "playlists:create": PlaylistRecord;
+  "playlists:rename": void;
+  "playlists:setComment": void;
+  "playlists:setVisibility": void;
+  "playlists:addEntries": PlaylistEntry[];
+  "playlists:removeEntry": void;
+  "playlists:moveEntries": void;
+  "playlists:delete": void;
   "playlists:sync": PlaylistSyncStatus;
   "queue:playSource": void;
   "queue:select": void;

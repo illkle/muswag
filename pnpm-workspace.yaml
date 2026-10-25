@@ -13,9 +13,7 @@ catalog:
   "@electron-toolkit/utils": ^4.0.0
   "@rolldown/plugin-babel": ^0.2.4
   "@tailwindcss/vite": ^4.3.3
-  "@tanstack/db": ^0.15.0
   "@tanstack/devtools-vite": ^0.8.5
-  "@tanstack/react-db": ^0.5.10
   "@tanstack/react-form": ^1.33.5
   "@tanstack/react-hotkeys": ^0.14.3
   "@tanstack/react-query": ^5.104.3

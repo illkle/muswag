@@ -6,8 +6,8 @@ import type { PlaylistState } from "../playlists/types.js";
 import type { NowPlaying, QueueSourceRef, SourceCursor } from "../player-queue.js";
 
 /**
- * The library database. Main owns it; the renderer mirrors `MIRRORED_TABLES` as TanStack DB
- * collections. Columns follow the Subsonic field names, so an API object maps onto a row by key.
+ * The library database. Main owns it; renderers read it through main's commands, and hear which of
+ * `ANNOUNCED_TABLES` changed. Columns follow the Subsonic field names, so an API object maps onto a row by key.
  */
 
 const json = <T>() => text({ mode: "json" }).$type<T>();
@@ -170,7 +170,7 @@ export const queueState = sqliteTable("queue_state", {
 
 /**
  * Where playback resumes after a restart, in a single row (`id` 1). It is written every few seconds
- * while a track plays, so it is kept out of the tables renderers mirror. Restores always start paused,
+ * while a track plays, so it is kept apart from the queue's own tables. Restores always start paused,
  * so play state is not kept.
  */
 export const queueResume = sqliteTable("queue_resume", {
@@ -198,8 +198,8 @@ export const credentials = sqliteTable("credentials", {
   token: text().notNull(),
 });
 
-/** Tables the renderer mirrors. Everything else stays in main. */
-export const MIRRORED_TABLES = [albums, artists, songs, playlists, queueItems, queueState] as const;
+/** Tables whose changes are announced, to main's search and queue and to renderers. */
+export const ANNOUNCED_TABLES = [albums, artists, songs, playlists] as const;
 
 export type Album = typeof albums.$inferSelect;
 export type Artist = typeof artists.$inferSelect;

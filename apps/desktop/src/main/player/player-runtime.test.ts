@@ -1,12 +1,11 @@
 import { it } from "@effect/vitest";
-import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
-import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { Deferred, Effect, Fiber, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import type { PlayerCommand } from "#shared/commands/player";
 import { EngineError, InstallFailed } from "./errors";
-import { player as playerTable, playerPosition } from "#shared/state/player";
+import type { AppStateName } from "#shared/state/app-state";
+import { AppState } from "../app-state";
 import { Player } from "./player";
 import { fixture, login, tracks, until } from "./test/player-harness";
 
@@ -75,24 +74,24 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
-  it.effect("mirrors its state for renderers, with position updates apart from everything else", () => {
+  it.effect("publishes its state for renderers, with position updates apart from everything else", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
-      const mirror = yield* MemoryMirror;
+      const state = yield* AppState;
       yield* login(player);
       yield* player.execute(select("a"));
       test.emit({ type: "file-loaded" });
       yield* until(player, (state) => state.playback._tag === "Playing");
-      expect(yield* mirror.get(playerTable, "player")).toMatchObject({ status: "playing", item: { key: "a" }, buffering: false, error: null });
+      expect(state.get("player")).toMatchObject({ status: "playing", item: { key: "a" }, buffering: false, error: null });
 
-      const batches: MirrorChangeBatch[] = [];
-      const unsubscribe = mirror.subscribe((batch) => batches.push(batch));
+      const changed: AppStateName[] = [];
+      const unsubscribe = state.subscribe((update) => changed.push(update.name));
       test.emit({ type: "property", name: "time-pos", data: 12 });
       yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.media.positionSeconds === 12);
       unsubscribe();
-      expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player_position"]);
-      expect(yield* mirror.get(playerPosition, "player")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null });
+      expect(changed).toEqual(["playerPosition"]);
+      expect(state.get("playerPosition")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null });
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
@@ -100,13 +99,13 @@ describe("Effect player", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
-      const mirror = yield* MemoryMirror;
+      const state = yield* AppState;
       yield* login(player);
       yield* player.execute(select("a"));
       const failed = yield* player.execute({ _tag: "Seek", seconds: 5 }).pipe(Effect.flip);
       expect(failed.message).toBe("Wait until the track has loaded.");
       // The command did nothing, so playback goes on; the error is only shown.
-      expect(yield* mirror.get(playerTable, "player")).toMatchObject({ status: "loading", error: { message: "Wait until the track has loaded.", fix: null } });
+      expect(state.get("player")).toMatchObject({ status: "loading", error: { message: "Wait until the track has loaded.", fix: null } });
 
       test.emit({ type: "file-loaded" });
       expect((yield* until(player, (state) => state.playback._tag === "Playing")).error).toBeNull();
@@ -357,16 +356,16 @@ describe("Effect player", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
-      const mirror = yield* MemoryMirror;
+      const state = yield* AppState;
       yield* login(player);
       yield* player.execute(select("a"));
       yield* TestClock.adjust("2 minutes");
       yield* until(player, (state) => state.playback._tag === "Failed");
-      expect(yield* mirror.get(playerTable, "player")).toMatchObject({ status: "error", error: { fix: "retry" } });
+      expect(state.get("player")).toMatchObject({ status: "error", error: { fix: "retry" } });
 
       yield* player.execute({ _tag: "DismissError" });
       expect(yield* player.snapshot).toMatchObject({ playback: { _tag: "Stopped", media: { item: { key: "a" } } }, error: null });
-      expect(yield* mirror.get(playerTable, "player")).toMatchObject({ status: "stopped", item: { key: "a" }, error: null });
+      expect(state.get("player")).toMatchObject({ status: "stopped", item: { key: "a" }, error: null });
 
       yield* player.execute({ _tag: "Play" });
       expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "a" } } });

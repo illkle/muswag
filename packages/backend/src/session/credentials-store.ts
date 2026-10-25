@@ -29,7 +29,7 @@ export class CredentialsStore extends Context.Service<CredentialsStore, Credenti
 const ROW_ID = 1;
 
 /**
- * Keeps the credentials in the database's `credentials` table, which is never mirrored. What is stored
+ * Keeps the credentials in the database's `credentials` table, which no renderer reads. What is stored
  * logs in to the one server and is not the password, so it needs no keychain to be kept in.
  */
 export const CredentialsStoreSql = () =>

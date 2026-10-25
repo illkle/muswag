@@ -1,13 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { albums, artists, songs, SubsonicApiError, SubsonicHttpError, syncState, type AlbumWithSongsID3, type ArtistID3, type Child } from "@muswag/model";
 import { eq } from "drizzle-orm";
-import type { MirrorChange } from "@muswag/tanstack-db-mirror/protocol";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
 
 import type { SubsonicApiService } from "../api/subsonic-api.js";
 import { MiniFs } from "../covers/cover-manager.js";
-import { Db, position } from "../db/database.js";
+import { LibraryChanges, type LibraryChange } from "../db/changes.js";
+import { Db } from "../db/database.js";
 import { apiAlbum as album, apiLayer, apiPlaylist as playlist, apiSong as song, idsOf, rowOf, seed, TestDatabase } from "../test/index.js";
 import { LibrarySync } from "./library-sync.js";
 
@@ -193,9 +192,10 @@ describe("LibrarySync.sync", () => {
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
       yield* sync.sync("full");
-      const before = yield* position;
+      const changes: Array<LibraryChange> = [];
+      (yield* LibraryChanges).subscribe((written) => changes.push(...written));
       yield* sync.sync("full");
-      expect(yield* position).toEqual(before);
+      expect(changes).toEqual([]);
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -499,8 +499,8 @@ describe("LibrarySync.refresh", () => {
 
     return Effect.gen(function* () {
       yield* seed({ albums: [album("stats", { playCount: 10, songCount: 2 })], songs: [song("same", "stats", { playCount: 2, starred: "2026-01-01" }), song("played", "stats", { playCount: 3 })] });
-      const changes: Array<MirrorChange> = [];
-      (yield* SqliteMirror).subscribe((batch) => changes.push(...batch.changes));
+      const changes: Array<LibraryChange> = [];
+      (yield* LibraryChanges).subscribe((written) => changes.push(...written));
       const library = yield* LibrarySync;
 
       yield* library.refresh({ type: "album", id: "stats" });

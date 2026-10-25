@@ -36,15 +36,9 @@ catalogs:
     '@tailwindcss/vite':
       specifier: ^4.3.3
       version: 4.3.3
-    '@tanstack/db':
-      specifier: ^0.15.0
-      version: 0.15.0
     '@tanstack/devtools-vite':
       specifier: ^0.8.5
       version: 0.8.5
-    '@tanstack/react-db':
-      specifier: ^0.5.10
-      version: 0.5.10
     '@tanstack/react-form':
       specifier: ^1.33.5
       version: 1.33.5
@@ -198,9 +192,6 @@ importers:
       '@muswag/model':
         specifier: workspace:*
         version: link:../../packages/model
-      '@muswag/tanstack-db-mirror':
-        specifier: workspace:*
-        version: link:../../packages/tanstack-db-mirror
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -210,15 +201,9 @@ importers:
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.3(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1))
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.15.0(typescript@7.0.2)
       '@tanstack/devtools-vite':
         specifier: 'catalog:'
         version: 0.8.5(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1))
-      '@tanstack/react-db':
-        specifier: 'catalog:'
-        version: 0.5.10(react@19.3.1)(typescript@7.0.2)
       '@tanstack/react-form':
         specifier: 'catalog:'
         version: 1.33.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -345,9 +330,6 @@ importers:
       '@muswag/model':
         specifier: workspace:*
         version: link:../model
-      '@muswag/tanstack-db-mirror':
-        specifier: workspace:*
-        version: link:../tanstack-db-mirror
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
@@ -390,31 +372,6 @@ importers:
         specifier: 'catalog:'
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1))
 
-  packages/tanstack-db-mirror:
-    dependencies:
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.15.0(typescript@7.0.2)
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 1.0.0-rc.5-5935859(@effect/sql-sqlite-node@4.0.5(effect@4.0.5))(@opentelemetry/api@1.9.1)(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)(effect@4.0.5)(zod@4.6.7)
-    devDependencies:
-      '@effect/sql-sqlite-node':
-        specifier: 'catalog:'
-        version: 4.0.5(effect@4.0.5)
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.6.5
-      '@vitest/coverage-v8':
-        specifier: 'catalog:'
-        version: 5.0.5(vitest@5.0.5)
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.5
-      vitest:
-        specifier: 'catalog:'
-        version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1))
-
   packages/tests:
     devDependencies:
       '@effect/platform-node':
@@ -429,12 +386,6 @@ importers:
       '@muswag/model':
         specifier: workspace:*
         version: link:../model
-      '@muswag/tanstack-db-mirror':
-        specifier: workspace:*
-        version: link:../tanstack-db-mirror
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.15.0(typescript@7.0.2)
       effect:
         specifier: 'catalog:'
         version: 4.0.5
@@ -1176,6 +1127,7 @@ packages:
   '@opentelemetry/sdk-trace-base@2.12.0':
     resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
@@ -2236,9 +2188,6 @@ packages:
     resolution: {integrity: sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==}
     engines: {node: '>=18'}
 
-  '@standard-schema/spec@1.1.0':
-    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
@@ -2337,16 +2286,6 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/db-ivm@0.2.0':
-    resolution: {integrity: sha512-AuMuGzVdWR5qzJPRYajmrUp95vMo0duvMZ0zBjMOvaI9rkh2GHZWCsJ/p7s81UN4Lep6HHJjahnYUF+XVL0+AQ==}
-    peerDependencies:
-      typescript: '>=4.7'
-
-  '@tanstack/db@0.15.0':
-    resolution: {integrity: sha512-truZ/WWSS48goC3JlxR2dbjSxYcVfwLtA8Z8xexvayR8HG1Jii040rS+PKUs+C50QGNfUQo5jWQUZ+lERZYeQw==}
-    peerDependencies:
-      typescript: '>=4.7'
-
   '@tanstack/devtools-bundler-core@0.1.3':
     resolution: {integrity: sha512-F0tlxIyfFqXkZ1mJP1EjtkiSeJA+ztXY2AYOHf7r4goCIEAOp86N9PFJ/yv8vu1TnmxGS6vKsZCS3Kyls9xQQA==}
     engines: {node: '>=18'}
@@ -2391,17 +2330,8 @@ packages:
     resolution: {integrity: sha512-y/xtNPNt/YeyoVxE/JCx+T7yjEzpezmbb+toK8DDD1P4m7Kzs5YR956+7OKexG3f8aXgC3rLZl7b1V+yNUSy5w==}
     engines: {node: '>=18'}
 
-  '@tanstack/pacer-lite@0.2.2':
-    resolution: {integrity: sha512-eQ1MyLKCHyXiH7NbdmB80W77OhiMgGBUb+qDx/8WMGbwg5Lf/NlfD0TfNYAqY77i8V3AxoDoYdICrQE5ADw4Yw==}
-    engines: {node: '>=18'}
-
   '@tanstack/query-core@5.104.3':
     resolution: {integrity: sha512-DZY9TuJAOgU3UyHUhXb4CcTYEHNZszlwkPg4VViIwTxOKzLprPUU+rbaPZQd3srqkGOtpaDdKpW972UV/LKlcg==}
-
-  '@tanstack/react-db@0.5.10':
-    resolution: {integrity: sha512-cLXzBQPloOrvS2iyAPY5uJy4a+r/2xTFcUyfuNVMpQQcrNP0QkphxmgfqYDbYMPMKq91RGLgY0hncRu0xslwEg==}
-    peerDependencies:
-      react: '>=18.0.0'
 
   '@tanstack/react-form@1.33.5':
     resolution: {integrity: sha512-LlRB28qJwO/QCGaHvWnbdh4haBgTFiZVmzA2uzxSBS3YA7/IqrQ6HOBK70CkFQ+DbflZ7NawsmSln13h5iIdTA==}
@@ -3898,10 +3828,6 @@ packages:
   forwarded@0.2.0:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
-
-  fractional-indexing@3.4.0:
-    resolution: {integrity: sha512-8J3glhz2rrpKG6KmI7wmJo3zH1VjeOpN+vTJSw1fOyO+Viqq3zX6/5NGh6oaZB2qIAYdOYuu5Dz9xp4faOO0Pg==}
-    engines: {node: ^14.13.1 || >=16.0.0}
 
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
@@ -7355,8 +7281,6 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
-  '@standard-schema/spec@1.1.0': {}
-
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
@@ -7429,18 +7353,6 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1)
 
-  '@tanstack/db-ivm@0.2.0(typescript@7.0.2)':
-    dependencies:
-      fractional-indexing: 3.4.0
-      typescript: 7.0.2
-
-  '@tanstack/db@0.15.0(typescript@7.0.2)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/db-ivm': 0.2.0(typescript@7.0.2)
-      '@tanstack/pacer-lite': 0.2.2
-      typescript: 7.0.2
-
   '@tanstack/devtools-bundler-core@0.1.3(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
       '@tanstack/devtools-client': 0.0.8
@@ -7498,16 +7410,7 @@ snapshots:
 
   '@tanstack/pacer-lite@0.1.1': {}
 
-  '@tanstack/pacer-lite@0.2.2': {}
-
   '@tanstack/query-core@5.104.3': {}
-
-  '@tanstack/react-db@0.5.10(react@19.3.1)(typescript@7.0.2)':
-    dependencies:
-      '@tanstack/db': 0.15.0(typescript@7.0.2)
-      react: 19.3.1
-    transitivePeerDependencies:
-      - typescript
 
   '@tanstack/react-form@1.33.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
@@ -9001,8 +8904,6 @@ snapshots:
       mime-types: 2.1.35
 
   forwarded@0.2.0: {}
-
-  fractional-indexing@3.4.0: {}
 
   fresh@2.0.0: {}
 

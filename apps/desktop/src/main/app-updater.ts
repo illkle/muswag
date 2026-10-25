@@ -1,11 +1,10 @@
 import electronUpdater from "electron-updater";
 import { app } from "electron";
 import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
-import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
-import { Effect } from "effect";
 
 import type { MuswagMainIpc } from "#shared/ipc";
-import { appUpdate, type AppUpdateState } from "#shared/state/app-update";
+import type { AppUpdateState } from "#shared/state/app-update";
+import type { AppStateHub } from "./app-state";
 
 const { autoUpdater } = electronUpdater;
 
@@ -108,12 +107,9 @@ export function initializeAutoUpdater(): void {
   void checkForAppUpdates();
 }
 
-/**
- * Shows renderers the update state in `state`, which must mirror `appUpdate`, and answers their
- * requests to check and to install.
- */
-export function registerAppUpdater(mainIpc: IpcListener<MuswagMainIpc>, state: MemoryMirrorService): void {
-  publish = (value) => void Effect.runFork(state.upsert(appUpdate, { id: "app_update", value }));
+/** Shows renderers the update state through `state`, and answers their requests to check and to install. */
+export function registerAppUpdater(mainIpc: IpcListener<MuswagMainIpc>, state: AppStateHub): void {
+  publish = (value) => state.set("appUpdate", value);
   publish(updateState);
   mainIpc.handle("appUpdate:check", () => checkForAppUpdates());
   mainIpc.handle("appUpdate:install", async () => {

@@ -3,10 +3,11 @@ import { AlbumCover } from "#/components/album-list/album-cover";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { PageState } from "#/components/page-state";
-import { db } from "#/data/library";
+import { useMainRead } from "#/data/main-read";
+import { LibraryActions } from "#/library/actions";
 import { useArtistAppearances } from "#/library/artist-appearances";
 import { formatMetaLine } from "#/lib/format";
-import { eq, inArray, useLiveQuery } from "@tanstack/react-db";
+import type { LibraryAlbum } from "@muswag/model";
 import { createFileRoute } from "@tanstack/react-router";
 import { WarningIcon } from "@phosphor-icons/react";
 
@@ -14,51 +15,32 @@ export const Route = createFileRoute("/app/artists/$artistId")({
   component: RouteComponent,
 });
 
-// `inArray` with an empty list is not a query TanStack DB can run, so an id no album has stands in for none.
-const NO_ALBUMS = [" "];
+const NO_ALBUMS: ReadonlyArray<LibraryAlbum> = [];
 
 function RouteComponent() {
   const { artistId } = Route.useParams();
 
-  const artistQuery = useLiveQuery({
-    queryKey: ["artist", artistId],
-    query: (q) =>
-      q
-        .from({ artist: db.artists })
-        .where(({ artist }) => eq(artist.id, artistId))
-        .findOne(),
-  });
-
-  const albumsQuery = useLiveQuery({
-    queryKey: ["artist-albums", artistId],
-    query: (q) =>
-      q
-        .from({ album: db.albums })
-        .where((v) => eq(v.album.artistId, artistId))
-        .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" }),
-  });
+  // The artist's row and its own albums, newest first.
+  const artistQuery = useMainRead({ queryKey: ["artist", artistId], tables: ["artists", "albums"], read: () => LibraryActions.artist(artistId) });
 
   const appearancesQuery = useArtistAppearances(artistId);
-  const appearsOnIds = appearancesQuery.data?.albumIds.length ? appearancesQuery.data.albumIds : NO_ALBUMS;
-  const appearsOnQuery = useLiveQuery({
-    queryKey: ["artist-appears-on", appearsOnIds],
-    query: (q) =>
-      q
-        .from({ album: db.albums })
-        .where(({ album }) => inArray(album.id, [...appearsOnIds]))
-        .orderBy((v) => v.album.year, { direction: "desc", nulls: "last" }),
+  const appearsOnIds = appearancesQuery.data?.albumIds ?? [];
+  const appearsOnQuery = useMainRead({
+    queryKey: ["albums-by-ids", appearsOnIds],
+    tables: ["albums"],
+    read: () => (appearsOnIds.length > 0 ? LibraryActions.albumsByIds(appearsOnIds) : Promise.resolve([])),
   });
 
-  if (artistQuery.isLoading || albumsQuery.isLoading || appearancesQuery.isPending || appearsOnQuery.isLoading) return <PageState tone="quiet" title="Loading artist…" />;
-  if (artistQuery.isError || albumsQuery.isError || appearancesQuery.isError || appearsOnQuery.isError) {
+  if (artistQuery.isPending || appearancesQuery.isPending || appearsOnQuery.isPending) return <PageState tone="quiet" title="Loading artist…" />;
+  if (artistQuery.isError || appearancesQuery.isError || appearsOnQuery.isError) {
     return <PageState tone="error" icon={<WarningIcon />} title="Artist unavailable" description="The artist could not be read from the local database." />;
   }
 
-  const albums = albumsQuery.data;
-  const appearsOn = appearsOnQuery.data;
+  const albums = artistQuery.data.albums;
+  const appearsOn = appearsOnQuery.data ?? NO_ALBUMS;
   // An artist may have no row of its own, and is then named as an album or a song credits it.
   const credited = [...albums, ...appearsOn].flatMap((album) => getArtistCredits(album)).find((credit) => credit.id === artistId)?.name;
-  const artistName = artistQuery.data?.name ?? credited ?? appearancesQuery.data.name ?? artistId;
+  const artistName = artistQuery.data.artist?.name ?? credited ?? appearancesQuery.data.name ?? artistId;
   const artistMeta = formatMetaLine([
     albums.length > 0 ? `${albums.length} album${albums.length === 1 ? "" : "s"}` : null,
     appearsOn.length > 0 ? `${appearsOn.length} appearance${appearsOn.length === 1 ? "" : "s"}` : null,
@@ -86,7 +68,7 @@ function RouteComponent() {
                 target={{
                   type: "artist",
                   id: artistId,
-                  coverArtId: artistQuery.data?.coverArt ?? null,
+                  coverArtId: artistQuery.data.artist?.coverArt ?? null,
                 }}
               />
             }

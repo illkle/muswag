@@ -16,7 +16,6 @@ import {
   type LoginCredentials,
   type SessionCredentials,
 } from "@muswag/model";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { Context, Crypto, Data, Effect, Layer, Scope, ScopedRef, Semaphore, Stream, SubscriptionRef } from "effect";
 import { HttpClient, HttpClientError } from "effect/http";
@@ -24,6 +23,7 @@ import { Path } from "effect/Path";
 
 import { locateSubsonicServer, makeSubsonicAPI, SubsonicAPI, subsonicToken, WRONG_CREDENTIALS, type SubsonicApiConfig } from "../api/subsonic-api.js";
 import { CoverManager, CoverManagerLive, MiniFs } from "../covers/cover-manager.js";
+import { LibraryChanges } from "../db/changes.js";
 import { Db } from "../db/database.js";
 import { LibrarySync } from "../library/library-sync.js";
 import { PlaylistEdits } from "../playlists/commands.js";
@@ -77,7 +77,7 @@ export interface SessionManagerOptions {
   readonly coverSaveLocation: string;
 }
 
-type SessionDependencies = Db | SqliteMirror | PlaylistEdits | MiniFs | Path | HttpClient.HttpClient | Crypto.Crypto | CredentialsStore;
+type SessionDependencies = Db | LibraryChanges | PlaylistEdits | MiniFs | Path | HttpClient.HttpClient | Crypto.Crypto | CredentialsStore;
 type SessionState = { readonly _tag: "LoggedOut" } | { readonly _tag: "LoggedIn"; readonly session: AuthenticatedSession };
 
 const toApiConfig = (credentials: SessionCredentials): SubsonicApiConfig => ({
@@ -147,7 +147,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
     const scope = yield* Effect.scope;
     const credentialsStore = yield* CredentialsStore;
     const db = yield* Db;
-    const mirror = yield* SqliteMirror;
+    const changes = yield* LibraryChanges;
     const fs = yield* MiniFs;
     const crypto = yield* Crypto.Crypto;
     // Login, logout and a session the server ends each replace the session, one at a time.
@@ -238,7 +238,7 @@ const makeSessionManager = (options: SessionManagerOptions) =>
       transitions.withPermit,
     );
 
-    const clearLocalData = mirror.write(Effect.forEach(USER_TABLES, (table) => db.delete(table), { discard: true })).pipe(Effect.andThen(fs.remove(options.coverSaveLocation)));
+    const clearLocalData = changes.write(Effect.forEach(USER_TABLES, (table) => db.delete(table), { discard: true })).pipe(Effect.andThen(fs.remove(options.coverSaveLocation)));
 
     const login = (entered: LoginCredentials, loginOptions: LoginOptions = {}) =>
       Effect.gen(function* () {

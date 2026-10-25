@@ -1,6 +1,6 @@
 import { QueueIcon } from "@phosphor-icons/react";
 import type { PlaybackItem, QueueSourceRef } from "@muswag/model";
-import { createStore, useStore } from "@tanstack/react-store";
+import { createStore, useSelector } from "@tanstack/react-store";
 import { useMemo } from "react";
 
 import { compactColumns } from "#/components/track-list/columns";
@@ -9,9 +9,8 @@ import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem, TrackSelection } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
-import { db } from "#/data/library";
-import { eq, useLiveQuery } from "@tanstack/react-db";
-import { useCollectionRow } from "#/data/stores";
+import { useMainRead } from "#/data/main-read";
+import { LibraryActions } from "#/library/actions";
 import { failureNotice } from "#/lib/notify";
 import { useSongDrop, type SongDrag } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
@@ -30,24 +29,15 @@ function togglePanel() {
 
 /** What to call the album, playlist, artist or library the queue is playing through. */
 function useSourceName(ref: QueueSourceRef | null): string | null {
-  // The albums are read on demand, so the album playing is asked for rather than looked up.
-  const albumId = ref?.type === "album" ? ref.albumId : null;
-  const albumQuery = useLiveQuery({
-    queryKey: ["queue-source-album", albumId],
-    query: (q) =>
-      albumId === null
-        ? undefined
-        : q
-            .from({ album: db.albums })
-            .where(({ album }) => eq(album.id, albumId))
-            .findOne(),
+  const named = ref !== null && ref.type !== "library" ? ref : null;
+  const nameQuery = useMainRead({
+    queryKey: ["queue-source-name", named],
+    tables: ["albums", "artists", "playlists"],
+    read: () => (named ? LibraryActions.sourceName(named) : Promise.resolve(null)),
   });
-  const album = albumQuery.data?.name;
-  const playlist = useCollectionRow(db.playlists, ref?.type === "playlist" ? ref.playlistId : null, ({ local }) => local?.name);
-  const artist = useCollectionRow(db.artists, ref?.type === "artist" ? ref.artistId : null, ({ name }) => name);
 
   if (ref?.type === "library") return "your library";
-  return album ?? playlist ?? artist ?? null;
+  return nameQuery.data ?? null;
 }
 
 // A row's key is its section and the key of its occurrence, which keeps an occurrence apart from itself
@@ -107,7 +97,7 @@ function useQueueItems(): {
 
 /** Shows or hides the queue panel. */
 export function QueuePanelToggle() {
-  const open = useStore(panelOpen);
+  const open = useSelector(panelOpen);
   // With the panel closed, songs dropped on its button go to the end of the queue.
   const drop = useSongDrop((drag) => dropInQueue(drag, null), { disabled: open });
 
@@ -129,7 +119,7 @@ export function QueuePanelToggle() {
 
 /** The playback queue as a column on the right of the window. */
 export function QueuePanel() {
-  const open = useStore(panelOpen);
+  const open = useSelector(panelOpen);
   return open ? <QueuePanelContent /> : null;
 }
 

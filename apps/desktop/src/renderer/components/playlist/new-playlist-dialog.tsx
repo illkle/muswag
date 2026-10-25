@@ -1,4 +1,4 @@
-import { createStore, useStore } from "@tanstack/react-store";
+import { createStore, useSelector } from "@tanstack/react-store";
 import { useNavigate } from "@tanstack/react-router";
 
 import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
@@ -14,7 +14,7 @@ export function openNewPlaylistDialog(songIds: readonly string[] = []) {
 
 /** The dialog `openNewPlaylistDialog` opens. Mounted once, so anything in the app can use it. */
 export function NewPlaylistDialog() {
-  const songIds = useStore(pendingSongIds);
+  const songIds = useSelector(pendingSongIds);
   const navigate = useNavigate();
 
   return (

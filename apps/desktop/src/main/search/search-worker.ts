@@ -31,15 +31,14 @@ const readIds = (table: keyof SearchedLibrary, ids: ReadonlyArray<string>) =>
   database.prepare(`${selectFrom(table)} WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as unknown as SearchedRow[];
 
 /**
- * The changes as the index takes them. Those that carry only an id, as songs' and albums' do, are
- * read here as the rows are now, which is after main committed them; a row that has gone since is a
- * delete.
+ * The changes as the index takes them. The rows written are read here as they are now, which is after
+ * main committed them; a row that has gone since is a delete.
  */
 const withRows = (changes: ReadonlyArray<SearchWorkerChange>): SearchedChange[] => {
   const written = new Map<keyof SearchedLibrary, Set<string>>();
   const result: SearchedChange[] = [];
   for (const change of changes) {
-    if (change.type !== "changed") result.push(change);
+    if (change.type === "delete") result.push({ table: change.table, type: "delete", key: change.key });
     else {
       const table = change.table as keyof SearchedLibrary;
       written.set(table, (written.get(table) ?? new Set()).add(change.key));

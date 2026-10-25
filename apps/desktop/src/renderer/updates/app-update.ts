@@ -1,8 +1,7 @@
 import { useSelector } from "@tanstack/react-store";
 
+import { appState } from "#/data/app-state";
 import { mainIpc } from "#/data/ipc";
-import { appState } from "#/data/state";
-import { rowStore } from "#/data/stores";
 import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
 
 export const AppUpdateIPC = {
@@ -10,10 +9,8 @@ export const AppUpdateIPC = {
   install: () => mainIpc.invoke("appUpdate:install"),
 };
 
-const appUpdateRow = rowStore(appState.appUpdate, "app_update");
-
 /** The update state, which main changes on its own while a check or a download runs. Null until it has arrived. */
-export const useAppUpdate = (): AppUpdateState | null => useSelector(appUpdateRow, (row) => row?.value ?? null);
+export const useAppUpdate = (): AppUpdateState | null => useSelector(appState.appUpdate, (state) => state ?? null);
 
 export function getAppUpdateStatus(state: AppUpdateState | null): AppUpdateStatus {
   return state?.status ?? "idle";

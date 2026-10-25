@@ -1,4 +1,4 @@
-import type { AlbumPageRequest, LibrarySort, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
+import type { AlbumPageRequest, LibrarySort, QueueSourceRef, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
 
 import { appCommand } from "#/data/app-command";
 
@@ -18,10 +18,20 @@ export const LibraryActions = {
   songPosition: (sort: LibrarySort, text: string) => appCommand("library:songPosition", sort, text),
   /** A page of the albums page, newest first, which main reads from SQLite, with how many albums there are when `withTotal`. */
   albumPage: (request: AlbumPageRequest, withTotal: boolean) => appCommand("library:albumPage", request, withTotal),
-  /** The ids of the artists with an album of their own, which are those the artists page lists. */
+  /** The artists with an album of their own, which are those the artists page lists, by name. */
   artistsWithAlbums: () => appCommand("library:artistsWithAlbums"),
   /** The cover art ids of the albums in `ids` that the library has, for the covers of their songs. */
   albumCoverArts: (ids: ReadonlyArray<string>) => appCommand("library:albumCoverArts", ids),
   /** The songs of the albums `ids`, album after album, each album's as its page lists them. */
   albumSongIds: (ids: ReadonlyArray<string>) => appCommand("library:albumSongIds", ids),
+  /** An album and its songs, in the order it plays in. */
+  album: (id: string) => appCommand("library:album", id),
+  /** An artist's row and its own albums, newest first. */
+  artist: (id: string) => appCommand("library:artist", id),
+  /** An artist's albums and their songs, in the order the artist plays in. */
+  discography: (id: string) => appCommand("library:discography", id),
+  /** The albums of `ids` the library has, newest first. */
+  albumsByIds: (ids: ReadonlyArray<string>) => appCommand("library:albumsByIds", ids),
+  /** What the album, artist or playlist a queue plays from is called. */
+  sourceName: (ref: QueueSourceRef) => appCommand("library:sourceName", ref),
 };

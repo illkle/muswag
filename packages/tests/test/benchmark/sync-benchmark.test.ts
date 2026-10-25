@@ -7,7 +7,7 @@ import { albums, songs } from "@muswag/model";
 import { Effect, Layer } from "effect";
 
 describe("sync storage benchmark", () => {
-  it("syncs a large library into the database through the mirror", async () => {
+  it("syncs a large library into the database, announcing what it writes", async () => {
     const count = 5_000;
     const listed = Array.from({ length: count }, (_, index) => apiAlbum(`album-${index}`));
     const api = apiLayer({

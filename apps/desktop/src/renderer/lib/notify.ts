@@ -1,6 +1,6 @@
 import { Toast } from "@base-ui/react/toast";
 
-import { playerState } from "#/data/state";
+import { appState } from "#/data/app-state";
 import { getErrorMessage } from "#/lib/err";
 
 /** The notices on screen. `Notices` draws them; anything in the renderer can add one. */
@@ -14,7 +14,7 @@ export const notices = Toast.createToastManager();
 export function notifyFailure(message: string, cause?: unknown): void {
   const reason = getErrorMessage(cause, "");
   // What the player could not do is above the player bar already, in its own words.
-  if (reason && playerState.player.get("player")?.error?.message === reason) return;
+  if (reason && appState.player.get()?.error?.message === reason) return;
 
   notices.add({
     // The same failure again, such as every double-click while the server is away, renews its notice instead of stacking another.

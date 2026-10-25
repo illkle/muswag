@@ -44,14 +44,12 @@ vi.mock("#/player/hooks", () => ({
   usePlayerPositionSeconds: () => mocks.positionSeconds,
   usePlayerStatus: () => mocks.status,
 }));
-vi.mock("#/data/library", () => ({ db: {} }));
 vi.mock("#/components/settings/mpv-info-dialog", () => ({ openMpvDialog: mocks.openMpvDialog }));
 vi.mock("#/queue/queue", () => ({ QueueActions: { play: mocks.startQueue, next: mocks.next } }));
 vi.mock("#/lib/notify", () => ({ failureNotice: (message: string) => (cause: unknown) => mocks.noticed(message, cause) }));
 vi.mock("#/components/queue-panel", () => ({ QueuePanelToggle: () => null }));
 vi.mock("#/components/album-list/album-cover", () => ({ AlbumCover: () => null }));
 vi.mock("#/components/utils/artist-links", () => ({ ArtistLinks: () => null }));
-vi.mock("@tanstack/react-db", () => ({ eq: () => true, useLiveQuery: () => ({ data: undefined }) }));
 vi.mock("@tanstack/react-router", () => ({ Link: ({ children }: { children: React.ReactNode }) => <a href="/">{children}</a> }));
 
 import { PlayerPanel, PlayerVolume } from "./player-panel";

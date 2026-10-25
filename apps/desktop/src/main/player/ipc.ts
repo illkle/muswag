@@ -21,17 +21,17 @@ export interface PlayerHandle {
 /** A renderer's command, which is all a renderer can make the player do: main's own commands do not decode. */
 const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(RendererCommand)(input).pipe(Effect.mapError(() => new CommandFailed({ message: "Invalid player command." })));
 
-/** Runs the player and its commands. Renderers see its state through `options.stateMirror`. */
+/** Runs the player and its commands. Renderers see its state through `options.appState`. */
 export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
   const runtime = ManagedRuntime.make(makePlayerLayer(options));
   const snapshot = () => runtime.runPromise(Player.use((player) => player.snapshot));
-  /** Runs a player operation and pairs its outcome with the state-mirror position that reflects it. */
+  /** Runs a player operation and pairs its outcome with the version of the app state that reflects it. */
   const respond = (operation: Effect.Effect<void, CommandFailed, Player>): Promise<CommandResult> =>
     runtime.runPromise(
       operation.pipe(
-        Effect.matchEffect({
-          onSuccess: () => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: true, position }))),
-          onFailure: (error) => options.stateMirror.position.pipe(Effect.map((position): CommandResult => ({ ok: false, message: error.message, position }))),
+        Effect.match({
+          onSuccess: (): CommandResult => ({ ok: true, version: options.appState.version }),
+          onFailure: (error): CommandResult => ({ ok: false, message: error.message, version: options.appState.version }),
         }),
       ),
     );

@@ -10,7 +10,6 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 }));
 
-vi.mock("#/data/library", () => ({ db: {} }));
 const player = vi.hoisted(() => ({ status: "playing" }));
 vi.mock("#/player/hooks", () => ({ usePlayerStatus: () => player.status }));
 // The songs main could not play, by id.

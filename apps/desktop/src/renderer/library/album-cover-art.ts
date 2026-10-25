@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react";
 
-import { mirrorClient } from "#/data/library";
+import { onLibraryChange } from "#/data/library-changes";
 import { LibraryActions } from "#/library/actions";
 
 /** The cover id of each album asked about, `null` for one without a cover or not in the library. */
@@ -59,19 +59,17 @@ function want(albumId: string) {
   wanted.add(albumId);
 }
 
-/** Asks again about the albums that changed, or about every album asked about once the stream restarted. */
+/** Asks again about the albums that changed, or about every album asked about when too many changed to list. */
 function follow() {
   following = true;
   const changed = (albumId: string) => {
     if (asking.has(albumId)) changedWhileAsking.add(albumId);
     else if (coverArts.has(albumId)) want(albumId);
   };
-  mirrorClient.subscribe((event) => {
-    if (event.type === "reset") {
-      for (const albumId of [...coverArts.keys(), ...asking]) changed(albumId);
-      return;
-    }
-    for (const change of event.batch.changes) if (change.table === "albums") changed(String(change.key));
+  onLibraryChange((event) => {
+    if (!("albums" in event.tables)) return;
+    const keys = event.tables.albums;
+    for (const albumId of keys ? keys.map(String) : [...coverArts.keys(), ...asking]) changed(albumId);
   });
 }
 

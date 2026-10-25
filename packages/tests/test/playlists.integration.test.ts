@@ -91,7 +91,7 @@ forEachServer((server, traits) => {
     await sync();
     expect(await serverSongs(serverId)).toEqual([songs.a, songs.a, songs.c]);
 
-    await run(commands.moveEntry(created.id, last!.id, created.local!.entries[0]!.id));
+    await run(commands.moveEntries(created.id, [last!.id], created.local!.entries[0]!.id));
     await sync();
     expect(await serverSongs(serverId)).toEqual([songs.c, songs.a, songs.a]);
   });

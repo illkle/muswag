@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
 
-// `MAIN_ONLY_SONG_COLUMNS` of @muswag/model: the columns the mirror leaves out.
+// `MAIN_ONLY_SONG_COLUMNS` of @muswag/model: the columns renderers never get.
 const OMITTED = new Set(
   "isDir bitRate bookmarkPosition contentType coverArt created genre isVideo originalHeight originalWidth parent path size suffix transcodedContentType transcodedSuffix type bpm comment sortName musicBrainzId genres albumArtists displayAlbumArtist contributors displayComposer moods replayGain explicitStatus".split(
     " ",
@@ -25,7 +25,7 @@ if (!file) {
   process.exit(1);
 }
 const sizes = (sizesArgument ?? "100,1000,10000,25000,100000,250000").split(",").map(Number);
-const formats = (formatsArgument ?? "objects,plain-objects,columns,json,chunks,utility-json").split(",");
+const formats = (formatsArgument ?? "plain-objects,columns,json,chunks,utility-json").split(",");
 const CHUNK = 10_000;
 
 // Shared by main and the utility process: the queries for each format.
@@ -40,8 +40,6 @@ const queries = (db, omitted) => {
   arrays.setReturnArrays(true);
   return {
     columns,
-    // What the mirror does today: a JSON object per row, parsed in main.
-    objects: (count) => db.prepare("SELECT json_object(" + columns.map((name) => "'" + name + "', \"" + name + "\"").join(", ") + ") AS value FROM songs" + order + " LIMIT ?").all(count).map(({ value }) => { const row = JSON.parse(value); if (typeof row.artists === "string") row.artists = JSON.parse(row.artists); return row; }),
     // Plain columns, which the driver turns into objects itself.
     plainObjects: (count, after) => {
       const rows = after
@@ -84,7 +82,6 @@ const resetStall = () => {
 ipcMain.handle("available", () => available);
 ipcMain.handle("reset-stall", () => resetStall());
 ipcMain.handle("main-stall", () => mainStall);
-ipcMain.handle("objects", (_event, count) => sql.objects(count));
 ipcMain.handle("plain-objects", (_event, count, after) => sql.plainObjects(count, after));
 ipcMain.handle("columns", (_event, count) => sql.columnar(count));
 ipcMain.handle("json", (_event, count) => sql.json(count));
@@ -148,7 +145,6 @@ const fromColumns = ({ columns, values }) => {
 };
 
 const load = {
-  objects: (count) => ipcRenderer.invoke("objects", count),
   "plain-objects": (count) => ipcRenderer.invoke("plain-objects", count),
   columns: async (count) => fromColumns(await ipcRenderer.invoke("columns", count)),
   json: async (count) => JSON.parse(await ipcRenderer.invoke("json", count)),

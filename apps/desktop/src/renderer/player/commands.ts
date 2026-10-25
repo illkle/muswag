@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
+import { untilAppStateVersion } from "#/data/app-state";
 import { mainIpc } from "#/data/ipc";
-import { playerState } from "#/data/state";
 import { CommandResult, type MpvInstallMethod, type RendererCommand } from "#shared/commands/player";
 
 /** How long a command waits for its outcome to show up in the state before it returns anyway. */
@@ -16,7 +16,7 @@ const decodeResult = Schema.decodeUnknownSync(CommandResult);
 async function settle(reply: unknown): Promise<void> {
   const result = decodeResult(reply);
   // The state catches up regardless; waiting only keeps the reply from arriving ahead of it.
-  await playerState.player.utils.awaitPosition(result.position, SETTLE_TIMEOUT_MS).catch(() => undefined);
+  await untilAppStateVersion(result.version, SETTLE_TIMEOUT_MS);
   if (!result.ok) throw new Error(result.message);
 }
 

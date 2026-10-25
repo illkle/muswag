@@ -1,4 +1,4 @@
-import { createStore, useStore } from "@tanstack/react-store";
+import { createStore, useSelector } from "@tanstack/react-store";
 
 const STORAGE_KEY = "muswag-setup-done";
 
@@ -9,7 +9,7 @@ const STORAGE_KEY = "muswag-setup-done";
  */
 const setupDone = createStore(localStorage.getItem(STORAGE_KEY) === "true");
 
-export const useSetupDone = () => useStore(setupDone);
+export const useSetupDone = () => useSelector(setupDone);
 
 export function finishSetup() {
   localStorage.setItem(STORAGE_KEY, "true");

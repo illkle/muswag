@@ -11,8 +11,8 @@ const mocks = vi.hoisted(() => ({
   install: vi.fn(),
 }));
 
-// The update state is read from main's mirror, which a test has no main for.
-vi.mock("#/data/state", () => ({ appState: {} }));
+// The update state is what main publishes, and a test has no main.
+vi.mock("#/data/app-state", () => ({ appState: {} }));
 
 vi.mock("#/updates/app-update", async (importOriginal) => ({
   ...(await importOriginal<typeof import("#/updates/app-update")>()),
