@@ -1,8 +1,8 @@
 import { albums, artists, type CoverTarget, type SubsonicHttpError } from "@muswag/model";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { and, eq } from "drizzle-orm";
-import { Cause, Context, Data, Deferred, Effect, Exit, Layer } from "effect";
+import { and, eq, isNotNull } from "drizzle-orm";
+import { Cause, Context, Data, Deferred, Effect, Exit, Layer, Semaphore } from "effect";
 import type { HttpClientError } from "effect/http/HttpClientError";
 import { Path } from "effect/Path";
 
@@ -21,6 +21,11 @@ export interface MiniFsService {
   /** Removes a cover file with what was made from it, or a directory with all it holds. Removing what is not there succeeds. */
   readonly remove: (path: string) => Effect.Effect<void, FileSystemError>;
   readonly exists: (path: string) => Effect.Effect<boolean>;
+  /**
+   * The names of the files in a directory, none when it is not there. Not of the directories in it:
+   * `covers` holds the cover directories of development checkouts' libraries.
+   */
+  readonly list: (directory: string) => Effect.Effect<ReadonlyArray<string>, FileSystemError>;
 }
 
 /** File access for cover images, relative to the app data directory. */
@@ -35,6 +40,12 @@ export interface CoverManagerService {
    * names no file yet or the file is gone.
    */
   readonly ensure: (owner: CoverOwner) => Effect.Effect<string | null, CoverManagerError>;
+  /**
+   * Removes every file of the cover directory that no album or artist names: the covers of rows a sync
+   * took away or gave another cover, and what a crash or a failed removal left behind. Answers with how
+   * many files it removed.
+   */
+  readonly sweep: Effect.Effect<number, FileSystemError | DatabaseError>;
 }
 
 export class CoverManager extends Context.Service<CoverManager, CoverManagerService>()("@muswag/backend/covers/CoverManager") {}
@@ -51,6 +62,14 @@ type CoverManagerError = NotAnImage | FileSystemError | HttpClientError | Subson
 
 /** How long a failed download answers for its cover before the server is asked again. */
 const RETRY_FAILED_AFTER = "1 minute";
+/**
+ * The longer edge a cover is asked for at, which servers scale it down to: twice the largest it is
+ * shown, an album's tile in the grid at up to about 350 px, for a display of twice the density. An
+ * original is often thousands of pixels and several MB. Navidrome, gonic and LMS take the size.
+ */
+export const COVER_PIXELS = 720;
+/** Downloads at a time. A grid asks for dozens of covers at once, and the server resizes each. */
+const DOWNLOAD_CONCURRENCY = 6;
 
 const make = (coverSaveLocation: string) =>
   Effect.gen(function* () {
@@ -62,6 +81,7 @@ const make = (coverSaveLocation: string) =>
     const scope = yield* Effect.scope;
     /** Downloads by owner: the ones running and, for a while, the ones that failed. */
     const downloads = new Map<string, Deferred.Deferred<string | null, CoverManagerError>>();
+    const downloading = yield* Semaphore.make(DOWNLOAD_CONCURRENCY);
 
     // Albums and artists have the same cover columns, so the queries are typed by one of them.
     const tableOf = (owner: CoverOwner) => (owner.type === "album" ? albums : artists) as typeof albums;
@@ -87,8 +107,11 @@ const make = (coverSaveLocation: string) =>
           return null;
         }
 
-        const response = yield* api.getCoverArt({ id: row.coverArt });
-        const bytes = new Uint8Array(yield* response.arrayBuffer);
+        const bytes = yield* api.getCoverArt({ id: row.coverArt, size: COVER_PIXELS }).pipe(
+          Effect.flatMap((response) => response.arrayBuffer),
+          Effect.map((buffer) => new Uint8Array(buffer)),
+          downloading.withPermit,
+        );
         // A server may answer a request it cannot serve with an error document and status 200.
         if (!coverMediaType(bytes)) return yield* new NotAnImage({ id: row.coverArt, message: `The server did not answer with an image for cover ${row.coverArt}` });
 
@@ -112,43 +135,57 @@ const make = (coverSaveLocation: string) =>
         if (row.coverArtPath && (yield* fs.exists(row.coverArtPath))) return row.coverArtPath;
 
         const key = `${owner.type}:${owner.id}`;
-        const current = downloads.get(key);
-        if (current) return yield* Deferred.await(current);
+        // Registered and started in one step that cannot be interrupted: a download registered but
+        // never started would keep everyone who asks after waiting.
+        const started = yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const current = downloads.get(key);
+            if (current) return current;
 
-        const deferred = Deferred.makeUnsafe<string | null, CoverManagerError>();
-        downloads.set(key, deferred);
-        const forget = Effect.sync(() => {
-          if (downloads.get(key) === deferred) downloads.delete(key);
-        });
-        const downloaded = download(owner).pipe(
-          Effect.tapError((error) => Effect.logWarning(`Failed to download the cover of ${key}`, error)),
-          // A failure stays and answers the requests that follow, so a list that keeps asking for its
-          // covers does not start a download with each request.
-          Effect.onExit((exit) => (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause) ? Effect.forkIn(Effect.delay(forget, RETRY_FAILED_AFTER), scope) : forget)),
+            const deferred = Deferred.makeUnsafe<string | null, CoverManagerError>();
+            downloads.set(key, deferred);
+            const forget = Effect.sync(() => {
+              if (downloads.get(key) === deferred) downloads.delete(key);
+            });
+            const downloaded = download(owner).pipe(
+              Effect.tapError((error) => Effect.logWarning(`Failed to download the cover of ${key}`, error)),
+              // A failure stays and answers the requests that follow, so a list that keeps asking for its
+              // covers does not start a download with each request.
+              Effect.onExit((exit) => (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause) ? Effect.forkIn(Effect.delay(forget, RETRY_FAILED_AFTER), scope) : forget)),
+            );
+            // Downloads belong to the session, so logging out interrupts them before they can write.
+            const fiber = yield* Effect.forkIn(downloaded, scope);
+            // From outside the fiber: one forked into a session that has closed ends before it runs, and
+            // whoever waits is answered all the same.
+            fiber.addObserver((exit) => {
+              Deferred.doneUnsafe(deferred, exit);
+              if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) Effect.runSync(forget);
+            });
+            return deferred;
+          }),
         );
-        // Downloads belong to the session, so logging out interrupts them before they can write.
-        const fiber = yield* Effect.forkIn(downloaded, scope);
-        // From outside the fiber: one forked into a session that has closed ends before it runs, and
-        // whoever waits is answered all the same.
-        fiber.addObserver((exit) => {
-          Deferred.doneUnsafe(deferred, exit);
-          if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) Effect.runSync(forget);
-        });
-        return yield* Deferred.await(deferred);
+        return yield* Deferred.await(started);
       });
 
-    return { ensure } satisfies CoverManagerService;
-  });
+    const sweep = Effect.gen(function* () {
+      const files = yield* fs.list(coverSaveLocation);
+      // Listed first: a download writes its file before its row names it, and is in `downloads` until
+      // after. So a file listed here is named by its row by the time the rows are read, or its owner is
+      // still downloading when `downloads` is read.
+      const kept = new Set([...downloads.keys()].map(fileNameOf));
+      for (const table of [albums, artists]) {
+        const rows = yield* db.select({ path: table.coverArtPath }).from(table).where(isNotNull(table.coverArtPath));
+        for (const { path: coverPath } of rows) kept.add(path.basename(coverPath!));
+      }
+      // A cover's thumbnails and the file it is written to first are named after it, with a suffix.
+      // Names of covers have no `.`.
+      const unused = files.filter((file) => !kept.has(file.split(".")[0]!));
+      yield* Effect.forEach(unused, (file) => Effect.ignore(fs.remove(path.join(coverSaveLocation, file))), { concurrency: 8, discard: true });
+      return unused.length;
+    });
 
-/** Removes the cover files of rows that are gone. Best effort: a file left behind goes with the directory at logout. */
-export const removeCoverFiles = (paths: ReadonlyArray<string | null>) =>
-  MiniFs.use((fs) =>
-    Effect.forEach(
-      paths.filter((path) => path !== null),
-      (path) => Effect.ignore(fs.remove(path)),
-      { concurrency: 8, discard: true },
-    ),
-  );
+    return { ensure, sweep } satisfies CoverManagerService;
+  });
 
 /**
  * The file of an owner's cover: one name per owner, so a new image replaces the old one. The name
@@ -156,7 +193,9 @@ export const removeCoverFiles = (paths: ReadonlyArray<string | null>) =>
  * digits and `-` is spelled out by its code: Windows has no `:`, drops a trailing `.`, and like
  * macOS takes `A` and `a` for the same name. Two owners never share a name.
  */
-export const coverFileName = (owner: CoverOwner) => `${owner.type}:${owner.id}`.replace(/[^a-z0-9-]/g, (character) => `_${character.codePointAt(0)!.toString(16)}_`);
+export const coverFileName = (owner: CoverOwner) => fileNameOf(`${owner.type}:${owner.id}`);
+
+const fileNameOf = (key: string) => key.replace(/[^a-z0-9-]/g, (character) => `_${character.codePointAt(0)!.toString(16)}_`);
 
 /** The media type of an image by its first bytes, or null when it is none a cover may have. */
 export function coverMediaType(bytes: Uint8Array): string | null {

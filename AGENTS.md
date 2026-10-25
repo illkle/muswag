@@ -46,8 +46,8 @@ When the worktree is done with, stop the dev app and remove its mapping: `tailsc
 
 - The browser drives the real app. Playing a track starts mpv on this machine, and playlist edits reach the
   Subsonic server.
-- Checkouts running side by side have their own library, queue and player, but share the cover cache and the
-  player settings.
+- Checkouts running side by side have their own library, queue, player and covers (in a directory of
+  `covers` named after the library), but share the player settings.
 - The bridge works only in development and only with `MUSWAG_DEV_BRIDGE_PORT` set. It listens on loopback
   and runs any command for whoever reaches it, so share it only inside the tailnet: `tailscale serve`, never
   `tailscale funnel`.

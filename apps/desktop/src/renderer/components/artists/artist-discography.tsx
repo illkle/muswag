@@ -11,8 +11,8 @@ import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
-import { getArtistCredits } from "#/components/utils/artist-links";
 import { db } from "#/data/library";
+import { creditedAsTheirAlbums, discHeading } from "#/library/album-tracks";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
@@ -23,12 +23,6 @@ const COVER_SIZE = 128;
 const ALBUM_GAP = 28;
 const FIRST_ALBUM_GAP = 12;
 const COVER_TO_TRACKS = 12;
-
-/** The artists something is credited to, as one comparable line. */
-const creditLine = (credited: Parameters<typeof getArtistCredits>[0]) =>
-  getArtistCredits(credited)
-    .map(({ name }) => name)
-    .join(", ");
 
 const playArtist = (artistId: string, key: string) => void QueueActions.playSource({ type: "artist", artistId }, key).catch(failureNotice("The artist could not be played."));
 
@@ -116,11 +110,8 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
         items.push({ type: "block", key: `album:${album.id}`, height: gap + COVER_SIZE + COVER_TO_TRACKS, content: <AlbumBlock album={album} onPlay={() => playArtist(artistId, key)} /> });
       }
 
-      const disc = song.discNumber;
-      if ((album.discTitles?.length ?? 0) > 1 && disc && (previous?.albumId !== song.albumId || previous.discNumber !== disc)) {
-        const title = album.discTitles?.find((entry) => entry.disc === disc)?.title;
-        items.push({ type: "heading", key: `disc:${album.id}:${disc}`, title: `Disc ${disc}`, ...(title ? { subtitle: title } : {}) });
-      }
+      const heading = discHeading(album, song, previous);
+      if (heading) items.push(heading);
 
       items.push({ type: "track", key, song });
     });
@@ -133,9 +124,7 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
   }
   if (items.length === 0) return <PageState title="No albums" description="This artist has no albums of their own in the synced local library." />;
 
-  // Naming the artist on every row only says something when a track is credited differently from its album.
-  const albumCredits = new Map(albums.map((album) => [album.id, creditLine(album)]));
-  const columns = songs.every((song) => creditLine(song) === albumCredits.get(song.albumId ?? "")) ? albumColumnsWithoutArtist : albumColumns;
+  const columns = creditedAsTheirAlbums(songs, albums) ? albumColumnsWithoutArtist : albumColumns;
 
   return (
     <TrackList

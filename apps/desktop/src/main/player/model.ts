@@ -1,4 +1,5 @@
 import type { Media, Playback, PlayerSnapshot } from "#shared/commands/player";
+import { playerPositionRow, positionAt } from "#shared/state/player";
 import type { SessionEvent } from "./mpv/session";
 
 export const currentMedia = (state: PlayerSnapshot): Media | null => (state.playback._tag === "Idle" ? null : state.playback.media);
@@ -15,8 +16,11 @@ const withMedia = (state: PlayerSnapshot, update: (media: Media) => Media): Play
   if (!media || state.playback._tag === "Idle") return state;
   return { ...state, playback: { ...state.playback, media: update(media) } };
 };
-export const withPosition = (state: PlayerSnapshot, positionSeconds: number): PlayerSnapshot =>
-  withMedia(state, (media) => ({ ...media, positionSeconds: Math.max(0, Math.min(positionSeconds, media.durationSeconds ?? Infinity)) }));
+/** `state` with the track at `positionSeconds` at `at`, in milliseconds since the epoch. */
+export const withPosition = (state: PlayerSnapshot, positionSeconds: number, at: number): PlayerSnapshot =>
+  withMedia(state, (media) => ({ ...media, positionSeconds: Math.max(0, Math.min(positionSeconds, media.durationSeconds ?? Infinity)), positionAt: at }));
+/** `state` with the track where it has got to by `now`, for a state in which it no longer moves on by itself. */
+export const withPositionAt = (state: PlayerSnapshot, now: number): PlayerSnapshot => withPosition(state, positionAt(playerPositionRow(state), now), now);
 export const withDuration = (state: PlayerSnapshot, durationSeconds: number): PlayerSnapshot => withMedia(state, (media) => ({ ...media, durationSeconds }));
 /** `state` with nothing wrong. A failed track is then no failure to anyone: it only waits to be played. */
 export const withoutError = (state: PlayerSnapshot): PlayerSnapshot => ({

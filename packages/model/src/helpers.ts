@@ -1,6 +1,8 @@
 import type { SessionCredentials } from "./contract.js";
 
-const SUBSONIC_API_VERSION = "1.16.1";
+/** The version of the Subsonic API muswag speaks, and the name it gives itself, in every request. */
+export const SUBSONIC_API_VERSION = "1.16.1";
+export const SUBSONIC_CLIENT_NAME = "muswag";
 
 /**
  * The address of a Subsonic server in the one form the app stores: scheme, host, port and path, with
@@ -41,7 +43,7 @@ export function buildSubsonicStreamUrl(credentials: SessionCredentials, songId: 
   url.searchParams.set("t", credentials.token);
   url.searchParams.set("s", credentials.salt);
   url.searchParams.set("v", SUBSONIC_API_VERSION);
-  url.searchParams.set("c", "muswag");
+  url.searchParams.set("c", SUBSONIC_CLIENT_NAME);
   // mpv can decode the source formats itself. A live transcode is commonly sent as
   // an unknown-length response, which mpv cannot finish reading early enough to
   // prefetch the next playlist entry for gapless playback.

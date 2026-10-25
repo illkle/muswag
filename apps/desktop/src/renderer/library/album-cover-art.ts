@@ -66,12 +66,12 @@ function follow() {
     if (asking.has(albumId)) changedWhileAsking.add(albumId);
     else if (coverArts.has(albumId)) want(albumId);
   };
-  mirrorClient.subscribe((event) => {
-    if (event.type === "reset") {
+  mirrorClient.onTableChange(["albums"], (changes) => {
+    if (changes === null) {
       for (const albumId of [...coverArts.keys(), ...asking]) changed(albumId);
       return;
     }
-    for (const change of event.batch.changes) if (change.table === "albums") changed(String(change.key));
+    for (const change of changes) changed(String(change.key));
   });
 }
 

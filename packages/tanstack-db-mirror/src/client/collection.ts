@@ -1,10 +1,10 @@
-import type { BaseCollectionConfig, CollectionConfig, SyncConfig, UtilsRecord } from "@tanstack/db";
+import type { BaseCollectionConfig, Collection, CollectionConfig, SyncConfig, UtilsRecord } from "@tanstack/db";
 
 import type { MirrorChangeBatch, MirrorPosition, MirrorRow } from "../protocol.js";
 import { tableAccess, type AnyMirrorTable, type MirrorKeyOf, type MirrorRowOf } from "../table.js";
 import { internStrings, type Interned } from "./intern.js";
 import { onDemandSync } from "./on-demand.js";
-import { attachCollectionHandle, MirrorClientDisposedError, MirrorTimeoutError, type MirrorClient } from "./mirror-client.js";
+import { MirrorClientDisposedError, MirrorTimeoutError, type MirrorClient } from "./mirror-client.js";
 
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 30_000;
@@ -12,7 +12,8 @@ const RETRY_MAX_DELAY_MS = 30_000;
 export interface MirrorCollectionUtils extends UtilsRecord {
   /**
    * Resolves once the collection has synced everything up to `position`, e.g. the position a
-   * main-process command returned after writing through the server's `write`.
+   * main-process command returned after writing through the server's `write`. Starts the collection
+   * again if it was garbage-collected, since only a running collection follows the stream.
    */
   awaitPosition: (position: MirrorPosition, timeoutMs?: number) => Promise<void>;
 }
@@ -26,11 +27,6 @@ export type MirrorCollectionConfig<TTable extends AnyMirrorTable, TOmit extends 
 > & {
   readonly client: MirrorClient;
   readonly table: TTable;
-  /**
-   * Leaves out the mutation handlers, so `insert`, `update` and `delete` throw instead of writing to
-   * the server. Use it when the server is `readOnly` and changes go through your own commands.
-   */
-  readonly readOnly?: boolean | undefined;
   /**
    * The columns the server leaves out of this table (`SqliteMirror`'s `omitColumns`). The rows arrive
    * without them, and the collection's rows are typed without them.
@@ -51,8 +47,8 @@ export type MirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit extends
 /**
  * Collection options for a TanStack DB collection that mirrors a table owned by another process: a
  * Drizzle SQLite table served by a `SqliteMirror`, or a memory table served by a `MemoryMirror`.
- * Loads the whole table, then applies the server's change stream. Mutations are written to the
- * server and resolve once their changes come back through the stream, unless `readOnly`.
+ * Loads the whole table, then applies the server's change stream. The collection is read-only: it has
+ * no mutation handlers, so `insert`, `update` and `delete` throw, and changes go through the server.
  */
 export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit extends keyof MirrorRowOf<TTable> = never>(
   config: MirrorCollectionConfig<TTable, TOmit>,
@@ -60,7 +56,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
   type Row = MirroredRowOf<TTable, TOmit>;
   type Key = MirrorKeyOf<TTable>;
 
-  const { client, table, readOnly = false, omit: _omit, ...collectionConfig } = config;
+  const { client, table, omit: _omit, ...collectionConfig } = config;
   const onDemand = config.syncMode === "on-demand";
   const info = tableAccess(table);
   const primaryKey = info.primaryKey;
@@ -81,6 +77,8 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
   };
   const tracker = new PositionTracker();
   let reportedKeyOnly = false;
+  /** The collection, known once its sync has first started. */
+  let owner: Pick<Collection<Row, Key>, "status" | "startSyncImmediate"> | undefined;
 
   const sync: SyncConfig<Row, Key> = {
     rowUpdateMode: "full",
@@ -221,6 +219,7 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
     ? onDemandSync<Row, Key>({
         client,
         table: info.name,
+        primaryKey,
         getKey,
         decode,
         onPosition: (position) => (tracker.current ? tracker.advance(position.seq) : tracker.loaded(position)),
@@ -231,22 +230,39 @@ export function mirrorCollectionOptions<TTable extends AnyMirrorTable, TOmit ext
         },
       })
     : undefined;
-  const persist = (params: { transaction: { mutations: ReadonlyArray<any> } }) => client.applyTransaction(params.transaction);
+  const chosen = onDemandConfig ?? sync;
+  const owned: SyncConfig<Row, Key> = {
+    ...chosen,
+    sync: (params) => {
+      owner = params.collection;
+      return chosen.sync(params);
+    },
+  };
+
   const awaitPosition: MirrorCollectionUtils["awaitPosition"] = (position, timeoutMs) => {
     // The position may come from a restarted server, or its last batch may have been lost.
     client.observeEpoch(position.epoch);
+    // A collection that never started has shown nothing yet, and loads from a later position when it starts.
+    if (!owner) return Promise.resolve();
+    // A garbage-collected collection follows no stream, so nothing would move its position.
+    if (owner.status === "cleaned-up") {
+      try {
+        owner.startSyncImmediate();
+      } catch (cause) {
+        // It is being cleaned up right now; it can be started only once that is done.
+        console.error(`[tanstack-db-mirror] could not restart "${id}" to wait for a position`, cause);
+      }
+    }
     client.expect(position);
-    return tracker.waitFor(position, timeoutMs ?? client.mutationTimeoutMs);
+    return tracker.waitFor(position, timeoutMs ?? client.positionTimeoutMs);
   };
-  attachCollectionHandle(awaitPosition, { client, table: info.name, encode: info.encode, waitFor: (position, timeoutMs) => tracker.waitFor(position, timeoutMs) });
 
   return {
     ...collectionConfig,
     id,
     getKey,
-    sync: onDemandConfig ?? sync,
+    sync: owned,
     startSync: collectionConfig.startSync ?? true,
-    ...(!readOnly && { onInsert: persist, onUpdate: persist, onDelete: persist }),
     utils: { awaitPosition },
   };
 }

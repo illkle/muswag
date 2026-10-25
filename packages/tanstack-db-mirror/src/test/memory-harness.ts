@@ -6,7 +6,7 @@ import { createMirrorClient, mirrorCollectionOptions, type MirrorClient, type Mi
 import { memoryTable } from "../memory/index.js";
 import type { MirrorRow } from "../protocol.js";
 import { MemoryMirror, type MemoryMirrorOptions, type MemoryMirrorService } from "../server/memory/index.js";
-import { createMemoryTransport, type MemoryConnection, type MemoryTransportOptions } from "../testing/index.js";
+import { createMemoryTransport, type MemoryConnection, type MemoryTransportOptions } from "./memory-transport.js";
 import { eventually, rowsOf, sortRows, stripVirtual } from "./harness.js";
 
 /** Nested values and a transformation, so the tests see rows cross in their encoded form. */
@@ -63,15 +63,15 @@ export async function createMemoryHarness(options: MemoryHarnessOptions = {}) {
   await startServer();
 
   const clients: Array<MemoryClient> = [];
-  const connect = (clientOptions: Partial<Omit<MirrorClientOptions, "transport">> & { latency?: MemoryTransportOptions["latency"]; readOnly?: boolean } = {}): MemoryClient => {
-    const { latency, readOnly, ...rest } = clientOptions;
+  const connect = (clientOptions: Partial<Omit<MirrorClientOptions, "transport">> & { latency?: MemoryTransportOptions["latency"] } = {}): MemoryClient => {
+    const { latency, ...rest } = clientOptions;
     const connection = transport.connect({ latency });
     const client = createMirrorClient({ transport: connection, ...rest });
     const connected: MemoryClient = {
       connection,
       client,
-      players: createCollection(mirrorCollectionOptions({ client, table: players, readOnly })),
-      counters: createCollection(mirrorCollectionOptions({ client, table: counters, readOnly })),
+      players: createCollection(mirrorCollectionOptions({ client, table: players })),
+      counters: createCollection(mirrorCollectionOptions({ client, table: counters })),
     };
     clients.push(connected);
     return connected;

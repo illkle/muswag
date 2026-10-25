@@ -18,11 +18,22 @@ let userDataPath: string;
 let databasePath: string;
 let stateMirror: Awaited<ReturnType<typeof startStateMirror>>;
 
-const ipcMain = { handle: () => {}, removeHandler: () => {} } as unknown as IpcMain;
-// A player that never answers: nothing here plays.
-const player = { execute: () => new Promise(() => {}), setCredentials: () => new Promise(() => {}), snapshot: () => new Promise(() => {}), subscribe: () => () => {} } as unknown as PlayerHandle;
+const handlers = new Map<string, (event: unknown, ...args: Array<unknown>) => unknown>();
+const ipcMain = { handle: (channel: string, listener: never) => void handlers.set(channel, listener), removeHandler: (channel: string) => void handlers.delete(channel) } as unknown as IpcMain;
+const executed: unknown[] = [];
+const position = { epoch: 1, seq: 0 };
+// A player that never answers, but for the commands it is given: nothing here plays.
+const player = {
+  execute: async (command: unknown) => (executed.push(command), { ok: true, position }),
+  locate: async () => null,
+  setCredentials: () => new Promise(() => {}),
+  snapshot: () => new Promise(() => {}),
+  subscribe: () => () => {},
+} as unknown as PlayerHandle;
+let updateChecks = 0;
+const updates = { check: async () => void updateChecks++, install: () => {} };
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
-const options = () => ({ databasePath, userDataPath, ipcMain, player, stateMirror: stateMirror.mirror, searchWorkerPath });
+const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, stateMirror: stateMirror.mirror, searchWorkerPath });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));
@@ -76,5 +87,27 @@ describe("startApp", () => {
     // No session yet, so there is no cover to give.
     await expect(app.coverPath({ type: "album", id: "1" })).rejects.toMatchObject({ _tag: "NotAuthenticated" });
     await app.dispose();
+  });
+});
+
+describe("app:command", () => {
+  it("runs the player's and the updater's commands, and turns down what does not decode", async () => {
+    const app = await startApp(options());
+    const command = (name: unknown, args: unknown) => handlers.get("app:command")!({}, name, args);
+    try {
+      expect(await command("player:execute", [{ _tag: "Seek", seconds: 12 }])).toEqual({ ok: true, value: { ok: true, position } });
+      expect(executed).toEqual([{ _tag: "Seek", seconds: 12 }]);
+      expect(await command("player:locate", [])).toEqual({ ok: true, value: null });
+      expect(await command("appUpdate:check", [])).toEqual({ ok: true, value: undefined });
+      expect(updateChecks).toBe(1);
+
+      // Main's own commands, such as one that names the binary to run, are not a renderer's to send.
+      expect(await command("player:execute", [{ _tag: "SetBinaryPath", path: "/tmp/mpv" }])).toMatchObject({ ok: false, error: { tag: "InvalidCommand" } });
+      expect(await command("player:execute", [{ _tag: "Seek", seconds: -1 }])).toMatchObject({ ok: false, error: { tag: "InvalidCommand" } });
+      expect(await command("player:command", [{ _tag: "Play" }])).toMatchObject({ ok: false, error: { tag: "InvalidCommand" } });
+      expect(executed).toHaveLength(1);
+    } finally {
+      await app.dispose();
+    }
   });
 });

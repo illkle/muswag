@@ -139,6 +139,26 @@ const loginFailureMessage = (error: { readonly _tag: string }): string => {
 /** Tables that hold the logged-in user's data. */
 const USER_TABLES = [albums, artists, songs, playlists, queueItems, queueState, queueResume, syncState] as const;
 
+/**
+ * Sweeps the cover directory each time a sync ends, however it ended: a sync is what leaves covers no
+ * row names any more. In the session's scope, so logging out stops it before the directory goes.
+ */
+const sweepCoversAfterSyncs = (context: Context.Context<LibrarySync | CoverManager>) =>
+  Context.get(context, LibrarySync).changes.pipe(
+    Stream.map(({ running }) => running),
+    Stream.changes,
+    // The first is the state the session starts in, before any sync.
+    Stream.drop(1),
+    Stream.filter((running) => running === null),
+    Stream.runForEach(() =>
+      Context.get(context, CoverManager).sweep.pipe(
+        Effect.tap((removed) => (removed > 0 ? Effect.logDebug(`Removed ${removed} cover files nothing shows`) : Effect.void)),
+        Effect.catchCause((cause) => Effect.logWarning("Failed to sweep the cover directory", cause)),
+      ),
+    ),
+    Effect.forkScoped,
+  );
+
 const makeSessionManager = (options: SessionManagerOptions) =>
   Effect.gen(function* () {
     // Without the app's scope: the session's services are built into the scope `ScopedRef` gives
@@ -192,7 +212,10 @@ const makeSessionManager = (options: SessionManagerOptions) =>
 
     const acquire = (credentials: SessionCredentials) => {
       const apiLayer = Layer.effect(SubsonicAPI, makeSubsonicAPI({ ...toApiConfig(credentials), onCredentialsRejected: expire(credentials) }));
-      const authenticatedLayer = Layer.mergeAll(LibrarySync.layer, CoverManagerLive(options.coverSaveLocation), PlaylistSyncManagerLive()).pipe(Layer.provideMerge(apiLayer));
+      const authenticatedLayer = Layer.mergeAll(LibrarySync.layer, CoverManagerLive(options.coverSaveLocation), PlaylistSyncManagerLive()).pipe(
+        Layer.tap(sweepCoversAfterSyncs),
+        Layer.provideMerge(apiLayer),
+      );
 
       return Layer.build(authenticatedLayer).pipe(
         Effect.provide(dependencies),

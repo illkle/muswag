@@ -33,6 +33,7 @@ function playlistOf(keys: readonly PlaybackItem[], currentId: number) {
                 .at(-1),
               mode,
               index,
+              ...input.args.slice(4),
             ]
           : input.args.slice(1)),
       ]);
@@ -47,7 +48,7 @@ function playlistOf(keys: readonly PlaybackItem[], currentId: number) {
       return input.decode(undefined);
     },
   };
-  const correlation: Correlation = { generation: 1, entries: keys.map((item, index) => ({ ...item, entryId: index + 1 })), currentId };
+  const correlation: Correlation = { generation: 1, entries: keys.map((item, index) => ({ ...item, entryId: index + 1, startSeconds: 0 })), currentId };
   return {
     session,
     correlation,
@@ -106,6 +107,28 @@ describe("queue commit", () => {
       });
     }),
   );
+  it.effect("starts a selection where it asks, and loads again an entry that would start elsewhere", () =>
+    Effect.gen(function* () {
+      const mpv = playlistOf([a, b], 1);
+      const restored = yield* applyQueue(mpv.session, null, [a, b], { key: "b", play: false, positionSeconds: 42 }, urls);
+      expect(mpv.sent).toEqual([
+        ["loadfile", "b", "replace", -1, { start: "42" }],
+        ["loadfile", "a", "insert-at", 0],
+      ]);
+      expect(restored.entries).toMatchObject([
+        { key: "a", startSeconds: 0 },
+        { key: "b", startSeconds: 42 },
+      ]);
+
+      // mpv would start the entry at 42 seconds again: the selection from its start gets an entry of its own.
+      const before = mpv.sent.length;
+      yield* applyQueue(mpv.session, restored, [a, b], { key: "b", play: true, positionSeconds: 0 }, urls);
+      expect(mpv.sent.slice(before)).toEqual([
+        ["loadfile", "b", "replace", -1],
+        ["loadfile", "a", "insert-at", 0],
+      ]);
+    }),
+  );
   it.effect("keeps only the current occurrence when the queue is reordered", () =>
     Effect.gen(function* () {
       const mpv = playlistOf([a, b, c], 2);
@@ -141,7 +164,7 @@ describe("queue commit", () => {
       expect(mpv.correlation.entries.map((entry) => entry.entryId)).toEqual([1, 2]);
 
       // The correlation claims an entry mpv does not hold.
-      const stale: Correlation = { ...mpv.correlation, entries: [...mpv.correlation.entries, { ...c, entryId: 9 }] };
+      const stale: Correlation = { ...mpv.correlation, entries: [...mpv.correlation.entries, { ...c, entryId: 9, startSeconds: 0 }] };
       mpv.failWith(undefined);
       expect(yield* applyQueue(mpv.session, stale, [a, b, c], null, urls).pipe(Effect.flip)).toMatchObject({ _tag: "QueueOutOfSync" });
     }),

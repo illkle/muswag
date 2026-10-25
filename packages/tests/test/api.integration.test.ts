@@ -22,13 +22,19 @@ function isImage(bytes: Uint8Array): boolean {
   return start.startsWith("\xff\xd8\xff") || start.startsWith("\x89PNG") || start.startsWith("GIF8") || (start.startsWith("RIFF") && start.slice(8) === "WEBP");
 }
 
+/**
+ * The varied library with one cover larger than any size muswag asks for, so that a server scaling it
+ * down shows. Only here: Navidrome took minutes to scan a library after one with it, in the sync tests.
+ */
+const library = variedLibrary.map((album) => (album.title === "Ágætis byrjun" ? { ...album, coverPixels: 1000 } : album));
+
 forEachServer((server, traits) => {
   let runtime: ManagedRuntime.ManagedRuntime<SubsonicAPI, unknown>;
   let api: SubsonicApiService;
   const run = <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect);
 
   beforeAll(async () => {
-    await server().setLibrary(variedLibrary);
+    await server().setLibrary(library);
     runtime = ManagedRuntime.make(subsonicLayerFor(server()));
     api = await runtime.runPromise(SubsonicAPI);
   });
@@ -87,6 +93,7 @@ forEachServer((server, traits) => {
       writeFile: (file, data) => Effect.sync(() => void files.set(file, data)),
       remove: (file) => Effect.sync(() => void files.delete(file)),
       exists: (file) => Effect.sync(() => files.has(file)),
+      list: () => Effect.succeed([]),
     });
     const covers = ManagedRuntime.make(CoverManagerLive("covers").pipe(Layer.provide(Layer.mergeAll(library.layer, subsonicLayerFor(server()), fs, PathLayer))));
     try {
@@ -107,6 +114,16 @@ forEachServer((server, traits) => {
     } finally {
       await covers.dispose();
       await library.dispose();
+    }
+  });
+
+  it("scales a cover down to the size asked for", async () => {
+    const { albumList2 } = await run(api.getAlbumList2({ type: "alphabeticalByArtist", size: 500 }));
+    const album = albumList2.album!.find(({ name }) => name === "Ágætis byrjun")!;
+    // The sizes muswag asks for, of a cover larger than each: the one it keeps and the two it makes from that.
+    for (const size of [720, 400, 96]) {
+      const response = await run(api.getCoverArt({ id: album.coverArt!, size }));
+      expect(longerEdge(new Uint8Array(await run(response.arrayBuffer)))).toBe(size);
     }
   });
 
@@ -137,6 +154,29 @@ forEachServer((server, traits) => {
     );
   });
 });
+
+/** The longer edge in pixels of a PNG, JPEG or WebP image. */
+function longerEdge(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const start = Buffer.from(bytes.subarray(0, 16)).toString("latin1");
+  if (start.startsWith("\x89PNG")) return Math.max(view.getUint32(16), view.getUint32(20));
+  if (start.startsWith("RIFF") && start.slice(8, 12) === "WEBP") {
+    const chunk = start.slice(12, 16);
+    if (chunk === "VP8X") return Math.max(1 + (view.getUint32(24, true) & 0xffffff), 1 + (view.getUint32(27, true) & 0xffffff));
+    if (chunk === "VP8L") {
+      const bits = view.getUint32(21, true);
+      return Math.max((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
+    }
+    return Math.max(view.getUint16(26, true) & 0x3fff, view.getUint16(28, true) & 0x3fff);
+  }
+  // A JPEG names its size in the frame header, the first SOF segment.
+  for (let offset = 2; offset < bytes.length;) {
+    const marker = view.getUint16(offset);
+    if (marker >= 0xffc0 && marker <= 0xffcf && marker !== 0xffc4 && marker !== 0xffc8 && marker !== 0xffcc) return Math.max(view.getUint16(offset + 5), view.getUint16(offset + 7));
+    offset += 2 + view.getUint16(offset + 2);
+  }
+  throw new Error(`Not an image muswag knows: ${start}`);
+}
 
 function readAlbums(library: Library) {
   return library.run(Db.use((db) => db.select().from(albums)));

@@ -1,17 +1,17 @@
 import { join, resolve } from "node:path";
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import type { MuswagMainIpc } from "#shared/ipc";
 import { getDefaultMpvIpcPath } from "./player";
-import { registerPlayerIpc, type PlayerHandle } from "./player/ipc";
+import { startPlayer, type PlayerHandle } from "./player/ipc";
 import { startStateMirror } from "./state-mirror";
 import { LibraryDatabaseError, resetLibrary, startApp, type AppOptions } from "./app";
-import { initializeAutoUpdater, registerAppUpdater } from "./app-updater";
+import { guardIpc } from "./app-page";
+import { appUpdates, initializeAutoUpdater, publishAppUpdates } from "./app-updater";
 import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
 import { startDevBridge } from "./dev-bridge";
-import { createWindow } from "./window";
+import { setApplicationMenu } from "./menu";
+import { APP_PAGE_URL, createWindow } from "./window";
 
 import { Effect } from "effect";
 
@@ -26,7 +26,8 @@ if (isSecondInstance) app.quit();
 
 registerCoverScheme();
 
-const mainIpc = new IpcListener<MuswagMainIpc>();
+// Every handler is registered through this, so that none answers a page other than the app's.
+const appIpc = guardIpc(ipcMain, APP_PAGE_URL);
 
 /**
  * Starts main's side of the app, or resolves to nothing when the app has to quit. A library database
@@ -73,8 +74,10 @@ app.whenReady().then(async () => {
   if (isSecondInstance) return;
   electronApp.setAppUserModelId("com.muswag.desktop");
 
+  setApplicationMenu();
   app.on("browser-window-created", (_, window) => {
-    optimizer.watchWindowShortcuts(window);
+    // Without `zoom` it swallows Cmd/Ctrl+Minus and Cmd/Ctrl+Shift+Equal before the menu sees them.
+    optimizer.watchWindowShortcuts(window, { zoom: true });
   });
 
   const userDataPath = app.getPath("userData");
@@ -82,11 +85,11 @@ app.whenReady().then(async () => {
   const serveCover = handleCoverProtocol({ userDataPath, coverPath: async (owner) => mainApp?.coverPath(owner) ?? null });
   // Before any handler is registered: the bridge only knows the handlers registered after it starts.
   const devBridgePort = Number(process.env.MUSWAG_DEV_BRIDGE_PORT);
-  if (is.dev && devBridgePort) startDevBridge({ ipcMain, port: devBridgePort, serveCover });
+  if (is.dev && devBridgePort) startDevBridge({ ipcMain: appIpc, port: devBridgePort, serveCover });
 
-  stateMirror = await startStateMirror(ipcMain);
-  registerAppUpdater(mainIpc, stateMirror.mirror);
-  player = registerPlayerIpc(mainIpc, {
+  stateMirror = await startStateMirror(appIpc);
+  publishAppUpdates(stateMirror.mirror);
+  player = startPlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     settingsPath: join(userDataPath, "player-settings.json"),
     stateMirror: stateMirror.mirror,
@@ -97,8 +100,9 @@ app.whenReady().then(async () => {
     databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
     userDataPath,
     searchWorkerPath: join(__dirname, "search-worker.cjs"),
-    ipcMain,
+    ipcMain: appIpc,
     player,
+    updates: appUpdates,
     stateMirror: stateMirror.mirror,
     onWindowFocus: (listener) => {
       app.on("browser-window-focus", listener);
@@ -111,12 +115,6 @@ app.whenReady().then(async () => {
   }
   createWindow();
   initializeAutoUpdater();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 });
 
 app.on("window-all-closed", () => {
@@ -131,18 +129,25 @@ app.on("before-quit", (event) => {
   if (shutdownStarted) return;
   shutdownStarted = true;
   void Effect.runPromise(
-    Effect.tryPromise(async () => {
-      // The player first and on its own: mpv is a separate process, and would play on without a
-      // window if anything before it failed or ran into the deadline.
-      await player?.shutdown().catch((cause) => console.error("Failed to shut the player down", cause));
-      await mainApp?.dispose();
-      await stateMirror?.dispose();
+    Effect.gen(function* () {
+      // Where playback has got to is read from mpv, so the queue stores it while the player is there.
+      // Not for long, as the player comes next.
+      yield* Effect.tryPromise(async () => mainApp?.closeQueue()).pipe(
+        Effect.timeoutOrElse({ duration: "2 seconds", orElse: () => Effect.logWarning("Storing the playback position took too long") }),
+        Effect.catch(() => Effect.logError("Storing the playback position failed")),
+      );
+      yield* Effect.tryPromise(async () => {
+        // The player on its own: mpv is a separate process, and would play on without a window if
+        // anything before it failed or ran into the deadline.
+        await player?.shutdown().catch((cause) => console.error("Failed to shut the player down", cause));
+        await mainApp?.dispose();
+        await stateMirror?.dispose();
+      });
     }).pipe(
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.logWarning("Desktop shutdown deadline reached") }),
       Effect.catch(() => Effect.logError("Desktop shutdown failed")),
     ),
   ).finally(() => {
-    mainIpc.dispose();
     allowQuit = true;
     app.quit();
   });

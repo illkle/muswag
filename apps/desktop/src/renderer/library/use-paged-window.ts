@@ -4,10 +4,7 @@ import { mirrorClient } from "#/data/library";
 import { PagedWindow, type PagedWindowSource, type PagedWindowView } from "#/library/paged-window";
 
 /** Calls `listener` whenever rows of `table` change, which the mirror tells of without the rows themselves. */
-export const onTableChange = (table: string) => (listener: () => void) =>
-  mirrorClient.subscribe((event) => {
-    if (event.type === "reset" || event.batch.changes.some((change) => change.table === table)) listener();
-  });
+export const onTableChange = (table: string) => (listener: () => void) => mirrorClient.onTableChange([table], () => listener());
 
 const NO_WINDOW = { subscribe: () => () => {}, getView: () => undefined };
 

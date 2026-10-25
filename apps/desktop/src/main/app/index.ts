@@ -8,22 +8,23 @@ import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
 import { FetchHttpClient } from "effect/http";
-import type { IpcMain } from "electron";
 
+import type { AppIpc } from "../app-page";
 import type { PlayerHandle } from "../player/ipc";
 import { createQueue } from "../queue";
 import { startLibrarySearch } from "../search/library-search";
 import type { SourceDb } from "../queue/source";
 import { unplayableTracks } from "#shared/state/queue";
-import { serveAppCommands } from "./commands";
-import { COVER_DIRECTORY, MiniFsLive } from "./platform";
+import { serveAppCommands, type AppUpdates } from "./commands";
+import { coverDirectoryOf, MiniFsLive } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
 
 export interface AppOptions {
   readonly databasePath: string;
   readonly userDataPath: string;
-  readonly ipcMain: IpcMain;
+  readonly ipcMain: AppIpc;
   readonly player: PlayerHandle;
+  readonly updates: AppUpdates;
   /** Where renderers see the session and sync status; it must mirror `SESSION_TABLES`. */
   readonly stateMirror: MemoryMirrorService;
   /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
@@ -83,7 +84,7 @@ const makeApp = (options: AppOptions) =>
       (search) => Effect.promise(() => search.dispose()),
     );
 
-    yield* serveAppCommands({ ipcMain: options.ipcMain, queue, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)), search: search.search });
+    yield* serveAppCommands({ ipcMain: options.ipcMain, queue, player: options.player, updates: options.updates, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)), search: search.search });
 
     // Coming back to the app catches up with the server, unless a sync did a moment ago.
     const { onWindowFocus } = options;
@@ -94,6 +95,7 @@ const makeApp = (options: AppOptions) =>
         (unsubscribe) => Effect.sync(unsubscribe),
       );
     }
+    return { queue };
   });
 
 /** What SQLite says of a file that is not a database, is damaged, or was left by a build with another schema. */
@@ -131,7 +133,7 @@ const rootMessage = (error: unknown): string => {
  */
 export async function startApp(options: AppOptions) {
   const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer, MiniFsLive(options.userDataPath));
-  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: COVER_DIRECTORY }).pipe(Layer.provide(platform)));
+  const backend = ManagedRuntime.make(BackendLive({ filename: options.databasePath, coverSaveLocation: coverDirectoryOf(options.databasePath, options.userDataPath) }).pipe(Layer.provide(platform)));
   try {
     // Building the backend opens and migrates the database; nothing else in it reaches outside the process.
     await backend.runPromise(Effect.void);
@@ -145,16 +147,16 @@ export async function startApp(options: AppOptions) {
     await Effect.runPromise(Scope.close(scope, Exit.void));
     await backend.dispose();
   };
-  try {
-    await backend.runPromise(makeApp(options).pipe(Scope.provide(scope)));
-  } catch (cause) {
+  const { queue } = await backend.runPromise(makeApp(options).pipe(Scope.provide(scope))).catch(async (cause: unknown) => {
     await dispose();
     throw cause;
-  }
+  });
 
   return {
     /** The file of a cover, relative to the app data directory: `CoverManager.ensure` of the session. Rejects without one. */
     coverPath: (owner: CoverOwner) => backend.runPromise(SessionManager.use((session) => session.use((active) => active.covers.ensure(owner)))),
+    /** Stores where playback has got to and stops the queue following the player: the first step of quitting, see `QueueManager.close`. */
+    closeQueue: () => queue.close(),
     dispose,
   };
 }
@@ -166,6 +168,6 @@ export async function startApp(options: AppOptions) {
 export async function resetLibrary({ databasePath, userDataPath }: Pick<AppOptions, "databasePath" | "userDataPath">): Promise<void> {
   await Promise.all([
     ...[databasePath, `${databasePath}-wal`, `${databasePath}-shm`].map((file) => rm(file, { force: true })),
-    rm(join(userDataPath, COVER_DIRECTORY), { recursive: true, force: true }),
+    rm(join(userDataPath, coverDirectoryOf(databasePath, userDataPath)), { recursive: true, force: true }),
   ]);
 }

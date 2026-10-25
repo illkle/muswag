@@ -39,7 +39,7 @@ export async function openLibrary(songCount: number, options: { readonly fullRow
 
   if (options.fullRows) await ManagedRuntime.make(DatabaseLive(file)).dispose();
   const layer = options.fullRows
-    ? SqliteMirror.layer({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS, readOnly: true }).pipe(Layer.provideMerge(SqliteClient.layer({ filename: file })))
+    ? SqliteMirror.layer({ tables: MIRRORED_TABLES, omitColumns: MIRROR_OMITTED_COLUMNS }).pipe(Layer.provideMerge(SqliteClient.layer({ filename: file })))
     : DatabaseLive(file);
   const runtime = ManagedRuntime.make(layer as ReturnType<typeof DatabaseLive>);
   const mirror = await runtime.runPromise(Effect.service(SqliteMirror));

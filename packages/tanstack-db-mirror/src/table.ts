@@ -35,14 +35,12 @@ export interface MirrorTableAccess {
   readonly primaryKey: string;
   /** Turns a row as it arrives into the collection's value. SQLite rows arrive decoded already. */
   readonly decode: ((value: unknown) => MirrorRow) | null;
-  /** Turns a collection value into what the server accepts in a mutation. */
-  readonly encode: ((row: MirrorRow) => MirrorRow) | null;
 }
 
 export function tableAccess(table: AnyMirrorTable): MirrorTableAccess {
   if (isMemoryTable(table)) {
-    return { name: table.name, primaryKey: table.primaryKey, decode: (value) => table.decode(value) as MirrorRow, encode: (row) => table.encode(row) };
+    return { name: table.name, primaryKey: table.primaryKey, decode: (value) => table.decode(value) as MirrorRow };
   }
   const info = describeTable(table);
-  return { name: info.name, primaryKey: info.primaryKey.key, decode: null, encode: null };
+  return { name: info.name, primaryKey: info.primaryKey.key, decode: null };
 }

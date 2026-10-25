@@ -1,28 +1,30 @@
 import { dialog } from "electron";
-import type { IpcListener } from "@electron-toolkit/typed-ipc/main";
-import { Effect, ManagedRuntime, Schema, Stream } from "effect";
-import type { MuswagMainIpc } from "#shared/ipc";
-import { RendererCommand, type CommandResult, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot } from "#shared/commands/player";
-import { CommandFailed } from "./errors";
+import { Effect, ManagedRuntime, Stream } from "effect";
+import type { CommandResult, PlayerCommand, PlayerCredentials, PlayerSnapshot } from "#shared/commands/player";
+import type { CommandFailed } from "./errors";
 import { makePlayerLayer } from "./layer";
-import { Player } from "./player";
+import { Player, type PlayerPosition } from "./player";
 
 /** The player as the rest of main uses it. */
 export interface PlayerHandle {
-  /** Runs a command from main itself, such as the queue manager. */
+  /** Runs a command, from main itself or one a renderer sent. */
   readonly execute: (command: PlayerCommand) => Promise<CommandResult>;
+  /** Lets the user pick an mpv binary in a native dialog and uses it; `null` when they cancel. */
+  readonly locate: () => Promise<CommandResult | null>;
   /** Credentials sign stream URLs; `null` stops playback. */
   readonly setCredentials: (credentials: PlayerCredentials | null) => Promise<CommandResult>;
+  /** Where the player is in the occurrence it holds, read from mpv: the state has where it was when it last moved otherwise than with time. */
+  readonly position: () => Promise<PlayerPosition | null>;
   readonly snapshot: () => Promise<PlayerSnapshot>;
   readonly subscribe: (listener: (snapshot: PlayerSnapshot) => void) => () => void;
   readonly shutdown: () => Promise<void>;
 }
 
-/** A renderer's command, which is all a renderer can make the player do: main's own commands do not decode. */
-const decodeCommand = (input: unknown) => Schema.decodeUnknownEffect(RendererCommand)(input).pipe(Effect.mapError(() => new CommandFailed({ message: "Invalid player command." })));
-
-/** Runs the player and its commands. Renderers see its state through `options.stateMirror`. */
-export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
+/**
+ * Runs the player. Renderers see its state through `options.stateMirror`, and send it commands
+ * through `app:command`, which lets through only the `RendererCommand`s.
+ */
+export function startPlayer(options: Parameters<typeof makePlayerLayer>[0]): PlayerHandle {
   const runtime = ManagedRuntime.make(makePlayerLayer(options));
   const snapshot = () => runtime.runPromise(Player.use((player) => player.snapshot));
   /** Runs a player operation and pairs its outcome with the state-mirror position that reflects it. */
@@ -35,14 +37,7 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
         }),
       ),
     );
-  const execute = (command: Effect.Effect<PlayerCommand, CommandFailed>) => respond(command.pipe(Effect.flatMap((command) => Player.use((player) => player.execute(command)))));
-
-  main.handle("player:command", (_event, command) => execute(decodeCommand(command)));
-  main.handle("player:locate", async () => {
-    const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
-    const path = result.canceled ? undefined : result.filePaths[0];
-    return path ? execute(Effect.succeed({ _tag: "SetBinaryPath", path })) : null;
-  });
+  const execute = (command: PlayerCommand) => respond(Player.use((player) => player.execute(command)));
 
   const listeners = new Set<(snapshot: PlayerSnapshot) => void>();
   runtime.runFork(
@@ -56,8 +51,14 @@ export function registerPlayerIpc(main: IpcListener<MuswagMainIpc>, options: Par
   );
 
   return {
-    execute: (command) => execute(Effect.succeed(command)),
+    execute,
+    locate: async () => {
+      const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
+      const path = result.canceled ? undefined : result.filePaths[0];
+      return path ? execute({ _tag: "SetBinaryPath", path }) : null;
+    },
     setCredentials: (credentials) => respond(Player.use((player) => player.setCredentials(credentials))),
+    position: () => runtime.runPromise(Player.use((player) => player.position)),
     snapshot,
     subscribe: (listener) => {
       listeners.add(listener);

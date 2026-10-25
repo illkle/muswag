@@ -18,6 +18,8 @@ export interface AlbumFixture {
   compilation?: boolean;
   /** Whether the album's folder has a cover image. It has unless this is `false`. */
   cover?: boolean;
+  /** The edge of the square cover in pixels, 32 when left out. */
+  coverPixels?: number;
   musicBrainzId?: string;
   songs: SongFixture[];
 }

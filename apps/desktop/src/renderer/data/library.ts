@@ -7,7 +7,7 @@ import { BasicIndex, createCollection } from "@tanstack/react-db";
 export const mirrorClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer }) });
 
 // Loading a table again means another snapshot from main, so a collection is kept once it has loaded.
-const options = { client: mirrorClient, defaultIndexType: BasicIndex, readOnly: true, gcTime: 0 } as const;
+const options = { client: mirrorClient, defaultIndexType: BasicIndex, gcTime: 0 } as const;
 
 export const db = {
   /**

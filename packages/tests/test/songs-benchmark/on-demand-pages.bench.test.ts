@@ -11,7 +11,7 @@ import { sampleAlbums } from "./samples.js";
 
 /** The collections as the renderer makes them: albums and songs both read on demand. */
 const collectionsOf = (library: Library) => {
-  const options = { client: library.client, readOnly: true, gcTime: 0, defaultIndexType: BasicIndex } as const;
+  const options = { client: library.client, gcTime: 0, defaultIndexType: BasicIndex } as const;
   const albumCollection = createCollection(mirrorCollectionOptions({ ...options, table: albums, syncMode: "on-demand", autoIndex: "eager" }));
   const songCollection = createCollection(mirrorCollectionOptions({ ...options, table: songs, omit: MAIN_ONLY_SONG_COLUMNS, syncMode: "on-demand", autoIndex: "eager" }));
   return { albumCollection, songCollection };

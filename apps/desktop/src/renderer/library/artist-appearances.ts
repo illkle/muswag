@@ -5,7 +5,7 @@ import { mirrorClient } from "#/data/library";
 import { LibraryActions } from "#/library/actions";
 
 /** The mirrored tables whose changes can add or take away an appearance. */
-const CREDIT_TABLES = new Set(["songs", "albums"]);
+const CREDIT_TABLES = ["songs", "albums"];
 /** How long those tables have to stay unchanged before the appearances are read again: a sync changes them many times in a row. */
 const QUIET_MS = 1_000;
 
@@ -19,8 +19,7 @@ export function useArtistAppearances(artistId: string) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // The client hears every change main makes, whether or not the songs are loaded here.
-    const unsubscribe = mirrorClient.subscribe((event) => {
-      if (event.type === "batch" && !event.batch.changes.some(({ table }) => CREDIT_TABLES.has(table))) return;
+    const unsubscribe = mirrorClient.onTableChange(CREDIT_TABLES, () => {
       clearTimeout(timer);
       timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ["artist-appearances", artistId] }), QUIET_MS);
     });

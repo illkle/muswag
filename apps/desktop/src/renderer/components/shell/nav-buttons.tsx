@@ -1,11 +1,14 @@
 import { Button } from "#/components/ui/button";
-import { useCanGoBack, useRouter } from "@tanstack/react-router";
+import { useCanGoBack, useLocation, useRouter } from "@tanstack/react-router";
 import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 
 export const NavButtons = () => {
   const router = useRouter();
   const canGoBack = useCanGoBack();
-  const canGoForward = router.history.location.state.__TSR_index < router.history.length - 1;
+  // Read through the location's subscription: the history is no store, so reading it while rendering would leave
+  // the button as it was when something else last re-rendered it. Every change of the history's length comes
+  // with a new location.
+  const canGoForward = useLocation({ select: (location) => location.state.__TSR_index < router.history.length - 1 });
 
   return (
     <div className="flex">

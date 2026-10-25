@@ -8,14 +8,18 @@ const mocks = vi.hoisted(() => ({
   listeners: new Set<(event: unknown) => void>(),
 }));
 vi.mock("#/library/actions", () => ({ LibraryActions: { albumCoverArts: mocks.albumCoverArts } }));
-vi.mock("#/data/library", () => ({
-  mirrorClient: {
+vi.mock("#/data/library", async () => {
+  const { MirrorClient } = await import("@muswag/tanstack-db-mirror/client");
+  const mirrorClient = {
     subscribe: (listener: (event: unknown) => void) => {
       mocks.listeners.add(listener);
       return () => mocks.listeners.delete(listener);
     },
-  },
-}));
+    // The client's own filtering, over the listeners above.
+    onTableChange: MirrorClient.prototype.onTableChange,
+  };
+  return { mirrorClient };
+});
 
 const { useAlbumCoverArt } = await import("#/library/album-cover-art");
 

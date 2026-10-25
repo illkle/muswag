@@ -34,6 +34,14 @@ class FakePlayer implements QueuePlayerPort {
   async restartCurrent(): Promise<void> {
     this.restarts += 1;
   }
+  /** The fake's state is where it is, which the real player would read from mpv. */
+  async position(): Promise<{ key: string; positionSeconds: number } | null> {
+    return this.state.current && { key: this.state.current.key, positionSeconds: this.state.positionSeconds };
+  }
+  /** Playback moves on to `positionSeconds` without the player saying so, as it does while a track plays. */
+  playOn(positionSeconds: number): void {
+    this.state = { ...this.state, positionSeconds };
+  }
   async stop(): Promise<void> {
     if (this.stopError) throw this.stopError;
   }
@@ -309,17 +317,37 @@ describe("QueueManager", () => {
     manager.dispose();
   });
 
+  it("removes several queued occurrences in one edit", async () => {
+    const player = new FakePlayer();
+    const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
+    await manager.enqueue([song("a"), song("b"), song("c"), song("d")]);
+    await manager.playSource(album, "a");
+    const [a, b, c, d] = manager.store.state.userQueue;
+    const applies = player.applies.length;
+
+    await manager.removeQueued([d!.key, b!.key, "gone"]);
+    expect(manager.store.state.userQueue).toEqual([a, c]);
+    expect(player.applies.slice(applies).map(({ items }) => items.map(({ track }) => track.id))).toEqual([["a", "a", "c", "c"]]);
+    // Nothing of them is queued any more: there is nothing to tell the player.
+    await manager.removeQueued([b!.key, "gone"]);
+    expect(player.applies).toHaveLength(applies + 1);
+    manager.dispose();
+  });
+
   it("gives duplicate user songs unique occurrences and restarts Previous past five seconds", async () => {
     const player = new FakePlayer();
     const manager = new QueueManager({ player, sources: factory, storage: new MemoryStorage() });
     await manager.enqueue([song("same"), song("same")]);
     expect(manager.store.state.userQueue[0]?.key).not.toBe(manager.store.state.userQueue[1]?.key);
 
-    await manager.playSource({ type: "album", albumId: "album" }, "a");
-    player.start({ key: "a", track: song("a") }, 1, 6);
+    await manager.playSource({ type: "album", albumId: "album" }, "c");
+    player.start({ key: "c", track: song("c") }, 1);
     await flush();
+    // Where the track is now is asked of the player, which said it was at the start.
+    player.playOn(6);
     await manager.previous();
     expect(player.restarts).toBe(1);
+    expect(selections(player)).toEqual(["c"]);
     manager.dispose();
   });
 
@@ -357,9 +385,9 @@ describe("QueueManager", () => {
     await vi.advanceTimersByTimeAsync(0);
     const written = writes.length;
 
-    for (let tick = 1; tick <= 20; tick++) {
-      player.start(occurrence("a"), 1 + tick, tick / 2);
-      await vi.advanceTimersByTimeAsync(500);
+    for (let second = 1; second <= 10; second++) {
+      player.playOn(second);
+      await vi.advanceTimersByTimeAsync(1_000);
     }
 
     expect(writes.length).toBeGreaterThan(written);
@@ -379,7 +407,7 @@ describe("QueueManager", () => {
     player.applyError = new Error("mpv rejected queue");
 
     await expect(manager.enqueue([song("queued-c")])).rejects.toThrow("mpv rejected queue");
-    await expect(manager.removeQueued(before[0]!.key)).rejects.toThrow("mpv rejected queue");
+    await expect(manager.removeQueued([before[0]!.key])).rejects.toThrow("mpv rejected queue");
 
     expect(manager.store.state.userQueue).toEqual(before);
     expect(storage.saved?.state.userQueue).toEqual(before);
@@ -517,14 +545,41 @@ describe("QueueManager", () => {
     player.start({ key: "a", track: song("a") }, 1);
     await vi.advanceTimersByTimeAsync(0);
 
-    // The player reports its position twice a second.
-    for (let tick = 1; tick <= 24; tick++) {
-      player.start({ key: "a", track: song("a") }, 1 + tick, tick / 2);
-      await vi.advanceTimersByTimeAsync(500);
+    // The player says nothing while the track plays on: the queue asks it where it is.
+    for (let second = 1; second <= 12; second++) {
+      player.playOn(second);
+      await vi.advanceTimersByTimeAsync(1_000);
     }
+    expect(storage.saved?.resumePositionSeconds).toBe(10);
 
-    expect(storage.saved?.resumePositionSeconds).toBeGreaterThanOrEqual(10);
+    // Once paused, the position is saved once more, and then no longer asked for.
+    player.report(occurrence("a"), 2, { status: "paused", paused: true, positionSeconds: 12.5 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(storage.saved?.resumePositionSeconds).toBe(12.5);
+    const position = vi.spyOn(player, "position");
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(position).not.toHaveBeenCalled();
     manager.dispose();
+  });
+
+  it("stores where playback has got to when it closes, for the app to resume there", async () => {
+    vi.useFakeTimers();
+    const player = new FakePlayer();
+    const storage = new MemoryStorage();
+    const manager = new QueueManager({ player, sources: factory, storage });
+    await manager.playSource(album, "a");
+    player.start(occurrence("a"), 1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    player.playOn(9);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(storage.saved?.resumePositionSeconds).toBe(0);
+
+    await manager.close();
+    expect(storage.saved).toMatchObject({ state: { nowPlaying: { key: "a" } }, resumePositionSeconds: 9 });
+    // Closed, it follows the player no more.
+    player.start(occurrence("c"), 2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(storage.saved).toMatchObject({ state: { nowPlaying: { key: "a" } }, resumePositionSeconds: 9 });
   });
   it("cancels a pending telemetry save when clearing", async () => {
     vi.useFakeTimers();

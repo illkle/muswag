@@ -5,7 +5,7 @@ import type { PlayerSnapshot } from "#shared/commands/player";
 import { PLAYER_TABLES } from "#shared/state/player";
 import { Binaries } from "../binary/binaries";
 import type { EngineError, InstallFailed } from "../errors";
-import { isPositionEvent, MpvSession, type SessionEvent, type SessionSinks } from "../mpv/session";
+import { MpvSession, type SessionEvent } from "../mpv/session";
 import type { MpvCommand, MpvEvent } from "../mpv/protocol";
 import { PlayerLive, type PlayerService } from "../player";
 import { SettingsStore, defaultSettings } from "../settings";
@@ -14,11 +14,11 @@ export const tracks: PlaybackItem[] = ["a", "b", "c"].map((key) => ({ key, track
 
 /** A PlayerLive wired to an in-memory mpv that records commands and lets tests inject events. */
 export function fixture() {
-  let sinks: SessionSinks | null = null;
+  let events: Queue.Enqueue<SessionEvent> | null = null;
   let generation = 0;
   let sequence = 0;
   let nextId = 0;
-  let playlist: { id: number; current: boolean }[] = [];
+  let playlist: { id: number; current: boolean; start: number }[] = [];
   let paused = false;
   let position = 0;
   let closes = 0;
@@ -30,7 +30,7 @@ export function fixture() {
   let override: ((command: MpvCommand<unknown>) => Effect.Effect<unknown, EngineError> | undefined) | undefined;
   const deliver = (event: MpvEvent, entryId: number | null, gen = generation) => {
     const stamped: SessionEvent = { _tag: "SessionEvent", generation: gen, sequence: ++sequence, entryId, event };
-    if (sinks) Queue.offerUnsafe(isPositionEvent(stamped) ? sinks.positions : sinks.events, stamped);
+    if (events) Queue.offerUnsafe(events, stamped);
   };
 
   const session = Layer.succeed(MpvSession, {
@@ -38,7 +38,7 @@ export function fixture() {
       Effect.gen(function* () {
         if (openFailure) return yield* openFailure;
         generation++;
-        sinks = next;
+        events = next;
         playlist = [];
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -55,13 +55,14 @@ export function fixture() {
               sequence++;
               const custom = override?.(input);
               if (custom) return (yield* custom) as A;
-              const [name, arg, mode, index] = input.args;
+              const [name, arg, mode, index, options] = input.args;
               let result: unknown;
               if (name === "loadfile") {
-                const entry = { id: ++nextId, current: mode === "replace" };
+                const entry = { id: ++nextId, current: mode === "replace", start: Number((options as { start?: string } | undefined)?.start ?? 0) };
                 if (mode === "replace") {
                   const leaving = playlist.find((entry) => entry.current);
                   playlist = [entry];
+                  position = entry.start;
                   if (leaving) deliver({ type: "end-file", entryId: leaving.id, reason: "stop" }, leaving.id);
                   deliver({ type: "start-file", entryId: entry.id }, entry.id);
                 } else playlist.splice(index as number, 0, entry);
@@ -77,6 +78,7 @@ export function fixture() {
                 const leaving = playlist.find((entry) => entry.current);
                 const entry = playlist[arg as number]!;
                 playlist = playlist.map((other) => ({ ...other, current: other === entry }));
+                position = entry.start;
                 if (leaving) deliver({ type: "end-file", entryId: leaving.id, reason: "stop" }, leaving.id);
                 deliver({ type: "start-file", entryId: entry.id }, entry.id);
               }
@@ -136,6 +138,10 @@ export function fixture() {
     },
     get currentId() {
       return currentId() ?? 0;
+    },
+    /** Where mpv is in the current track: `time-pos` reads it. */
+    set position(seconds: number) {
+      position = seconds;
     },
     emit: (event: MpvEvent, id = currentId(), gen = generation) => deliver(event, id, gen),
     override: (fn: typeof override) => {

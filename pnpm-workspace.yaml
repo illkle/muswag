@@ -4,12 +4,10 @@ packages:
 
 catalog:
   "@base-ui/react": ^1.9.0
-  "@effect/platform-browser": 4.0.5
   "@effect/platform-node": 4.0.5
   "@effect/sql-sqlite-node": 4.0.5
   "@effect/tsgo": 0.53.1
   "@effect/vitest": 4.0.5
-  "@electron-toolkit/typed-ipc": ^1.0.2
   "@electron-toolkit/utils": ^4.0.0
   "@rolldown/plugin-babel": ^0.2.4
   "@tailwindcss/vite": ^4.3.3

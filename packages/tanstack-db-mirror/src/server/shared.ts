@@ -4,8 +4,6 @@ import {
   MIRROR_PROTOCOL_VERSION,
   type MirrorChangeBatch,
   type MirrorExpression,
-  type MirrorKey,
-  type MirrorMutation,
   type MirrorOrder,
   type MirrorRequest,
   type MirrorResponse,
@@ -13,10 +11,8 @@ import {
   type MirrorServerTransport,
 } from "../protocol.js";
 
-/** A request the server refused: unknown table or column, missing row, malformed payload. */
+/** A request the server refused: unknown table or column, malformed payload. */
 export class MirrorRequestError extends Data.TaggedError("MirrorRequestError")<{ readonly message: string }> {}
-
-export const readOnlyError = () => new MirrorRequestError({ message: "This mirror is read-only; change the data through the server instead" });
 
 /** Change-batch listeners, isolated from each other: one that throws does not stop the rest. */
 export function makeListeners() {
@@ -65,8 +61,6 @@ export const serveWith =
       );
     });
 
-const MUTATION_TYPES = new Set(["insert", "update", "delete"]);
-
 export function parseRequest(raw: unknown): MirrorRequest {
   const invalid = (message: string) => new MirrorRequestError({ message: `Invalid mirror request: ${message}` });
   if (!isRecord(raw)) throw invalid("expected an object");
@@ -96,27 +90,12 @@ export function parseRequest(raw: unknown): MirrorRequest {
         limit: raw.limit as number | undefined,
         offset: raw.offset as number | undefined,
       };
-    case "count":
-      if (typeof raw.table !== "string") throw invalid("count.table must be a string");
-      return { v: MIRROR_PROTOCOL_VERSION, type: "count", table: raw.table, where: raw.where as MirrorExpression | undefined };
-    case "mutate": {
-      if (!Array.isArray(raw.mutations)) throw invalid("mutate.mutations must be an array");
-      for (const mutation of raw.mutations as Array<unknown>) {
-        if (!isRecord(mutation) || typeof mutation.table !== "string" || !MUTATION_TYPES.has(mutation.type as string)) {
-          throw invalid("malformed mutation");
-        }
-        if (mutation.type === "insert" ? !isRecord(mutation.value) : !isKey(mutation.key)) throw invalid("malformed mutation");
-        if (mutation.type === "update" && !isRecord(mutation.changes)) throw invalid("malformed mutation");
-      }
-      return { v: MIRROR_PROTOCOL_VERSION, type: "mutate", mutations: raw.mutations as Array<MirrorMutation> };
-    }
     default:
       throw invalid(`unknown request type ${String(raw.type)}`);
   }
 }
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-export const isKey = (value: unknown): value is MirrorKey => typeof value === "string" || typeof value === "number";
 
 export function errorPayload(error: unknown) {
   if (!(error instanceof Error)) return { name: "Error", message: String(error) };

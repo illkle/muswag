@@ -11,8 +11,11 @@ import { useLibrarySyncStatus } from "#/library/queries";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
 import { mpvStatusLabels, openMpvDialog } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
+import { Button } from "#/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "#/components/ui/dialog";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "#/components/ui/menu";
 import { SidebarMenuButton } from "#/components/ui/sidebar";
+import { getErrorMessage } from "#/lib/err";
 import { cn } from "#/lib/utils";
 
 const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
@@ -35,6 +38,42 @@ function StatusPill({ children, tone }: { children: ReactNode; tone: "primary" |
   );
 }
 
+/** Asks before logging out, since main deletes the synced library with the session. */
+function LogoutDialog({ open, onOpenChange, hostName }: { open: boolean; onOpenChange: (open: boolean) => void; hostName: string }) {
+  // Once main has logged out the app leaves for the login page, so only a failure keeps this dialog up.
+  const logoutMutation = useMutation({
+    mutationFn: () => Session.logout(),
+  });
+
+  const setOpen = (nextOpen: boolean) => {
+    if (logoutMutation.isPending) return;
+    if (!nextOpen) logoutMutation.reset();
+    onOpenChange(nextOpen);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent showCloseButton={!logoutMutation.isPending} className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log out of {hostName}?</DialogTitle>
+          <DialogDescription>The library and the queue will be removed from this computer. Logging in again syncs the library back from the server.</DialogDescription>
+        </DialogHeader>
+
+        {logoutMutation.isError ? <p className="text-xs text-destructive">{getErrorMessage(logoutMutation.error, "Could not log out.")}</p> : null}
+
+        <DialogFooter>
+          <Button type="button" variant="secondary" disabled={logoutMutation.isPending} onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>
+            {logoutMutation.isPending ? "Logging out…" : "Log out"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ServerMenu() {
   const userStateQuery = useUser();
   const binary = usePlayerMpvBinary();
@@ -42,10 +81,8 @@ export function ServerMenu() {
   const appUpdate = useAppUpdate();
 
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
-  const logoutMutation = useMutation({
-    mutationFn: () => Session.logout(),
-  });
   const syncMutation = useMutation({
     // A quick sync reads every song again whenever the server has scanned its files; a full one repairs what that missed.
     mutationFn: (mode: SyncMode) => LibraryActions.sync(mode),
@@ -153,14 +190,15 @@ export function ServerMenu() {
 
           <MenuSeparator />
 
-          <MenuItem className="group data-highlighted:bg-destructive/10 data-highlighted:text-destructive" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>
+          <MenuItem className="group data-highlighted:bg-destructive/10 data-highlighted:text-destructive" onClick={() => setLogoutDialogOpen(true)}>
             <SignOutIcon className="size-4 text-muted-foreground group-data-highlighted:text-destructive" />
-            Log out
+            Log out…
           </MenuItem>
         </MenuContent>
       </Menu>
 
       <AppUpdateDialog onOpenChange={closeUpdateDialog} open={updateDialogOpen} state={appUpdate} />
+      <LogoutDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen} hostName={hostName} />
     </>
   );
 }

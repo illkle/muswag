@@ -27,13 +27,14 @@ function start(keys: readonly string[]) {
   );
   const position = { epoch: 0, seq: 0 };
   const snapshot = () => runtime.runPromise(Player.use((player) => player.snapshot));
-  const player: Pick<PlayerHandle, "execute" | "snapshot" | "subscribe"> = {
+  const player: Pick<PlayerHandle, "execute" | "position" | "snapshot" | "subscribe"> = {
     execute: (command) =>
       runtime.runPromise(
         Player.use((player) => player.execute(command)).pipe(
           Effect.match({ onSuccess: () => ({ ok: true as const, position }), onFailure: ({ message }) => ({ ok: false as const, message, position }) }),
         ),
       ),
+    position: () => runtime.runPromise(Player.use((player) => player.position)),
     snapshot,
     subscribe: (listener) => {
       listeners.add(listener);

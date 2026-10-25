@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { PlayerRow, playerRow } from "#shared/state/player";
+import { PlayerRow, playerPositionRow, playerRow, positionAt } from "#shared/state/player";
 import { initialSnapshot, RendererCommand } from "./player";
 
 const decode = Schema.decodeUnknownExit(RendererCommand);
@@ -34,10 +34,29 @@ describe("the player row renderers read", () => {
     expect(encode(playerRow(initialSnapshot("epoch")))).toMatchObject({ _tag: "Success", value: { status: "idle", item: null, error: null } });
     const failed = playerRow({
       ...initialSnapshot("epoch"),
-      playback: { _tag: "Failed", media: { item: item as never, positionSeconds: 3, durationSeconds: null }, reason: "track" },
+      playback: { _tag: "Failed", media: { item: item as never, positionSeconds: 3, positionAt: 0, durationSeconds: null }, reason: "track" },
       error: { message: "The track did not finish loading.", fix: "retry" },
     });
     expect(encode(failed)).toMatchObject({ _tag: "Success", value: { status: "error", item: { track: { album: "kept" } }, error: { fix: "retry" } } });
     expect(encode({ ...failed, item: { key: "a", track: { id: "" } } })._tag).toBe("Failure");
+  });
+});
+
+describe("the position renderers read", () => {
+  const media = { item: item as never, positionSeconds: 30, positionAt: 1_000, durationSeconds: 40 };
+  it("moves on with the clock only while the track plays and mpv has the data", () => {
+    const playing = playerPositionRow({ ...initialSnapshot("epoch"), playback: { _tag: "Playing", media, buffering: false } });
+    expect(playing).toEqual({ id: "player", positionSeconds: 30, durationSeconds: 40, at: 1_000, advancing: true });
+    expect(positionAt(playing, 3_500)).toBe(32.5);
+    // Up to the end of the track, and never back from where it was.
+    expect(positionAt(playing, 60_000)).toBe(40);
+    expect(positionAt(playing, 0)).toBe(30);
+
+    for (const playback of [
+      { _tag: "Playing", media, buffering: true },
+      { _tag: "Paused", media },
+      { _tag: "Loading", media, targetPaused: false },
+    ] as const)
+      expect(positionAt(playerPositionRow({ ...initialSnapshot("epoch"), playback }), 3_500)).toBe(30);
   });
 });

@@ -1,10 +1,12 @@
-import { createTransaction, type Transaction } from "@tanstack/db";
+import { Effect } from "effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { album, createHarness, expectInSync, mulberry32, sleep, song, type ConnectedClient, type Harness } from "../test/harness.js";
-import { MirrorClientDisposedError, MirrorRemoteError, MirrorTimeoutError } from "./index.js";
+import { createHarness, expectInSync, mulberry32, sleep, type ConnectedClient, type Harness } from "../test/harness.js";
+import { MirrorClientDisposedError, MirrorTimeoutError } from "./index.js";
 
-const EXPECTED_ERRORS = [MirrorRemoteError, MirrorTimeoutError, MirrorClientDisposedError];
+// A wait times out when its batch is held back long enough, and ends when its collection is cleaned up.
+const EXPECTED_ERRORS = [MirrorTimeoutError, MirrorClientDisposedError];
 
 let harness: Harness;
 
@@ -20,7 +22,7 @@ async function runScenario(seed: number, steps: number) {
   let nextSongId = 1;
 
   harness = await createHarness({ latency: () => random() * 4, server: { retainChanges: 15 } });
-  const clients: Array<ConnectedClient> = [0, 1, 2].map(() => harness.connect({ mutationTimeoutMs: 2_000, heartbeatMs: 100 }));
+  const clients: Array<ConnectedClient> = [0, 1, 2].map(() => harness.connect({ positionTimeoutMs: 2_000, heartbeatMs: 100 }));
 
   const unexpected: Array<unknown> = [];
   const consoleErrors: Array<unknown> = [];
@@ -28,15 +30,23 @@ async function runScenario(seed: number, steps: number) {
   console.error = (...args: Array<unknown>) => consoleErrors.push(args);
 
   const pending: Array<Promise<unknown>> = [];
-  const track = (tx: Transaction<any>) => {
-    pending.push(
-      tx.isPersisted.promise.catch((error: unknown) => {
-        if (!EXPECTED_ERRORS.some((type) => error instanceof type)) unexpected.push(error);
-      }),
-    );
-  };
   const background = (promise: Promise<unknown>) => {
     pending.push(promise.catch((error: unknown) => unexpected.push(error)));
+  };
+  /** Runs `effect` the way a main-process command does, and has a collection of a client wait for its position. */
+  const command = (effect: Effect.Effect<unknown, unknown, SqlClient.SqlClient>) => {
+    const client = pick(clients);
+    const collection = chance(0.5) ? client.albums : client.songs;
+    const position = harness.write(Effect.andThen(effect, harness.server.position));
+    pending.push(
+      position.then(
+        (reached) =>
+          collection.utils.awaitPosition(reached).catch((error: unknown) => {
+            if (!EXPECTED_ERRORS.some((type) => error instanceof type)) unexpected.push(error);
+          }),
+        (error: unknown) => unexpected.push(error),
+      ),
+    );
   };
 
   const ops: Array<[weight: number, run: () => void | Promise<void>]> = [
@@ -46,48 +56,19 @@ async function runScenario(seed: number, steps: number) {
     [1, () => background(harness.exec(`UPDATE albums SET plays = plays + 1 WHERE id > ?`, [pick(albumIds)]))],
     [3, () => background(harness.exec(`INSERT INTO songs (id, album_id, title) SELECT ?, id, 'server song' FROM albums WHERE id = ?`, [nextSongId++, pick(albumIds)]))],
     [1, () => background(harness.run(harness.sql.unsafe(`UPDATE songs SET title = 'unflushed' WHERE id % 2 = 0`)).then(() => harness.run(harness.server.flush)))],
+    [4, () => command(harness.sql.unsafe(`INSERT OR IGNORE INTO albums (id, name) VALUES (?, ?)`, [pick(albumIds), `command ${random()}`]))],
+    [4, () => command(harness.sql.unsafe(`UPDATE albums SET plays = ?, extra = ? WHERE id = ?`, [Math.floor(random() * 100), JSON.stringify({ tags: [String(seed)] }), pick(albumIds)]))],
+    [2, () => command(harness.sql.unsafe(`DELETE FROM albums WHERE id = ?`, [pick(albumIds)]))],
     [
-      4,
+      2,
       () => {
-        const client = pick(clients);
         const id = pick(albumIds);
-        if (client.albums.status === "ready" && !client.albums.has(id)) track(client.albums.insert(album(id, { name: `client ${random()}` })));
-      },
-    ],
-    [
-      4,
-      () => {
-        const client = pick(clients);
-        const id = pick(albumIds);
-        if (!client.albums.has(id)) return;
-        track(
-          client.albums.update(id, (draft) => {
-            draft.plays = Math.floor(random() * 100);
-            draft.extra = { tags: [String(seed)] };
-          }),
+        command(
+          Effect.andThen(
+            harness.sql.unsafe(`INSERT OR IGNORE INTO albums (id, name) VALUES (?, 'with a song')`, [id]),
+            harness.sql.unsafe(`INSERT INTO songs (id, album_id, title) VALUES (?, ?, 'command song')`, [nextSongId++, id]),
+          ),
         );
-      },
-    ],
-    [
-      2,
-      () => {
-        const client = pick(clients);
-        const id = pick(albumIds);
-        if (client.albums.has(id)) track(client.albums.delete(id));
-      },
-    ],
-    [
-      2,
-      () => {
-        const client = pick(clients);
-        const id = pick(albumIds);
-        if (client.albums.status !== "ready" || client.songs.status !== "ready" || client.albums.has(id)) return;
-        const tx = createTransaction({ mutationFn: ({ transaction }) => client.client.applyTransaction(transaction) });
-        tx.mutate(() => {
-          client.albums.insert(album(id));
-          client.songs.insert(song(nextSongId++, id));
-        });
-        track(tx);
       },
     ],
     [1, () => pick(clients).connection.dropNextBatches(1)],

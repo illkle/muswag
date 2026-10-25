@@ -9,7 +9,7 @@ import { createMirrorClient, mirrorCollectionOptions, type MirrorClient, type Mi
 import type { MirrorRow } from "../protocol.js";
 import { SqliteMirror, type SqliteMirrorOptions, type SqliteMirrorService } from "../server/sqlite/index.js";
 import type { MirrorRowOf } from "../table.js";
-import { createMemoryTransport, type MemoryConnection, type MemoryTransportOptions } from "../testing/index.js";
+import { createMemoryTransport, type MemoryConnection, type MemoryTransportOptions } from "./memory-transport.js";
 
 export const albums = sqliteTable("albums", {
   id: text().primaryKey(),

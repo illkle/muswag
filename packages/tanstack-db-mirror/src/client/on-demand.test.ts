@@ -181,7 +181,7 @@ describe("on-demand mirror collection", () => {
     subscription.unsubscribe();
   });
 
-  it("refreshes a burst of changes a few times, not once per batch", async () => {
+  it("reads a burst of changes again once it is over, not once per batch", async () => {
     const { collection, connected } = await setup();
     const album2 = live({ query: (q) => q.from({ song: collection }).where(({ song }) => eq(song.albumId, "a2")) });
     await album2.preload();
@@ -193,8 +193,55 @@ describe("on-demand mirror collection", () => {
     await collection.utils.awaitPosition(await harness.run(harness.server.position));
 
     expect(album2.size).toBe(57);
-    // At most one refresh per 250 ms, plus the one right away and the one after the last batch.
-    expect(queries(connected) - before).toBeLessThanOrEqual(Math.ceil(elapsed / 250) + 2);
+    // One read after the burst, and one every two seconds while it lasts.
+    expect(queries(connected) - before).toBeLessThanOrEqual(Math.floor(elapsed / 2_000) + 1);
+  });
+
+  it("reads a subset again while changes keep coming, every two seconds", async () => {
+    const { collection, connected } = await setup();
+    const album2 = live({ query: (q) => q.from({ song: collection }).where(({ song }) => eq(song.albumId, "a2")) });
+    await album2.preload();
+    const before = queries(connected);
+
+    // Changes 50 ms apart, as a library sync sends them, never leave the table quiet.
+    await harness.insertSongs([song(1000, "a2")]);
+    let seen: number | undefined;
+    const started = Date.now();
+    for (let i = 1; Date.now() - started < 2_600; i++) {
+      await harness.exec(`UPDATE songs SET title = ? WHERE id = 1`, [`Busy ${i}`]);
+      if (seen === undefined && collection.has(1000)) seen = Date.now() - started;
+      await sleep(50);
+    }
+
+    expect(seen).toBeDefined();
+    expect(seen!).toBeGreaterThan(1_500);
+    expect(queries(connected) - before).toBe(1);
+  });
+
+  it("reads a subset asked for by key again only for changes to its keys", async () => {
+    const { collection, connected } = await setup();
+    const picked = live({ query: (q) => q.from({ song: collection }).where(({ song }) => inArray(song.id, [3, 9, 27])) });
+    await picked.preload();
+    const before = queries(connected);
+
+    await harness.exec(`UPDATE songs SET title = 'Other' WHERE id IN (1, 2, 10)`);
+    await harness.insertSongs([song(600, "a1")]);
+    await harness.exec(`DELETE FROM songs WHERE id = 4`);
+    await collection.utils.awaitPosition(await harness.run(harness.server.position), 2_000);
+    expect(queries(connected)).toBe(before);
+
+    // A change to one of its keys reads it again at once, without waiting for the table to go quiet.
+    const started = Date.now();
+    await harness.exec(`UPDATE songs SET title = 'Picked' WHERE id = 9`);
+    await collection.utils.awaitPosition(await harness.run(harness.server.position));
+    expect(Date.now() - started).toBeLessThan(250);
+    expect(collection.get(9)?.title).toBe("Picked");
+    expect(queries(connected)).toBe(before + 1);
+
+    await harness.exec(`DELETE FROM songs WHERE id = 27`);
+    await collection.utils.awaitPosition(await harness.run(harness.server.position));
+    expect(sortedIds(picked.toArray)).toEqual([3, 9]);
+    expect(sortedIds(collection.toArray)).toEqual([3, 9]);
   });
 
   it("refreshes a subset whose rows changed while it loaded", async () => {
@@ -313,7 +360,10 @@ describe("on-demand mirror collection", () => {
           .offset(0),
     });
     const album2 = live({ query: (q) => q.from({ song: collection }).where(({ song }) => eq(song.albumId, "a2")) });
-    const ready = Promise.all([window.preload(), album2.preload()]);
+    // Asked for by key, among them songs that are deleted and inserted along the way.
+    const pickedIds = [...Array.from({ length: 20 }, () => 1 + Math.floor(random() * 300)), 1000, 1003, 1010];
+    const picked = live({ query: (q) => q.from({ song: collection }).where(({ song }) => inArray(song.id, pickedIds)) });
+    const ready = Promise.all([window.preload(), album2.preload(), picked.preload()]);
     const title = () => `Song ${String(Math.floor(random() * 400)).padStart(3, "0")}`;
     const albumId = () => `a${1 + Math.floor(random() * 3)}`;
     let next = 1000;
@@ -332,6 +382,7 @@ describe("on-demand mirror collection", () => {
     await eventually(async () => {
       expect(window.toArray.map(stripVirtual).map(({ id }) => id)).toEqual(await selectIds(`SELECT id FROM songs WHERE album_id = 'a1' ORDER BY title, id LIMIT 25 OFFSET ?`, [offset]));
       expect(sortedIds(album2.toArray)).toEqual(await selectIds(`SELECT id FROM songs WHERE album_id = 'a2' ORDER BY id`));
+      expect(sortedIds(picked.toArray)).toEqual(await selectIds(`SELECT id FROM songs WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id`, [JSON.stringify(pickedIds)]));
       // The rows held are those of the database.
       for (const row of collection.toArray) {
         expect(stripVirtual(row)).toEqual(

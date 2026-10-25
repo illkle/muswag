@@ -2,21 +2,31 @@ import { Db, LibraryQueries, PlaylistCommands, SessionManager } from "@muswag/ba
 import type { Song } from "@muswag/model";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Effect, Exit, Schema } from "effect";
-import type { IpcMain } from "electron";
 
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
+import { APP_COMMAND_CHANNEL } from "#shared/ipc";
+import type { AppIpc } from "../app-page";
+import type { PlayerHandle } from "../player/ipc";
 import type { QueueManager } from "../queue/queue-manager";
 import type { LibrarySearch } from "../search/library-search";
 
 type Handlers = { [K in AppCommandName]: (...args: (typeof AppCommandArgs)[K]["Type"]) => Effect.Effect<AppCommandResults[K], unknown> };
+
+/** Checking for an update of the app and installing it (`app-updater.ts`). */
+export interface AppUpdates {
+  readonly check: () => Promise<void>;
+  readonly install: () => void;
+}
 
 /**
  * Answers `app:command` from renderers for as long as the scope lasts: decodes each command against
  * `AppCommandArgs`, runs it, and replies with its result or failure as data.
  */
 export const serveAppCommands = (options: {
-  readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
+  readonly ipcMain: AppIpc;
   readonly queue: QueueManager;
+  readonly player: Pick<PlayerHandle, "execute" | "locate">;
+  readonly updates: AppUpdates;
   readonly songsByIds: (ids: readonly string[]) => Promise<Song[]>;
   readonly search: LibrarySearch["search"];
 }) =>
@@ -26,7 +36,7 @@ export const serveAppCommands = (options: {
     const mirror = yield* SqliteMirror;
     const db = yield* Db;
     const run = Effect.runPromiseWith(yield* Effect.context<never>());
-    const { queue } = options;
+    const { queue, player, updates } = options;
 
     /** A library write, paired with the mirror position renderers can await to see it. */
     const written = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.flatMap((value) => mirror.position.pipe(Effect.map((position) => ({ value, position })))));
@@ -62,7 +72,7 @@ export const serveAppCommands = (options: {
       "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),
       "playlists:setVisibility": (id, isPublic) => written(commands.setVisibility(id, isPublic)),
       "playlists:addEntries": (id, songIds, beforeEntryId) => written(commands.addEntries(id, songIds, beforeEntryId)),
-      "playlists:removeEntry": (id, entryId) => written(commands.removeEntry(id, entryId)),
+      "playlists:removeEntries": (id, entryIds) => written(commands.removeEntries(id, entryIds)),
       "playlists:moveEntries": (id, entryIds, beforeEntryId) => written(commands.moveEntries(id, entryIds, beforeEntryId)),
       "playlists:delete": (id) => written(commands.delete(id)),
       "playlists:sync": () => session.use((active) => active.playlists.sync),
@@ -71,9 +81,13 @@ export const serveAppCommands = (options: {
       "queue:play": () => Effect.promise(() => queue.play()),
       "queue:enqueue": (songIds, beforeKey) => Effect.promise(() => songsInOrder(songIds).then((tracks) => queue.enqueue(tracks, beforeKey))),
       "queue:moveQueued": (keys, beforeKey) => Effect.promise(() => queue.moveQueued(keys, beforeKey)),
-      "queue:removeQueued": (key) => Effect.promise(() => queue.removeQueued(key)),
+      "queue:removeQueued": (keys) => Effect.promise(() => queue.removeQueued(keys)),
       "queue:next": () => Effect.promise(() => queue.next()),
       "queue:previous": () => Effect.promise(() => queue.previous()),
+      "player:execute": (command) => Effect.promise(() => player.execute(command)),
+      "player:locate": () => Effect.promise(() => player.locate()),
+      "appUpdate:check": () => Effect.promise(() => updates.check()),
+      "appUpdate:install": () => Effect.sync(() => updates.install()),
     };
 
     const execute = <K extends AppCommandName>(name: K, input: unknown): Effect.Effect<AppCommandReply<K>> =>
@@ -95,14 +109,14 @@ export const serveAppCommands = (options: {
 
     yield* Effect.acquireRelease(
       Effect.sync(() => {
-        options.ipcMain.handle("app:command", (_event, name: unknown, args: unknown) => {
+        options.ipcMain.handle(APP_COMMAND_CHANNEL, (_event, name: unknown, args: unknown) => {
           if (typeof name !== "string" || !Object.hasOwn(AppCommandArgs, name)) return { ok: false, error: { tag: "InvalidCommand", message: `Unknown command ${String(name)}` } };
           return run(execute(name as AppCommandName, args));
         });
       }),
       () =>
         Effect.sync(() => {
-          options.ipcMain.removeHandler("app:command");
+          options.ipcMain.removeHandler(APP_COMMAND_CHANNEL);
         }),
     );
   });

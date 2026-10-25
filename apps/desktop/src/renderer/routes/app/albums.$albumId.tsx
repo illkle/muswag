@@ -8,9 +8,10 @@ import { db } from "#/data/library";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
 import { useAlbumRefresh } from "#/library/page-refresh";
+import { creditedAsTheirAlbums, discHeading } from "#/library/album-tracks";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
-import { ArtistLinks, getArtistCredits } from "#/components/utils/artist-links";
+import { ArtistLinks } from "#/components/utils/artist-links";
 import { eq, useLiveQuery } from "@tanstack/react-db";
 import { albumColumns, albumColumnsWithoutArtist } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
@@ -23,12 +24,6 @@ import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/compo
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
 });
-
-/** The artists something is credited to, as one comparable line. */
-const creditLine = (credited: Parameters<typeof getArtistCredits>[0]) =>
-  getArtistCredits(credited)
-    .map(({ name }) => name)
-    .join(", ");
 
 function RouteComponent() {
   const { albumId } = Route.useParams();
@@ -57,18 +52,15 @@ function RouteComponent() {
   const playingKey = usePlayingKey((ref) => ref.type === "album" && ref.albumId === albumId);
 
   const discTitles = albumQuery.data?.discTitles;
-  const items = useMemo((): TrackListItem[] => {
-    const showDiscs = (discTitles?.length ?? 0) > 1;
-
-    return (songsQuery.data ?? []).flatMap((song, index, songs): TrackListItem[] => {
-      const track: TrackListItem = { type: "track", key: albumOccurrenceKey(albumId, song.id), song };
-      const disc = song.discNumber;
-      if (!showDiscs || !disc || songs[index - 1]?.discNumber === disc) return [track];
-
-      const title = discTitles?.find((entry) => entry.disc === disc)?.title;
-      return [{ type: "heading", key: `disc:${disc}`, title: `Disc ${disc}`, ...(title ? { subtitle: title } : {}) }, track];
-    });
-  }, [albumId, discTitles, songsQuery.data]);
+  const items = useMemo(
+    (): TrackListItem[] =>
+      (songsQuery.data ?? []).flatMap((song, index, songs): TrackListItem[] => {
+        const track: TrackListItem = { type: "track", key: albumOccurrenceKey(albumId, song.id), song };
+        const heading = discHeading({ id: albumId, discTitles }, song, songs[index - 1]);
+        return heading ? [heading, track] : [track];
+      }),
+    [albumId, discTitles, songsQuery.data],
+  );
 
   if (albumQuery.isLoading || songsQuery.isLoading) return <PageState tone="quiet" title="Loading album…" />;
   if (albumQuery.isError || songsQuery.isError) {
@@ -81,9 +73,7 @@ function RouteComponent() {
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
-  // Naming the artist on every row only says something when a track is credited differently from the album.
-  const albumCredit = creditLine(album);
-  const columns = (songsQuery.data ?? []).every((song) => creditLine(song) === albumCredit) ? albumColumnsWithoutArtist : albumColumns;
+  const columns = creditedAsTheirAlbums(songsQuery.data ?? [], [album]) ? albumColumnsWithoutArtist : albumColumns;
   const firstKey = items.find(isTrackItem)?.key;
 
   const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));

@@ -18,7 +18,7 @@ export async function writeLibrary(root: string, albums: readonly AlbumFixture[]
   for (const album of albums) {
     const dir = albumDirectory(root, album);
     await mkdir(dir, { recursive: true });
-    if (album.cover !== false) await write(path.join(dir, "cover.png"), solidPng(album.title));
+    if (album.cover !== false) await write(path.join(dir, "cover.png"), solidPng(album.title, album.coverPixels));
     for (const song of album.songs) {
       await write(path.join(dir, `${song.disc ?? 1}-${String(song.track).padStart(2, "0")}.mp3`), Buffer.concat([id3Tag(album, song), silence(song.durationSec)]));
     }
@@ -82,9 +82,8 @@ function id3Tag(album: AlbumFixture, song: SongFixture): Buffer {
   return Buffer.concat([Buffer.from("ID3", "latin1"), Buffer.from([4, 0, 0]), synchsafe(body.length), body]);
 }
 
-/** A small PNG of one colour, which `seed` picks, so that albums have covers that differ. */
-function solidPng(seed: string): Buffer {
-  const size = 32;
+/** A square PNG of one colour, which `seed` picks, so that albums have covers that differ. */
+function solidPng(seed: string, size = 32): Buffer {
   const hue = crc32(seed);
   const rgb = [hue & 0xff, (hue >> 8) & 0xff, (hue >> 16) & 0xff];
   const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: size }, () => rgb).flat())]);

@@ -103,7 +103,9 @@ describe("electron transports", () => {
     const collection = createCollection(mirrorCollectionOptions({ client, table: albums }));
 
     await collection.preload();
-    await collection.insert(album("a2")).isPersisted.promise;
+    const position = await harness.write(Effect.andThen(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a2', 'Album a2')`), harness.server.position));
+    await collection.utils.awaitPosition(position);
+    expect(collection.has("a2")).toBe(true);
     await harness.insertAlbums([album("a3")]);
 
     await eventually(() => expect(rowsOf(collection)).toEqual([album("a1"), album("a2"), album("a3")]));
