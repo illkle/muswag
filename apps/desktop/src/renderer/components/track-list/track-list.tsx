@@ -1,45 +1,20 @@
 import { useElementScrollRestoration } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type DragEvent,
-  type JSX,
-  type KeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-} from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
-import type { GhostShape, TrackColumn } from "#/components/track-list/columns";
-import {
-  EMPTY_SELECTION,
-  EMPTY_SPANS,
-  selectAll,
-  selectAllPositions,
-  selectForAction,
-  selectOnClick,
-  selectPositionForAction,
-  selectPositionOnClick,
-  spansHave,
-  spansSize,
-  togglePosition,
-  toggleSelected,
-  type SpanSelection,
-} from "#/components/track-list/selection";
-import { TrackRow } from "#/components/track-list/track-row";
+import type { TrackColumn } from "#/components/track-list/columns";
+import { LoadingRow, LoadingRows } from "#/components/track-list/loading-rows";
+import { rowPositionOf, TRACK_HEIGHT, TrackRow } from "#/components/track-list/track-row";
 import { isTrackItem, type TrackItem, type TrackListItem, type TrackRows, type TrackSelection } from "#/components/track-list/types";
+import { useDragAndDrop, type TrackListDrop } from "#/components/track-list/use-drag-and-drop";
+import { useTrackListSelection } from "#/components/track-list/use-selection";
+import { useTypeahead } from "#/components/track-list/use-typeahead";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "#/components/ui/context-menu";
 import { scrollMemory } from "#/lib/scroll-memory";
-import { draggedSongs, startSongDrag, type SongDrag } from "#/lib/song-drag";
+import type { SongDrag } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
 import { TOP_HEIGHT } from "#/styles";
 
-const TRACK_HEIGHT = 48;
 const HEADING_HEIGHT = 40;
 const NOTE_HEIGHT = 32;
 /** The column header, and the gap between it and the first row. */
@@ -77,12 +52,6 @@ function tracksOf(items: readonly TrackListItem[]): { tracks: readonly TrackItem
   return { tracks, positions };
 }
 
-/** Where among the tracks the row an event happened in is, or `null` outside the rows. */
-const rowPositionOf = (event: { target: EventTarget }): number | null => {
-  const position = (event.target as Element).closest<HTMLElement>("[data-track-position]")?.dataset.trackPosition;
-  return position === undefined ? null : Number(position);
-};
-
 const NO_TRACKS = { tracks: [] as readonly TrackItem[], positions: null };
 
 /** A drag of the songs of `selection`, which is what a list drags unless it says otherwise. */
@@ -90,9 +59,6 @@ export const songDragOf = ({ items, count, songIds }: TrackSelection): SongDrag 
   label: count === 1 && items.length === 1 ? items[0]!.song.title : `${count} ${count === 1 ? "song" : "songs"}`,
   songIds,
 });
-
-/** How long typing a few letters to jump to them waits for the next one before it starts over. */
-const TYPEAHEAD_MS = 1_000;
 
 /**
  * The menu for the selected rows. It is drawn only while the menu is open, so the selection is read
@@ -103,53 +69,6 @@ function SelectionMenu({ menu, selection }: { menu: (selection: TrackSelection) 
   // go, and an open menu should still act on what was selected when it was opened.
   const [opened] = useState(selection);
   return menu(opened);
-}
-
-/** A mask of `shapes`, a cell of each of a few rows in turn, as a column of `LoadingRows` repeats it down the list. */
-function ghostMask(rows: readonly (readonly GhostShape[])[]): CSSProperties {
-  const rects = rows.flatMap((shapes, row) =>
-    shapes.map(({ x = 0, y, width, height, radius = Math.min(4, height / 2) }) => `<rect x="${x}%" y="${row * TRACK_HEIGHT + y}" width="${width}%" height="${height}" rx="${radius}"/>`),
-  );
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg">${rects.join("")}</svg>`;
-  return {
-    maskImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")`,
-    maskRepeat: "repeat-y",
-    maskSize: `100% ${rows.length * TRACK_HEIGHT}px`,
-  };
-}
-
-/**
- * What every row of a list of `TrackRows` shows until it has loaded: the shapes of each column's
- * `ghost`, laid out on the rows' grid and drawn under all the rows at once by the browser itself. A
- * fast drag of the scrollbar scrolls further than the rows drawn before the list has drawn the rows
- * there, and this is in their places rather than nothing. A row that has loaded covers it.
- */
-function LoadingRows({ top, count, columns, gridTemplateColumns }: { top: number; count: number; columns: readonly TrackColumn[]; gridTemplateColumns: string }) {
-  const masks = useMemo(() => columns.map(({ ghost }) => (ghost ? ghostMask(ghost) : undefined)), [columns]);
-  return (
-    <div aria-hidden className="absolute left-0 w-full px-2" style={{ top, height: count * TRACK_HEIGHT }}>
-      <div style={{ gridTemplateColumns }} className="grid h-full gap-3 px-2">
-        {columns.map(({ id }, index) => (
-          <div key={id} className={cn(masks[index] && "bg-muted")} style={masks[index]} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** A row of a list of `TrackRows` that has not loaded yet, which shows `LoadingRows` under it. It can be selected like any other. */
-function LoadingRow({ rowIndex, position, isSelected }: { rowIndex: number; position: number; isSelected: boolean }) {
-  return (
-    <div
-      role="row"
-      aria-rowindex={rowIndex}
-      aria-selected={isSelected}
-      aria-busy
-      draggable
-      data-track-position={position}
-      className={cn("h-12 w-full rounded-lg border-2 border-transparent bg-clip-padding select-none", isSelected && "bg-muted")}
-    />
-  );
 }
 
 /**
@@ -205,18 +124,7 @@ export function TrackList({
   /** What dragging the selected rows drags. A drag selects the row it starts on first, as a right-click does. */
   dragOf?: (selection: TrackSelection) => SongDrag;
   /** Lets songs be dropped between the rows of a list of items. */
-  drop?: {
-    /** What the list is called in `SongDrag.rows`, so that its own rows show as moving rather than being added. */
-    list?: string;
-    /** Whether songs of `drag` can be dropped in the list at all. */
-    accepts?: (drag: SongDrag) => boolean;
-    /**
-     * Where songs dropped on the row at `index`, on its lower half when `after`, go: the index of the row
-     * they go before, the number of rows for after the last, or `null` where they cannot go.
-     */
-    gapAt: (index: number, after: boolean) => number | null;
-    onDrop: (drag: SongDrag, gap: number) => void;
-  };
+  drop?: TrackListDrop;
   /** Restores the scroll position when navigating back to the page the list is on. */
   scrollId?: string;
   /** Comes back to where it was on any visit to the page, not only when going back to it. Needs `scrollId`. */
@@ -267,84 +175,16 @@ export function TrackList({
   /** How many tracks there are, and the one at a position among them. Every row of `TrackRows` is a track. */
   const trackCount = rows ? rows.count : tracks.length;
   const trackAt = (position: number): TrackItem | undefined => (rows ? rows.at(position) : tracks[position]);
-  /** Where among the tracks the row at `index` is. */
-  const positionOf = (index: number) => (rows ? index : positions ? positions[index]! : index);
-  /** The keys of the tracks in order, which only clicks and keys need, so they are not kept between them. */
-  const trackKeys = () => tracks.map(({ key }) => key);
+  /** Where among the tracks the row at `index` is, or -1 for a row that is not a track. */
+  const positionOf = (index: number) => (positions ? positions[index]! : index);
 
   const gridTemplateColumns = useMemo(() => columns.map(({ width }) => width).join(" "), [columns]);
 
-  /**
-   * The track the keyboard is on. A row that was clicked is where the keyboard goes on from. A list of
-   * items follows it by its key wherever it moves; a list of `TrackRows` keeps to its position.
-   */
-  const [cursor, setCursor] = useState<{ position: number; key: string | null } | null>(null);
-
-  // A list of items selects by key, which holds wherever its rows move. A list of `TrackRows` does not
-  // know every key, and selects by position; positions move when rows come or go, so it starts over.
-  const [selectionState, setSelectionState] = useState(EMPTY_SELECTION);
-  const [spanState, setSpanState] = useState<SpanSelection>(EMPTY_SPANS);
-  const [spansFor, setSpansFor] = useState(count);
-  if (rows && spansFor !== count) {
-    setSpansFor(count);
-    setSpanState(EMPTY_SPANS);
-    // A position the keyboard was on may be past the end now, or another song's.
-    setCursor(null);
-  }
-  const isSelected = (position: number, item: TrackItem | undefined) => (rows ? spansHave(spanState.spans, position) : item !== undefined && selectionState.keys.has(item.key));
-  const clearSelection = () => (rows ? setSpanState(EMPTY_SPANS) : setSelectionState(EMPTY_SELECTION));
-  const selectEverything = () => (rows ? setSpanState(selectAllPositions(rows.count)) : setSelectionState(selectAll(trackKeys())));
-  const selectAt = (position: number, modifiers: { toggle: boolean; range: boolean }) => {
-    if (rows) return setSpanState((state) => selectPositionOnClick(state, position, modifiers));
-    const key = tracks[position]?.key;
-    if (key === undefined) return;
-    const order = trackKeys();
-    setSelectionState((state) => selectOnClick(state, order, key, modifiers));
-  };
-  const toggleAt = (position: number) => {
-    if (rows) return setSpanState((state) => togglePosition(state, position));
-    const key = tracks[position]?.key;
-    if (key !== undefined) setSelectionState((state) => toggleSelected(state, key));
-  };
-  const selectForActionAt = (position: number) => {
-    if (rows) return setSpanState((state) => selectPositionForAction(state, position));
-    const key = tracks[position]?.key;
-    if (key !== undefined) setSelectionState((state) => selectForAction(state, key));
-  };
-
-  /** What the menu acts on, read only when it opens. */
-  const currentSelection = (): TrackSelection => {
-    if (rows) {
-      const { spans } = spanState;
-      const held: TrackItem[] = [];
-      for (const { start, end } of spans) {
-        for (let position = start; position < end; position++) {
-          const item = rows.at(position);
-          if (item) held.push(item);
-        }
-      }
-      const count = spansSize(spans);
-      // Main reads positions as the library is now, which a change may have moved since the rows on
-      // screen were read; a selection of those rows only is what they show.
-      if (held.length === count) {
-        const ids = held.map(({ song }) => song.id);
-        return { items: held, count, songIds: () => Promise.resolve(ids) };
-      }
-      return { items: held, count, songIds: () => rows.songIds(spans) };
-    }
-    // Read from the rows that are there now, so keys of rows that have left the list select nothing.
-    const selected = tracks.filter(({ key }) => selectionState.keys.has(key));
-    const ids = selected.filter(({ unavailable }) => !unavailable).map(({ song }) => song.id);
-    return { items: selected, count: ids.length, songIds: () => Promise.resolve(ids) };
-  };
-
-  /** What a gesture on the row at `position` acts on: the selection when the row is part of it, and otherwise the row alone. */
-  const selectionFrom = (position: number): TrackSelection => {
-    const item = trackAt(position);
-    if (isSelected(position, item)) return currentSelection();
-    if (item) return { items: [item], count: item.unavailable ? 0 : 1, songIds: () => Promise.resolve(item.unavailable ? [] : [item.song.id]) };
-    return { items: [], count: 1, songIds: () => rows!.songIds([{ start: position, end: position + 1 }]) };
-  };
+  // A list of items selects by key, and the keyboard follows its track by key, which holds wherever its
+  // rows move. A list of `TrackRows` does not know every key, and selects by position, where the keyboard
+  // also keeps; positions move when rows come or go, so it starts over.
+  const selection = useTrackListSelection(tracks, rows);
+  const { cursor: cursorAt, moveCursor } = selection;
 
   // The rows are given one function to play with, which stays the same whatever function the page passes, so that a new one does not draw every row again.
   const onActivateRef = useRef(onActivate);
@@ -353,8 +193,6 @@ export function TrackList({
   });
   const [playRow] = useState(() => (item: TrackItem) => onActivateRef.current?.(item));
 
-  const cursorAt = cursor === null ? -1 : rows || cursor.key === null ? cursor.position : tracks.findIndex(({ key }) => key === cursor.key);
-  const moveCursor = (position: number) => setCursor({ position, key: trackAt(position)?.key ?? null });
   /** The id of that row's element, which is how the list, holding the focus itself, points at it. */
   const cursorRowId = useId();
 
@@ -373,7 +211,7 @@ export function TrackList({
   /** The first track in view below whatever lies over the top of the list. */
   const firstTrackInView = (): number | null => {
     const top = (rowVirtualizer.scrollOffset ?? 0) + scrollPaddingStart;
-    const row = virtualRows.find(({ index, start }) => start >= top && (rows ? true : items[index]?.type === "track"));
+    const row = virtualRows.find(({ index, start }) => start >= top && positionOf(index) !== -1);
     if (row) return positionOf(row.index);
     return trackCount > 0 ? 0 : null;
   };
@@ -381,41 +219,17 @@ export function TrackList({
   /** Scrolls the track at `position` into view. The first comes with what is above it, which on a page with a header is that header. */
   const reveal = (position: number) => {
     if (position === 0) rowVirtualizer.scrollToOffset(0);
-    else rowVirtualizer.scrollToIndex(rows || !positions ? position : positions.indexOf(position));
+    else rowVirtualizer.scrollToIndex(positions ? positions.indexOf(position) : position);
   };
 
   /** Puts the keyboard on the track at `position`, selecting it as a click would unless `select` is false, and shows it. */
   const goTo = (position: number, { select = true, range = false } = {}) => {
     moveCursor(position);
-    if (select) selectAt(position, { toggle: false, range });
+    if (select) selection.select(position, { toggle: false, range });
     reveal(position);
   };
 
-  // What has been typed to jump to, until a moment passes without another key.
-  const typed = useRef({ text: "", at: 0, search: 0 });
-  const typeahead = (event: KeyboardEvent<HTMLDivElement>): boolean => {
-    const { key } = event;
-    if (!findPosition || key.length !== 1 || event.metaKey || event.ctrlKey || event.altKey) return false;
-    const now = performance.now();
-    const going = typed.current.text !== "" && now - typed.current.at < TYPEAHEAD_MS;
-    // Space plays and pauses, unless it goes on what is being typed.
-    if (key === " " && !going) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    const text = (going ? typed.current.text : "") + key;
-    const search = typed.current.search + 1;
-    typed.current = { text, at: now, search };
-    findPosition(text).then(
-      (position) => {
-        // Only the latest of the searches goes anywhere.
-        if (position === null || typed.current.search !== search) return;
-        goTo(Math.min(Math.max(position, 0), trackCount - 1));
-      },
-      // Not finding where to jump leaves the list where it is.
-      (cause: unknown) => console.error("[track-list] could not find where the typed text starts", cause),
-    );
-    return true;
-  };
+  const typeahead = useTypeahead(findPosition, (position) => goTo(Math.min(Math.max(position, 0), trackCount - 1)));
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Keys pressed in something inside the list, such as a button of `topContent`, are its own.
@@ -426,13 +240,13 @@ export function TrackList({
     const at = cursorAt;
 
     if (key === "Escape") {
-      clearSelection();
+      selection.clear();
     } else if (key === "a" && mod) {
       event.preventDefault();
-      selectEverything();
+      selection.selectAll();
     } else if (key === "Enter") {
       if (at === -1) return;
-      if (mod) return toggleAt(at);
+      if (mod) return selection.toggle(at);
       const item = trackAt(at);
       if (item) onActivate?.(item);
     } else if (menu && (key === "ContextMenu" || (key === "F10" && shiftKey))) {
@@ -467,9 +281,9 @@ export function TrackList({
 
   const onClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const position = rowPositionOf(event);
-    if (position === null) return clearSelection();
+    if (position === null) return selection.clear();
     moveCursor(position);
-    selectAt(position, { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey });
+    selection.select(position, { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey });
   };
 
   const onDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -486,54 +300,10 @@ export function TrackList({
       return;
     }
     moveCursor(position);
-    selectForActionAt(position);
+    selection.selectForAction(position);
   };
 
-  const onDragStart = (event: DragEvent<HTMLDivElement>) => {
-    const position = rowPositionOf(event);
-    if (position === null) return;
-    const selection = selectionFrom(position);
-    if (selection.count === 0) return event.preventDefault();
-    moveCursor(position);
-    selectForActionAt(position);
-    startSongDrag(event, dragOf(selection));
-  };
-
-  /** Where songs being dragged over the list would go, as `drop.gapAt` says. */
-  const [dropGap, setDropGap] = useState<number | null>(null);
-  useEffect(() => {
-    if (dropGap === null) return;
-    // A cancelled drag ends at its source, which may be in another list.
-    const clear = () => setDropGap(null);
-    window.addEventListener("dragend", clear);
-    return () => window.removeEventListener("dragend", clear);
-  }, [dropGap]);
-  const gapUnder = (event: DragEvent<HTMLDivElement>): number | null => {
-    const drag = draggedSongs(event);
-    if (!drop || !drag || drop.accepts?.(drag) === false) return null;
-    const y = event.clientY - event.currentTarget.getBoundingClientRect().top + event.currentTarget.scrollTop;
-    const row = virtualRows.find(({ end }) => y < end) ?? virtualRows.at(-1);
-    return row ? drop.gapAt(row.index, y >= row.start + row.size / 2) : null;
-  };
-  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
-    const gap = gapUnder(event);
-    if (gap !== dropGap) setDropGap(gap);
-    if (gap === null) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = drop?.list !== undefined && draggedSongs(event)?.rows?.list === drop.list ? "move" : "copy";
-  };
-  const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
-    // Moving onto a row is still over the list.
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropGap(null);
-  };
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    const drag = draggedSongs(event);
-    const gap = gapUnder(event);
-    setDropGap(null);
-    if (gap === null || !drag) return;
-    event.preventDefault();
-    drop?.onDrop(drag, gap);
-  };
+  const { dropGap, props: dragProps } = useDragAndDrop({ selection, dragOf, drop, virtualRows });
   /** Where the line that shows where songs would go is drawn: at the top of the row they go before, or the bottom of the last. */
   const dropLineAt = dropGap === null ? undefined : dropGap < count ? rowVirtualizer.measurementsCache[dropGap]?.start : rowVirtualizer.measurementsCache[count - 1]?.end;
 
@@ -557,13 +327,10 @@ export function TrackList({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={menu ? onContextMenu : undefined}
-      onDragStart={onDragStart}
-      onDragOver={drop ? onDragOver : undefined}
-      onDragLeave={drop ? onDragLeave : undefined}
-      onDrop={drop ? onDrop : undefined}
+      {...dragProps}
       onFocus={(event) => {
         // Reached with Tab, the list shows where the keyboard is at once. A click decides that itself.
-        if (event.target !== event.currentTarget || cursor !== null || !event.currentTarget.matches(":focus-visible")) return;
+        if (event.target !== event.currentTarget || selection.hasCursor || !event.currentTarget.matches(":focus-visible")) return;
         const first = firstTrackInView();
         if (first !== null) moveCursor(first);
       }}
@@ -602,7 +369,7 @@ export function TrackList({
               className={cn("absolute top-0 left-0 flex w-full px-2", rows && item && "bg-background")}
             >
               {!item ? (
-                <LoadingRow rowIndex={rowIndex} position={position} isSelected={isSelected(position, undefined)} />
+                <LoadingRow rowIndex={rowIndex} position={position} isSelected={selection.isSelected(position)} />
               ) : item.type === "track" ? (
                 <TrackRow
                   id={isCursor ? cursorRowId : undefined}
@@ -611,7 +378,7 @@ export function TrackList({
                   position={position}
                   columns={columns}
                   gridTemplateColumns={gridTemplateColumns}
-                  isSelected={isSelected(position, item)}
+                  isSelected={selection.isSelected(position)}
                   isPlaying={item.key === playingKey}
                   isCursor={isCursor}
                   onPlay={onActivate && !item.unavailable ? playRow : undefined}
@@ -648,7 +415,7 @@ export function TrackList({
   return (
     <ContextMenu>
       <ContextMenuContent>
-        <SelectionMenu menu={menu} selection={currentSelection} />
+        <SelectionMenu menu={menu} selection={selection.current} />
       </ContextMenuContent>
       {list}
     </ContextMenu>
