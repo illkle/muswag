@@ -1,7 +1,9 @@
 name: Release desktop app
 
 # Two channels, which the app's update setting chooses between:
-# - stable: a `vX.Y.Z` tag. Its release is the one GitHub marks as the latest.
+# - stable: a `vX.Y.Z` tag. Its release is the one GitHub marks as the latest. Started by hand, it
+#   promotes a nightly: the release is made of the commit that nightly was built from, and its tag is
+#   made when it is published.
 # - nightly: master at 06:00 UTC, when it has moved since the last nightly. Its version is the patch
 #   after the latest stable one, as in `0.5.2-nightly.20261025.142`, so it sorts above that stable
 #   release and below the next. Its release is a prerelease, and only the newest few are kept.
@@ -31,7 +33,11 @@ on:
           - stable
         default: nightly
       tag:
-        description: "Stable only: the existing tag to build, for example v0.5.1"
+        description: "Stable only: the version to release, as v0.5.2. A new one promotes the nightly below; an existing one is built again. Empty: the version the nightly was made for"
+        type: string
+        required: false
+      nightly:
+        description: "Stable only: the nightly to promote, as v0.5.2-nightly.20261025.25. Empty: the latest"
         type: string
         required: false
 
@@ -74,10 +80,16 @@ jobs:
           EVENT: ${{ github.event_name }}
           INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_TAG: ${{ inputs.tag }}
+          INPUT_NIGHTLY: ${{ inputs.nightly }}
         run: |
           set -euo pipefail
 
           stable_tags() { git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; }
+          # By when it was published: a release's `createdAt` is its commit's, which nightlies can share.
+          latest_nightly() {
+            gh release list --limit 100 --exclude-drafts --json tagName,publishedAt \
+              --jq '[.[] | select(.tagName | contains("-nightly."))] | sort_by(.publishedAt) | last | .tagName // ""'
+          }
 
           case "$EVENT" in
             push) channel=stable; tag="$GITHUB_REF_NAME" ;;
@@ -86,7 +98,28 @@ jobs:
           esac
           skip=false
 
-          if [[ "$channel" == stable ]]; then
+          if [[ "$channel" == stable && "$EVENT" != push && ( -z "$tag" || -z "$(git tag --list "$tag")" ) ]]; then
+            nightly="${INPUT_NIGHTLY:-$(latest_nightly)}"
+            if [[ "$nightly" != v*-nightly.* || -z "$(git tag --list "$nightly")" ]]; then
+              echo "There is no nightly '$nightly' to promote." >&2
+              exit 1
+            fi
+            tag="${tag:-${nightly%%-nightly.*}}"
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "A stable release tag must look like v0.5.1; got: '$tag'" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            # The app updates only to a newer version, so a stable release has to be newer than the last.
+            latest_stable="$(stable_tags | head -n 1)"
+            if [[ -n "$latest_stable" && "$(printf '%s\n%s\n' "${latest_stable#v}" "$version" | sort -V | tail -n 1)" != "$version" ]]; then
+              echo "$tag is not newer than $latest_stable." >&2
+              exit 1
+            fi
+            sha="$(git rev-list -n 1 "$nightly")"
+            notes_from="$latest_stable"
+            echo "Promoting $nightly to $tag."
+          elif [[ "$channel" == stable ]]; then
             if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "A stable release tag must look like v0.5.1; got: '$tag'" >&2
               exit 1
@@ -101,8 +134,7 @@ jobs:
             IFS=. read -r major minor patch <<< "${latest_stable#v}"
             version="${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))-nightly.$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
             tag="v$version"
-            last_nightly="$(gh release list --limit 100 --exclude-drafts --json tagName,createdAt \
-              --jq '[.[] | select(.tagName | contains("-nightly."))] | sort_by(.createdAt) | last | .tagName // ""')"
+            last_nightly="$(latest_nightly)"
             notes_from="${last_nightly:-$latest_stable}"
             # A nightly started by hand is built even when master has not moved.
             if [[ "$EVENT" == schedule && -n "$last_nightly" && "$(git rev-list -n 1 "$last_nightly")" == "$sha" ]]; then
@@ -321,8 +353,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release list --limit 200 --json tagName,isDraft,createdAt \
-            --jq "[.[] | select(.tagName | contains(\"-nightly.\"))] | sort_by(.createdAt) | reverse
+          gh release list --limit 200 --json tagName,isDraft,publishedAt \
+            --jq "[.[] | select(.tagName | contains(\"-nightly.\"))] | sort_by(.publishedAt) | reverse
                   | (map(select(.isDraft | not))[${NIGHTLIES_KEPT}:] + map(select(.isDraft))) | .[].tagName" |
             while read -r tag; do
               echo "Removing $tag"

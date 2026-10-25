@@ -83,7 +83,9 @@ on macOS. The integration tests do not run on their own; start them for a branch
 `release.yml` makes both update channels, and publishes a release only once both workflows have
 passed on its commit:
 
-- stable, from a pushed `vX.Y.Z` tag;
+- stable, from a pushed `vX.Y.Z` tag, or by promoting a nightly with
+  `gh workflow run release.yml -f channel=stable`: that releases the commit of the latest nightly
+  (or `-f nightly=<tag>`) as the version it was made for (or `-f tag=vX.Y.Z`), and makes the tag;
 - nightly, from master at 06:00 UTC when it has moved since the last nightly, or by hand with
   `gh workflow run release.yml -f channel=nightly`. A nightly is a prerelease versioned as the patch
   after the latest stable release, such as `0.5.2-nightly.20261025.142`; the newest five are kept.
