@@ -3,7 +3,7 @@ import { songRow } from "@muswag/model";
 import { initialSnapshot, type Playback } from "#shared/commands/player";
 import { runtimeView } from "./player-port";
 
-const media = { item: { key: "a", track: songRow({ id: "a", title: "A" }) }, positionSeconds: 4, durationSeconds: null };
+const media = { item: { key: "a", track: songRow({ id: "a", title: "A" }) }, positionSeconds: 4, positionAt: 0, durationSeconds: null };
 const view = (playback: Playback) => runtimeView({ ...initialSnapshot("current"), playback });
 
 describe("player runtime view", () => {

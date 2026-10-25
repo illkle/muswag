@@ -55,9 +55,14 @@ const decode =
   (value: unknown) =>
     Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(() => protocolError(`decode:${operation}`)));
 export const command = (name: string, ...args: readonly unknown[]): MpvCommand<void> => ({ name, args: [name, ...args], decode: () => Effect.void });
-export const load = (url: Redacted.Redacted<string>, mode: "replace" | "insert-at", index = -1): MpvCommand<{ readonly playlist_entry_id: number }> => ({
+/**
+ * Loads `url` into the playlist; with `startSeconds` it starts there. mpv keeps that option with the
+ * entry, and starts there again whenever the entry is played.
+ */
+export const load = (url: Redacted.Redacted<string>, mode: "replace" | "insert-at", index = -1, startSeconds = 0): MpvCommand<{ readonly playlist_entry_id: number }> => ({
   name: "loadfile",
-  args: ["loadfile", url, mode, index],
+  // mpv takes the values of per-file options as strings only.
+  args: ["loadfile", url, mode, index, ...(startSeconds > 0 ? [{ start: String(startSeconds) }] : [])],
   decode: decode(Schema.Struct({ playlist_entry_id: id }), "loadfile"),
 });
 export const playlist: MpvCommand<readonly { readonly id: number; readonly current?: boolean | undefined }[]> = {

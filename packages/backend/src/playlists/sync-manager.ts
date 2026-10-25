@@ -7,28 +7,34 @@ import {
   type PlaylistWithSongs,
   type RemotePlaylist,
   type RemotePlaylistMutation,
+  songs,
   type SubsonicApiError,
+  type SubsonicDecodeError,
+  type SubsonicHttpError,
   type UpdatePlaylistArgs,
 } from "@muswag/model";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Stream, SubscriptionRef } from "effect";
 
-import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
+import { SubsonicAPI, type SubsonicApiService, type SubsonicClientError } from "../api/subsonic-api.js";
 import { Db, type Database, write } from "../db/database.js";
+import { chunks, STATEMENT_IDS } from "../db/upsert.js";
 import { PlaylistEdits } from "./commands.js";
-import { hasPendingLocalChanges, mergePlaylists } from "./merge.js";
+import { hasPendingLocalChanges, mergePlaylists, sameArray } from "./merge.js";
 
 const DEFAULT_DEBOUNCE_MS = 500;
 const DEFAULT_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_RETRY_MS = 5_000;
 const DEFAULT_MAX_RETRY_MS = 5 * 60_000;
 const DEFAULT_FETCH_CONCURRENCY = 5;
+/** Subsonic's code for a playlist or song that is not there. */
+const NOT_FOUND = 70;
 /**
  * Subsonic's codes for a request the server will not take however often it is sent: a parameter is
  * missing, the user may not do this, the playlist or a song is not there. Its other codes say the
  * server failed or the session is not accepted, which the next pass may find changed.
  */
-const REFUSAL_CODES: ReadonlyArray<number | undefined> = [10, 50, 70];
+const REFUSAL_CODES: ReadonlyArray<number | undefined> = [10, 50, NOT_FOUND];
 
 type PlaylistApi = Pick<SubsonicApiService, "getPlaylists" | "getPlaylist" | "createPlaylist" | "updatePlaylist" | "deletePlaylist">;
 /** A pass to run after `delayMs`, and the `sync` callers waiting for its outcome. */
@@ -123,22 +129,49 @@ function matchesSummary(base: PlaylistState, summary: { changed: string; songCou
 /**
  * `reusable` is empty for full passes (startup, manual sync, retry), which self-heals anything the
  * `changed` timestamp missed — it has second granularity, so two edits inside one second can look equal.
+ *
+ * A playlist the server does not answer for is taken to be as it was last synced, so that the others
+ * are still merged and pushed: left out, it would read as deleted on the server. `lastSynced` has
+ * that state of every playlist here with a server id, or `null` where it has none, and then there is
+ * nothing to stand in for it and the pass fails as a whole. The errors come back for the pass to fail
+ * with once it has pushed the rest, and the server ids of the playlists stood in for, which the pass
+ * pushes nothing to.
  */
-function fetchRemotePlaylists(api: PlaylistApi, currentUsername: string, concurrency: number, reusable: ReadonlyMap<string, PlaylistState>) {
+function fetchRemotePlaylists(api: PlaylistApi, currentUsername: string, concurrency: number, reusable: ReadonlyMap<string, PlaylistState>, lastSynced: ReadonlyMap<string, PlaylistState | null>) {
   return Effect.gen(function* () {
     const summaries = (yield* api.getPlaylists).playlists.playlist ?? [];
+    const failures: SubsonicClientError[] = [];
+    const unread = new Set<string>();
 
-    return yield* Effect.all(
-      summaries.map((summary) => {
+    const remote = yield* Effect.forEach(
+      summaries,
+      (summary) => {
         const base = reusable.get(summary.id);
         if (base && matchesSummary(base, summary)) {
           return Effect.succeed(baseToRemotePlaylist(summary.id, base));
         }
-        return api.getPlaylist({ id: summary.id }).pipe(Effect.map(({ playlist }) => toRemotePlaylist(playlist, currentUsername)));
-      }),
+        return api.getPlaylist({ id: summary.id }).pipe(
+          Effect.map(({ playlist }): RemotePlaylist | null => toRemotePlaylist(playlist, currentUsername)),
+          Effect.catch((error) => {
+            const synced = lastSynced.get(summary.id);
+            if (synced === null) return Effect.fail(error);
+            failures.push(error);
+            // One nobody here has seen is picked up by the pass after.
+            if (synced === undefined) return Effect.succeed(null);
+            unread.add(summary.id);
+            return Effect.succeed(baseToRemotePlaylist(summary.id, synced));
+          }),
+        );
+      },
       { concurrency: Math.max(1, concurrency) },
     );
+    return { remote: remote.filter((playlist) => playlist !== null), failures, unread };
   });
+}
+
+/** What each playlist with a server id was when it was last synced, `null` for one that has not been. */
+function lastSyncedStates(records: readonly PlaylistRecord[]): Map<string, PlaylistState | null> {
+  return new Map(records.flatMap((record) => (record.serverId === null ? [] : [[record.serverId, record.base] as const])));
 }
 
 function readLocalPlaylists(db: Database) {
@@ -170,10 +203,6 @@ function songIds(state: PlaylistState): string[] {
   return state.entries.map(({ songId }) => songId);
 }
 
-function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
 function sameRemoteVersion(left: RemotePlaylist, right: RemotePlaylist): boolean {
   return (
     left.name === right.name &&
@@ -182,7 +211,7 @@ function sameRemoteVersion(left: RemotePlaylist, right: RemotePlaylist): boolean
     left.readonly === right.readonly &&
     left.owner === right.owner &&
     left.changed === right.changed &&
-    sameStringArray(left.songIds, right.songIds)
+    sameArray(left.songIds, right.songIds)
   );
 }
 
@@ -210,7 +239,7 @@ function removedSongIndices(previous: readonly string[], next: readonly string[]
  * adds the whole new list back.
  */
 function songListUpdate(previous: readonly string[], next: readonly string[]): Pick<UpdatePlaylistArgs, "songIdToAdd" | "songIndexToRemove"> {
-  if (next.length > previous.length && sameStringArray(previous, next.slice(0, previous.length))) {
+  if (next.length > previous.length && sameArray(previous, next.slice(0, previous.length))) {
     return { songIdToAdd: next.slice(previous.length) };
   }
   const removed = removedSongIndices(previous, next);
@@ -258,7 +287,7 @@ function executeRemoteMutation(db: Database, api: PlaylistApi, mutation: RemoteP
 
       case "replace": {
         const nextSongIds = songIds(mutation.state);
-        const entriesChanged = !sameStringArray(nextSongIds, mutation.expected.songIds);
+        const entriesChanged = !sameArray(nextSongIds, mutation.expected.songIds);
         let previousSongIds = mutation.expected.songIds;
 
         // Subsonic has no conditional update operation. Re-reading immediately before a destructive
@@ -319,6 +348,40 @@ function discardLocalChange(db: Database, mutation: RemotePlaylistMutation, erro
   );
 }
 
+/**
+ * The mutation with the songs it adds that the library no longer has left out, or `null` when it adds
+ * none. A server answers "not found" to a playlist with such a song, which was most likely deleted on
+ * the server after it was added here; sent again without it, the rest of the change goes through.
+ * Songs the server already had in the playlist stay: the library may not have caught up with them yet.
+ */
+function dropMissingSongs(db: Database, mutation: Exclude<RemotePlaylistMutation, { type: "delete" }>) {
+  return write(
+    Effect.gen(function* () {
+      const [record] = yield* db.select().from(playlists).where(eq(playlists.id, mutation.localId));
+      // Edited again meanwhile: the next pass sends that.
+      if (!record?.local || JSON.stringify(record.local) !== JSON.stringify(mutation.state)) return null;
+      // The server made the playlist and the request after named no songs; sent again, the create
+      // would make a second one.
+      if (mutation.type === "create" && record.serverId !== null) return null;
+      const synced = new Set(record.base?.entries.map(({ id }) => id));
+      const added = [...new Set(mutation.state.entries.filter(({ id }) => !synced.has(id)).map(({ songId }) => songId))];
+      const known = new Set<string>();
+      for (const ids of chunks(added, STATEMENT_IDS)) {
+        for (const { id } of yield* db
+          .select({ id: songs.id })
+          .from(songs)
+          .where(inArray(songs.id, [...ids])))
+          known.add(id);
+      }
+      const entries = mutation.state.entries.filter(({ id, songId }) => synced.has(id) || known.has(songId));
+      if (entries.length === mutation.state.entries.length) return null;
+      const state = { ...mutation.state, entries };
+      yield* db.update(playlists).set({ local: state }).where(eq(playlists.id, mutation.localId));
+      return { ...mutation, state };
+    }),
+  );
+}
+
 /** One pass for both requests: full if either asked for that, after the wait the later one asked for. */
 const joinRequests = (earlier: SyncRequest, later: SyncRequest): SyncRequest => ({
   full: earlier.full || later.full,
@@ -348,12 +411,23 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
       Effect.gen(function* () {
         let needsRerun = false;
 
+        /** The first playlist the server did not answer for, which fails the pass once the rest are pushed. */
+        let unread: SubsonicClientError | undefined;
+        /** The server ids of the playlists stood in for by what they were last synced as. */
+        const unreadIds = new Set<string>();
+
         const fetchPlaylists = (forceIds: ReadonlySet<string> = new Set()) =>
           Effect.gen(function* () {
+            const records = yield* readLocalPlaylists(db);
             // Records with pending local work are never reused, so a mutated playlist is always verified.
-            const reusable = full ? new Map<string, PlaylistState>() : reusableBases(yield* readLocalPlaylists(db));
+            const reusable = full ? new Map<string, PlaylistState>() : reusableBases(records);
             for (const serverId of forceIds) reusable.delete(serverId);
-            return yield* fetchRemotePlaylists(api, api.username, fetchConcurrency, reusable);
+            const fetched = yield* fetchRemotePlaylists(api, api.username, fetchConcurrency, reusable, lastSyncedStates(records));
+            for (const error of fetched.failures) yield* Effect.logWarning(`A playlist could not be read from the server, so it is synced as it was last time (${error.message})`);
+            unread ??= fetched.failures[0];
+            for (const serverId of fetched.unread) unreadIds.add(serverId);
+            const { remote } = fetched;
+            return remote;
           });
 
         // Reading local state, merging and saving happen in one transaction, so a local edit cannot
@@ -372,14 +446,31 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
 
         const mutatedServerIds = new Set<string>();
         const refused: string[] = [];
-        let failure: SubsonicApiError | undefined;
-        for (const mutation of merged.remote) {
+        let failure: SubsonicApiError | SubsonicDecodeError | SubsonicHttpError | undefined;
+        for (let mutation of merged.remote) {
+          // What a playlist the server did not answer for is pushed against is only what it was last synced
+          // as, and a change of its name would go out unchecked. It waits for a pass that reads it.
+          if (mutation.type !== "create" && unreadIds.has(mutation.serverId)) continue;
           // The server answered, so the playlists after this one are still pushed. No answer at all
           // fails the pass here: the next request would fare no better.
-          const result = yield* executeRemoteMutation(db, api, mutation, api.username).pipe(Effect.catchTag("SubsonicApiError", (error) => Effect.succeed(error)));
+          const push = (pushed: RemotePlaylistMutation) =>
+            executeRemoteMutation(db, api, pushed, api.username).pipe(Effect.catchTag(["SubsonicApiError", "SubsonicDecodeError", "SubsonicHttpError"], (error) => Effect.succeed(error)));
+          let result = yield* push(mutation);
+          if (typeof result !== "string" && result._tag === "SubsonicApiError" && result.code === NOT_FOUND) {
+            // Deleting a playlist the server no longer has is done.
+            if (mutation.type === "delete") result = "applied";
+            else {
+              const without = yield* dropMissingSongs(db, mutation);
+              if (without) {
+                yield* Effect.logWarning(`Songs the library no longer has were left out of the playlist "${without.state.name}" (${result.message})`);
+                mutation = without;
+                result = yield* push(mutation);
+              }
+            }
+          }
           if (result === "stale") needsRerun = true;
           else if (result !== "applied") {
-            if (REFUSAL_CODES.includes(result.code)) {
+            if (result._tag === "SubsonicApiError" && REFUSAL_CODES.includes(result.code)) {
               const message = yield* discardLocalChange(db, mutation, result);
               if (message !== null) refused.push(message);
               yield* Effect.logWarning(message ?? `The server refused a change to a playlist (${result.message})`);
@@ -401,8 +492,10 @@ const makePlaylistSyncManager = (options: PlaylistSyncManagerOptions) =>
           if (merged.remote.length > 0) needsRerun = true;
         }
 
-        // A change the server failed on stays pending, and the pass is retried as a failed one is.
-        if (failure) return yield* failure;
+        // A change the server failed on stays pending, and the pass is retried as a failed one is, as
+        // it is when a playlist could not be read.
+        const failed = failure ?? unread;
+        if (failed) return yield* failed;
         return { needsRerun, refused };
       });
 

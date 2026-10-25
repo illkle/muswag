@@ -58,17 +58,19 @@ const ArtistResult = ({ artist }: { artist: Found<"artist">["artist"] }) => {
 
 const SongResult = ({ song }: { song: Found<"song">["song"] }) => {
   const n = useNavigate();
+  const { albumId, artistId } = song;
   return (
     <Autocomplete.Item
       // The cover is the album's, which is read here rather than kept with every song of the index.
-      render={<InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={song.albumId ? <TrackCover albumId={song.albumId} /> : <AlbumCover size="icon" />} />}
-      onClick={() =>
-        n({
-          to: "/app/albums/$albumId",
-          params: { albumId: song.albumId ?? "n" },
-          resetScroll: true,
-        })
+      render={
+        <InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={albumId ? <TrackCover albumId={albumId} /> : <AlbumCover size="icon" />} className="data-disabled:opacity-50" />
       }
+      // A song the server files under no album leads to its artist instead, and one with neither has no page to open.
+      disabled={!albumId && !artistId}
+      onClick={() => {
+        if (albumId) n({ to: "/app/albums/$albumId", params: { albumId }, resetScroll: true });
+        else if (artistId) n({ to: "/app/artists/$artistId", params: { artistId }, resetScroll: true });
+      }}
     />
   );
 };

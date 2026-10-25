@@ -60,7 +60,7 @@ describe("mpv protocol", () => {
         Effect.gen(function* () {
           const service = yield* MpvSession;
           const events = yield* Queue.unbounded<SessionEvent>();
-          const session = yield* service.open("mpv", { events, positions: events });
+          const session = yield* service.open("mpv", events);
           const first = yield* session.execute(load(url("one"), "replace")).pipe(Effect.forkChild);
           const a = yield* Queue.take(writes);
           expect(a.command[1]).toBe("one");

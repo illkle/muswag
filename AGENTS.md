@@ -46,8 +46,8 @@ When the worktree is done with, stop the dev app and remove its mapping: `tailsc
 
 - The browser drives the real app. Playing a track starts mpv on this machine, and playlist edits reach the
   Subsonic server.
-- Checkouts running side by side have their own library, queue and player, but share the cover cache and the
-  player settings.
+- Checkouts running side by side have their own library, queue, player and covers (in a directory of
+  `covers` named after the library), but share the player settings.
 - The bridge works only in development and only with `MUSWAG_DEV_BRIDGE_PORT` set. It listens on loopback
   and runs any command for whoever reaches it, so share it only inside the tailnet: `tailscale serve`, never
   `tailscale funnel`.
@@ -76,3 +76,28 @@ the syncs is done when they pass on all three.
 
 The Docker engine on the development machine is shared with other services. Copy files into test
 containers or use tmpfs; a database on a bind mount from `/tmp` once hung the engine.
+
+## CI and releases
+
+`ci.yml` checks every pull request and push to master: format, lint, typecheck and unit tests, and mpv
+on macOS. The integration tests do not run on their own; start them for a branch with
+`gh workflow run integration.yml --ref <branch>`.
+
+`release.yml` makes both update channels, and publishes a release only once both workflows have
+passed on its commit:
+
+- stable, from a pushed `vX.Y.Z` tag, or by promoting a nightly with
+  `gh workflow run release.yml -f channel=stable`: that releases the commit of the latest nightly
+  (or `-f nightly=<tag>`) as the version it was made for (or `-f tag=vX.Y.Z`), and makes the tag;
+- nightly, from master at 06:00 UTC when it has moved since the last nightly, or by hand with
+  `gh workflow run release.yml -f channel=nightly`. A nightly is a prerelease versioned as the patch
+  after the latest stable release, such as `0.5.2-nightly.20261025.142`; the newest five are kept.
+
+The app chooses between them in its update dialog (`main/app-updater.ts`).
+
+The macOS app is signed with muswag's own self-signed certificate, which is in 1Password and in the
+`MACOS_SIGNING_P12` and `MACOS_SIGNING_PASSWORD` secrets of the `release` environment, which only
+master and `v*` tags can use; `release.yml` pins its fingerprint. macOS
+installs an update only when it is signed like the app it replaces, so this certificate must never
+change: lose it, and every Mac install has to be replaced by hand. The Windows and Linux builds are
+not signed.

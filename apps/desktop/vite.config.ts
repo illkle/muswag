@@ -11,6 +11,8 @@ import tanstackRouter from "@tanstack/router-plugin/vite";
 
 import babel from "@rolldown/plugin-babel";
 
+import { inlineScriptHashes } from "./scripts/inline-script-hashes.ts";
+
 const require = createRequire(import.meta.url);
 const electronVersion = (require("electron/package.json") as { version: string }).version;
 const chromiumVersion = electronToChromium(electronVersion.split(".").slice(0, 2).join("."));
@@ -71,6 +73,7 @@ export const rendererConfig = defineConfig({
     babel({
       presets: [reactCompilerPreset()],
     }),
+    inlineScriptHashes(),
   ],
 });
 

@@ -29,6 +29,9 @@ import {
 } from "@muswag/model";
 import { Schema } from "effect";
 
+import { UpdateChannel } from "../state/app-update";
+import { RendererCommand, type CommandResult } from "./player";
+
 /**
  * The contract between the renderer and main, which owns the library, the session and the queue.
  * The renderer reads the library through the commands below, and main's state, the queue among it,
@@ -64,7 +67,7 @@ export const AppCommandArgs = {
   "playlists:setComment": Schema.Tuple([Id, Text]),
   "playlists:setVisibility": Schema.Tuple([Id, Schema.Boolean]),
   "playlists:addEntries": Schema.Tuple([Id, Ids, Schema.NullOr(Id)]),
-  "playlists:removeEntry": Schema.Tuple([Id, Id]),
+  "playlists:removeEntries": Schema.Tuple([Id, Ids]),
   "playlists:moveEntries": Schema.Tuple([Id, Ids, Schema.NullOr(Id)]),
   "playlists:delete": Schema.Tuple([Id]),
   "playlists:sync": Schema.Tuple([]),
@@ -73,9 +76,14 @@ export const AppCommandArgs = {
   "queue:play": Schema.Tuple([]),
   "queue:enqueue": Schema.Tuple([Ids, Schema.NullOr(Id)]),
   "queue:moveQueued": Schema.Tuple([Ids, Schema.NullOr(Id)]),
-  "queue:removeQueued": Schema.Tuple([Id]),
+  "queue:removeQueued": Schema.Tuple([Ids]),
   "queue:next": Schema.Tuple([]),
   "queue:previous": Schema.Tuple([]),
+  "player:execute": Schema.Tuple([RendererCommand]),
+  "player:locate": Schema.Tuple([]),
+  "appUpdate:check": Schema.Tuple([]),
+  "appUpdate:install": Schema.Tuple([]),
+  "appUpdate:setChannel": Schema.Tuple([UpdateChannel]),
 } as const;
 
 export type AppCommandResults = {
@@ -120,7 +128,7 @@ export type AppCommandResults = {
   "playlists:setComment": void;
   "playlists:setVisibility": void;
   "playlists:addEntries": PlaylistEntry[];
-  "playlists:removeEntry": void;
+  "playlists:removeEntries": void;
   "playlists:moveEntries": void;
   "playlists:delete": void;
   "playlists:sync": PlaylistSyncStatus;
@@ -132,6 +140,19 @@ export type AppCommandResults = {
   "queue:removeQueued": void;
   "queue:next": void;
   "queue:previous": void;
+  /**
+   * How the player took the command. A command it turns down is not a failed app command: its outcome
+   * is in the player's state, which renderers wait for at the version it gives either way.
+   */
+  "player:execute": CommandResult;
+  /** Lets the user pick an mpv binary in a native dialog and uses it; `null` when they cancel. */
+  "player:locate": CommandResult | null;
+  /** Checks for an update now. The outcome arrives in the update state (`state/app-update.ts`). */
+  "appUpdate:check": void;
+  /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
+  "appUpdate:install": void;
+  /** Updates from another channel from now on, and checks it. */
+  "appUpdate:setChannel": void;
 };
 
 export type AppCommandName = keyof typeof AppCommandArgs;

@@ -2,13 +2,13 @@
 
 navidrome\opensubsonic client in development
 
-### Mac — “muswag.app” is damaged and can’t be opened.
+### Mac — opening it the first time
 
-Apple is strict on running unsigned apps and signing them requires paid developer account.
-Run these in terminal to self-sign and then launch
+muswag is signed with its own certificate rather than one from Apple, so macOS blocks it the first time.
+Open System Settings › Privacy & Security and click Open Anyway, or run
 
 ```
-sudo xattr -d com.apple.quarantine /Applications/muswag.app
-
-sudo codesign --force --deep --sign - /Applications/muswag.app
+xattr -dr com.apple.quarantine /Applications/muswag.app
 ```
+
+Do not sign the app again yourself: macOS installs updates only on the app as it was released.

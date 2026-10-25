@@ -34,9 +34,11 @@ export function makeThumbnails(resize: ResizeCover): (coverPath: string, size: T
   let resized: Promise<unknown> = Promise.resolve();
 
   /**
-   * `resize` blocks the thread it runs on: about 10 ms for a usual cover, up to 100 ms for a 3000 px
-   * one, and a grid asks for dozens at once. They are resized one at a time, and the event loop gets a
-   * turn after each, so IPC and player events wait for one cover at most.
+   * `resize` blocks the thread it runs on: about 5 ms for a cover of the size the cover manager asks
+   * the server for, but up to 80 ms for a 3000 px original, which a server that does not scale covers
+   * down or a cover downloaded before sends, and a grid asks for dozens at once. They are resized one
+   * at a time, and the event loop gets a turn after each, so IPC and player events wait for one cover
+   * at most.
    */
   const resizeInTurn = (coverPath: string, size: ThumbnailSize): Promise<Buffer | null> => {
     const thumbnail = resized.then(async () => resize(await readFile(coverPath), THUMBNAIL_PIXELS[size]));

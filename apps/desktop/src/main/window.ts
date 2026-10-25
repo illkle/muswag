@@ -1,7 +1,15 @@
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { BrowserWindow, nativeTheme, shell } from "electron";
 import { is } from "@electron-toolkit/utils";
+
+import { isAppPage } from "./app-page";
+
+const devServerUrl = is.dev ? process.env.ELECTRON_RENDERER_URL : undefined;
+
+/** The page the window shows: the dev server's in development, the bundled renderer otherwise. */
+export const APP_PAGE_URL = devServerUrl ?? pathToFileURL(join(__dirname, "../renderer/index.html")).href;
 
 export function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -38,12 +46,13 @@ export function createWindow(): void {
     if (/^https?:/i.test(details.url)) void shell.openExternal(details.url);
     return { action: "deny" };
   });
+  // The window shows the app and nothing else. A link or a file dropped on it would otherwise replace
+  // the app with a page of its own, which the preload hands the app's channels to.
+  mainWindow.webContents.on("will-navigate", (event) => {
+    if (!isAppPage(APP_PAGE_URL, event.url)) event.preventDefault();
+  });
+  mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
 
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-    return;
-  }
-
-  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  mainWindow.loadURL(APP_PAGE_URL);
+  if (devServerUrl) mainWindow.webContents.openDevTools({ mode: "detach" });
 }

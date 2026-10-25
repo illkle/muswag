@@ -84,13 +84,10 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
     void placed.catch(failureNotice("The songs could not be put in the playlist."));
   };
 
-  const removeEntries = async (entryIds: readonly string[]) => {
-    for (const entryId of entryIds) await PlaylistActions.removeEntry(playlistId, entryId);
-  };
   const removeSelected = (selection: TrackSelection) => {
     const entryIds = entryIdsOf(selection);
     // The row may be far from the header and the menu is closed, so a failure is a notice.
-    void removeEntries(entryIds).catch(failureNotice(`The ${entryIds.length === 1 ? "song" : "songs"} could not be removed from the playlist.`));
+    void PlaylistActions.removeEntries(playlistId, entryIds).catch(failureNotice(`The ${entryIds.length === 1 ? "song" : "songs"} could not be removed from the playlist.`));
   };
 
   return (

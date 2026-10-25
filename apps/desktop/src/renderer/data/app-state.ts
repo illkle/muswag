@@ -1,8 +1,8 @@
 import { replaceEqualDeep } from "@tanstack/react-query";
 import { createStore, type Store } from "@tanstack/react-store";
 
-import type { AppStateName, AppStateUpdate, AppStateValues } from "#shared/state/app-state";
-import { mainIpc } from "./ipc";
+import { APP_CONNECT_CHANNEL } from "#shared/ipc";
+import type { AppStateName, AppStateSnapshot, AppStateUpdate, AppStateValues } from "#shared/state/app-state";
 
 type AppStateStores = { readonly [K in AppStateName]: Store<AppStateValues[K] | undefined> };
 
@@ -59,7 +59,7 @@ export function connectToMain(): Promise<void> {
       apply(update.name, update.version, update.value);
       reach(update.version);
     });
-    const { version, values } = await mainIpc.invoke("app:connect");
+    const { version, values } = (await window.electron.ipcRenderer.invoke(APP_CONNECT_CHANNEL)) as AppStateSnapshot;
     for (const name of Object.keys(appState) as AppStateName[]) {
       if (values[name] !== undefined) apply(name, version, values[name]);
     }

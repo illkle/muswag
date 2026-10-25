@@ -103,6 +103,19 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
     const update = (playlistId: string, apply: (state: PlaylistState) => void) =>
       change(playlistId, (current) => ({ record: edit(requireWritable(current, playlistId), apply), result: undefined })).pipe(Effect.asVoid);
 
+    /** Removes entries as one revision, so removing many costs a single write and a single sync pass. */
+    const removeEntries = (playlistId: string, entryIds: readonly string[]) =>
+      change(playlistId, (current) => {
+        const playlist = requireWritable(current, playlistId);
+        for (const entryId of entryIds) requireEntryIndex(playlist.local.entries, entryId);
+        if (entryIds.length === 0) return null;
+        const removed = new Set(entryIds);
+        const record = edit(playlist, (state) => {
+          state.entries = state.entries.filter(({ id }) => !removed.has(id));
+        });
+        return { record, result: undefined };
+      }).pipe(Effect.asVoid);
+
     return {
       create: (input: CreatePlaylistInput) =>
         attempt((): PlaylistRecord => {
@@ -158,15 +171,9 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
           return { record, result: entries };
         }).pipe(Effect.map((entries) => entries ?? [])),
 
-      removeEntry: (playlistId: string, entryId: string) =>
-        change(playlistId, (current) => {
-          const playlist = requireWritable(current, playlistId);
-          const index = requireEntryIndex(playlist.local.entries, entryId);
-          const record = edit(playlist, (state) => {
-            state.entries.splice(index, 1);
-          });
-          return { record, result: undefined };
-        }).pipe(Effect.asVoid),
+      removeEntry: (playlistId: string, entryId: string) => removeEntries(playlistId, [entryId]),
+
+      removeEntries,
 
       /**
        * Moves entries, in playlist order, to just before `beforeEntryId`, or to the end for `null`, as one

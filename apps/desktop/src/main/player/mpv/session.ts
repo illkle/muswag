@@ -3,7 +3,8 @@ import { EngineError } from "../errors";
 import { MpvConnection } from "./connection";
 import { command, parseMessage, type MpvCommand, type MpvEvent } from "./protocol";
 
-const OBSERVED_PROPERTIES = ["pause", "time-pos", "duration", "seeking", "paused-for-cache"] as const;
+// The position is not among them: it moves with time, and is read when it is needed.
+const OBSERVED_PROPERTIES = ["pause", "duration", "seeking", "paused-for-cache"] as const;
 const REQUEST_TIMEOUT = "5 seconds";
 
 /**
@@ -17,15 +18,6 @@ export type SessionEvent = {
   readonly entryId: number | null;
   readonly event: MpvEvent;
 };
-export const isPositionEvent = (event: SessionEvent) => event.event.type === "property" && event.event.name === "time-pos";
-
-/** Where a session delivers what it reads. Offers never wait: a full `events` queue ends the session. */
-export interface SessionSinks {
-  /** Lifecycle and property events, in wire order. */
-  readonly events: Queue.Enqueue<SessionEvent>;
-  /** High-frequency time-pos observations; typically a sliding queue that keeps only the latest. */
-  readonly positions: Queue.Enqueue<SessionEvent>;
-}
 export interface SessionHandle {
   /** Distinguishes this process from earlier ones, whose late events must be ignored. */
   readonly generation: number;
@@ -35,7 +27,11 @@ export interface SessionHandle {
   /** Fails with the error that ended the session; never completes while the session is healthy. */
   readonly failure: Effect.Effect<never, EngineError>;
 }
-export class MpvSession extends Context.Service<MpvSession, { readonly open: (binaryPath: string, sinks: SessionSinks) => Effect.Effect<SessionHandle, EngineError, Scope.Scope> }>()(
+/**
+ * `open` delivers the session's lifecycle and property events to `events`, in wire order. Offers never
+ * wait: a full queue ends the session.
+ */
+export class MpvSession extends Context.Service<MpvSession, { readonly open: (binaryPath: string, events: Queue.Enqueue<SessionEvent>) => Effect.Effect<SessionHandle, EngineError, Scope.Scope> }>()(
   "@muswag/player/MpvSession",
 ) {}
 
@@ -47,7 +43,7 @@ export const MpvSessionLive = (ipcPath: string) =>
     Effect.gen(function* () {
       const connection = yield* MpvConnection;
       let generation = 0;
-      const open = Effect.fn("MpvSession.open")(function* (binaryPath: string, sinks: SessionSinks) {
+      const open = Effect.fn("MpvSession.open")(function* (binaryPath: string, events: Queue.Enqueue<SessionEvent>) {
         const currentGeneration = ++generation;
         yield* Effect.annotateCurrentSpan({ generation: currentGeneration });
         const wire = yield* connection.open(binaryPath, `${ipcPath}-${currentGeneration}`);
@@ -79,7 +75,7 @@ export const MpvSessionLive = (ipcPath: string) =>
           if (event.type === "start-file") entryId = event.entryId;
           const stamped: SessionEvent = { _tag: "SessionEvent", generation: currentGeneration, sequence, entryId: event.type === "end-file" ? event.entryId : entryId, event };
           if (event.type === "end-file" && entryId === event.entryId) entryId = null;
-          return Queue.offerUnsafe(isPositionEvent(stamped) ? sinks.positions : sinks.events, stamped);
+          return Queue.offerUnsafe(events, stamped);
         };
         const handleLine = Effect.fnUntraced(function* (line: string) {
           const message = yield* parseMessage(line);

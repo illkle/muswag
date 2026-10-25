@@ -1,6 +1,6 @@
 import { getColumns, getTableName } from "drizzle-orm";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
-import { Context, Duration, Effect, FiberSet, Layer, Option, Schedule, Semaphore } from "effect";
+import { Context, Effect, FiberSet, Layer, Option, Semaphore } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
@@ -12,8 +12,6 @@ export interface LibraryChangesOptions {
   readonly tables: ReadonlyArray<SQLiteTable>;
   /** Columns, by table name and as row property names, whose changes alone are not announced. */
   readonly ignoreColumns?: { readonly [table: string]: ReadonlyArray<string> } | undefined;
-  /** Also announces, this often, writes that did not go through `write`. */
-  readonly flushInterval?: Duration.Input | undefined;
 }
 
 export interface LibraryChangesService {
@@ -22,7 +20,7 @@ export interface LibraryChangesService {
    * enclosing transaction it joins that transaction, and the changes are announced after the outer commit.
    */
   readonly write: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>;
-  /** Announces the committed changes that have not been announced yet. */
+  /** Announces the committed changes that have not been announced yet, such as those of writes made without `write`. */
   readonly flush: Effect.Effect<void, SqlError>;
   /** Calls `listener` with the changes of every write, once it has committed. */
   readonly subscribe: (listener: (changes: ReadonlyArray<LibraryChange>) => void) => () => void;
@@ -146,10 +144,6 @@ export const make = Effect.fnUntraced(function* (options: LibraryChangesOptions)
 
   const write = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError, R> =>
     Effect.flatMap(inTransaction, (open) => (open ? Effect.tap(effect, () => flushInBackground) : Effect.tap(sql.withTransaction(effect), () => flushAfterCommit)));
-
-  if (options.flushInterval !== undefined) {
-    yield* flushAfterCommit.pipe(Effect.repeat(Schedule.spaced(options.flushInterval)), Effect.forkScoped);
-  }
 
   const subscribe = (listener: (changes: ReadonlyArray<LibraryChange>) => void) => {
     listeners.add(listener);

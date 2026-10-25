@@ -19,14 +19,14 @@ function fakeState<Value>() {
 const mocks = { queue: EMPTY_QUEUE };
 const collections = {
   player: fakeState<{ status: string; item: unknown; error?: null }>(),
-  position: fakeState<{ positionSeconds: number; durationSeconds: number | null }>(),
+  position: fakeState<{ positionSeconds: number; durationSeconds: number | null; at: number; advancing: boolean }>(),
 };
 
 // The factories run at the import below, once the stores are there.
 vi.mock("#/data/app-state", () => ({ appState: { player: collections.player, playerPosition: collections.position } }));
 vi.mock("#/queue/queue", () => ({ useQueueSelector: (select: (queue: QueueManagerState) => unknown) => select(mocks.queue) }));
 
-const { usePlayerCanGoBack, usePlayerCanPlay, usePlayerConnected, usePlayerError } = await import("#/player/hooks");
+const { usePlayerCanGoBack, usePlayerCanPlay, usePlayerConnected, usePlayerError, usePlayerPositionSeconds } = await import("#/player/hooks");
 
 const canPlay = (row: { status: string; item: unknown } | undefined, queue: QueueManagerState = EMPTY_QUEUE) => {
   collections.player.set(row);
@@ -35,6 +35,7 @@ const canPlay = (row: { status: string; item: unknown } | undefined, queue: Queu
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   collections.player.set(undefined);
   collections.position.set(undefined);
@@ -79,12 +80,53 @@ describe("usePlayerCanGoBack", () => {
     });
     expect(result.current).toBe(false);
 
-    act(() => collections.position.set({ positionSeconds: 1, durationSeconds: 200 }));
+    act(() => collections.position.set({ positionSeconds: 1, durationSeconds: 200, at: 0, advancing: false }));
     expect(result.current).toBe(true);
     const rendered = renders;
 
-    act(() => collections.position.set({ positionSeconds: 2, durationSeconds: 200 }));
-    act(() => collections.position.set({ positionSeconds: 3, durationSeconds: 200 }));
+    act(() => collections.position.set({ positionSeconds: 2, durationSeconds: 200, at: 0, advancing: false }));
+    act(() => collections.position.set({ positionSeconds: 3, durationSeconds: 200, at: 0, advancing: true }));
     expect(renders).toBe(rendered);
+  });
+
+  it("restarts a track that plays on from its very start", () => {
+    collections.player.set({ status: "playing", item });
+    mocks.queue = { ...EMPTY_QUEUE, nowPlaying: item };
+    collections.position.set({ positionSeconds: 0, durationSeconds: 200, at: 0, advancing: false });
+    const { result } = renderHook(() => usePlayerCanGoBack());
+    expect(result.current).toBe(false);
+    act(() => collections.position.set({ positionSeconds: 0, durationSeconds: 200, at: 0, advancing: true }));
+    expect(result.current).toBe(true);
+  });
+});
+
+describe("usePlayerPositionSeconds", () => {
+  it("moves the position on with the clock while the track plays, up to its end", async () => {
+    vi.useFakeTimers({ now: 10_000 });
+    act(() => collections.position.set({ positionSeconds: 30, durationSeconds: 32, at: 10_000, advancing: true }));
+    const { result } = renderHook(() => usePlayerPositionSeconds());
+    expect(result.current).toBe(30);
+    await act(() => vi.advanceTimersByTimeAsync(1_500));
+    expect(result.current).toBeCloseTo(31.5, 1);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(result.current).toBe(32);
+  });
+
+  it("holds while paused or buffering, where main last put it", async () => {
+    vi.useFakeTimers({ now: 10_000 });
+    act(() => collections.position.set({ positionSeconds: 30, durationSeconds: 200, at: 5_000, advancing: false }));
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return usePlayerPositionSeconds();
+    });
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(result.current).toBe(30);
+    expect(renders).toBe(1);
+
+    // Playing again, it moves on from where main says playback is.
+    act(() => collections.position.set({ positionSeconds: 40, durationSeconds: 200, at: Date.now(), advancing: true }));
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current).toBeCloseTo(41, 1);
   });
 });

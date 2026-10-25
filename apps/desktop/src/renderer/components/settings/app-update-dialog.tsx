@@ -2,8 +2,9 @@ import { ArrowsClockwiseIcon, CheckCircleIcon, DownloadSimpleIcon, PackageIcon, 
 
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "#/components/ui/dialog";
+import { RadioTabItem, RadioTabs } from "#/components/ui-custom/radio-tabs";
 import { getAppUpdateStatus, isAppUpdateBusy, AppUpdateIPC } from "#/updates/app-update";
-import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
+import { channelOfVersion, type AppUpdateState, type AppUpdateStatus, type UpdateChannel } from "#shared/state/app-update";
 
 const statusLabels: Record<AppUpdateStatus, string> = {
   disabled: "Updates are only checked in packaged builds",
@@ -29,6 +30,19 @@ function StatusIcon({ status }: { status: AppUpdateStatus }) {
     return <WarningIcon className="size-4 text-destructive" />;
   }
   return <CheckCircleIcon className="size-4 text-emerald-500" />;
+}
+
+const channelOptions: { label: string; value: UpdateChannel }[] = [
+  { label: "Stable", value: "stable" },
+  { label: "Nightly", value: "nightly" },
+];
+
+/** What choosing `channel` means for an install of `version`. */
+function channelNote(channel: UpdateChannel, version: string): string {
+  if (channel === "nightly") return "The latest changes, built every day there are any.";
+  // Main never goes back to an older version, so a nightly install waits for the next stable release.
+  if (channelOfVersion(version) === "nightly") return "This nightly stays until a stable release is newer than it.";
+  return "Released versions only.";
 }
 
 function formatLastChecked(value: string | null): string {
@@ -61,6 +75,24 @@ export function AppUpdateDialog({ onOpenChange, open, state }: { onOpenChange: (
           {status === "downloading" && state?.progressPercent !== null ? (
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${state?.progressPercent ?? 0}%` }} />
+            </div>
+          ) : null}
+
+          {state ? (
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center justify-between gap-4">
+                <span id="update-channel-label" className="text-sm">
+                  Updates
+                </span>
+                <RadioTabs aria-labelledby="update-channel-label" className="h-8" onValueChange={(value) => void AppUpdateIPC.setChannel(value as UpdateChannel)} value={state.channel}>
+                  {channelOptions.map(({ label, value }) => (
+                    <RadioTabItem key={value} value={value}>
+                      {label}
+                    </RadioTabItem>
+                  ))}
+                </RadioTabs>
+              </div>
+              <p className="text-xs text-muted-foreground">{channelNote(state.channel, state.currentVersion)}</p>
             </div>
           ) : null}
 

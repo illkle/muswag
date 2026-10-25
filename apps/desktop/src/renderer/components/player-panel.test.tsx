@@ -226,7 +226,7 @@ describe("PlayerPanel", () => {
     seekSlider().focus();
     fireEvent.keyDown(seekSlider(), { key: "ArrowRight" });
     fireEvent.keyUp(seekSlider(), { key: "ArrowRight" });
-    // mpv is still on its way: positions it reports from before the seek do not move the slider back.
+    // mpv is still on its way: the position from before the seek, moving on, does not move the slider back.
     mocks.positionSeconds = 100.5;
     view.rerender(<PlayerPanel />);
     expect(seekSlider().value).toBe("105");

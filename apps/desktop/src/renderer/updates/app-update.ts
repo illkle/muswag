@@ -1,12 +1,13 @@
 import { useSelector } from "@tanstack/react-store";
 
+import { appCommand } from "#/data/app-command";
 import { appState } from "#/data/app-state";
-import { mainIpc } from "#/data/ipc";
-import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
+import type { AppUpdateState, AppUpdateStatus, UpdateChannel } from "#shared/state/app-update";
 
 export const AppUpdateIPC = {
-  check: () => mainIpc.invoke("appUpdate:check"),
-  install: () => mainIpc.invoke("appUpdate:install"),
+  check: () => appCommand("appUpdate:check"),
+  install: () => appCommand("appUpdate:install"),
+  setChannel: (channel: UpdateChannel) => appCommand("appUpdate:setChannel", channel),
 };
 
 /** The update state, which main changes on its own while a check or a download runs. Null until it has arrived. */

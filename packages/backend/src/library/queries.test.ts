@@ -597,6 +597,17 @@ describe("LibraryQueries.artistAppearances", () => {
       expect(yield* LibraryQueries.artistAppearances("nobody")).toEqual({ albumIds: [], name: null });
     }).pipe(Effect.provide(layer)),
   );
+  it.effect("finds the artist by an id JSON escapes, and not by a name that is its id", () =>
+    Effect.gen(function* () {
+      const odd = { id: 'say "hi"\\ ünï', name: "Odd" };
+      yield* seed({
+        albums: [apiAlbum("featured", { artistId: "host" }), apiAlbum("named")],
+        songs: [apiSong("featured-1", "featured", { artists: [{ id: "host", name: "Host" }, odd] }), apiSong("named-1", "named", { artists: [{ id: "someone", name: odd.id }] })],
+      });
+
+      expect(yield* LibraryQueries.artistAppearances(odd.id)).toEqual({ albumIds: ["featured"], name: "Odd" });
+    }).pipe(Effect.provide(layer)),
+  );
 });
 
 describe("LibraryQueries.searchResults", () => {

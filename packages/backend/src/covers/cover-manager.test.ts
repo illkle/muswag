@@ -10,7 +10,7 @@ import { albums, artists, SubsonicHttpError, type AlbumID3 } from "@muswag/model
 import { SubsonicAPI, type SubsonicApiService } from "../api/subsonic-api.js";
 import { Db, write } from "../db/database.js";
 import { rowOf, seed, TestDatabase } from "../test/index.js";
-import { coverFileName, CoverManager, CoverManagerLive, coverMediaType, MiniFs } from "./cover-manager.js";
+import { COVER_PIXELS, coverFileName, CoverManager, CoverManagerLive, coverMediaType, MiniFs } from "./cover-manager.js";
 
 const owner = { type: "album", id: "album-1" } as const;
 const coverPath = "covers/album_3a_album-1";
@@ -32,6 +32,7 @@ function managerLayer(getCoverArt: SubsonicApiService["getCoverArt"], files = ne
     writeFile: (path, data) => Effect.sync(() => void files.set(path, data)),
     remove: (path) => Effect.sync(() => void files.delete(path)),
     exists: (path) => Effect.sync(() => files.has(path)),
+    list: (directory) => Effect.sync(() => [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).map((path) => path.slice(directory.length + 1))),
   });
   return CoverManagerLive("covers").pipe(Layer.provideMerge(Layer.mergeAll(Layer.succeed(SubsonicAPI, api), fs, PathLayer)), Layer.provideMerge(TestDatabase()));
 }
@@ -82,6 +83,34 @@ describe("CoverManager", () => {
 
       expect(yield* Effect.all([manager.ensure(owner), manager.ensure(owner)], { concurrency: 2 })).toEqual([coverPath, coverPath]);
       expect(fetches).toBe(1);
+    }).pipe(Effect.provide(managerLayer(getCoverArt)));
+  });
+
+  it.effect("asks for the cover at the size it keeps, and downloads a few at a time", () => {
+    const sizes: Array<number | undefined> = [];
+    let downloading = 0;
+    let most = 0;
+    const release = Deferred.makeUnsafe<void>();
+    const getCoverArt: SubsonicApiService["getCoverArt"] = ({ size }) =>
+      Effect.sync(() => {
+        sizes.push(size);
+        most = Math.max(most, ++downloading);
+      }).pipe(Effect.andThen(Deferred.await(release)), Effect.as({ status: 200, arrayBuffer: Effect.sync(() => (downloading--, JPEG.buffer)) } as unknown as HttpClientResponse.HttpClientResponse));
+    const many = Array.from({ length: 10 }, (_, index) => ({ ...album, id: `album-${index}`, coverArt: `cover-${index}` }));
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: many });
+      const manager = yield* CoverManager;
+
+      const all = yield* Effect.forkChild(Effect.forEach(many, ({ id }) => manager.ensure({ type: "album", id }), { concurrency: "unbounded" }));
+      yield* Effect.yieldNow.pipe(Effect.repeat({ until: () => downloading === 6 }));
+      yield* TestClock.adjust("1 second");
+      expect(downloading).toBe(6);
+      yield* Deferred.succeed(release, undefined);
+
+      expect(yield* Fiber.join(all)).toHaveLength(10);
+      expect(most).toBe(6);
+      expect(sizes).toEqual(many.map(() => COVER_PIXELS));
     }).pipe(Effect.provide(managerLayer(getCoverArt)));
   });
 
@@ -207,6 +236,49 @@ describe("CoverManager", () => {
       expect(requested).toEqual(["cover-1", "cover-2"]);
       expect(yield* rowOf(albums, owner.id)).toMatchObject({ coverArt: "cover-2", coverArtPath: coverPath });
     }).pipe(Effect.provide(managerLayer(getCoverArt)));
+  });
+
+  it.effect("sweeps away the files no album or artist names, with what was made from them", () => {
+    const files = new Map<string, Uint8Array>();
+    const { getCoverArt } = servingCovers();
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album] });
+      const db = yield* Db;
+      yield* db.insert(artists).values({ id: "artist-1", name: "Artist", coverArt: "ar-1", coverArtPath: "covers/artist_3a_artist-1" });
+      const manager = yield* CoverManager;
+      yield* manager.ensure(owner);
+      const named = [coverPath, `${coverPath}.thumb`, `${coverPath}.icon`, "covers/artist_3a_artist-1"];
+      // Of an album a sync removed, one a crash left half written, and one whose row has another cover now.
+      const unnamed = ["covers/album_3a_gone", "covers/album_3a_gone.thumb", "covers/album_3a_crashed.tmp", "covers/artist_3a_changed"];
+      for (const path of [...named, ...unnamed]) files.set(path, JPEG);
+
+      expect(yield* manager.sweep).toBe(unnamed.length);
+      expect([...files.keys()].sort()).toEqual(named.sort());
+      expect(yield* manager.sweep).toBe(0);
+    }).pipe(Effect.provide(managerLayer(getCoverArt, files)));
+  });
+
+  it.effect("keeps the file of a cover that is still downloading, which its row does not name yet", () => {
+    const files = new Map<string, Uint8Array>();
+    const asked = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+    const getCoverArt: SubsonicApiService["getCoverArt"] = () => Deferred.succeed(asked, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(imageResponse()));
+
+    return Effect.gen(function* () {
+      yield* seed({ albums: [album] });
+      const manager = yield* CoverManager;
+
+      const pending = yield* Effect.forkChild(manager.ensure(owner));
+      yield* Deferred.await(asked);
+      // As the file is in place a moment before the row names it.
+      files.set(coverPath, JPEG);
+      expect(yield* manager.sweep).toBe(0);
+      yield* Deferred.succeed(release, undefined);
+
+      expect(yield* Fiber.join(pending)).toBe(coverPath);
+      expect(files.has(coverPath)).toBe(true);
+    }).pipe(Effect.provide(managerLayer(getCoverArt, files)));
   });
 });
 

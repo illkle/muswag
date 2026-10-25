@@ -22,6 +22,7 @@ export function createQueue(options: { player: PlayerHandle; library: SourceDb; 
     player: {
       applyQueue: ({ items, select }) => playerCommand(player, { _tag: "ApplyQueue", items, select: select ? { ...select, positionSeconds: select.positionSeconds ?? 0 } : null }),
       restartCurrent: () => playerCommand(player, { _tag: "Restart" }),
+      position: () => player.position(),
       stop: () => playerCommand(player, { _tag: "Stop" }),
       getState: async () => runtimeView(await player.snapshot()),
       subscribe: (listener) => player.subscribe((snapshot) => listener(runtimeView(snapshot))),

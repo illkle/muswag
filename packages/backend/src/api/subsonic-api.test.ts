@@ -67,22 +67,81 @@ describe("Effect SubsonicAPI", () => {
     }),
   );
 
-  it.effect("sends a request that reads again, twice, after a network error", () =>
+  it.effect("sends a request that reads again after a network error, waiting longer each time", () =>
     Effect.gen(function* () {
       let count = 0;
       const fakeHttpClient = HttpClient.make((request) => {
         count += 1;
-        if (count <= 2) return Effect.fail(new HttpClientError({ reason: new TransportError({ request, description: "err" }) }));
+        if (count <= 3) return Effect.fail(new HttpClientError({ reason: new TransportError({ request, description: "err" }) }));
         return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(subsonic(albumList))));
       });
 
       const result = yield* Effect.gen(function* () {
         const api = yield* SubsonicAPI;
-        return yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: 50 });
+        const reading = yield* Effect.forkChild(api.getAlbumList2({ type: "alphabeticalByArtist", size: 50 }));
+        // Half a second, then one and two, each give or take a fifth.
+        const countAt = (elapsed: number) => TestClock.setTime(elapsed).pipe(Effect.map(() => count));
+        expect(yield* countAt(399)).toBe(1);
+        expect(yield* countAt(600)).toBe(2);
+        expect(yield* countAt(1199)).toBe(2);
+        expect(yield* countAt(1800)).toBe(3);
+        expect(yield* countAt(2799)).toBe(3);
+        expect(yield* countAt(4200)).toBe(4);
+        return yield* Fiber.join(reading);
       }).pipe(Effect.provide(withClient(fakeHttpClient)));
 
       expect(result.albumList2.album).toHaveLength(1);
-      expect(count).toBe(3);
+    }),
+  );
+
+  it.effect("asks again when the server failed or asks for fewer requests, and gives up after three more", () =>
+    Effect.gen(function* () {
+      const sent: string[] = [];
+      const failures: Response[] = [];
+      const statuses = [503, 429, 502];
+      const fakeHttpClient = HttpClient.make((request, url) => {
+        sent.push(url.pathname);
+        const status = url.pathname.includes("getPlaylists") ? 500 : (statuses.shift() ?? 200);
+        const response = new Response(status === 200 ? subsonic(albumList) : "busy", { status });
+        if (status !== 200) failures.push(response);
+        return Effect.succeed(HttpClientResponse.fromWeb(request, response));
+      });
+
+      const [result, error] = yield* Effect.gen(function* () {
+        const api = yield* SubsonicAPI;
+        const reading = yield* Effect.forkChild(Effect.all([api.getAlbumList2({ type: "alphabeticalByArtist" }), Effect.flip(api.getPlaylists)]));
+        yield* TestClock.adjust("10 seconds");
+        return yield* Fiber.join(reading);
+      }).pipe(Effect.provide(withClient(fakeHttpClient)));
+
+      expect(result.albumList2.album).toHaveLength(1);
+      expect(error).toMatchObject({ _tag: "SubsonicHttpError", status: 500 });
+      expect(sent.filter((path) => path.includes("getAlbumList2"))).toHaveLength(4);
+      expect(sent.filter((path) => path.includes("getPlaylists"))).toHaveLength(4);
+      // Read to the end, so that none holds on to its connection.
+      expect(failures.map(({ bodyUsed }) => bodyUsed)).toEqual(failures.map(() => true));
+    }),
+  );
+
+  it.effect("answers a status nothing changes at once, and sends a change once whatever the status", () =>
+    Effect.gen(function* () {
+      const sent: string[] = [];
+      const fakeHttpClient = HttpClient.make((request, url) => {
+        sent.push(url.pathname);
+        const status = url.pathname.includes("getAlbum") ? 404 : 503;
+        return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("no", { status })));
+      });
+
+      const errors = yield* Effect.gen(function* () {
+        const api = yield* SubsonicAPI;
+        return yield* Effect.all([Effect.flip(api.getAlbum({ id: "a" })), Effect.flip(api.createPlaylist({ name: "Mix" }))]);
+      }).pipe(Effect.provide(withClient(fakeHttpClient)));
+
+      expect(errors).toMatchObject([
+        { _tag: "SubsonicHttpError", status: 404 },
+        { _tag: "SubsonicHttpError", status: 503 },
+      ]);
+      expect(sent).toEqual(["/rest/getAlbum.view", "/rest/createPlaylist.view"]);
     }),
   );
 
@@ -106,6 +165,21 @@ describe("Effect SubsonicAPI", () => {
 
       expect(errors.map(({ _tag }) => _tag)).toEqual(["HttpClientError", "HttpClientError", "HttpClientError"]);
       expect(sent).toEqual(["/rest/createPlaylist.view", "/rest/updatePlaylist.view", "/rest/deletePlaylist.view"]);
+    }),
+  );
+
+  it.effect("pings once, so that a login to an address that is wrong fails at once", () =>
+    Effect.gen(function* () {
+      const sent: string[] = [];
+      const fakeHttpClient = HttpClient.make((request, url) => {
+        sent.push(url.pathname);
+        return Effect.fail(new HttpClientError({ reason: new TransportError({ request, description: "connection refused" }) }));
+      });
+
+      const error = yield* SubsonicAPI.use((api) => Effect.flip(api.ping)).pipe(Effect.provide(withClient(fakeHttpClient)));
+
+      expect(error._tag).toBe("HttpClientError");
+      expect(sent).toEqual(["/rest/ping.view"]);
     }),
   );
 

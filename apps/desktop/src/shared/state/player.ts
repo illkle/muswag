@@ -4,7 +4,7 @@ import { BinaryState, PlaybackItemSchema, PlayerError, type Playback, type Playe
 
 /**
  * The player's state as renderers see it, which main publishes whenever the player does (`app-state.ts`).
- * Position is a value of its own, so its updates twice a second do not touch anything else.
+ * Position is a value of its own, so a seek or a pause does not touch anything else.
  */
 
 const PLAYER = "player";
@@ -33,8 +33,24 @@ export const PlayerRow = Schema.Struct({
 });
 export type PlayerRow = typeof PlayerRow.Type;
 
-export const PlayerPositionRow = Schema.Struct({ id: PlayerId, positionSeconds: Seconds, durationSeconds: Schema.NullOr(Seconds) });
+/**
+ * Where playback is in the track. `positionSeconds` is where it was at `at`, in milliseconds since the
+ * epoch; while `advancing` it moves on from there with the clock, which `positionAt` works out. Main
+ * writes the row only when the position moves otherwise: on a load, a seek, a pause, or buffering.
+ */
+export const PlayerPositionRow = Schema.Struct({
+  id: PlayerId,
+  positionSeconds: Seconds,
+  durationSeconds: Schema.NullOr(Seconds),
+  at: Schema.Finite,
+  /** Playing and not waiting for data. */
+  advancing: Schema.Boolean,
+});
 export type PlayerPositionRow = typeof PlayerPositionRow.Type;
+
+/** Where playback is at `now`, in milliseconds since the epoch. It stops at the end of the track. */
+export const positionAt = (row: Omit<PlayerPositionRow, "id">, now: number): number =>
+  row.advancing ? Math.min(row.positionSeconds + Math.max(0, now - row.at) / 1000, row.durationSeconds ?? Infinity) : row.positionSeconds;
 
 // ---- From a player snapshot ----
 
@@ -54,5 +70,11 @@ export function playerRow(snapshot: PlayerSnapshot): PlayerRow {
 
 export function playerPositionRow({ playback }: PlayerSnapshot): PlayerPositionRow {
   const media = playback._tag === "Idle" ? null : playback.media;
-  return { id: PLAYER, positionSeconds: media?.positionSeconds ?? 0, durationSeconds: media?.durationSeconds ?? null };
+  return {
+    id: PLAYER,
+    positionSeconds: media?.positionSeconds ?? 0,
+    durationSeconds: media?.durationSeconds ?? null,
+    at: media?.positionAt ?? 0,
+    advancing: playback._tag === "Playing" && !playback.buffering,
+  };
 }

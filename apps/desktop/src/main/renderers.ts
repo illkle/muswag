@@ -1,6 +1,6 @@
 import type { LibraryChange } from "@muswag/backend";
 
-import type { MuswagRendererEvents } from "#shared/ipc";
+import { APP_CONNECT_CHANNEL, type MuswagRendererEvents } from "#shared/ipc";
 import type { AppStateHub } from "./app-state";
 import type { LibraryChangedEvent } from "#shared/state/app-state";
 
@@ -14,8 +14,8 @@ export interface WebContentsLike {
 
 /** The part of Electron's `ipcMain` that renderers connect through. */
 export interface ConnectIpc {
-  handle(channel: "app:connect", listener: (event: { readonly sender: WebContentsLike }) => unknown): void;
-  removeHandler(channel: "app:connect"): void;
+  handle(channel: string, listener: (event: { readonly sender: WebContentsLike }) => unknown): void;
+  removeHandler(channel: string): void;
 }
 
 /** Past this many rows of a table in one write, renderers hear only that the table changed. */
@@ -55,7 +55,7 @@ export function serveRenderers(ipcMain: ConnectIpc, state: AppStateHub) {
     }
   };
 
-  ipcMain.handle("app:connect", ({ sender }) => {
+  ipcMain.handle(APP_CONNECT_CHANNEL, ({ sender }) => {
     // Before the snapshot is taken, so the renderer hears of every change after it.
     if (!renderers.has(sender.id) && !sender.isDestroyed()) {
       renderers.set(sender.id, sender);
@@ -71,7 +71,7 @@ export function serveRenderers(ipcMain: ConnectIpc, state: AppStateHub) {
     send,
     dispose: () => {
       unsubscribe();
-      ipcMain.removeHandler("app:connect");
+      ipcMain.removeHandler(APP_CONNECT_CHANNEL);
       renderers.clear();
     },
   };

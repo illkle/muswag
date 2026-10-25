@@ -486,6 +486,8 @@ export const LibraryQueries = {
   /**
    * Where `artistId` appears on other artists' albums: the albums with a song that credits it. The
    * credits are JSON on each song, so this reads every song, which SQLite does far faster than a page.
+   * Only the songs whose credits hold the id as JSON writes it, quoted, are taken apart: the few
+   * that might credit it. JSON.stringify wrote the column, and writes the id the same way here.
    */
   artistAppearances: (artistId: string) =>
     Db.use((db) =>
@@ -494,7 +496,8 @@ export const LibraryQueries = {
         FROM ${songs}
         JOIN ${albums} ON ${albums.id} = ${songs.albumId}
         JOIN json_each(${songs.artists}) AS credit
-        WHERE json_extract(credit.value, '$.id') = ${artistId} AND ${albums.artistId} IS NOT ${artistId}
+        WHERE instr(${songs.artists}, ${JSON.stringify(artistId)}) > 0
+          AND json_extract(credit.value, '$.id') = ${artistId} AND ${albums.artistId} IS NOT ${artistId}
       `),
     ).pipe(Effect.map((rows): ArtistAppearances => ({ albumIds: [...new Set(rows.map(({ albumId }) => albumId))], name: rows.find(({ name }) => name)?.name ?? null }))),
 

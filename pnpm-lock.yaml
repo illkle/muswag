@@ -9,9 +9,6 @@ catalogs:
     '@base-ui/react':
       specifier: ^1.9.0
       version: 1.9.0
-    '@effect/platform-browser':
-      specifier: 4.0.5
-      version: 4.0.5
     '@effect/platform-node':
       specifier: 4.0.5
       version: 4.0.5
@@ -24,9 +21,6 @@ catalogs:
     '@effect/vitest':
       specifier: 4.0.5
       version: 4.0.5
-    '@electron-toolkit/typed-ipc':
-      specifier: ^1.0.2
-      version: 1.0.2
     '@electron-toolkit/utils':
       specifier: ^4.0.0
       version: 4.0.0
@@ -171,18 +165,12 @@ importers:
       '@base-ui/react':
         specifier: 'catalog:'
         version: 1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@effect/platform-browser':
-        specifier: 'catalog:'
-        version: 4.0.5(effect@4.0.5)
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.5(effect@4.0.5)(vitest@5.0.5)
-      '@electron-toolkit/typed-ipc':
-        specifier: 'catalog:'
-        version: 1.0.2(@electron-toolkit/preload@3.0.2(electron@44.8.0(supports-color@7.2.0)))(electron@44.8.0(supports-color@7.2.0))
       '@electron-toolkit/utils':
         specifier: 'catalog:'
         version: 4.0.0(electron@44.8.0(supports-color@7.2.0))
@@ -629,11 +617,6 @@ packages:
   '@drizzle-team/brocli@0.12.1':
     resolution: {integrity: sha512-yHwomvolVafvUXhy5TdiJVkuNCxXn+bKOs2aWiWEQh/5YaV97Oa/abJz3dmx7lxgIUsUlS1Jl4mEfvJPo3YsVw==}
 
-  '@effect/platform-browser@4.0.5':
-    resolution: {integrity: sha512-o3H75xA91nkgIWOcp0XouIxxWxJEOFkTf7gG4qkQtZfy0tq46hJBI0U8jrUqsPruo2vCCNfM0yCoj5AG7F5BMQ==}
-    peerDependencies:
-      effect: ^4.0.5
-
   '@effect/platform-node-shared@4.0.5':
     resolution: {integrity: sha512-a8rCdEkfZBGe9C6bsIjxVZuRp73svIyK5IHwHdDAVsvZXjrbkxusfI+rZ8WlX31RP1mKizwI/E72GQTNfdMWHw==}
     engines: {node: '>=18.0.0'}
@@ -700,17 +683,6 @@ packages:
   '@electron-internal/extract-zip@1.0.5':
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
     engines: {node: '>=22.12.0'}
-
-  '@electron-toolkit/preload@3.0.2':
-    resolution: {integrity: sha512-TWWPToXd8qPRfSXwzf5KVhpXMfONaUuRAZJHsKthKgZR/+LqX1dZVSSClQ8OTAEduvLGdecljCsoT2jSshfoUg==}
-    peerDependencies:
-      electron: '>=13.0.0'
-
-  '@electron-toolkit/typed-ipc@1.0.2':
-    resolution: {integrity: sha512-N5yV5PzoAQDI4pLRBguY/8qwS7C7b84g2XQHPNqmp5KJTiYGeaQVfglI3979tzIqpSEV8Nmwdlw3ADmYE44WvQ==}
-    peerDependencies:
-      '@electron-toolkit/preload': '>=3.0.0'
-      electron: '>=13.0.0'
 
   '@electron-toolkit/utils@4.0.0':
     resolution: {integrity: sha512-qXSntwEzluSzKl4z5yFNBknmPGjPa3zFhE4mp9+h0cgokY5ornAeP+CJQDBhKsL1S58aOQfcwkD3NwLZCl+64g==}
@@ -6167,10 +6139,6 @@ snapshots:
 
   '@drizzle-team/brocli@0.12.1': {}
 
-  '@effect/platform-browser@4.0.5(effect@4.0.5)':
-    dependencies:
-      effect: 4.0.5
-
   '@effect/platform-node-shared@4.0.5(effect@4.0.5)':
     dependencies:
       '@types/ws': 8.18.2
@@ -6231,15 +6199,6 @@ snapshots:
       vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(yaml@2.9.1))
 
   '@electron-internal/extract-zip@1.0.5': {}
-
-  '@electron-toolkit/preload@3.0.2(electron@44.8.0(supports-color@7.2.0))':
-    dependencies:
-      electron: 44.8.0(supports-color@7.2.0)
-
-  '@electron-toolkit/typed-ipc@1.0.2(@electron-toolkit/preload@3.0.2(electron@44.8.0(supports-color@7.2.0)))(electron@44.8.0(supports-color@7.2.0))':
-    dependencies:
-      '@electron-toolkit/preload': 3.0.2(electron@44.8.0(supports-color@7.2.0))
-      electron: 44.8.0(supports-color@7.2.0)
 
   '@electron-toolkit/utils@4.0.0(electron@44.8.0(supports-color@7.2.0))':
     dependencies:

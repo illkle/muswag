@@ -5,8 +5,19 @@ import { Schema } from "effect";
 export const AppUpdateStatus = Schema.Literals(["disabled", "idle", "checking", "up-to-date", "downloading", "ready", "error"]);
 export type AppUpdateStatus = typeof AppUpdateStatus.Type;
 
+/**
+ * The releases the app updates from: the stable ones, from release tags, or the nightly builds of master.
+ * The release workflow (`.github/workflows/release.yml`) makes both.
+ */
+export const UpdateChannel = Schema.Literals(["stable", "nightly"]);
+export type UpdateChannel = typeof UpdateChannel.Type;
+
+/** The channel a version was released on, which is the one an install starts on. */
+export const channelOfVersion = (version: string): UpdateChannel => (version.includes("-nightly.") ? "nightly" : "stable");
+
 export const AppUpdateState = Schema.Struct({
   canCheck: Schema.Boolean,
+  channel: UpdateChannel,
   currentVersion: Schema.String,
   error: Schema.NullOr(Schema.String),
   latestVersion: Schema.NullOr(Schema.String),

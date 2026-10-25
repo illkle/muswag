@@ -5,7 +5,8 @@ import { InvalidCommand, QueueOutOfSync, type EngineError } from "./errors";
 import { command, load, playlist } from "./mpv/protocol";
 import type { SessionHandle } from "./mpv/session";
 
-export type Entry = PlaybackItem & { readonly entryId: number };
+/** `startSeconds` is where mpv starts the entry each time it plays it: see `load`. */
+export type Entry = PlaybackItem & { readonly entryId: number; readonly startSeconds: number };
 /** Which mpv playlist entry holds each queue occurrence, for one session generation. */
 export type Correlation = { readonly generation: number; readonly entries: readonly Entry[]; readonly currentId: number | null };
 
@@ -40,12 +41,15 @@ export const applyQueue = Effect.fn("applyQueue")(function* (
   const anchorIndex = items.findIndex((item) => item.key === anchorKey);
   /** mpv's playlist, kept in step with every command below. */
   let entries: Entry[] = live ? [...live.entries] : [];
-  const held = anchorIndex < 0 ? undefined : entries.find((entry) => sameOccurrence(entry, items[anchorIndex]!));
+  // An entry that would start elsewhere than the selection asks is loaded again.
+  const held = anchorIndex < 0 ? undefined : entries.find((entry) => sameOccurrence(entry, items[anchorIndex]!) && (!select || entry.startSeconds === select.positionSeconds));
   if (anchorIndex < 0 || (!select && !held)) return yield* new InvalidCommand({ operation: "queue", message: "An explicit selection is required to replace the current track." });
   const urlAt = (index: number) => urls.get(items[index]!.key)!;
 
-  if (!held) entries = [{ ...items[anchorIndex]!, entryId: (yield* session.execute(load(urlAt(anchorIndex), "replace"))).playlist_entry_id }];
-  else if (select) yield* session.execute(command("playlist-play-index", entries.indexOf(held)));
+  if (!held) {
+    const startSeconds = select?.positionSeconds ?? 0;
+    entries = [{ ...items[anchorIndex]!, entryId: (yield* session.execute(load(urlAt(anchorIndex), "replace", -1, startSeconds))).playlist_entry_id, startSeconds }];
+  } else if (select) yield* session.execute(command("playlist-play-index", entries.indexOf(held)));
   const anchorId = (held ?? entries[0]!).entryId;
 
   // A reordered queue keeps only the anchor, which mpv is on and must not lose.
@@ -65,7 +69,7 @@ export const applyQueue = Effect.fn("applyQueue")(function* (
   for (const [index, item] of items.entries()) {
     const entry = entries[index];
     if (entry && sameOccurrence(entry, item)) continue;
-    entries.splice(index, 0, { ...item, entryId: (yield* session.execute(load(urlAt(index), "insert-at", index))).playlist_entry_id });
+    entries.splice(index, 0, { ...item, entryId: (yield* session.execute(load(urlAt(index), "insert-at", index))).playlist_entry_id, startSeconds: 0 });
   }
 
   const actual = yield* session.execute(playlist);
@@ -75,5 +79,5 @@ export const applyQueue = Effect.fn("applyQueue")(function* (
   // entry is current at all: mpv may have advanced meanwhile, and says so with start-file.
   const currentId = actual.find((entry) => entry.current)?.id ?? null;
   if (select && currentId !== null && currentId !== anchorId) return yield* new QueueOutOfSync({ operation: "queue", message: "The engine did not start the selected track." });
-  return { generation: session.generation, entries: items.map((item, index) => ({ ...item, entryId: entries[index]!.entryId })), currentId: anchorId };
+  return { generation: session.generation, entries: items.map((item, index) => ({ ...item, entryId: entries[index]!.entryId, startSeconds: entries[index]!.startSeconds })), currentId: anchorId };
 });

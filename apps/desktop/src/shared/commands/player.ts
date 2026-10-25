@@ -3,12 +3,11 @@ import type { PlaybackItem } from "@muswag/model";
 
 /**
  * The main-process player as the rest of the app talks to it. Only what is decoded on arrival is a
- * schema: the commands a renderer may send, the result it gets back, and the parts of the state that
- * reach renderers in the tables of `state/player.ts`. What stays inside main is a plain type.
+ * schema: the commands a renderer may send, and the parts of the state that reach renderers as
+ * the values of `state/player.ts`. What stays inside main is a plain type.
  */
 
 const Seconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Percent = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 
 // ---- mpv discovery and installation ----
@@ -55,8 +54,8 @@ export type RendererCommand = typeof RendererCommand.Type;
 export type Selection = { readonly key: string; readonly play: boolean; readonly positionSeconds: number };
 /**
  * Every command the player runs. Those a renderer cannot send are main's own: the queue is changed
- * through the queue manager, and the path of a binary to run comes from the native dialog of
- * `player:locate`.
+ * through the queue manager, and the path of a binary to run comes from the native dialog of the
+ * `player:locate` command.
  */
 export type PlayerCommand =
   | RendererCommand
@@ -72,8 +71,7 @@ export type PlayerCredentials = { readonly url: string; readonly username: strin
  * How a command went, and the version the app state had once it was handled, which renderers wait for
  * to see its outcome. The message of a failure is also what the player's state says went wrong.
  */
-export const CommandResult = Schema.Union([Schema.Struct({ ok: Schema.Literal(true), version: Count }), Schema.Struct({ ok: Schema.Literal(false), message: Schema.String, version: Count })]);
-export type CommandResult = typeof CommandResult.Type;
+export type CommandResult = { readonly ok: true; readonly version: number } | { readonly ok: false; readonly message: string; readonly version: number };
 
 // ---- State ----
 
@@ -100,7 +98,11 @@ export const PlaybackItemSchema = Schema.declare(
 export const PlayerError = Schema.Struct({ message: Schema.String, fix: Schema.NullOr(Schema.Literals(["retry", "mpv", "login"])) });
 export type PlayerError = typeof PlayerError.Type;
 
-export type Media = { readonly item: PlaybackItem; readonly positionSeconds: number; readonly durationSeconds: number | null };
+/**
+ * `positionSeconds` is where the track was at `positionAt`, in milliseconds since the epoch. While it
+ * plays it moves on from there with the clock: the player sets it again only when it moves otherwise.
+ */
+export type Media = { readonly item: PlaybackItem; readonly positionSeconds: number; readonly positionAt: number; readonly durationSeconds: number | null };
 export type Playback =
   | { readonly _tag: "Idle" }
   | { readonly _tag: "Loading"; readonly media: Media; readonly targetPaused: boolean }
