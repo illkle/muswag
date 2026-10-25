@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "#/components/ui/button";
 import { Slider } from "#/components/ui-custom/slider";
-import { MpvIPC, PlayerIPC } from "#/player/commands";
+import { PlayerIPC } from "#/player/commands";
+import { openMpvDialog } from "#/components/settings/mpv-info-dialog";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
 import { QueueActions } from "#/queue/queue";
 import {
@@ -467,26 +468,9 @@ function PlayerErrorBanner() {
             </Button>
           ) : null}
           {error.fix === "mpv" ? (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  void MpvIPC.locate().catch(() => {});
-                }}
-              >
-                Locate mpv
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  void MpvIPC.recheck().catch(() => {});
-                }}
-              >
-                Recheck
-              </Button>
-            </>
+            <Button size="sm" variant="outline" onClick={openMpvDialog}>
+              Set up mpv
+            </Button>
           ) : null}
           {error.fix === "login" ? (
             <Link to="/" className={buttonVariants({ variant: "outline", size: "sm" })}>
