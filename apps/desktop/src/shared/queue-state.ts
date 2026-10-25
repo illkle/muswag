@@ -80,8 +80,8 @@ function windowAround(cursor: SourceCursor, items: readonly SourceItem[], hasMor
 }
 
 // ---- Storage ----
-// Main stores the queue in the mirrored `queue_items` and `queue_state` tables; the renderer reads it
-// back from them. These convert between the two shapes. Where playback resumes after a restart is not
+// Main stores the queue in the `queue_items` and `queue_state` tables, which it restores the queue from
+// after a restart. These convert between the two shapes. Where playback resumes after a restart is not
 // part of it: only main needs that, and it changes all the time.
 
 /** The occurrences that store `state`. The one playing gets a row of its own only when it is in neither list. */

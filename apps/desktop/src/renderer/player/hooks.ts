@@ -1,23 +1,18 @@
 import { useSelector } from "@tanstack/react-store";
 import { useEffect, useState } from "react";
 
-import { playerState } from "#/data/state";
-import { rowStore } from "#/data/stores";
+import { appState } from "#/data/app-state";
 import { useQueueSelector } from "#/queue/queue";
 import type { BinaryState, PlayerError } from "#shared/commands/player";
 import { getQueueCanGoNext, getQueueCanGoPrevious, getQueueCanStart } from "#shared/queue-state";
 import { positionAt, type PlayerPositionRow, type PlayerRow } from "#shared/state/player";
 
-// ---- Rows ----
-// Each player table has one row, keyed "player". Each hook selects what it
-// needs from them, so a component re-renders only when that changes.
+// ---- State ----
+// What the player is doing, and where it is in the track, each `undefined` until main has published it.
+// Each hook selects what it needs, so a component re-renders only when that changes.
 
-/** `undefined` until the state mirror has loaded. */
-const playerRow = rowStore(playerState.player, "player");
-const positionRow = rowStore(playerState.position, "player");
-
-const usePlayer = <T>(select: (row: PlayerRow | undefined) => T): T => useSelector(playerRow, select);
-const usePosition = <T>(select: (row: PlayerPositionRow | undefined) => T): T => useSelector(positionRow, select);
+const usePlayer = <T>(select: (row: PlayerRow | undefined) => T): T => useSelector(appState.player, select);
+const usePosition = <T>(select: (row: PlayerPositionRow | undefined) => T): T => useSelector(appState.playerPosition, select);
 
 // ---- Player ----
 

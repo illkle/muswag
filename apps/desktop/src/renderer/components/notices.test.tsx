@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ playerError: null as { message: string } | null }));
 
 // The player's state, which says what its banner shows.
-vi.mock("#/data/state", () => ({ playerState: { player: { get: () => ({ error: mocks.playerError }) } } }));
+vi.mock("#/data/app-state", () => ({ appState: { player: { get: () => ({ error: mocks.playerError }) } } }));
 
 const { Notices } = await import("#/components/notices");
 const { failureNotice, notifyFailure } = await import("#/lib/notify");

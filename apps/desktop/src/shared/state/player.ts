@@ -1,12 +1,10 @@
-import { memoryTable } from "@muswag/tanstack-db-mirror/memory";
 import { Schema } from "effect";
 
 import { BinaryState, PlaybackItemSchema, PlayerError, type Playback, type PlayerSnapshot } from "#shared/commands/player";
 
 /**
- * The player's state as renderers see it: memory tables in the state mirror (`mirror.ts`), which
- * main writes whenever the player publishes. Position has a table of its own, so a seek or a pause does
- * not touch anything else.
+ * The player's state as renderers see it, which main publishes whenever the player does (`app-state.ts`).
+ * Position is a value of its own, so a seek or a pause does not touch anything else.
  */
 
 const PLAYER = "player";
@@ -34,7 +32,6 @@ export const PlayerRow = Schema.Struct({
   error: Schema.NullOr(PlayerError),
 });
 export type PlayerRow = typeof PlayerRow.Type;
-export const player = memoryTable("player", PlayerRow, { primaryKey: "id" });
 
 /**
  * Where playback is in the track. `positionSeconds` is where it was at `at`, in milliseconds since the
@@ -54,9 +51,6 @@ export type PlayerPositionRow = typeof PlayerPositionRow.Type;
 /** Where playback is at `now`, in milliseconds since the epoch. It stops at the end of the track. */
 export const positionAt = (row: Omit<PlayerPositionRow, "id">, now: number): number =>
   row.advancing ? Math.min(row.positionSeconds + Math.max(0, now - row.at) / 1000, row.durationSeconds ?? Infinity) : row.positionSeconds;
-export const playerPosition = memoryTable("player_position", PlayerPositionRow, { primaryKey: "id" });
-
-export const PLAYER_TABLES = [player, playerPosition] as const;
 
 // ---- From a player snapshot ----
 

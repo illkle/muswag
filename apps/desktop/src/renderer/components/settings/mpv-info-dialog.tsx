@@ -1,5 +1,5 @@
 import { WarningCircleIcon } from "@phosphor-icons/react";
-import { createStore, useStore } from "@tanstack/react-store";
+import { createStore, useSelector } from "@tanstack/react-store";
 
 import { MpvInstall, MpvSearch } from "#/components/settings/mpv-setup";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
@@ -29,7 +29,7 @@ export const openMpvDialog = () => dialogOpen.setState(() => true);
 const setDialogOpen = (open: boolean) => dialogOpen.setState(() => open);
 
 export function MpvInfoDialog() {
-  const open = useStore(dialogOpen);
+  const open = useSelector(dialogOpen);
   const playerError = usePlayerError();
   const playerStatus = usePlayerStatus();
 

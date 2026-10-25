@@ -2,18 +2,17 @@
 import "#/data/dev-bridge";
 import { createHashHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import ReactDOM from "react-dom/client";
 import { StrictMode } from "react";
 import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { ThemeProvider } from "#/components/utils/theme-provider";
 import { Session } from "#/session/session";
+import { queryClient } from "#/data/main-read";
 if (import.meta.env.DEV) {
   void import("react-scan").then(({ scan }) => scan({ enabled: true }));
 }
-
-const queryClient = new QueryClient();
 
 const router = createTanStackRouter({
   routeTree,

@@ -1,8 +1,7 @@
-import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { Effect, Layer, Queue, Redacted, Stream } from "effect";
 import { songRow, type PlaybackItem } from "@muswag/model";
 import type { PlayerSnapshot } from "#shared/commands/player";
-import { PLAYER_TABLES } from "#shared/state/player";
+import { AppState, AppStateHub } from "../../app-state";
 import { Binaries } from "../binary/binaries";
 import type { EngineError, InstallFailed } from "../errors";
 import { MpvSession, type SessionEvent } from "../mpv/session";
@@ -109,7 +108,7 @@ export function fixture() {
       ),
     ),
     // Kept in the test's context, so tests can read what renderers would see.
-    Layer.provideMerge(MemoryMirror.layer({ tables: PLAYER_TABLES })),
+    Layer.provideMerge(Layer.sync(AppState, () => new AppStateHub())),
   );
   const currentId = () => playlist.find((entry) => entry.current)?.id ?? null;
   return {

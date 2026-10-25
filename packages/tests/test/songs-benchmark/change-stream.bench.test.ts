@@ -7,38 +7,34 @@ import { describe, it } from "vitest";
 import { openLibrary, recorder, SIZES } from "./harness.js";
 
 /**
- * What a change to many songs costs main and the IPC to renderers: songs as a key-only table, which
- * the app has, against songs sent whole, which it had. A stats refresh that changes every song stands
- * for a first sync or a rescan, and one of a thousand songs for an ordinary one. The time is main's:
- * the write with its capture triggers, then reading the change log back and broadcasting it.
+ * What announcing a change to many songs costs main: the write with its triggers, then reading the
+ * keys back and handing them to main's listeners, which is done before `exec` resolves. A stats
+ * refresh that changes every song stands for a first sync or a rescan, and one of a thousand songs
+ * for an ordinary one. Renderers hear only which tables changed once there are more than a thousand.
  */
 describe("change stream", () => {
   const { record, save } = recorder("change-stream");
 
   it.each(SIZES)("%i songs", async (size) => {
-    for (const fullRows of [false, true]) {
-      const label = fullRows ? "whole rows" : "keys only";
-      const library = await openLibrary(size, { fullRows });
-      let bytes = 0;
-      const unsubscribe = library.mirror.subscribe((batch) => {
-        bytes += serialize(batch).byteLength;
-      });
+    const library = await openLibrary(size);
+    let bytes = 0;
+    const unsubscribe = library.changes.subscribe((changes) => {
+      bytes += serialize(changes).byteLength;
+    });
 
-      // The flush after the commit broadcasts before `exec` resolves.
-      let started = performance.now();
-      await library.exec(`UPDATE songs SET playCount = coalesce(playCount, 0) + 1`);
-      record(size, `every song changes, ${label}`, performance.now() - started);
-      record(size, `  to renderers, ${label}`, bytes / 1024 / 1024, "MB");
+    let started = performance.now();
+    await library.exec(`UPDATE songs SET playCount = coalesce(playCount, 0) + 1`);
+    record(size, "every song changes", performance.now() - started);
+    record(size, "  keys to main's listeners", bytes / 1024 / 1024, "MB");
 
-      bytes = 0;
-      started = performance.now();
-      await library.exec(`UPDATE songs SET playCount = coalesce(playCount, 0) + 1 WHERE rowid IN (SELECT rowid FROM songs ORDER BY rowid LIMIT 1000)`);
-      record(size, `1000 songs change, ${label}`, performance.now() - started);
-      record(size, `  to renderers, ${label} `, bytes / 1024, "KB");
+    bytes = 0;
+    started = performance.now();
+    await library.exec(`UPDATE songs SET playCount = coalesce(playCount, 0) + 1 WHERE rowid IN (SELECT rowid FROM songs ORDER BY rowid LIMIT 1000)`);
+    record(size, "1000 songs change", performance.now() - started);
+    record(size, "  keys to main's listeners ", bytes / 1024, "KB");
 
-      unsubscribe();
-      await library.dispose();
-    }
+    unsubscribe();
+    await library.dispose();
   });
 
   it("saves", () => save());

@@ -1,6 +1,5 @@
 import { PlayIcon, WarningIcon } from "@phosphor-icons/react";
-import { ALBUM_ORDER, ARTIST_ALBUM_ORDER, artistOccurrenceKey, type LibraryAlbum as Album } from "@muswag/model";
-import { eq, isUndefined, not, useLiveQuery } from "@tanstack/react-db";
+import { artistOccurrenceKey, type LibraryAlbum as Album, type LibrarySong } from "@muswag/model";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 
@@ -11,8 +10,9 @@ import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import type { TrackListItem } from "#/components/track-list/types";
 import { Button } from "#/components/ui/button";
-import { db } from "#/data/library";
+import { useMainRead } from "#/data/main-read";
 import { creditedAsTheirAlbums, discHeading } from "#/library/album-tracks";
+import { LibraryActions } from "#/library/actions";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
@@ -59,41 +59,19 @@ function AlbumBlock({ album, onPlay }: { album: Album; onPlay: () => void }) {
   );
 }
 
+const NO_ALBUMS: ReadonlyArray<Album> = [];
+const NO_SONGS: ReadonlyArray<LibrarySong> = [];
+
 /** Every album of an artist, newest first, each with its tracks under its cover. Playing a track goes on through the albums after it. */
 export function ArtistDiscography({ artistId }: { artistId: string }) {
-  // The keys name what each query reads, so a render builds no query unless the artist is another one.
-  const albumsQuery = useLiveQuery({
-    queryKey: ["discography-albums", artistId],
-    query: (q) =>
-      ARTIST_ALBUM_ORDER.reduce(
-        (query, { column, direction }) => query.orderBy(({ album }) => album[column], { direction, nulls: "last", stringSort: "lexical" }),
-        q.from({ album: db.albums }).where(({ album }) => eq(album.artistId, artistId)),
-      ),
-  });
-
-  // The order main plays the artist in (`openArtist` in the backend's queries). The songs are joined to
-  // the albums rather than the other way round: an inner join reads the smaller collection whole, and the
-  // songs, read on demand, start out empty. Joined this way only the songs of these albums are read.
-  const songsQuery = useLiveQuery({
-    queryKey: ["discography-songs", artistId],
-    query: (q) =>
-      ARTIST_ALBUM_ORDER.reduce(
-        (query, { column, direction }) => query.orderBy(({ album }) => album[column], { direction, nulls: "last", stringSort: "lexical" }),
-        q
-          .from({ album: db.albums })
-          .where(({ album }) => eq(album.artistId, artistId))
-          .leftJoin({ song: db.songs }, ({ song, album }) => eq(song.albumId, album.id))
-          .where(({ song }) => not(isUndefined(song))),
-      )
-        .orderBy(({ song }) => ALBUM_ORDER.map((column) => song![column]), { stringSort: "lexical", nulls: "first" })
-        .select(({ song }) => song),
-  });
+  // The albums and their songs in the order main plays the artist in, which it reads with the same query.
+  // Every song of the artist is a lot to read again while a sync changes songs, so it waits until they stop.
+  const discographyQuery = useMainRead({ queryKey: ["discography", artistId], tables: ["albums", "songs"], read: () => LibraryActions.discography(artistId), quiet: true });
 
   const playingKey = usePlayingKey((ref) => ref.type === "artist" && ref.artistId === artistId);
 
-  const albums = albumsQuery.data;
-  // The join leaves out albums without songs, but its rows are typed as though it kept them.
-  const songs = useMemo(() => songsQuery.data.filter((song) => song !== undefined), [songsQuery.data]);
+  const albums = discographyQuery.data?.albums ?? NO_ALBUMS;
+  const songs = discographyQuery.data?.songs ?? NO_SONGS;
 
   const items = useMemo((): TrackListItem[] => {
     const albumsById = new Map(albums.map((album) => [album.id, album]));
@@ -118,8 +96,8 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
     return items;
   }, [artistId, albums, songs]);
 
-  if (albumsQuery.isLoading || songsQuery.isLoading) return <PageState tone="quiet" title="Loading albums…" />;
-  if (albumsQuery.isError || songsQuery.isError) {
+  if (discographyQuery.isPending) return <PageState tone="quiet" title="Loading albums…" />;
+  if (discographyQuery.isError) {
     return <PageState tone="error" icon={<WarningIcon />} title="Albums unavailable" description="The artist's albums could not be read from the local database." />;
   }
   if (items.length === 0) return <PageState title="No albums" description="This artist has no albums of their own in the synced local library." />;

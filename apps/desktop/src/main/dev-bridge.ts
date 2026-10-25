@@ -1,11 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { json } from "node:stream/consumers";
 
-import type { WebContentsLike } from "@muswag/tanstack-db-mirror/electron/main";
-
 import { coverSizeOf } from "#shared/cover";
 import type { AppIpc } from "./app-page";
 import type { ServeCover } from "./cover-protocol";
+import type { WebContentsLike } from "./renderers";
 
 type Handler = (event: { readonly sender: WebContentsLike }, ...args: Array<unknown>) => unknown;
 

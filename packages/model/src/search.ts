@@ -1,4 +1,4 @@
-import type { LibrarySong } from "./db/mirror.js";
+import type { LibrarySong } from "./db/library-columns.js";
 import type { Album, Artist } from "./db/schema.js";
 
 /** A row a search found, by its table: albums, artists and songs are searched together. */

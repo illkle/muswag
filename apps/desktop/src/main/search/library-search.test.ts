@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
-import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
+import type { LibraryChange } from "@muswag/backend";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { startLibrarySearch } from "./library-search";
@@ -14,17 +14,14 @@ const workerPath = fileURLToPath(new URL("./search-worker.ts", import.meta.url))
 let directory: string;
 let database: DatabaseSync;
 let search: ReturnType<typeof startLibrarySearch>;
-const listeners = new Set<(batch: MirrorChangeBatch) => void>();
-let seq = 0;
+const listeners = new Set<(changes: ReadonlyArray<LibraryChange>) => void>();
 
-/** Tells the search of changes as the mirror would. */
-const broadcast = (...changes: Array<{ table: string; type: "changed" | "delete"; key: string } | { table: string; type: "upsert"; key: string; value: Record<string, unknown> }>) => {
-  const fromSeq = seq;
-  const batch = { epoch: 1, fromSeq, toSeq: (seq += changes.length), changes: changes.map((change, index) => ({ ...change, seq: fromSeq + index + 1 })) };
-  for (const listener of listeners) listener(batch);
+/** Tells the search of the rows a write changed, as `LibraryChanges` would. */
+const broadcast = (...changes: Array<LibraryChange>) => {
+  for (const listener of listeners) listener(changes);
 };
 
-/** Writes a song as main would, and tells the search of it as the mirror would: by its id alone. */
+/** Writes a song as main would, and tells the search of it by its id. */
 const insertSong = (id: string, title: string) => {
   database.prepare(`INSERT INTO songs (id, title, artist, album, year, playCount) VALUES (?, ?, NULL, NULL, NULL, 0)`).run(id, title);
   broadcast({ table: "songs", type: "changed", key: id });
@@ -66,7 +63,7 @@ describe("the library search", () => {
     expect(found(await search.search("harvest", 20))).toEqual(["album:album-a", "artist:artist-a", "song:song-a"]);
   });
 
-  it("finds what main has written since, once the mirror has told it", async () => {
+  it("finds what main has written since, once it has been told", async () => {
     await search.search("harvest", 20);
 
     insertSong("song-b", "Cortez the Killer");
@@ -74,7 +71,7 @@ describe("the library search", () => {
     expect(found(await search.search("cortez", 20))).toEqual(["song:song-b"]);
   });
 
-  it("reads the songs whose ids the mirror sends, and drops those that have gone", async () => {
+  it("reads the songs whose ids it is told, and drops those that have gone", async () => {
     insertSong("song-b", "Cortez the Killer");
     await search.search("harvest", 20);
 
@@ -88,7 +85,7 @@ describe("the library search", () => {
     expect(found(await search.search("cortez", 20))).toEqual([]);
   });
 
-  it("reads the albums whose ids the mirror sends, and drops those that have gone", async () => {
+  it("reads the albums whose ids it is told, and drops those that have gone", async () => {
     await search.search("harvest", 20);
 
     database.prepare(`INSERT INTO albums VALUES ('album-b', 'Zuma', 'Someone', 1975)`).run();
@@ -99,12 +96,12 @@ describe("the library search", () => {
     expect(found(await search.search("harvest", 20))).toEqual(["artist:artist-a", "song:song-a"]);
   });
 
-  it("takes artists from the rows the mirror sends", async () => {
+  it("reads the artists written and drops the ones deleted", async () => {
     await search.search("harvest", 20);
 
     database.prepare(`INSERT INTO artists VALUES ('artist-b', 'Crazy Horse')`).run();
     database.prepare(`DELETE FROM artists WHERE id = 'artist-a'`).run();
-    broadcast({ table: "artists", type: "upsert", key: "artist-b", value: { id: "artist-b", name: "Crazy Horse" } }, { table: "artists", type: "delete", key: "artist-a" });
+    broadcast({ table: "artists", type: "changed", key: "artist-b" }, { table: "artists", type: "deleted", key: "artist-a" });
 
     expect(found(await search.search("crazy horse", 20))).toEqual(["artist:artist-b"]);
     expect(found(await search.search("harvest", 20))).toEqual(["album:album-a", "song:song-a"]);

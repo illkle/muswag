@@ -3,10 +3,10 @@ import { rename, writeFile } from "node:fs/promises";
 
 import electronUpdater from "electron-updater";
 import { app } from "electron";
-import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 
-import { appUpdate, channelOfVersion, UpdateChannel, type AppUpdateState } from "#shared/state/app-update";
+import { channelOfVersion, UpdateChannel, type AppUpdateState } from "#shared/state/app-update";
+import type { AppStateHub } from "./app-state";
 import type { AppUpdates } from "./app/commands";
 
 const { autoUpdater } = electronUpdater;
@@ -158,13 +158,10 @@ async function setUpdateChannel(channel: UpdateChannel): Promise<void> {
 /** What renderers ask of the updater through `app:command`. */
 export const appUpdates: AppUpdates = { check: checkForAppUpdates, install: installAppUpdate, setChannel: setUpdateChannel };
 
-/**
- * Shows renderers the update state in `state`, which must mirror `appUpdate`, and keeps the chosen
- * channel in `channelPath`.
- */
-export function publishAppUpdates(state: MemoryMirrorService, channelPath: string): void {
+/** Shows renderers the update state through `state`, and keeps the chosen channel in `channelPath`. */
+export function publishAppUpdates(state: AppStateHub, channelPath: string): void {
   settingsPath = channelPath;
   updateState = { ...updateState, channel: loadChannel(channelPath) ?? updateState.channel };
-  publish = (value) => void Effect.runFork(state.upsert(appUpdate, { id: "app_update", value }));
+  publish = (value) => state.set("appUpdate", value);
   publish(updateState);
 }

@@ -20,7 +20,7 @@ import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 export type AlbumListSection = {
   id: string;
   title: string;
-  albums: Album[];
+  albums: ReadonlyArray<Album>;
   /** Leaves the artist off the tiles, for a section that is all one artist's albums. */
   hideArtist?: boolean;
 };

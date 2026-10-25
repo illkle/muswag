@@ -4,7 +4,8 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { getDefaultMpvIpcPath } from "./player";
 import { startPlayer, type PlayerHandle } from "./player/ipc";
-import { startStateMirror } from "./state-mirror";
+import { AppStateHub } from "./app-state";
+import { serveRenderers } from "./renderers";
 import { LibraryDatabaseError, resetLibrary, startApp, type AppOptions } from "./app";
 import { guardIpc } from "./app-page";
 import { appUpdates, initializeAutoUpdater, publishAppUpdates } from "./app-updater";
@@ -16,7 +17,7 @@ import { APP_PAGE_URL, createWindow } from "./window";
 import { Effect } from "effect";
 
 let player: PlayerHandle | undefined;
-let stateMirror: Awaited<ReturnType<typeof startStateMirror>> | undefined;
+let renderers: ReturnType<typeof serveRenderers> | undefined;
 let mainApp: Awaited<ReturnType<typeof startApp>> | undefined;
 
 // A second instance would open the same library and fight the first over the queue. Development
@@ -87,14 +88,15 @@ app.whenReady().then(async () => {
   const devBridgePort = Number(process.env.MUSWAG_DEV_BRIDGE_PORT);
   if (is.dev && devBridgePort) startDevBridge({ ipcMain: appIpc, port: devBridgePort, serveCover });
 
-  stateMirror = await startStateMirror(appIpc);
-  publishAppUpdates(stateMirror.mirror, join(userDataPath, "update-settings.json"));
+  const appState = new AppStateHub();
+  renderers = serveRenderers(appIpc, appState);
+  publishAppUpdates(appState, join(userDataPath, "update-settings.json"));
   player = startPlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     settingsPath: join(userDataPath, "player-settings.json"),
-    stateMirror: stateMirror.mirror,
+    appState,
   });
-  // The library is migrated and mirrored before any window can ask for it.
+  // The library is migrated before any window can ask for it.
   mainApp = await startAppOrReset({
     // A development checkout keeps its library next to itself, so several can run side by side.
     databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
@@ -103,7 +105,8 @@ app.whenReady().then(async () => {
     ipcMain: appIpc,
     player,
     updates: appUpdates,
-    stateMirror: stateMirror.mirror,
+    appState,
+    renderers,
     onWindowFocus: (listener) => {
       app.on("browser-window-focus", listener);
       return () => app.off("browser-window-focus", listener);
@@ -141,7 +144,7 @@ app.on("before-quit", (event) => {
         // anything before it failed or ran into the deadline.
         await player?.shutdown().catch((cause) => console.error("Failed to shut the player down", cause));
         await mainApp?.dispose();
-        await stateMirror?.dispose();
+        renderers?.dispose();
       });
     }).pipe(
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.logWarning("Desktop shutdown deadline reached") }),

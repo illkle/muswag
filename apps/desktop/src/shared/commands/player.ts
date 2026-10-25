@@ -1,11 +1,10 @@
 import { Schema, type Redacted } from "effect";
 import type { PlaybackItem } from "@muswag/model";
-import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 
 /**
  * The main-process player as the rest of the app talks to it. Only what is decoded on arrival is a
- * schema: the commands a renderer may send, and the parts of the state that reach renderers in the
- * tables of `state/player.ts`. What stays inside main is a plain type.
+ * schema: the commands a renderer may send, and the parts of the state that reach renderers as
+ * the values of `state/player.ts`. What stays inside main is a plain type.
  */
 
 const Seconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
@@ -69,10 +68,10 @@ export type PlayerCommand =
 export type PlayerCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: Redacted.Redacted<string> };
 
 /**
- * How a command went, with where the state mirror stood once it was handled; renderers await that
- * position to see its outcome. The message of a failure is also what the player's state says went wrong.
+ * How a command went, and the version the app state had once it was handled, which renderers wait for
+ * to see its outcome. The message of a failure is also what the player's state says went wrong.
  */
-export type CommandResult = { readonly ok: true; readonly position: MirrorPosition } | { readonly ok: false; readonly message: string; readonly position: MirrorPosition };
+export type CommandResult = { readonly ok: true; readonly version: number } | { readonly ok: false; readonly message: string; readonly version: number };
 
 // ---- State ----
 

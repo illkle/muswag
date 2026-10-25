@@ -1,6 +1,7 @@
 export * from "./app.js";
 export * from "./api/subsonic-api.js";
 export * from "./covers/cover-manager.js";
+export * from "./db/changes.js";
 export * from "./db/database.js";
 export * from "./library/library-sync.js";
 export * from "./playlists/commands.js";

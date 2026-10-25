@@ -9,22 +9,24 @@ import { DatabaseSync } from "node:sqlite";
 import type { IpcMain } from "electron";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { AppStateHub } from "../app-state";
 import type { PlayerHandle } from "../player/ipc";
-import { startStateMirror } from "../state-mirror";
+import { serveRenderers } from "../renderers";
 
 const { LibraryDatabaseError, resetLibrary, startApp } = await import("./index");
 
 let userDataPath: string;
 let databasePath: string;
-let stateMirror: Awaited<ReturnType<typeof startStateMirror>>;
+let appState: AppStateHub;
+let renderers: ReturnType<typeof serveRenderers>;
 
 const handlers = new Map<string, (event: unknown, ...args: Array<unknown>) => unknown>();
 const ipcMain = { handle: (channel: string, listener: never) => void handlers.set(channel, listener), removeHandler: (channel: string) => void handlers.delete(channel) } as unknown as IpcMain;
 const executed: unknown[] = [];
-const position = { epoch: 1, seq: 0 };
+
 // A player that never answers, but for the commands it is given: nothing here plays.
 const player = {
-  execute: async (command: unknown) => (executed.push(command), { ok: true, position }),
+  execute: async (command: unknown) => (executed.push(command), { ok: true, version: 0 }),
   locate: async () => null,
   setCredentials: () => new Promise(() => {}),
   snapshot: () => new Promise(() => {}),
@@ -33,16 +35,17 @@ const player = {
 let updateChecks = 0;
 const updates = { check: async () => void updateChecks++, install: () => {}, setChannel: async () => {} };
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
-const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, stateMirror: stateMirror.mirror, searchWorkerPath });
+const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, appState, renderers, searchWorkerPath });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));
   databasePath = join(userDataPath, "library.db");
-  stateMirror = await startStateMirror(ipcMain);
+  appState = new AppStateHub();
+  renderers = serveRenderers(ipcMain, appState);
 });
 
 afterEach(async () => {
-  await stateMirror.dispose();
+  renderers.dispose();
   await rm(userDataPath, { recursive: true, force: true });
 });
 
@@ -84,6 +87,9 @@ describe("startApp", () => {
     expect(existsSync(join(userDataPath, "covers"))).toBe(false);
 
     const app = await startApp(options());
+    // Renderers see the queue and the session from the start.
+    expect(appState.get("queue")).toEqual({ nowPlaying: null, userQueue: [], source: null });
+    expect(appState.get("auth")).toBeDefined();
     // No session yet, so there is no cover to give.
     await expect(app.coverPath({ type: "album", id: "1" })).rejects.toMatchObject({ _tag: "NotAuthenticated" });
     await app.dispose();
@@ -95,7 +101,7 @@ describe("app:command", () => {
     const app = await startApp(options());
     const command = (name: unknown, args: unknown) => handlers.get("app:command")!({}, name, args);
     try {
-      expect(await command("player:execute", [{ _tag: "Seek", seconds: 12 }])).toEqual({ ok: true, value: { ok: true, position } });
+      expect(await command("player:execute", [{ _tag: "Seek", seconds: 12 }])).toEqual({ ok: true, value: { ok: true, version: 0 } });
       expect(executed).toEqual([{ _tag: "Seek", seconds: 12 }]);
       expect(await command("player:locate", [])).toEqual({ ok: true, value: null });
       expect(await command("appUpdate:check", [])).toEqual({ ok: true, value: undefined });

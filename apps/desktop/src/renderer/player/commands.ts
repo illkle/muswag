@@ -1,5 +1,5 @@
 import { appCommand } from "#/data/app-command";
-import { playerState } from "#/data/state";
+import { untilAppStateVersion } from "#/data/app-state";
 import type { CommandResult, MpvInstallMethod, RendererCommand } from "#shared/commands/player";
 
 /** How long a command waits for its outcome to show up in the state before it returns anyway. */
@@ -11,7 +11,7 @@ const SETTLE_TIMEOUT_MS = 5_000;
  */
 async function settle(result: CommandResult): Promise<void> {
   // The state catches up regardless; waiting only keeps the reply from arriving ahead of it.
-  await playerState.player.utils.awaitPosition(result.position, SETTLE_TIMEOUT_MS).catch(() => undefined);
+  await untilAppStateVersion(result.version, SETTLE_TIMEOUT_MS);
   if (!result.ok) throw new Error(result.message);
 }
 

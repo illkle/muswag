@@ -28,7 +28,7 @@ export function createQueue(options: { player: PlayerHandle; library: SourceDb; 
       subscribe: (listener) => player.subscribe((snapshot) => listener(runtimeView(snapshot))),
     },
     sources: createQueueSources(options.library),
-    // Stored in mirrored tables, which is also how renderers see the queue.
+    // Stored in the queue tables, which the queue restores from after a restart.
     storage: new DbQueueStorage(options.tables),
   });
 }

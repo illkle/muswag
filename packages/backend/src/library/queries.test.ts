@@ -13,11 +13,11 @@ import {
   type QueueSourceRef,
   type SourceWindow,
 } from "@muswag/model";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { describe, expect } from "vitest";
 
+import { LibraryChanges } from "../db/changes.js";
 import { write } from "../db/database.js";
 import { PlaylistCommands, PlaylistEdits } from "../playlists/commands.js";
 import { apiAlbum, apiSong, seed, TestDatabase } from "../test/index.js";
@@ -344,7 +344,7 @@ describe("LibraryQueries songs list", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("gives songs as renderers mirror them, and no page around a song the library no longer has", () =>
+  it.effect("gives songs as renderers get them, and no page around a song the library no longer has", () =>
     Effect.gen(function* () {
       yield* seed({ songs: [apiSong("a", "album", { path: "music/a.flac" })] });
 
@@ -417,11 +417,103 @@ describe("LibraryQueries albums list", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("finds the artists with an album of their own, once each", () =>
+  it.effect("finds the artists with an album of their own, once each, by name with numbers by their value", () =>
     Effect.gen(function* () {
-      yield* seed({ albums: [apiAlbum("one", { artistId: "a" }), apiAlbum("two", { artistId: "a" }), apiAlbum("three", { artistId: "b" }), apiAlbum("various")] });
+      yield* seed({
+        albums: [apiAlbum("one", { artistId: "a" }), apiAlbum("two", { artistId: "a" }), apiAlbum("three", { artistId: "b" }), apiAlbum("four", { artistId: "c" }), apiAlbum("various")],
+        artists: [
+          { id: "a", name: "band 10" },
+          { id: "b", name: "Band 9" },
+          { id: "c", name: "Ärzte" },
+          { id: "credited", name: "Credited only" },
+        ],
+      });
 
-      expect([...(yield* LibraryQueries.artistsWithAlbums())].sort()).toEqual(["a", "b"]);
+      const listed = yield* LibraryQueries.artistsWithAlbums();
+      expect(listed.map(({ id }) => id)).toEqual(["c", "b", "a"]);
+      expect(listed[0]).not.toHaveProperty("coverArtPath");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads an album with its songs in the order it plays in, and nothing for one it does not have", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [apiAlbum("album"), apiAlbum("other")],
+        songs: [apiSong("b", "album", { discNumber: 1, track: 2 }), apiSong("c", "album", { discNumber: 2, track: 1 }), apiSong("a", "album", { discNumber: 1, track: 1 }), apiSong("x", "other")],
+      });
+
+      const { album, songs } = yield* LibraryQueries.album("album");
+      expect(album).toMatchObject({ id: "album", name: "Album album" });
+      expect(album).not.toHaveProperty("coverArtPath");
+      expect(songs.map(({ id }) => id)).toEqual(["a", "b", "c"]);
+      expect(songs[0]).not.toHaveProperty("path");
+      expect(yield* LibraryQueries.album("gone")).toEqual({ album: null, songs: [] });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads an artist's albums newest first and their songs in the order the artist plays in", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [
+          apiAlbum("old", { artistId: "artist", year: 1990 }),
+          apiAlbum("undated", { artistId: "artist" }),
+          apiAlbum("new", { artistId: "artist", year: 2020 }),
+          apiAlbum("theirs", { artistId: "else" }),
+        ],
+        artists: [{ id: "artist", name: "Artist" }],
+        songs: [apiSong("old-1", "old", { track: 1 }), apiSong("new-2", "new", { track: 2 }), apiSong("undated-1", "undated"), apiSong("new-1", "new", { track: 1 }), apiSong("else-1", "theirs")],
+      });
+
+      const discography = yield* LibraryQueries.discography("artist");
+      expect(discography.albums.map(({ id }) => id)).toEqual(["new", "old", "undated"]);
+      expect(discography.songs.map(({ id }) => id)).toEqual(["new-1", "new-2", "old-1", "undated-1"]);
+      // What playback goes through is the same order.
+      const window = yield* windowAt({ type: "artist", artistId: "artist" }, artistOccurrenceKey("artist", "new-1"));
+      expect(idsOf(window.next)).toEqual(["new-2", "old-1", "undated-1"]);
+
+      const artist = yield* LibraryQueries.artist("artist");
+      expect(artist.artist).toMatchObject({ id: "artist", name: "Artist" });
+      expect(artist.albums.map(({ id }) => id)).toEqual(["new", "old", "undated"]);
+      expect((yield* LibraryQueries.artist("credited")).artist).toBeNull();
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads albums and songs by id, leaving out those the library does not have", () =>
+    Effect.gen(function* () {
+      yield* seed({ albums: [apiAlbum("a", { year: 2000 }), apiAlbum("b", { year: 2010 })], songs: [apiSong("one", "a"), apiSong("two", "b")] });
+
+      expect((yield* LibraryQueries.albumsByIds(["a", "gone", "b", "a"])).map(({ id }) => id)).toEqual(["b", "a"]);
+      expect((yield* LibraryQueries.librarySongsByIds(["two", "gone", "one"])).map(({ id }) => id).sort()).toEqual(["one", "two"]);
+      expect(yield* LibraryQueries.albumsByIds([])).toEqual([]);
+      // More ids than SQLite takes parameters in a statement.
+      expect(yield* LibraryQueries.librarySongsByIds(Array.from({ length: 40_000 }, (_, index) => `missing-${index}`))).toEqual([]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads a playlist with the songs of its entries that the library has", () =>
+    Effect.gen(function* () {
+      yield* seed({ songs: [apiSong("one", "album"), apiSong("two", "album")] });
+      const playlist = yield* (yield* PlaylistCommands).create({ name: "Mix", songIds: ["two", "gone", "one", "two"] });
+
+      const detail = yield* LibraryQueries.playlist(playlist.id);
+      expect(detail.playlist?.local?.entries.map(({ songId }) => songId)).toEqual(["two", "gone", "one", "two"]);
+      expect(detail.songs.map(({ id }) => id).sort()).toEqual(["one", "two"]);
+      expect(detail.songs[0]).not.toHaveProperty("path");
+      expect(yield* LibraryQueries.playlist("missing")).toEqual({ playlist: null, songs: [] });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("names the album, artist or playlist a queue plays from", () =>
+    Effect.gen(function* () {
+      yield* seed({ albums: [apiAlbum("album")], artists: [{ id: "artist", name: "The Artist" }] });
+      const playlist = yield* (yield* PlaylistCommands).create({ name: "Mix" });
+
+      expect(yield* LibraryQueries.sourceName({ type: "album", albumId: "album" })).toBe("Album album");
+      expect(yield* LibraryQueries.sourceName({ type: "artist", artistId: "artist" })).toBe("The Artist");
+      expect(yield* LibraryQueries.sourceName({ type: "playlist", playlistId: playlist.id })).toBe("Mix");
+      expect(yield* LibraryQueries.sourceName({ type: "album", albumId: "gone" })).toBeNull();
+      expect(yield* LibraryQueries.sourceName({ type: "library", sort: "title" })).toBeNull();
+      expect((yield* LibraryQueries.playlists()).map(({ local }) => local?.name)).toEqual(["Mix"]);
     }).pipe(Effect.provide(layer)),
   );
 
@@ -452,11 +544,10 @@ describe("LibraryQueries albums list", () => {
 });
 
 describe("LibraryQueries queue storage", () => {
-  it.effect("keeps the resume position out of the mirrored rows, so saving it alone sends renderers nothing", () =>
+  it.effect("stores the queue and where it resumes, which announces nothing", () =>
     Effect.gen(function* () {
-      const mirror = yield* SqliteMirror;
-      const mirrored: string[] = [];
-      mirror.subscribe((batch) => mirrored.push(...batch.changes.map(({ table }) => table)));
+      const announced: string[] = [];
+      (yield* LibraryChanges).subscribe((changes) => announced.push(...changes.map(({ table }) => table)));
       const track = songRow({ id: "a", title: "A" });
 
       yield* LibraryQueries.writeQueue({
@@ -465,13 +556,9 @@ describe("LibraryQueries queue storage", () => {
         state: { id: 1, nowPlayingKey: "now", nowPlayingOrigin: "user", source: null },
         resumePositionSeconds: 12,
       });
-      expect(mirrored.sort()).toEqual(["queue_items", "queue_state"]);
       expect(yield* LibraryQueries.loadQueue).toMatchObject({ state: { nowPlayingKey: "now" }, items: [{ key: "now" }], resumePositionSeconds: 12 });
 
-      mirrored.length = 0;
       yield* LibraryQueries.writeQueue({ upsert: [], remove: [], state: null, resumePositionSeconds: 30.5 });
-      yield* mirror.flush;
-      expect(mirrored).toEqual([]);
       expect((yield* LibraryQueries.loadQueue).resumePositionSeconds).toBe(30.5);
 
       // A change of the queue alone leaves the position where it was.
@@ -481,6 +568,7 @@ describe("LibraryQueries queue storage", () => {
 
       yield* LibraryQueries.clearQueue;
       expect(yield* LibraryQueries.loadQueue).toEqual({ state: null, items: [], resumePositionSeconds: 0 });
+      expect(announced).toEqual([]);
     }).pipe(Effect.provide(layer)),
   );
 });

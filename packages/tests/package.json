@@ -17,8 +17,6 @@
     "@effect/sql-sqlite-node": "catalog:",
     "@muswag/backend": "workspace:*",
     "@muswag/model": "workspace:*",
-    "@muswag/tanstack-db-mirror": "workspace:*",
-    "@tanstack/db": "catalog:",
     "effect": "catalog:",
     "testcontainers": "^12.2.1",
     "vitest": "catalog:"

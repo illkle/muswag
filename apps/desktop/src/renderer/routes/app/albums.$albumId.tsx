@@ -4,22 +4,24 @@ import { DiscIcon, PlayIcon, WarningIcon } from "@phosphor-icons/react";
 import { PageState } from "#/components/page-state";
 import { Button } from "#/components/ui/button";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
-import { db } from "#/data/library";
+import { useMainRead } from "#/data/main-read";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
+import { LibraryActions } from "#/library/actions";
 import { useAlbumRefresh } from "#/library/page-refresh";
 import { creditedAsTheirAlbums, discHeading } from "#/library/album-tracks";
 
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
-import { eq, useLiveQuery } from "@tanstack/react-db";
 import { albumColumns, albumColumnsWithoutArtist } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
 import { TrackMenuAddItems } from "#/components/track-list/track-menu";
 import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
-import { ALBUM_ORDER, albumOccurrenceKey } from "@muswag/model";
+import { albumOccurrenceKey, type LibrarySong } from "@muswag/model";
 import { useMemo } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+
+const NO_SONGS: ReadonlyArray<LibrarySong> = [];
 
 export const Route = createFileRoute("/app/albums/$albumId")({
   component: RouteComponent,
@@ -29,51 +31,35 @@ function RouteComponent() {
   const { albumId } = Route.useParams();
   useAlbumRefresh(albumId);
 
-  // The keys name what each query reads, so a render builds no query unless the album is another one.
-  const albumQuery = useLiveQuery({
-    queryKey: ["album", albumId],
-    query: (q) =>
-      q
-        .from({ album: db.albums })
-        .where(({ album }) => eq(album.id, albumId))
-        .findOne(),
-  });
-
-  const songsQuery = useLiveQuery({
-    queryKey: ["album-songs", albumId],
-    query: (q) =>
-      q
-        .from({ song: db.songs })
-        .where(({ song }) => eq(song.albumId, albumId))
-        // The order main plays the album in. Nulls first is what SQLite does too.
-        .orderBy(({ song }) => ALBUM_ORDER.map((column) => song[column]), { stringSort: "lexical", nulls: "first" }),
-  });
+  // The album with its songs, in the order main plays the album in.
+  const albumQuery = useMainRead({ queryKey: ["album", albumId], tables: ["albums", "songs"], read: () => LibraryActions.album(albumId) });
+  const songs = albumQuery.data?.songs ?? NO_SONGS;
 
   const playingKey = usePlayingKey((ref) => ref.type === "album" && ref.albumId === albumId);
 
-  const discTitles = albumQuery.data?.discTitles;
+  const discTitles = albumQuery.data?.album?.discTitles;
   const items = useMemo(
     (): TrackListItem[] =>
-      (songsQuery.data ?? []).flatMap((song, index, songs): TrackListItem[] => {
+      songs.flatMap((song, index, songs): TrackListItem[] => {
         const track: TrackListItem = { type: "track", key: albumOccurrenceKey(albumId, song.id), song };
         const heading = discHeading({ id: albumId, discTitles }, song, songs[index - 1]);
         return heading ? [heading, track] : [track];
       }),
-    [albumId, discTitles, songsQuery.data],
+    [albumId, discTitles, songs],
   );
 
-  if (albumQuery.isLoading || songsQuery.isLoading) return <PageState tone="quiet" title="Loading album…" />;
-  if (albumQuery.isError || songsQuery.isError) {
+  if (albumQuery.isPending) return <PageState tone="quiet" title="Loading album…" />;
+  if (albumQuery.isError) {
     return <PageState tone="error" icon={<WarningIcon />} title="Album unavailable" description="The album could not be read from the local database." />;
   }
-  if (!albumQuery.data) return <PageState icon={<DiscIcon />} title="Album not found" description="This album is not in the synced local library." />;
+  if (!albumQuery.data.album) return <PageState icon={<DiscIcon />} title="Album not found" description="This album is not in the synced local library." />;
 
-  const album = albumQuery.data;
+  const album = albumQuery.data.album;
   const { genres } = album;
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
   const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
-  const columns = creditedAsTheirAlbums(songsQuery.data ?? [], [album]) ? albumColumnsWithoutArtist : albumColumns;
+  const columns = creditedAsTheirAlbums(songs, [album]) ? albumColumnsWithoutArtist : albumColumns;
   const firstKey = items.find(isTrackItem)?.key;
 
   const playFrom = (key: string) => void QueueActions.playSource({ type: "album", albumId }, key).catch(failureNotice("The album could not be played."));

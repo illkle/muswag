@@ -7,6 +7,8 @@ import {
   artists,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
+  MAIN_ONLY_ALBUM_COLUMNS,
+  MAIN_ONLY_ARTIST_COLUMNS,
   MAIN_ONLY_SONG_COLUMNS,
   playlistOccurrenceKey,
   playlists,
@@ -15,9 +17,14 @@ import {
   queueState,
   songs,
   sortKey,
+  type AlbumDetail,
   type AlbumPage,
   type AlbumPageRequest,
   type ArtistAppearances,
+  type ArtistDetail,
+  type Discography,
+  type PlaylistDetail,
+  type PlaylistRow,
   type LibrarySort,
   type QueueItemRow,
   type QueueSourceRef,
@@ -32,9 +39,10 @@ import {
   type SourceWindow,
 } from "@muswag/model";
 import { asc, desc, eq, getTableColumns, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
-import { Db, position, write, type Database } from "../db/database.js";
+import { Db, type Database } from "../db/database.js";
 import { chunks, STATEMENT_IDS } from "../db/upsert.js";
 
 /** The columns an order of the library sorts by, all ascending. */
@@ -55,6 +63,11 @@ const placeOf = (db: Pick<Database, "select">, sort: LibrarySort, id: string) =>
 const beside = (sort: LibrarySort, operator: "<" | ">", place: { readonly key: string; readonly id: string }) =>
   sql`(${sql.join(orderColumns(sort), sql`, `)}) ${sql.raw(operator)} (${place.key}, ${place.id})`;
 
+/** An artist's albums in `ARTIST_ALBUM_ORDER`. SQLite puts nulls first going up and last going down, as the order asks. */
+const artistAlbumOrder = () => ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column]));
+/** An album's songs in `ALBUM_ORDER`. */
+const albumSongOrder = () => ALBUM_ORDER.map((column) => asc(songs[column]));
+
 // ---- Queue sources ----
 // A source is read as a whole in one transaction: where its cursor is and the occurrences around it
 // come from the same contents, so they always agree.
@@ -68,7 +81,7 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
     .select()
     .from(songs)
     .where(eq(songs.albumId, albumId))
-    .orderBy(...ALBUM_ORDER.map((column) => asc(songs[column])))
+    .orderBy(...albumSongOrder())
     .pipe(
       Effect.map((rows) => {
         const items = rows.map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
@@ -83,11 +96,7 @@ const openArtist = (db: Reads, artistId: string, key: string | null) =>
     .from(songs)
     .innerJoin(albums, eq(albums.id, songs.albumId))
     .where(eq(albums.artistId, artistId))
-    .orderBy(
-      // SQLite puts nulls first going up and last going down, as the page asks TanStack DB to.
-      ...ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column])),
-      ...ALBUM_ORDER.map((column) => asc(songs[column])),
-    )
+    .orderBy(...artistAlbumOrder(), ...albumSongOrder())
     .pipe(
       Effect.map((rows) => {
         const items = rows.map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
@@ -163,11 +172,40 @@ const openSource = (db: Reads, ref: QueueSourceRef, key: string | null) => {
 };
 
 const MAIN_ONLY = new Set<string>(MAIN_ONLY_SONG_COLUMNS);
-/** The columns of a song that renderers mirror. */
+/** The columns of a song that renderers get. */
 const LIBRARY_SONG_COLUMNS = Object.fromEntries(Object.entries(getTableColumns(songs)).filter(([name]) => !MAIN_ONLY.has(name))) as Omit<
   (typeof songs)["_"]["columns"],
   (typeof MAIN_ONLY_SONG_COLUMNS)[number]
 >;
+
+const MAIN_ONLY_ALBUM = new Set<string>(MAIN_ONLY_ALBUM_COLUMNS);
+/** The columns of an album that renderers get. */
+const LIBRARY_ALBUM_COLUMNS = Object.fromEntries(Object.entries(getTableColumns(albums)).filter(([name]) => !MAIN_ONLY_ALBUM.has(name))) as Omit<
+  (typeof albums)["_"]["columns"],
+  (typeof MAIN_ONLY_ALBUM_COLUMNS)[number]
+>;
+
+const MAIN_ONLY_ARTIST = new Set<string>(MAIN_ONLY_ARTIST_COLUMNS);
+/** The columns of an artist that renderers get. */
+const LIBRARY_ARTIST_COLUMNS = Object.fromEntries(Object.entries(getTableColumns(artists)).filter(([name]) => !MAIN_ONLY_ARTIST.has(name))) as Omit<
+  (typeof artists)["_"]["columns"],
+  (typeof MAIN_ONLY_ARTIST_COLUMNS)[number]
+>;
+
+/** `column IN` the values of `ids`, as one parameter however many there are: SQLite caps the parameters of a statement. */
+const inIds = (column: SQLiteColumn, ids: ReadonlyArray<string>) => sql`${column} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`;
+
+/** The songs of `ids` that the library has, as renderers get them, in no particular order. */
+const librarySongsIn = (db: Pick<Database, "select">, ids: ReadonlyArray<string>) =>
+  ids.length === 0
+    ? Effect.succeed([])
+    : db
+        .select(LIBRARY_SONG_COLUMNS)
+        .from(songs)
+        .where(inIds(songs.id, [...new Set(ids)]));
+
+/** Artists' names as the artists page lists them: by the letters, whatever their case or accents, and numbers by their value. */
+const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 /** Ranges in order, those that overlap or meet made one, empty ones left out. */
 const merged = (ranges: ReadonlyArray<SongRange>) =>
@@ -181,7 +219,7 @@ const merged = (ranges: ReadonlyArray<SongRange>) =>
       return result;
     }, []);
 
-/** Reads main itself needs, such as the playback queue's sources, and the songs and albums lists, which renderers read by the page. */
+/** Reads main itself needs, such as the playback queue's sources, and what renderers read through main's commands. */
 export const LibraryQueries = {
   songsByIds: (ids: ReadonlyArray<string>) =>
     Db.use((db) =>
@@ -194,7 +232,7 @@ export const LibraryQueries = {
     ).pipe(Effect.map((pages) => pages.flat())),
 
   /**
-   * A page of the songs list in an order, songs as renderers mirror them, and how many songs there are
+   * A page of the songs list in an order, songs as renderers get them, and how many songs there are
    * when `withTotal`; both from one transaction, so they agree. A page after or before a song is found
    * from where that song is through the order's index, and is `null` when the library no longer has it.
    */
@@ -269,11 +307,127 @@ export const LibraryQueries = {
       ),
     ),
 
-  /** The ids of the artists with an album of their own, which are those the artists page lists. */
+  /** The artists with an album of their own, which are those the artists page lists, by name. */
   artistsWithAlbums: () =>
-    Db.use((db) => db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId))).pipe(
-      Effect.map((rows) => rows.flatMap(({ artistId }) => (artistId === null ? [] : [artistId]))),
+    Db.use((db) =>
+      db
+        .select(LIBRARY_ARTIST_COLUMNS)
+        .from(artists)
+        .where(inArray(artists.id, db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId)))),
+    ).pipe(Effect.map((rows) => rows.sort((left, right) => byName.compare(left.name, right.name)))),
+
+  /** An album and its songs in `ALBUM_ORDER`, the order it plays in, from one transaction. */
+  album: (albumId: string) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.all({
+          album: tx
+            .select(LIBRARY_ALBUM_COLUMNS)
+            .from(albums)
+            .where(eq(albums.id, albumId))
+            .pipe(Effect.map(([album]) => album ?? null)),
+          songs: tx
+            .select(LIBRARY_SONG_COLUMNS)
+            .from(songs)
+            .where(eq(songs.albumId, albumId))
+            .orderBy(...albumSongOrder()),
+        }),
+      ),
+    ).pipe(Effect.map((detail): AlbumDetail => detail)),
+
+  /** An artist's row and its own albums in `ARTIST_ALBUM_ORDER`, from one transaction. */
+  artist: (artistId: string) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.all({
+          artist: tx
+            .select(LIBRARY_ARTIST_COLUMNS)
+            .from(artists)
+            .where(eq(artists.id, artistId))
+            .pipe(Effect.map(([artist]) => artist ?? null)),
+          albums: tx
+            .select(LIBRARY_ALBUM_COLUMNS)
+            .from(albums)
+            .where(eq(albums.artistId, artistId))
+            .orderBy(...artistAlbumOrder()),
+        }),
+      ),
+    ).pipe(Effect.map((detail): ArtistDetail => detail)),
+
+  /** An artist's albums and their songs album after album, in the order the artist plays in (`openArtist`), from one transaction. */
+  discography: (artistId: string) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.all({
+          albums: tx
+            .select(LIBRARY_ALBUM_COLUMNS)
+            .from(albums)
+            .where(eq(albums.artistId, artistId))
+            .orderBy(...artistAlbumOrder()),
+          songs: tx
+            .select(LIBRARY_SONG_COLUMNS)
+            .from(songs)
+            .innerJoin(albums, eq(albums.id, songs.albumId))
+            .where(eq(albums.artistId, artistId))
+            .orderBy(...artistAlbumOrder(), ...albumSongOrder()),
+        }),
+      ),
+    ).pipe(Effect.map((discography): Discography => discography)),
+
+  /** The albums of `ids` that the library has, in `ARTIST_ALBUM_ORDER`. */
+  albumsByIds: (ids: ReadonlyArray<string>) =>
+    Db.use((db) =>
+      db
+        .select(LIBRARY_ALBUM_COLUMNS)
+        .from(albums)
+        .where(inIds(albums.id, [...new Set(ids)]))
+        .orderBy(...artistAlbumOrder()),
     ),
+
+  /** The songs of `ids` that the library has, as renderers get them, in no particular order. */
+  librarySongsByIds: (ids: ReadonlyArray<string>) => Db.use((db) => librarySongsIn(db, ids)),
+
+  /** A playlist as stored and the songs of its entries that the library has, from one transaction. */
+  playlist: (playlistId: string) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
+        Effect.gen(function* () {
+          const [playlist = null] = yield* tx.select().from(playlists).where(eq(playlists.id, playlistId));
+          const detail: PlaylistDetail = { playlist, songs: yield* librarySongsIn(tx, playlist?.local?.entries.map(({ songId }) => songId) ?? []) };
+          return detail;
+        }),
+      ),
+    ),
+
+  /** Every playlist, the ones awaiting deletion on the server among them. */
+  playlists: () => Db.use((db) => db.select().from(playlists)).pipe(Effect.map((rows): PlaylistRow[] => rows)),
+
+  /** What the album, artist or playlist `ref` is called; `null` for the library, or for one the library does not have. */
+  sourceName: (ref: QueueSourceRef) =>
+    Db.use((db): Effect.Effect<string | null, unknown> => {
+      switch (ref.type) {
+        case "album":
+          return db
+            .select({ name: albums.name })
+            .from(albums)
+            .where(eq(albums.id, ref.albumId))
+            .pipe(Effect.map(([row]) => row?.name ?? null));
+        case "artist":
+          return db
+            .select({ name: artists.name })
+            .from(artists)
+            .where(eq(artists.id, ref.artistId))
+            .pipe(Effect.map(([row]) => row?.name ?? null));
+        case "playlist":
+          return db
+            .select({ local: playlists.local })
+            .from(playlists)
+            .where(eq(playlists.id, ref.playlistId))
+            .pipe(Effect.map(([row]) => row?.local?.name ?? null));
+        case "library":
+          return Effect.succeed(null);
+      }
+    }),
 
   /** The cover art ids of the albums in `ids` that the library has, which a song shows its album's cover by. */
   albumCoverArts: (ids: ReadonlyArray<string>) =>
@@ -308,7 +462,7 @@ export const LibraryQueries = {
       }),
     ),
 
-  /** The rows of what a search found, in the order it found them, leaving out any that have gone since. Songs come as renderers mirror them. */
+  /** The rows of what a search found, in the order it found them, leaving out any that have gone since. Songs come as renderers get them. */
   searchResults: (hits: ReadonlyArray<SearchHit>) =>
     Db.use((db) => {
       const idsOf = (type: SearchHit["type"]) => hits.flatMap((hit) => (hit.type === type ? [hit.id] : []));
@@ -403,28 +557,24 @@ export const LibraryQueries = {
     }),
   ),
 
-  /**
-   * Applies a change to the stored queue in one write; `null` leaves the state row or the resume
-   * position as it is. The resume position is in a table renderers do not mirror, so a change of it
-   * alone sends them nothing.
-   */
+  /** Applies a change to the stored queue in one transaction; `null` leaves the state row or the resume position as it is. The queue's tables are not announced. */
   writeQueue: (change: { readonly upsert: ReadonlyArray<QueueItemRow>; readonly remove: ReadonlyArray<string>; readonly state: QueueStateRow | null; readonly resumePositionSeconds: number | null }) =>
-    write(
-      Db.use((db) =>
+    Db.use((db) =>
+      db.transaction((tx) =>
         Effect.gen(function* () {
-          for (const chunk of chunks(change.remove, STATEMENT_IDS)) yield* db.delete(queueItems).where(inArray(queueItems.key, [...chunk]));
+          for (const chunk of chunks(change.remove, STATEMENT_IDS)) yield* tx.delete(queueItems).where(inArray(queueItems.key, [...chunk]));
           for (const row of change.upsert) {
-            yield* db
+            yield* tx
               .insert(queueItems)
               .values(row)
               .onConflictDoUpdate({ target: queueItems.key, set: { list: row.list, position: row.position, track: row.track } });
           }
-          if (change.state) yield* db.insert(queueState).values(change.state).onConflictDoUpdate({ target: queueState.id, set: change.state });
+          if (change.state) yield* tx.insert(queueState).values(change.state).onConflictDoUpdate({ target: queueState.id, set: change.state });
           const positionSeconds = change.resumePositionSeconds;
-          if (positionSeconds !== null) yield* db.insert(queueResume).values({ id: 1, positionSeconds }).onConflictDoUpdate({ target: queueResume.id, set: { positionSeconds } });
+          if (positionSeconds !== null) yield* tx.insert(queueResume).values({ id: 1, positionSeconds }).onConflictDoUpdate({ target: queueResume.id, set: { positionSeconds } });
         }),
-      ).pipe(Effect.andThen(position)),
+      ),
     ),
 
-  clearQueue: write(Db.use((db) => Effect.all([db.delete(queueItems), db.delete(queueState), db.delete(queueResume)], { discard: true }))),
+  clearQueue: Db.use((db) => db.transaction((tx) => Effect.all([tx.delete(queueItems), tx.delete(queueState), tx.delete(queueResume)], { discard: true }))),
 };

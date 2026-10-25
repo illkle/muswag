@@ -2,10 +2,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppUpdateState } from "#shared/state/app-update";
+import { AppStateHub } from "./app-state";
 
 const electron = vi.hoisted(() => ({ version: "1.2.3" }));
 
@@ -40,13 +40,16 @@ const updater = vi.hoisted(() => {
 
 vi.mock("electron-updater", () => ({ default: { autoUpdater: updater } }));
 
-/** Loads the module afresh, as each run of the app does, and publishes to a stand-in for the mirror. */
+/** Loads the module afresh, as each run of the app does, and publishes to a hub of its own. */
 async function start(settingsPath: string) {
   vi.resetModules();
   const { appUpdates, initializeAutoUpdater, publishAppUpdates } = await import("./app-updater");
   const published: AppUpdateState[] = [];
-  const state = { upsert: (_table: unknown, row: { value: AppUpdateState }) => Effect.sync(() => void published.push(row.value)) };
-  publishAppUpdates(state as never, settingsPath);
+  const state = new AppStateHub();
+  state.subscribe((update) => {
+    if (update.name === "appUpdate") published.push(update.value);
+  });
+  publishAppUpdates(state, settingsPath);
   return {
     initializeAutoUpdater,
     latest: () => published.at(-1)!,

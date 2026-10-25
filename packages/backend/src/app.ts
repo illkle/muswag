@@ -14,7 +14,7 @@ export interface BackendLiveOptions {
 
 /**
  * Everything main runs on top of the library database: the session with its sync services, playlist
- * commands, and the mirror server that renderers connect to. Needs `MiniFs`, `Path`, `HttpClient`
+ * commands, and the announcements of what writes to the library changed. Needs `MiniFs`, `Path`, `HttpClient`
  * and `Crypto` from the platform.
  */
 export const BackendLive = (options: BackendLiveOptions) =>

@@ -1,10 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { mirrorClient } from "#/data/library";
 import { PagedWindow, type PagedWindowSource, type PagedWindowView } from "#/library/paged-window";
-
-/** Calls `listener` whenever rows of `table` change, which the mirror tells of without the rows themselves. */
-export const onTableChange = (table: string) => (listener: () => void) => mirrorClient.onTableChange([table], () => listener());
 
 const NO_WINDOW = { subscribe: () => () => {}, getView: () => undefined };
 

@@ -1,8 +1,8 @@
 import { playlists, type CreatePlaylistInput, type PlaylistEntry, type PlaylistRecord, type PlaylistState } from "@muswag/model";
 import { eq } from "drizzle-orm";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Context, Data, Effect, Layer, PubSub, Stream } from "effect";
 
+import { LibraryChanges } from "../db/changes.js";
 import { Db } from "../db/database.js";
 
 export class PlaylistError extends Data.TaggedError("PlaylistError")<{ readonly message: string }> {}
@@ -73,7 +73,7 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
   make: Effect.gen(function* () {
     const db = yield* Db;
     const edits = yield* PlaylistEdits;
-    const mirror = yield* SqliteMirror;
+    const changes = yield* LibraryChanges;
 
     const read = (playlistId: string) =>
       db
@@ -84,7 +84,7 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
 
     /** Reads the playlist, computes its next version and saves it, all in one transaction. */
     const change = <A>(playlistId: string, next: (playlist: PlaylistRecord | undefined) => { readonly record: PlaylistRecord; readonly result: A } | null) =>
-      mirror
+      changes
         .write(
           Effect.gen(function* () {
             const current = yield* read(playlistId);
@@ -133,7 +133,7 @@ export class PlaylistCommands extends Context.Service<PlaylistCommands>()("@musw
             },
             revision: 0,
           };
-        }).pipe(Effect.tap((record) => mirror.write(db.insert(playlists).values(record)).pipe(Effect.andThen(edits.notify)))),
+        }).pipe(Effect.tap((record) => changes.write(db.insert(playlists).values(record)).pipe(Effect.andThen(edits.notify)))),
 
       rename: (playlistId: string, name: string) =>
         attempt(() => requireName(name)).pipe(

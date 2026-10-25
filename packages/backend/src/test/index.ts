@@ -6,7 +6,7 @@ import { makeSubsonicAPI, SubsonicAPI, type SubsonicApiConfig, type SubsonicApiS
 import { MiniFs } from "../covers/cover-manager.js";
 import { DatabaseLive, Db, write } from "../db/database.js";
 
-/** A migrated in-memory database with its mirror server. */
+/** A migrated in-memory database that announces its changes. */
 export const TestDatabase = () => DatabaseLive(":memory:");
 
 /** Cover files that are never written: for tests that sync a library and do not look at covers. */

@@ -7,8 +7,8 @@ import type { HttpClientError } from "effect/http/HttpClientError";
 import { Path } from "effect/Path";
 
 import { SubsonicAPI } from "../api/subsonic-api.js";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 
+import { LibraryChanges } from "../db/changes.js";
 import { Db } from "../db/database.js";
 
 export class FileSystemError extends Data.TaggedError("FileSystemError")<{
@@ -77,7 +77,7 @@ const make = (coverSaveLocation: string) =>
     const fs = yield* MiniFs;
     const path = yield* Path;
     const api = yield* SubsonicAPI;
-    const mirror = yield* SqliteMirror;
+    const changes = yield* LibraryChanges;
     const scope = yield* Effect.scope;
     /** Downloads by owner: the ones running and, for a while, the ones that failed. */
     const downloads = new Map<string, Deferred.Deferred<string | null, CoverManagerError>>();
@@ -116,7 +116,7 @@ const make = (coverSaveLocation: string) =>
         if (!coverMediaType(bytes)) return yield* new NotAnImage({ id: row.coverArt, message: `The server did not answer with an image for cover ${row.coverArt}` });
 
         yield* fs.writeFile(coverPath, bytes);
-        const stored = yield* mirror.write(
+        const stored = yield* changes.write(
           db
             .update(table)
             .set({ coverArtPath: coverPath })

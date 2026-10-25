@@ -8,18 +8,12 @@ const mocks = vi.hoisted(() => ({
   listeners: new Set<(event: unknown) => void>(),
 }));
 vi.mock("#/library/actions", () => ({ LibraryActions: { albumCoverArts: mocks.albumCoverArts } }));
-vi.mock("#/data/library", async () => {
-  const { MirrorClient } = await import("@muswag/tanstack-db-mirror/client");
-  const mirrorClient = {
-    subscribe: (listener: (event: unknown) => void) => {
-      mocks.listeners.add(listener);
-      return () => mocks.listeners.delete(listener);
-    },
-    // The client's own filtering, over the listeners above.
-    onTableChange: MirrorClient.prototype.onTableChange,
-  };
-  return { mirrorClient };
-});
+vi.mock("#/data/library-changes", () => ({
+  onLibraryChange: (listener: (event: unknown) => void) => {
+    mocks.listeners.add(listener);
+    return () => mocks.listeners.delete(listener);
+  },
+}));
 
 const { useAlbumCoverArt } = await import("#/library/album-cover-art");
 
@@ -27,8 +21,11 @@ const Cover = ({ albumId }: { albumId: string }) => <span data-testid={albumId}>
 const covers = new Map<string, string | null>();
 mocks.albumCoverArts.mockImplementation(async (ids) => ids.flatMap((id) => (covers.has(id) ? [{ id, coverArt: covers.get(id)! }] : [])));
 const flush = () => act(async () => {});
+/** Tells of a write in main that changed `changes`, as main does. */
 const batch = (changes: Array<{ table: string; key: string }>) => {
-  for (const listener of mocks.listeners) listener({ type: "batch", batch: { epoch: 1, fromSeq: 0, toSeq: 1, changes: changes.map((change, seq) => ({ seq, type: "changed", ...change })) } });
+  const tables: Record<string, string[]> = {};
+  for (const { table, key } of changes) (tables[table] ??= []).push(key);
+  for (const listener of mocks.listeners) listener({ tables });
 };
 
 afterEach(cleanup);

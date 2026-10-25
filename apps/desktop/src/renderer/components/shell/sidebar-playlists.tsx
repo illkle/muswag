@@ -5,13 +5,12 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { openNewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
 import { Button } from "#/components/ui/button";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "#/components/ui/sidebar";
-import { db } from "#/data/library";
 import { getErrorMessage } from "#/lib/err";
 import { failureNotice } from "#/lib/notify";
 import { startSongDrag, useSongDrop } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
 import { PlaylistActions } from "#/playlists/actions";
-import { usePlaylists, usePlaylistSyncStatus, type PlaylistSummary } from "#/playlists/queries";
+import { readPlaylist, usePlaylists, usePlaylistSyncStatus, type PlaylistSummary } from "#/playlists/queries";
 
 /** A playlist of the sidebar: it opens the playlist, takes songs dropped on it unless it is read-only, and drags its songs. */
 function SidebarPlaylist({ playlist }: { playlist: PlaylistSummary }) {
@@ -39,7 +38,7 @@ function SidebarPlaylist({ playlist }: { playlist: PlaylistSummary }) {
             label: playlist.name,
             playlistId: playlist.id,
             // The entries as they are when the songs are dropped.
-            songIds: () => Promise.resolve(db.playlists.get(playlist.id)?.local?.entries.map(({ songId }) => songId) ?? []),
+            songIds: () => readPlaylist(playlist.id).then((record) => record?.local?.entries.map(({ songId }) => songId) ?? []),
           })
         }
         className={cn(drop.over && "bg-sidebar-accent ring-2 ring-brand ring-inset")}

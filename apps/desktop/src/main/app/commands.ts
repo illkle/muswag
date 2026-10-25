@@ -1,6 +1,5 @@
 import { Db, LibraryQueries, PlaylistCommands, SessionManager } from "@muswag/backend";
 import type { Song } from "@muswag/model";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Effect, Exit, Schema } from "effect";
 
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
@@ -35,13 +34,9 @@ export const serveAppCommands = (options: {
   Effect.gen(function* () {
     const session = yield* SessionManager;
     const commands = yield* PlaylistCommands;
-    const mirror = yield* SqliteMirror;
     const db = yield* Db;
     const run = Effect.runPromiseWith(yield* Effect.context<never>());
     const { queue, player, updates } = options;
-
-    /** A library write, paired with the mirror position renderers can await to see it. */
-    const written = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.flatMap((value) => mirror.position.pipe(Effect.map((position) => ({ value, position })))));
 
     /** Songs in the order of `ids`, skipping any that are gone. */
     const songsInOrder = async (ids: readonly string[]): Promise<Song[]> => {
@@ -66,17 +61,24 @@ export const serveAppCommands = (options: {
       "library:artistsWithAlbums": () => LibraryQueries.artistsWithAlbums().pipe(Effect.provideService(Db, db)),
       "library:albumCoverArts": (ids) => LibraryQueries.albumCoverArts(ids).pipe(Effect.provideService(Db, db)),
       "library:albumSongIds": (ids) => LibraryQueries.albumSongIds(ids).pipe(Effect.provideService(Db, db)),
+      "library:album": (id) => LibraryQueries.album(id).pipe(Effect.provideService(Db, db)),
+      "library:artist": (id) => LibraryQueries.artist(id).pipe(Effect.provideService(Db, db)),
+      "library:discography": (id) => LibraryQueries.discography(id).pipe(Effect.provideService(Db, db)),
+      "library:albumsByIds": (ids) => LibraryQueries.albumsByIds(ids).pipe(Effect.provideService(Db, db)),
+      "library:sourceName": (ref) => LibraryQueries.sourceName(ref).pipe(Effect.provideService(Db, db)),
+      "playlists:list": () => LibraryQueries.playlists().pipe(Effect.provideService(Db, db)),
+      "playlists:get": (id) => LibraryQueries.playlist(id).pipe(Effect.provideService(Db, db)),
       // The worker finds the rows, and their current contents are read here.
       "library:search": (query, limit) =>
         Effect.tryPromise(() => options.search(query, limit)).pipe(Effect.flatMap((hits) => (hits ? LibraryQueries.searchResults(hits).pipe(Effect.provideService(Db, db)) : Effect.succeed(null)))),
-      "playlists:create": (input) => written(commands.create(input)),
-      "playlists:rename": (id, name) => written(commands.rename(id, name)),
-      "playlists:setComment": (id, comment) => written(commands.setComment(id, comment)),
-      "playlists:setVisibility": (id, isPublic) => written(commands.setVisibility(id, isPublic)),
-      "playlists:addEntries": (id, songIds, beforeEntryId) => written(commands.addEntries(id, songIds, beforeEntryId)),
-      "playlists:removeEntries": (id, entryIds) => written(commands.removeEntries(id, entryIds)),
-      "playlists:moveEntries": (id, entryIds, beforeEntryId) => written(commands.moveEntries(id, entryIds, beforeEntryId)),
-      "playlists:delete": (id) => written(commands.delete(id)),
+      "playlists:create": (input) => commands.create(input),
+      "playlists:rename": (id, name) => commands.rename(id, name),
+      "playlists:setComment": (id, comment) => commands.setComment(id, comment),
+      "playlists:setVisibility": (id, isPublic) => commands.setVisibility(id, isPublic),
+      "playlists:addEntries": (id, songIds, beforeEntryId) => commands.addEntries(id, songIds, beforeEntryId),
+      "playlists:removeEntries": (id, entryIds) => commands.removeEntries(id, entryIds),
+      "playlists:moveEntries": (id, entryIds, beforeEntryId) => commands.moveEntries(id, entryIds, beforeEntryId),
+      "playlists:delete": (id) => commands.delete(id),
       "playlists:sync": () => session.use((active) => active.playlists.sync),
       "queue:playSource": (ref, key) => Effect.promise(() => queue.playSource({ ...ref }, key)),
       "queue:select": (key) => Effect.promise(() => queue.select(key)),

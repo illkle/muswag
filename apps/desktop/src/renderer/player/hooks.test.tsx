@@ -2,6 +2,7 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { songRow } from "@muswag/model";
+import { createStore } from "@tanstack/react-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { QueueManagerState } from "#shared/queue-state";
@@ -9,32 +10,20 @@ import type { QueueManagerState } from "#shared/queue-state";
 const item = { key: "queued", origin: "user" as const, track: songRow({ id: "song", title: "Song" }) };
 const EMPTY_QUEUE: QueueManagerState = { nowPlaying: null, userQueue: [], source: null };
 
-/** A collection with the one row the player tables hold, which tells its subscribers when it changes. */
-function fakeCollection<Row>() {
-  let row: Row | undefined;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => row,
-    toArray: [] as Row[],
-    subscribeChanges: (listener: () => void) => {
-      listeners.add(listener);
-      return { unsubscribe: () => listeners.delete(listener) };
-    },
-    set: (next: Row | undefined) => {
-      row = next;
-      for (const listener of listeners) listener();
-    },
-  };
+/** A store of what main publishes, as `appState` holds it: `undefined` until it has arrived. */
+function fakeState<Value>() {
+  const store = createStore<Value | undefined>(undefined);
+  return Object.assign(store, { set: (next: Value | undefined) => store.setState(() => next) });
 }
 
 const mocks = { queue: EMPTY_QUEUE };
 const collections = {
-  player: fakeCollection<{ status: string; item: unknown; error?: null }>(),
-  position: fakeCollection<{ positionSeconds: number; durationSeconds: number | null; at: number; advancing: boolean }>(),
+  player: fakeState<{ status: string; item: unknown; error?: null }>(),
+  position: fakeState<{ positionSeconds: number; durationSeconds: number | null; at: number; advancing: boolean }>(),
 };
 
-// The factories run at the import below, once the collections are there.
-vi.mock("#/data/state", () => ({ playerState: { player: collections.player, position: collections.position } }));
+// The factories run at the import below, once the stores are there.
+vi.mock("#/data/app-state", () => ({ appState: { player: collections.player, playerPosition: collections.position } }));
 vi.mock("#/queue/queue", () => ({ useQueueSelector: (select: (queue: QueueManagerState) => unknown) => select(mocks.queue) }));
 
 const { usePlayerCanGoBack, usePlayerCanPlay, usePlayerConnected, usePlayerError, usePlayerPositionSeconds } = await import("#/player/hooks");

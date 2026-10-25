@@ -59,8 +59,11 @@ The schema is `packages/model/src/db/schema.ts`. After changing it, run `pnpm db
 `packages/backend`: it writes a drizzle-kit migration to `drizzle/` and embeds the migrations into
 `src/db/migrations.generated.ts`, which the app runs at start-up. A test fails when the two disagree.
 
-Writes to a table in `MIRRORED_TABLES` go through `write` in `packages/backend/src/db/database.ts`, which
-commits them in one transaction and then sends the changes to renderers.
+Writes to a table in `ANNOUNCED_TABLES` go through `write` in `packages/backend/src/db/database.ts`, which
+commits them in one transaction and then announces the rows they changed, by key: main's search and queue
+read what they need again, and renderers hear which tables changed (`library:changed`) and read again
+through main's commands. Main's in-memory state (player, session, sync status, queue) reaches renderers
+as whole values, `app:state` events after `app:connect` (`apps/desktop/src/main/app-state.ts`).
 
 Backend tests get an in-memory database (`TestDatabase`), an API stub (`makeApi`) and Subsonic fixtures from
 `@muswag/backend/testing`.

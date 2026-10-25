@@ -1,5 +1,5 @@
 import type { SongPageRequest } from "@muswag/model";
-import { deepEquals } from "@tanstack/db";
+import { replaceEqualDeep } from "@tanstack/react-query";
 
 /** Rows in a page: a few screens of a list, which main reads in about a millisecond. */
 export const PAGE_SIZE = 100;
@@ -181,7 +181,7 @@ export class PagedWindow<Row extends { readonly id: string }> {
     const byId = new Map(before.rows.map((row) => [row.id, row]));
     return rows.map((row) => {
       const previous = byId.get(row.id);
-      return previous && deepEquals(previous, row) ? previous : row;
+      return previous ? replaceEqualDeep(previous, row) : row;
     });
   }
 

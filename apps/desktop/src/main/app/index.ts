@@ -1,20 +1,18 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { BackendLive, LibraryQueries, SessionManager, type CoverOwner, type Db } from "@muswag/backend";
-import { createElectronMainTransport } from "@muswag/tanstack-db-mirror/electron/main";
-import type { MemoryMirrorService } from "@muswag/tanstack-db-mirror/server/memory";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
+import { BackendLive, LibraryChanges, LibraryQueries, SessionManager, type CoverOwner, type Db } from "@muswag/backend";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
 import { FetchHttpClient } from "effect/http";
 
 import type { AppIpc } from "../app-page";
+import type { AppStateHub } from "../app-state";
 import type { PlayerHandle } from "../player/ipc";
+import { libraryChangedEvent, type Renderers } from "../renderers";
 import { createQueue } from "../queue";
 import { startLibrarySearch } from "../search/library-search";
 import type { SourceDb } from "../queue/source";
-import { unplayableTracks } from "#shared/state/queue";
 import { serveAppCommands, type AppUpdates } from "./commands";
 import { coverDirectoryOf, MiniFsLive } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
@@ -25,8 +23,10 @@ export interface AppOptions {
   readonly ipcMain: AppIpc;
   readonly player: PlayerHandle;
   readonly updates: AppUpdates;
-  /** Where renderers see the session and sync status; it must mirror `SESSION_TABLES`. */
-  readonly stateMirror: MemoryMirrorService;
+  /** Where renderers see the session, the sync status and the queue. */
+  readonly appState: AppStateHub;
+  /** The renderers that have connected, which hear of changes to the library. */
+  readonly renderers: Renderers;
   /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
   readonly searchWorkerPath: string;
   /** Calls `listener` whenever a window of the app gains focus, until the returned function is called. */
@@ -37,20 +37,24 @@ export interface AppOptions {
 const SYNC_ON_FOCUS_AFTER_MS = 10 * 60_000;
 
 /**
- * Main's side of the app: the library database and its mirror, the session with its sync services,
- * playlist commands and the playback queue, reachable from renderers through `app:command`.
+ * Main's side of the app: the library database and the changes to it, the session with its sync
+ * services, playlist commands and the playback queue, reachable from renderers through `app:command`.
  */
 const makeApp = (options: AppOptions) =>
   Effect.gen(function* () {
     const session = yield* SessionManager;
-    const mirror = yield* SqliteMirror;
-    const run = Effect.runPromiseWith(yield* Effect.context<Db | SqliteMirror>());
+    const changes = yield* LibraryChanges;
+    const run = Effect.runPromiseWith(yield* Effect.context<Db | LibraryChanges>());
 
-    yield* mirror.serve(createElectronMainTransport({ ipcMain: options.ipcMain }));
+    // Renderers hear which tables changed, and read again what they show.
+    yield* Effect.acquireRelease(
+      Effect.sync(() => changes.subscribe((written) => options.renderers.send("library:changed", libraryChangedEvent(written)))),
+      (unsubscribe) => Effect.sync(unsubscribe),
+    );
 
     const library: SourceDb = {
       sourceWindow: (ref, at, size) => run(LibraryQueries.sourceWindow(ref, at, size)),
-      subscribe: (listener) => mirror.subscribe(listener),
+      subscribe: (listener) => changes.subscribe(listener),
     };
     const queue = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -62,14 +66,20 @@ const makeApp = (options: AppOptions) =>
             write: (change) => run(LibraryQueries.writeQueue(change)),
             clear: () => run(LibraryQueries.clearQueue),
           },
-          onUnplayable: (tracks) => void Effect.runPromise(options.stateMirror.replace(unplayableTracks, tracks)).catch((cause) => console.error("[queue] failed to publish unplayable tracks", cause)),
+          onUnplayable: (tracks) => options.appState.set("unplayable", tracks),
         }),
       ),
       (manager) => Effect.sync(() => manager.dispose()),
     );
+    // Renderers see the queue as the manager holds it.
+    options.appState.set("queue", queue.store.state);
+    yield* Effect.acquireRelease(
+      Effect.sync(() => queue.store.subscribe((state) => options.appState.set("queue", state))),
+      (subscription) => Effect.sync(() => subscription.unsubscribe()),
+    );
 
     const syncPlayerCredentials = makePlayerCredentialsSync(session, options.player);
-    yield* publishSession(session, options.stateMirror, syncPlayerCredentials);
+    yield* publishSession(session, options.appState, syncPlayerCredentials);
 
     // Playback resumes only once the session it streams from is back.
     yield* session.restore.pipe(
@@ -80,7 +90,7 @@ const makeApp = (options: AppOptions) =>
     );
 
     const search = yield* Effect.acquireRelease(
-      Effect.sync(() => startLibrarySearch({ databasePath: options.databasePath, workerPath: options.searchWorkerPath, subscribe: (listener) => mirror.subscribe(listener) })),
+      Effect.sync(() => startLibrarySearch({ databasePath: options.databasePath, workerPath: options.searchWorkerPath, subscribe: (listener) => changes.subscribe(listener) })),
       (search) => Effect.promise(() => search.dispose()),
     );
 

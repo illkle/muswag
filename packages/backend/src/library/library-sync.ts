@@ -15,10 +15,10 @@ import {
   type SyncMode,
 } from "@muswag/model";
 import { count, eq, inArray, sql } from "drizzle-orm";
-import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
 import { SubsonicAPI, WRONG_CREDENTIALS } from "../api/subsonic-api.js";
+import { LibraryChanges } from "../db/changes.js";
 import { Db, write } from "../db/database.js";
 import { chunks, STATEMENT_IDS, STATEMENT_ROWS, upsertChanged } from "../db/upsert.js";
 
@@ -37,7 +37,7 @@ type ReportProgress = (progress: Progress) => Effect.Effect<void>;
 /** Downloads the library from the server into the database and keeps it up to date. */
 export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend/LibrarySync", {
   make: Effect.gen(function* () {
-    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror>();
+    const context = yield* Effect.context<Db | SubsonicAPI | LibraryChanges>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
     const db = yield* Db;

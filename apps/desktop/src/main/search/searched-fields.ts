@@ -1,7 +1,6 @@
 import type { SearchHit } from "@muswag/model";
 
-// What a search looks at. Main reads it to send the worker only the fields of a change that a search
-// looks at; Fuse and the index stay in the worker.
+// What a search looks at. Fuse and the index stay in the worker.
 
 /** The fields of a row that a search looks at, and the row's id. */
 export type SearchedRow = Readonly<Record<string, unknown>> & { readonly id: string };
@@ -12,11 +11,8 @@ export type SearchedLibrary = { readonly albums: ReadonlyArray<SearchedRow>; rea
 /** A change to a row of `SEARCHED_TABLES`, with only the fields a search looks at. */
 export type SearchedChange = { readonly table: string; readonly type: "upsert"; readonly value: SearchedRow } | { readonly table: string; readonly type: "delete"; readonly key: string };
 
-/**
- * A change as main sends it to the worker: what the index takes, or the id of a row that was written
- * where the mirror sends only the key, as it does for songs and albums. The worker reads that row itself.
- */
-export type SearchWorkerChange = SearchedChange | { readonly table: string; readonly type: "changed"; readonly key: string };
+/** A change as main sends it to the worker: the id of a row that was written or deleted. The worker reads a written row itself. */
+export type SearchWorkerChange = { readonly table: string; readonly type: "changed" | "delete"; readonly key: string };
 
 /** The fields Fuse searches, by row type, with the weight of each. */
 export const KEYS = ["song.artist", "song.album", "song.title", "song.year", "album.artist", { name: "album.name", weight: 3 }, "album.year", { name: "artist.name", weight: 2 }] as const;

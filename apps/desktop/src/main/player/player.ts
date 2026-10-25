@@ -1,8 +1,8 @@
 import { Cause, Clock, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
-import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { initialSnapshot, type Media, type MpvInstallMethod, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
-import { player as playerTable, playerPosition, playerPositionRow, playerRow, positionAt } from "#shared/state/player";
+import { playerPositionRow, playerRow, positionAt } from "#shared/state/player";
+import { AppState } from "../app-state";
 import { Binaries } from "./binary/binaries";
 import { BinaryUnavailable, CommandFailed, describeFailure, EngineError, InternalError, InvalidCommand, PlaybackFailed, SettingsFailed, safeCause, safeFailure, type PlayerFailure } from "./errors";
 import { currentMedia, isCurrentEvent, isFiniteNonNegative, isHeldPaused, isSettled, withDuration, withoutError, withPosition, withPositionAt } from "./model";
@@ -84,7 +84,7 @@ export const PlayerLive = Layer.effect(
     const sessions = yield* MpvSession;
     const binaries = yield* Binaries;
     const store = yield* SettingsStore;
-    const stateMirror = yield* MemoryMirror;
+    const appState = yield* AppState;
     const owner = yield* Effect.scope;
 
     // Unbounded: sessions offer their events without waiting, and one that could not be taken would be lost.
@@ -123,26 +123,22 @@ export const PlayerLive = Layer.effect(
 
     // ---- State publication ----
 
-    /** Writes the rows of `next`. */
-    const mirror = (next: PlayerSnapshot) =>
-      stateMirror
-        .write(
-          Effect.gen(function* () {
-            yield* stateMirror.upsert(playerTable, playerRow(next));
-            yield* stateMirror.upsert(playerPosition, playerPositionRow(next));
-          }),
-        )
-        .pipe(
-          // Renderers would miss this state, but playback itself must not stop over it.
-          Effect.catchCause((cause) => Effect.logError("Mirroring the player state failed", cause)),
-        );
-    yield* mirror(initial);
+    /** Publishes `next` to renderers. */
+    const showRenderers = (next: PlayerSnapshot) =>
+      Effect.sync(() => {
+        appState.set("player", playerRow(next));
+        appState.set("playerPosition", playerPositionRow(next));
+      }).pipe(
+        // Renderers would miss this state, but playback itself must not stop over it.
+        Effect.catchCause((cause) => Effect.logError("Publishing the player state failed", cause)),
+      );
+    yield* showRenderers(initial);
 
     const publish = (next: PlayerSnapshot) =>
       Effect.suspend(() => {
         state = { ...next, stamp: { ...state.stamp, revision: state.stamp.revision + 1 } };
-        // Mirrored first, so whoever reacts to the change finds renderers' view up to date.
-        return mirror(state).pipe(Effect.andThen(SubscriptionRef.set(published, state)));
+        // Published first, so whoever reacts to the change finds renderers' view up to date.
+        return showRenderers(state).pipe(Effect.andThen(SubscriptionRef.set(published, state)));
       });
     /** `next` with the current track at `positionSeconds` as of now. */
     const positioned = (next: PlayerSnapshot, positionSeconds: number) => Effect.map(Clock.currentTimeMillis, (now) => withPosition(next, positionSeconds, now));

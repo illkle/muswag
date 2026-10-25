@@ -2,9 +2,6 @@
 import { performance } from "node:perf_hooks";
 
 import { LibraryQueries } from "@muswag/backend";
-import { albums } from "@muswag/model";
-import { mirrorCollectionOptions } from "@muswag/tanstack-db-mirror/client";
-import { BasicIndex, createCollection, createLiveQueryCollection, eq } from "@tanstack/db";
 import { describe, it } from "vitest";
 
 import { heapMb, median, openLibrary, recorder, SIZES, type Library } from "./harness.js";
@@ -14,7 +11,7 @@ const PAGE = 100;
 /**
  * The albums, which the renderer reads from main as it does the songs: the pages of the albums page,
  * the artists that have albums of their own, the cover ids of the albums of the rows a list draws, and
- * the album and artist pages through the on-demand collection.
+ * the albums of a list of them, as an artist's "appears on" asks.
  */
 describe("albums", () => {
   const { record, save } = recorder("albums");
@@ -48,31 +45,8 @@ describe("albums", () => {
     const ids = (await library.query<{ id: string }>(`SELECT id FROM albums ORDER BY random() LIMIT 30`)).map(({ id }) => id);
     record(size, "covers of 30 rows' albums", await timed(library, () => library.run(LibraryQueries.albumCoverArts(ids))));
 
-    // An album's page and an artist's, through the on-demand albums.
-    const collection = createCollection(mirrorCollectionOptions({ client: library.client, table: albums, gcTime: 0, defaultIndexType: BasicIndex, syncMode: "on-demand", autoIndex: "eager" }));
-    const albumTimes: Array<number> = [];
-    for (const id of ids.slice(0, 20)) {
-      const started = performance.now();
-      const query = createLiveQueryCollection({ query: (q) => q.from({ album: collection }).where(({ album }) => eq(album.id, id)), gcTime: 0 });
-      await query.preload();
-      albumTimes.push(performance.now() - started);
-      await query.cleanup();
-    }
-    record(size, "album page header", median(albumTimes));
-    const artists = (await library.query<{ artistId: string }>(`SELECT artistId FROM albums WHERE artistId IS NOT NULL GROUP BY artistId ORDER BY count(*) DESC LIMIT 10`)).map(
-      ({ artistId }) => artistId,
-    );
-    const artistTimes: Array<number> = [];
-    for (const artistId of artists) {
-      const started = performance.now();
-      const query = createLiveQueryCollection({ query: (q) => q.from({ album: collection }).where(({ album }) => eq(album.artistId, artistId)), gcTime: 0 });
-      await query.preload();
-      artistTimes.push(performance.now() - started);
-      await query.cleanup();
-    }
-    record(size, "artist page albums (most albums)", median(artistTimes));
+    record(size, "albums of 30 ids", await timed(library, () => library.run(LibraryQueries.albumsByIds(ids))));
 
-    await collection.cleanup();
     await library.dispose();
   });
 

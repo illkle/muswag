@@ -25,9 +25,9 @@ export interface QueueTables {
 }
 
 /**
- * Stores the queue in the mirrored queue tables, which is also how renderers see it, and the resume
- * position in a table of main's own. Each save writes only what changed since the last one, so saving
- * the position as a track plays sends renderers nothing.
+ * Stores the queue in the queue tables, for the queue to restore after a restart, and the resume
+ * position in a table of its own. Each save writes only what changed since the last one, so saving the
+ * position as a track plays writes one row.
  */
 export class DbQueueStorage implements QueueStorage {
   /** What the tables hold, as JSON by key, as last read or written; `null` until read. */

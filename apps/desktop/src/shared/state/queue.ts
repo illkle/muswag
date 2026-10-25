@@ -1,4 +1,3 @@
-import { memoryTable } from "@muswag/tanstack-db-mirror/memory";
 import { Schema } from "effect";
 
 /**
@@ -14,5 +13,3 @@ export const UnplayableTrack = Schema.Struct({
   at: Schema.Finite,
 });
 export type UnplayableTrack = typeof UnplayableTrack.Type;
-
-export const unplayableTracks = memoryTable("unplayable_tracks", UnplayableTrack, { primaryKey: "id" });

@@ -2,9 +2,8 @@ import type { QueueSourceRef } from "@muswag/model";
 import { useSelector } from "@tanstack/react-store";
 
 import { appCommand } from "#/data/app-command";
-import { db } from "#/data/library";
-import { collectionStore } from "#/data/stores";
-import { queueStateFromRows, type QueueManagerState } from "#shared/queue-state";
+import { appState } from "#/data/app-state";
+import { emptyQueueState, type QueueManagerState } from "#shared/queue-state";
 
 /** The playback queue lives in main; these send it commands. */
 export const QueueActions = {
@@ -23,11 +22,10 @@ export const QueueActions = {
   previous: () => appCommand("queue:previous"),
 };
 
-/** The queue as main stores it in the mirrored queue tables, put together once per change for every reader. */
-const queue = collectionStore([db.queueState, db.queueItems], () => queueStateFromRows(db.queueState.get(1), db.queueItems.toArray));
+const EMPTY = emptyQueueState();
 
-/** What `select` makes of the queue. The component re-renders only when that changes. */
-export const useQueueSelector = <T>(select: (queue: QueueManagerState) => T): T => useSelector(queue, select);
+/** What `select` makes of the queue, as main's queue manager holds it. The component re-renders only when that changes. */
+export const useQueueSelector = <T>(select: (queue: QueueManagerState) => T): T => useSelector(appState.queue, (queue) => select(queue ?? EMPTY));
 
 export const useQueueManagerState = (): QueueManagerState => useQueueSelector((state) => state);
 
