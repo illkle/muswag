@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Schema } from "effect";
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
 import { APP_COMMAND_CHANNEL } from "#shared/ipc";
 import type { UpdateChannel } from "#shared/state/app-update";
+import type { Theme } from "#shared/theme";
 import type { AppIpc } from "../app-page";
 import type { PlayerHandle } from "../player/ipc";
 import type { QueueManager } from "../queue/queue-manager";
@@ -30,6 +31,8 @@ export const serveAppCommands = (options: {
   readonly updates: AppUpdates;
   readonly songsByIds: (ids: readonly string[]) => Promise<Song[]>;
   readonly search: LibrarySearch["search"];
+  /** Draws the windows' native parts in a theme (`window.ts`). */
+  readonly setTheme: (theme: Theme) => void;
 }) =>
   Effect.gen(function* () {
     const session = yield* SessionManager;
@@ -93,6 +96,7 @@ export const serveAppCommands = (options: {
       "appUpdate:check": () => Effect.promise(() => updates.check()),
       "appUpdate:install": () => Effect.sync(() => updates.install()),
       "appUpdate:setChannel": (channel) => Effect.promise(() => updates.setChannel(channel)),
+      "window:setTheme": (theme) => Effect.sync(() => options.setTheme(theme)),
     };
 
     const execute = <K extends AppCommandName>(name: K, input: unknown): Effect.Effect<AppCommandReply<K>> =>

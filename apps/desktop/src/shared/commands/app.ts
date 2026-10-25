@@ -30,6 +30,7 @@ import {
 import { Schema } from "effect";
 
 import { UpdateChannel } from "../state/app-update";
+import { Theme } from "../theme";
 import { RendererCommand, type CommandResult } from "./player";
 
 /**
@@ -84,6 +85,7 @@ export const AppCommandArgs = {
   "appUpdate:check": Schema.Tuple([]),
   "appUpdate:install": Schema.Tuple([]),
   "appUpdate:setChannel": Schema.Tuple([UpdateChannel]),
+  "window:setTheme": Schema.Tuple([Theme]),
 } as const;
 
 export type AppCommandResults = {
@@ -153,6 +155,8 @@ export type AppCommandResults = {
   "appUpdate:install": void;
   /** Updates from another channel from now on, and checks it. */
   "appUpdate:setChannel": void;
+  /** Draws what the OS draws of the windows, such as their controls on Windows, in the theme the user picked. */
+  "window:setTheme": void;
 };
 
 export type AppCommandName = keyof typeof AppCommandArgs;

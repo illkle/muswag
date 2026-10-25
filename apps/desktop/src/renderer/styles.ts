@@ -1,2 +1,2 @@
-export const TOP_HEIGHT = 42;
+export { TOP_HEIGHT } from "#shared/layout";
 export const PLAYER_HEIGHT = 82;

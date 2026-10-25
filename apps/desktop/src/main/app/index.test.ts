@@ -35,7 +35,7 @@ const player = {
 let updateChecks = 0;
 const updates = { check: async () => void updateChecks++, install: () => {}, setChannel: async () => {} };
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
-const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, appState, renderers, searchWorkerPath });
+const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, setTheme: () => {}, appState, renderers, searchWorkerPath });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));
