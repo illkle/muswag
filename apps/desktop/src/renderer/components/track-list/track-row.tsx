@@ -5,6 +5,15 @@ import { cn } from "#/lib/utils";
 import type { TrackColumn } from "#/components/track-list/columns";
 import type { TrackItem } from "#/components/track-list/types";
 
+/** How high the row of a track is, as `h-12` draws it. */
+export const TRACK_HEIGHT = 48;
+
+/** Where among the tracks the row an event happened in is, or `null` outside the rows. */
+export const rowPositionOf = (event: { target: EventTarget }): number | null => {
+  const position = (event.target as Element).closest<HTMLElement>("[data-track-position]")?.dataset.trackPosition;
+  return position === undefined ? null : Number(position);
+};
+
 /**
  * A track in a track list. Every list draws its tracks with this one element. The list handles the
  * clicks and the context menu of all its rows itself, finding the row by its `data-track-key`, so a
