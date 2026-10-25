@@ -53,6 +53,8 @@ export interface TestServer {
 }
 
 const LIBRARY_TIMEOUT_MS = 120_000;
+/** How long a server may sit idle with the old library listed before it is asked to scan again. */
+const RESCAN_AFTER_MS = 10_000;
 
 export async function startServer(definition: ServerDefinition): Promise<TestServer> {
   const configured = await definition.configure(new GenericContainer(definition.image).withExposedPorts(definition.port).withWaitStrategy(Wait.forListeningPorts()));
@@ -90,8 +92,7 @@ export async function startServer(definition: ServerDefinition): Promise<TestSer
         await writeLibrary(source, albums, new Date(modified));
         await run(container, ["sh", "-c", `rm -rf ${definition.musicPath}/* ${definition.musicPath}/.[!.]*`]);
         await container.copyDirectoriesToContainer([{ source, target: definition.musicPath }]);
-        await subsonic(url, admin, "startScan", definition.startScanParams);
-        await waitForLibrary(url, admin, albums);
+        await waitForLibrary(url, admin, albums, () => subsonic(url, admin, "startScan", definition.startScanParams));
         current = wanted;
       } finally {
         await rm(source, { recursive: true, force: true });
@@ -136,21 +137,29 @@ async function listedLibrary(url: string, account: Account): Promise<string> {
 const scanning = async (url: string, account: Account) => (await subsonic<{ scanStatus: { scanning: boolean } }>(url, account, "getScanStatus")).scanStatus.scanning;
 
 /**
- * Waits until the server lists the albums and songs of `albums`, and no others, and is not scanning
- * before or after it lists them. The library is compared and not the scan status alone, which some
- * servers report as done before they start.
+ * Has the server scan with `scan`, and waits until it lists the albums and songs of `albums`, and no
+ * others, and is not scanning before or after it lists them. The library is compared and not the scan
+ * status alone, which some servers report as done before they start. A server that sits idle with
+ * another library listed is asked to scan again: Navidrome once let a scan go by, and listed the old
+ * library until the wait ran out.
  */
-async function waitForLibrary(url: string, account: Account, albums: readonly AlbumFixture[]): Promise<void> {
+async function waitForLibrary(url: string, account: Account, albums: readonly AlbumFixture[], scan: () => Promise<unknown>): Promise<void> {
   const expected = JSON.stringify({
     albums: albums.map(({ title, songs }) => `${title} (${songs.length})`).sort(),
     songs: albums.flatMap(({ title, songs }) => songs.map((song) => `${title} / ${song.title}`)).sort(),
   });
   const deadline = Date.now() + LIBRARY_TIMEOUT_MS;
   let listed = "";
+  await scan();
+  let scannedAt = Date.now();
   while (Date.now() < deadline) {
     if (!(await scanning(url, account))) {
       listed = await listedLibrary(url, account);
       if (listed === expected && !(await scanning(url, account))) return;
+      if (Date.now() - scannedAt > RESCAN_AFTER_MS) {
+        await scan();
+        scannedAt = Date.now();
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
