@@ -11,6 +11,8 @@ function result(patch: Partial<CommandResult> = {}): CommandResult {
   return { code: 0, errorCode: null, stderr: "", stdout: "", ...patch };
 }
 
+const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
+
 function deps(overrides: Partial<MpvLocatorDeps> = {}): MpvLocatorDeps {
   return {
     env: {},
@@ -31,6 +33,7 @@ describe("mpv discovery and validation", () => {
       }),
     );
 
+    expect(paths).toContain("C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Packages\\mpv-player.mpv-CI.MSVC_Microsoft.Winget.Source_8wekyb3d8bbwe\\mpv.exe");
     expect(paths).toContain("C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\mpv.exe");
     expect(paths).toContain("D:\\Programs\\MPV Player\\mpv.exe");
   });
@@ -118,6 +121,27 @@ describe("binary service", () => {
       const shellOnly = environment({ "/login/mpv": "0.41.0" });
       expect(yield* shellOnly.service.resolve(null, null)).toMatchObject({ _tag: "Ready", path: "/login/mpv", source: "login-shell" });
       expect(shellOnly.ran).toEqual(["mpv", "/bin/zsh", "/login/mpv"]);
+    }),
+  );
+
+  it.effect("finds an mpv put on PATH after the app started on Windows, from the registry", () =>
+    Effect.gen(function* () {
+      const ran: string[] = [];
+      const service = makeBinaries(
+        deps({
+          platform: "win32",
+          fileExists: (path) => Effect.succeed(path === "D:\\Tools\\mpv\\mpv.exe"),
+          runCommand: (command) =>
+            Effect.sync(() => {
+              ran.push(command);
+              if (command === "powershell.exe")
+                return result({ stdout: `${base64('C:\\Windows\\system32;C:\\Windows;C:\\Users\\Кирилл\\AppData\\Local\\Microsoft\\WindowsApps;"D:\\Tools\\mpv\\"')}\r\n` });
+              return command === "D:\\Tools\\mpv\\mpv.exe" ? result({ stdout: "mpv v0.41.0" }) : result({ code: null, errorCode: "ENOENT" });
+            }),
+        }),
+      );
+      expect(yield* service.resolve(null, null)).toMatchObject({ _tag: "Ready", path: "D:\\Tools\\mpv\\mpv.exe", source: "login-shell" });
+      expect(ran).toEqual(["mpv.exe", "powershell.exe", "D:\\Tools\\mpv\\mpv.exe"]);
     }),
   );
 

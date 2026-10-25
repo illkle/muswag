@@ -54,6 +54,26 @@ describe("install catalog", () => {
     }),
   );
 
+  it.effect("finds a Windows manager put on PATH after the app started, reading the registry once", () =>
+    Effect.gen(function* () {
+      const ran: string[] = [];
+      const candidates = yield* detectInstallCandidates(
+        deps({
+          env: { USERPROFILE: "C:\\Users\\me" },
+          fileExists: (path) => Effect.succeed(path === "D:\\scoop\\shims\\scoop.cmd"),
+          platform: "win32",
+          runCommand: (command) =>
+            Effect.sync(() => {
+              ran.push(command);
+              return command === "powershell.exe" ? { ...failed, code: 0, stdout: `${Buffer.from("C:\\Windows\\system32;;D:\\scoop\\shims", "utf8").toString("base64")}\r\n` } : failed;
+            }),
+        }),
+      );
+      expect(candidates).toEqual([expect.objectContaining({ managerPath: "D:\\scoop\\shims\\scoop.cmd", option: expect.objectContaining({ method: "scoop" }) })]);
+      expect(ran.filter((command) => command === "powershell.exe")).toHaveLength(1);
+    }),
+  );
+
   it.effect("falls back to WinGet instructions when Windows has no manager", () =>
     Effect.gen(function* () {
       const candidates = yield* detectInstallCandidates(deps({ env: { USERPROFILE: "C:\\Users\\me" }, platform: "win32" }));

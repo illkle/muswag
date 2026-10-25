@@ -25,7 +25,7 @@ const mpvSourceLabels: Record<MpvSource, string> = {
   cache: "Remembered from last launch",
   path: "Found on PATH",
   "well-known": "Found in a standard install location",
-  "login-shell": "Found via your shell profile",
+  "login-shell": "Found on PATH as a new terminal sees it",
 };
 
 export const mpvStatusLabels: Record<BinaryState["_tag"], string> = {

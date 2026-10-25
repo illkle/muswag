@@ -8,6 +8,15 @@ import type { MpvSource } from "#shared/commands/player";
 import { runCommand, type CommandResult } from "../support/exec";
 
 const LOGIN_SHELL_PROBE_TIMEOUT_MS = 3_000;
+const WINDOWS_PATH_PROBE_TIMEOUT_MS = 5_000;
+/**
+ * The machine PATH and then the user's, as Windows joins them for a new process. Sent as base64 of
+ * UTF-8, so a non-ASCII user name survives whatever code page the console has, or the lack of one.
+ */
+const WINDOWS_PATH_SCRIPT =
+  "$path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User'); [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($path))";
+/** The folder `winget install --id mpv-player.mpv-CI.MSVC --scope user` unpacks mpv into. */
+const WINGET_MPV_PACKAGE = "Microsoft\\WinGet\\Packages\\mpv-player.mpv-CI.MSVC_Microsoft.Winget.Source_8wekyb3d8bbwe\\mpv.exe";
 
 export type MpvLocatorDeps = {
   env: Record<string, string | undefined>;
@@ -35,7 +44,7 @@ export const createMpvLocatorDeps = Effect.gen(function* () {
 /**
  * Where mpv may be, the likeliest place first, found without running anything: the binary the
  * environment or the user names, the one that worked last time, PATH, and the usual install
- * locations that exist. A login shell is asked only after these (`probeLoginShell`).
+ * locations that exist. PATH as it is now, not as the app got it, is looked at only after these (`probeFreshPath`).
  */
 export const collectMpvCandidates = Effect.fn("collectMpvCandidates")(function* (
   options: { manualPath?: string | null; cachedPath?: string | null },
@@ -62,8 +71,10 @@ export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
   if (deps.platform === "win32") {
     const userProfile = deps.env.USERPROFILE ?? deps.homeDirectory;
     const programFiles = deps.env.ProgramFiles ?? "C:\\Program Files";
+    // The mpv package leaves no command alias in WinGet\Links: its mpv.exe needs the DLLs beside it, so
+    // WinGet adds the package folder to the user's PATH instead, which the running app does not see.
     return [
-      ...(deps.env.LOCALAPPDATA ? [joinWindowsPath(deps.env.LOCALAPPDATA, "Microsoft\\WinGet\\Links\\mpv.exe")] : []),
+      ...(deps.env.LOCALAPPDATA ? [joinWindowsPath(deps.env.LOCALAPPDATA, WINGET_MPV_PACKAGE), joinWindowsPath(deps.env.LOCALAPPDATA, "Microsoft\\WinGet\\Links\\mpv.exe")] : []),
       joinWindowsPath(userProfile, "scoop\\shims\\mpv.exe"),
       "C:\\ProgramData\\chocolatey\\bin\\mpv.exe",
       joinWindowsPath(programFiles, "mpv\\mpv.exe"),
@@ -75,9 +86,14 @@ export function getWellKnownMpvPaths(deps: MpvLocatorDeps): string[] {
   return ["/usr/bin/mpv", "/usr/local/bin/mpv", join(deps.homeDirectory, ".local/bin/mpv")];
 }
 
-/** What a login shell finds on its PATH. Starting one takes from a fraction of a second to seconds. */
-export const probeLoginShell = Effect.fn("probeLoginShell")(function* (command: string, deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
-  if (deps.platform === "win32") return null;
+/**
+ * Where `command` is on the PATH a program started now would get. The app's own PATH is the one it
+ * started with, so it misses what an installer has added since: on macOS and Linux a login shell is
+ * asked, and on Windows, where an installer changes PATH in the registry, the registry is read
+ * (`command` names the file, with its extension). Either takes from a fraction of a second to seconds.
+ */
+export const probeFreshPath = Effect.fn("probeFreshPath")(function* (command: string, deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
+  if (deps.platform === "win32") return yield* findOnWindowsPath(command, yield* readWindowsPath(deps), deps);
   const result = yield* deps.runCommand(deps.env.SHELL ?? "/bin/sh", ["-ilc", `command -v ${command}`], {
     env: deps.env,
     timeoutMs: LOGIN_SHELL_PROBE_TIMEOUT_MS,
@@ -88,6 +104,28 @@ export const probeLoginShell = Effect.fn("probeLoginShell")(function* (command: 
     .map((line) => line.trim())
     .filter((line) => line.startsWith("/"));
   return paths[paths.length - 1] ?? null;
+});
+
+/** The directories of the PATH Windows gives a new process, with the variables in them expanded. */
+export const readWindowsPath = Effect.fn("readWindowsPath")(function* (deps: MpvLocatorDeps): Effect.fn.Return<string[]> {
+  const result = yield* deps.runCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_PATH_SCRIPT], {
+    env: deps.env,
+    timeoutMs: WINDOWS_PATH_PROBE_TIMEOUT_MS,
+  });
+  if (result.errorCode || result.code !== 0) return [];
+  return Buffer.from(result.stdout.trim(), "base64")
+    .toString("utf8")
+    .split(";")
+    .map((directory) => directory.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean);
+});
+
+export const findOnWindowsPath = Effect.fn("findOnWindowsPath")(function* (fileName: string, directories: readonly string[], deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
+  for (const directory of directories) {
+    const filePath = joinWindowsPath(directory, fileName);
+    if (yield* deps.fileExists(filePath)) return filePath;
+  }
+  return null;
 });
 
 function addPath(candidates: MpvCandidate[], value: string | null | undefined, source: MpvSource, explicit: boolean): void {
