@@ -197,7 +197,7 @@
 
 /* A surface floating over the page: the player bar and the popups anchored to the top bar. */
 @utility surface-raised {
-  @apply bg-popover/85 text-popover-foreground shadow-lg ring-1 ring-foreground/10 backdrop-blur-xl;
+  @apply bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/10;
 }
 
 /* Stale hover after a drag of songs, which `lib/song-drag.ts` marks until the pointer moves. */
