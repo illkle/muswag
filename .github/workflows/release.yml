@@ -218,7 +218,7 @@ jobs:
             echo "The certificate in MACOS_SIGNING_P12 is $imported, not $MACOS_SIGNING_SHA1." >&2
             exit 1
           fi
-          security find-certificate -Z "$keychain" -p > "$RUNNER_TEMP/signing.pem"
+          security find-certificate -p "$keychain" > "$RUNNER_TEMP/signing.pem"
           sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing.pem"
           security find-identity -v -p codesigning "$keychain"
 
