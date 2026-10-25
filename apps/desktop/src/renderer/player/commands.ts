@@ -23,12 +23,9 @@ async function settle(reply: unknown): Promise<void> {
 const execute = async (command: RendererCommand) => settle(await mainIpc.invoke("player:command", command));
 
 export const MpvIPC = {
-  cancelInstall: async () => {
-    const install = playerState.player.get("player")?.install;
-    if (install && install._tag !== "Idle") await execute({ _tag: "CancelInstall", jobId: install.jobId });
-  },
   clearManualPath: () => execute({ _tag: "ClearBinaryPath" }),
-  install: (method: MpvInstallMethod) => execute({ _tag: "StartInstall", method }),
+  /** Opens a terminal that installs mpv with `method`. */
+  openTerminal: (method: MpvInstallMethod) => execute({ _tag: "OpenInstallTerminal", method }),
   /** Lets the user pick an mpv binary; does nothing when they cancel. */
   locate: async () => {
     const reply = await mainIpc.invoke("player:locate");

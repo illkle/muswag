@@ -4,7 +4,7 @@ import { BasicIndex, createCollection } from "@tanstack/react-db";
 
 import { STATE_MIRROR_CHANNEL } from "#shared/ipc";
 import { appUpdate } from "#shared/state/app-update";
-import { player, playerInstallOutput, playerPosition } from "#shared/state/player";
+import { player, playerPosition } from "#shared/state/player";
 import { unplayableTracks } from "#shared/state/queue";
 import { auth, librarySync, playlistSync } from "#shared/state/session";
 
@@ -27,5 +27,4 @@ export const appState = {
 export const playerState = {
   player: createCollection(mirrorCollectionOptions({ ...options, table: player })),
   position: createCollection(mirrorCollectionOptions({ ...options, table: playerPosition })),
-  installOutput: createCollection(mirrorCollectionOptions({ ...options, table: playerInstallOutput })),
 };

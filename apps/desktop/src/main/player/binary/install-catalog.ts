@@ -43,7 +43,7 @@ const detectMac = Effect.fn("detectMac")(function* (deps: MpvLocatorDeps): Effec
       args: ["install", "mpv"],
       managerPath,
       option: {
-        automatic: managerPath !== null,
+        terminal: managerPath !== null,
         command: "brew install mpv",
         method: "brew",
         note: managerPath ? null : "Homebrew is not installed. Install Homebrew first, then run this command in a terminal.",
@@ -63,10 +63,10 @@ const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps
   const winget = yield* findManager("winget.exe", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps, probe);
   if (winget)
     candidates.push({
-      args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+      args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements"],
       managerPath: winget,
       option: {
-        automatic: true,
+        terminal: true,
         command: "winget install --id mpv-player.mpv-CI.MSVC --exact --source winget --scope user",
         method: "winget",
         note: null,
@@ -78,21 +78,21 @@ const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps
     candidates.push({
       args: ["install", "extras/mpv"],
       managerPath: scoop,
-      option: { automatic: false, command: "scoop install extras/mpv", method: "scoop", note: "Run this in a terminal, then re-check.", url: null },
+      option: { terminal: true, command: "scoop install extras/mpv", method: "scoop", note: null, url: null },
     });
   const choco = yield* findManager("choco.exe", ["C:\\ProgramData\\chocolatey\\bin\\choco.exe"], deps, probe);
   if (choco)
     candidates.push({
       args: ["install", "mpv", "-y"],
       managerPath: choco,
-      option: { automatic: false, command: "choco install mpv", method: "choco", note: "Run this in an administrator terminal, then re-check.", url: null },
+      option: { terminal: true, command: "choco install mpv", method: "choco", note: "Needs administrator rights: Windows asks for them before the terminal opens.", url: null },
     });
   if (candidates.length === 0)
     candidates.push({
       args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user"],
       managerPath: null,
       option: {
-        automatic: false,
+        terminal: false,
         command: "winget install --id mpv-player.mpv-CI.MSVC --exact --source winget --scope user",
         method: "winget",
         note: "No supported package manager was found. Install WinGet first, or locate mpv.exe manually.",
@@ -117,7 +117,7 @@ const detectLinux = Effect.fn("detectLinux")(function* (deps: MpvLocatorDeps): E
       candidates.push({
         args: manager.args,
         managerPath,
-        option: { automatic: false, command: manager.command, method: manager.method, note: "Run this in a terminal, then re-check.", url: null },
+        option: { terminal: true, command: manager.command, method: manager.method, note: null, url: null },
       });
   }
   return candidates;

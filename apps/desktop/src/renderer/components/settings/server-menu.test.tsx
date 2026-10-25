@@ -11,6 +11,7 @@ import type { BinaryState } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn<() => Promise<void>>(),
+  openMpvDialog: vi.fn(),
   playerError: null as string | null,
   librarySync: { running: null, progress: null, error: null, lastSyncedAt: null } as LibrarySyncStatus,
   binary: { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" } as BinaryState,
@@ -70,7 +71,7 @@ vi.mock("#/components/settings/theme-switcher", () => ({
 }));
 
 vi.mock("#/components/settings/mpv-info-dialog", () => ({
-  MpvInfoDialog: () => null,
+  openMpvDialog: mocks.openMpvDialog,
   mpvStatusLabels: { Checking: "Checking", Ready: "Available", Unavailable: "Not installed" },
 }));
 vi.mock("#/components/settings/app-update-dialog", () => ({ AppUpdateDialog: () => null }));
@@ -157,7 +158,7 @@ describe("ServerMenu", () => {
   });
 
   it("raises an alert on the button and the mpv row when playback is unavailable", () => {
-    mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [] };
+    mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [], searched: [] };
 
     renderServerMenu();
 

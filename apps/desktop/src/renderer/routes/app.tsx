@@ -5,6 +5,8 @@ import { PlayerPanel } from "#/components/player-panel";
 import { Notices } from "#/components/notices";
 import { useSkippedTrackNotices } from "#/queue/unplayable";
 import { NewPlaylistDialog } from "#/components/playlist/new-playlist-dialog";
+import { MpvInfoDialog } from "#/components/settings/mpv-info-dialog";
+import { useSetupDone } from "#/onboarding/setup-state";
 import { useUser } from "#/session/session";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
@@ -14,13 +16,15 @@ export const Route = createFileRoute("/app")({
 
 function RouteComponent() {
   const userStateQuery = useUser();
+  const setupDone = useSetupDone();
   useSkippedTrackNotices();
 
   if (userStateQuery.isLoading) {
     return null;
   }
 
-  if (!userStateQuery.data) {
+  // Setup is not finished: its page is at the start.
+  if (!userStateQuery.data || !setupDone) {
     return <Navigate to="/" replace />;
   }
 
@@ -41,6 +45,7 @@ function RouteComponent() {
         <Notices />
       </AppSidebarWrapper>
       <NewPlaylistDialog />
+      <MpvInfoDialog />
     </div>
   );
 }

@@ -1,15 +1,18 @@
 import { Context, Effect, Layer } from "effect";
 import type { BinaryState } from "#shared/commands/player";
 import type { MpvInstallMethod } from "#shared/commands/player";
-import { detectInstallCandidates, type MpvInstallCandidate } from "./install-catalog";
-import { collectMpvCandidates, createMpvLocatorDeps, probeFreshPath, type MpvCandidate, type MpvLocatorDeps } from "./mpv-locator";
+import { InstallFailed } from "../errors";
+import { detectInstallCandidates } from "./install-catalog";
+import { collectMpvCandidates, createMpvLocatorDeps, getWellKnownMpvPaths, probeFreshPath, type MpvCandidate, type MpvLocatorDeps } from "./mpv-locator";
 import { validateMpvBinary } from "./mpv-validator";
+import { launchTerminal, planTerminal } from "./terminal";
 
 export class Binaries extends Context.Service<
   Binaries,
   {
     readonly resolve: (manualPath: string | null, cachedPath: string | null) => Effect.Effect<BinaryState>;
-    readonly candidate: (method: MpvInstallMethod) => Effect.Effect<MpvInstallCandidate | null>;
+    /** Opens a terminal that installs mpv with `method`, for the user to see through. */
+    readonly openTerminal: (method: MpvInstallMethod) => Effect.Effect<void, InstallFailed>;
   }
 >()("@muswag/player/Binaries") {}
 
@@ -42,7 +45,7 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
       });
       const unavailable = Effect.fnUntraced(function* () {
         const options = (yield* detectInstallCandidates(environment)).map((candidate) => candidate.option);
-        return { _tag: "Unavailable" as const, message: rejected ?? "mpv was not found. Install it, or select its executable.", options };
+        return { _tag: "Unavailable" as const, message: rejected ?? "mpv was not found. Install it, or select its executable.", options, searched: getWellKnownMpvPaths(environment) };
       });
 
       for (const candidate of yield* collectMpvCandidates({ manualPath, cachedPath }, environment)) {
@@ -55,9 +58,15 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
     },
     Effect.timeoutOrElse({
       duration: "30 seconds",
-      orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", message: "Checking mpv timed out.", options: [] }),
+      orElse: () => Effect.succeed<BinaryState>({ _tag: "Unavailable", message: "Checking mpv timed out.", options: [], searched: [] }),
     }),
   ),
-  candidate: (method) => detectInstallCandidates(environment).pipe(Effect.map((candidates) => candidates.find((candidate) => candidate.option.method === method) ?? null)),
+  openTerminal: Effect.fn("Binaries.openTerminal")(function* (method: MpvInstallMethod) {
+    const candidate = (yield* detectInstallCandidates(environment)).find((candidate) => candidate.option.method === method);
+    if (!candidate?.managerPath) return yield* new InstallFailed({ operation: "install", message: "That package manager is not installed." });
+    const launches = yield* planTerminal({ method, managerPath: candidate.managerPath, args: candidate.args }, environment);
+    if (launches.length === 0) return yield* new InstallFailed({ operation: "install", message: "No terminal could be found. Copy the command and run it in a terminal." });
+    yield* launchTerminal(launches);
+  }),
 });
 export const BinariesLive = Layer.effect(Binaries, createMpvLocatorDeps.pipe(Effect.map(makeBinaries)));

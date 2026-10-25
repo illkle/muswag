@@ -1,5 +1,5 @@
 import { Schema, type Redacted } from "effect";
-import { Id as Key, type PlaybackItem } from "@muswag/model";
+import type { PlaybackItem } from "@muswag/model";
 
 /**
  * The main-process player as the rest of the app talks to it. Only what is decoded on arrival is a
@@ -20,7 +20,8 @@ export const MpvSource = Schema.Literals(["env", "manual", "cache", "path", "wel
 export type MpvSource = typeof MpvSource.Type;
 export const MpvInstallOption = Schema.Struct({
   command: Schema.String,
-  automatic: Schema.Boolean,
+  /** The app can open a terminal that runs `command`: the package manager is installed. */
+  terminal: Schema.Boolean,
   method: MpvInstallMethod,
   note: Schema.NullOr(Schema.String),
   url: Schema.NullOr(Schema.String),
@@ -30,23 +31,13 @@ export type MpvInstallOption = typeof MpvInstallOption.Type;
 export const BinaryState = Schema.Union([
   Schema.TaggedStruct("Checking", {}),
   Schema.TaggedStruct("Ready", { path: Schema.String, version: Schema.String, source: MpvSource }),
-  /** `message` names the binary that was turned down and says why, or says that none was found. */
-  Schema.TaggedStruct("Unavailable", { message: Schema.String, options: Schema.Array(MpvInstallOption) }),
+  /**
+   * `message` names the binary that was turned down and says why, or says that none was found.
+   * `searched` is where the app looked besides PATH.
+   */
+  Schema.TaggedStruct("Unavailable", { message: Schema.String, options: Schema.Array(MpvInstallOption), searched: Schema.Array(Schema.String) }),
 ]);
 export type BinaryState = typeof BinaryState.Type;
-
-const InstallJob = { jobId: Schema.String, method: MpvInstallMethod };
-export const InstallState = Schema.Union([
-  Schema.TaggedStruct("Idle", {}),
-  Schema.TaggedStruct("Running", InstallJob),
-  Schema.TaggedStruct("Cancelling", InstallJob),
-  Schema.TaggedStruct("Succeeded", InstallJob),
-  Schema.TaggedStruct("Cancelled", InstallJob),
-  Schema.TaggedStruct("Failed", { ...InstallJob, message: Schema.String }),
-]);
-export type InstallState = typeof InstallState.Type;
-export const InstallOutput = Schema.Struct({ jobId: Schema.String, sequence: Count, stream: Schema.Literals(["stdout", "stderr"]), line: Schema.String });
-export type InstallOutput = typeof InstallOutput.Type;
 
 // ---- Commands ----
 
@@ -56,8 +47,7 @@ export const RendererCommand = Schema.Union([
   Schema.TaggedStruct("Seek", { seconds: Seconds }),
   Schema.TaggedStruct("SetVolume", { percent: Percent }),
   Schema.TaggedStruct("SetMuted", { muted: Schema.Boolean }),
-  Schema.TaggedStruct("StartInstall", { method: MpvInstallMethod }),
-  Schema.TaggedStruct("CancelInstall", { jobId: Key }),
+  Schema.TaggedStruct("OpenInstallTerminal", { method: MpvInstallMethod }),
 ]);
 export type RendererCommand = typeof RendererCommand.Type;
 
@@ -142,8 +132,6 @@ export type PlayerSnapshot = {
   readonly volumePercent: number;
   readonly muted: boolean;
   readonly binary: BinaryState;
-  readonly install: InstallState;
-  readonly installOutput: readonly InstallOutput[];
   readonly error: PlayerError | null;
 };
 
@@ -153,7 +141,5 @@ export const initialSnapshot = (epoch: string): PlayerSnapshot => ({
   volumePercent: 100,
   muted: false,
   binary: { _tag: "Checking" },
-  install: { _tag: "Idle" },
-  installOutput: [],
   error: null,
 });

@@ -16,8 +16,7 @@ const mocks = vi.hoisted(() => ({
   pause: vi.fn(async () => {}),
   seek: vi.fn<(seconds: number) => Promise<void>>(),
   dismissError: vi.fn(async () => {}),
-  locate: vi.fn(async () => {}),
-  recheck: vi.fn(async () => {}),
+  openMpvDialog: vi.fn(),
   status: "paused",
   canGoForward: false,
   startQueue: vi.fn(async () => {}),
@@ -26,7 +25,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("#/player/commands", () => ({
-  MpvIPC: { locate: mocks.locate, recheck: mocks.recheck },
   PlayerIPC: { setMuted: mocks.setMuted, setVolume: mocks.setVolume, play: mocks.play, pause: mocks.pause, seek: mocks.seek, dismissError: mocks.dismissError },
 }));
 // A paused track of four minutes, a hundred seconds in.
@@ -47,6 +45,7 @@ vi.mock("#/player/hooks", () => ({
   usePlayerStatus: () => mocks.status,
 }));
 vi.mock("#/data/library", () => ({ db: {} }));
+vi.mock("#/components/settings/mpv-info-dialog", () => ({ openMpvDialog: mocks.openMpvDialog }));
 vi.mock("#/queue/queue", () => ({ QueueActions: { play: mocks.startQueue, next: mocks.next } }));
 vi.mock("#/lib/notify", () => ({ failureNotice: (message: string) => (cause: unknown) => mocks.noticed(message, cause) }));
 vi.mock("#/components/queue-panel", () => ({ QueuePanelToggle: () => null }));
@@ -142,7 +141,7 @@ describe("PlayerPanel", () => {
     mocks.error = null;
     mocks.status = "paused";
     mocks.canGoForward = false;
-    for (const mock of [mocks.play, mocks.pause, mocks.dismissError, mocks.locate, mocks.recheck, mocks.startQueue, mocks.noticed]) mock.mockClear();
+    for (const mock of [mocks.play, mocks.pause, mocks.dismissError, mocks.openMpvDialog, mocks.startQueue, mocks.noticed]) mock.mockClear();
     mocks.next.mockReset().mockResolvedValue(undefined);
     mocks.seek.mockReset().mockResolvedValue(undefined);
   });
@@ -252,10 +251,8 @@ describe("PlayerPanel", () => {
     mocks.error = { message: "mpv was not found. Install it, or select its executable.", fix: "mpv" };
     view.rerender(<PlayerPanel />);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Locate mpv" }));
-    fireEvent.click(screen.getByRole("button", { name: "Recheck" }));
-    expect(mocks.locate).toHaveBeenCalledOnce();
-    expect(mocks.recheck).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Set up mpv" }));
+    expect(mocks.openMpvDialog).toHaveBeenCalledOnce();
 
     mocks.error = null;
     view.rerender(<PlayerPanel />);

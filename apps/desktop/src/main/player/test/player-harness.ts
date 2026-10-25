@@ -4,8 +4,7 @@ import { songRow, type PlaybackItem } from "@muswag/model";
 import type { PlayerSnapshot } from "#shared/commands/player";
 import { PLAYER_TABLES } from "#shared/state/player";
 import { Binaries } from "../binary/binaries";
-import { Installer } from "../binary/installer";
-import type { EngineError } from "../errors";
+import type { EngineError, InstallFailed } from "../errors";
 import { isPositionEvent, MpvSession, type SessionEvent, type SessionSinks } from "../mpv/session";
 import type { MpvCommand, MpvEvent } from "../mpv/protocol";
 import { PlayerLive, type PlayerService } from "../player";
@@ -26,6 +25,7 @@ export function fixture() {
   let probes = 0;
   let openFailure: EngineError | null = null;
   let probeGate: Effect.Effect<void> = Effect.void;
+  let terminal: Effect.Effect<void, InstallFailed> = Effect.void;
   const commands: unknown[][] = [];
   let override: ((command: MpvCommand<unknown>) => Effect.Effect<unknown, EngineError> | undefined) | undefined;
   const deliver = (event: MpvEvent, entryId: number | null, gen = generation) => {
@@ -95,13 +95,14 @@ export function fixture() {
               Effect.andThen(
                 Effect.sync(() => {
                   probes++;
-                  return openFailure ? { _tag: "Unavailable" as const, message: "Missing mpv", options: [] } : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
+                  return openFailure
+                    ? { _tag: "Unavailable" as const, message: "Missing mpv", options: [], searched: [] }
+                    : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
                 }),
               ),
             ),
-          candidate: () => Effect.succeed(null),
+          openTerminal: () => Effect.suspend(() => terminal),
         }),
-        Layer.succeed(Installer, { start: () => Effect.die("unused"), cancel: () => Effect.void, changes: Stream.empty }),
         Layer.succeed(SettingsStore, { load: Effect.succeed(defaultSettings), save: () => Effect.void }),
       ),
     ),
@@ -115,6 +116,10 @@ export function fixture() {
     /** Makes mpv fail to start, and be reported missing, until called with `null`. */
     failOpen: (error: EngineError | null) => {
       openFailure = error;
+    },
+    /** What opening a terminal for an install does. */
+    openTerminal: (outcome: Effect.Effect<void, InstallFailed>) => {
+      terminal = outcome;
     },
     /** Makes every check for mpv wait for `gate` first. */
     holdProbes: (gate: Effect.Effect<void>) => {

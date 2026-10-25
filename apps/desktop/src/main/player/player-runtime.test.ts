@@ -5,7 +5,7 @@ import { Deferred, Effect, Fiber, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import type { PlayerCommand } from "#shared/commands/player";
-import { EngineError } from "./errors";
+import { EngineError, InstallFailed } from "./errors";
 import { player as playerTable, playerPosition } from "#shared/state/player";
 import { Player } from "./player";
 import { fixture, login, tracks, until } from "./test/player-harness";
@@ -16,6 +16,25 @@ const edit = (items = tracks): PlayerCommand => ({ _tag: "ApplyQueue", items, se
 const barrier: PlayerCommand = { _tag: "SetMuted", muted: false };
 
 describe("Effect player", () => {
+  it.effect("opens a terminal without waiting behind playback, and tells only the caller when it cannot", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      const gate = yield* Deferred.make<void>();
+      // A check for mpv that does not finish holds the worker: the terminal must not wait for it.
+      test.holdProbes(Deferred.await(gate));
+      const refresh = yield* player.execute({ _tag: "RefreshBinary" }).pipe(Effect.forkChild);
+      yield* player.execute({ _tag: "OpenInstallTerminal", method: "apt" });
+
+      test.openTerminal(Effect.fail(new InstallFailed({ operation: "install", message: "No terminal could be found." })));
+      const failed = yield* player.execute({ _tag: "OpenInstallTerminal", method: "apt" }).pipe(Effect.flip);
+      expect(failed.message).toBe("No terminal could be found.");
+      expect((yield* player.snapshot).error).toBeNull();
+
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(refresh);
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("commits a duplicate-media queue while events arrive before replies; restores only after load", () => {
     const test = fixture();
     return Effect.gen(function* () {

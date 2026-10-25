@@ -1,10 +1,9 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
-import { initialSnapshot, type Media, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
-import { installOutputRows, player as playerTable, playerInstallOutput, playerPosition, playerPositionRow, playerRow } from "#shared/state/player";
+import { initialSnapshot, type Media, type MpvInstallMethod, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
+import { player as playerTable, playerPosition, playerPositionRow, playerRow } from "#shared/state/player";
 import { Binaries } from "./binary/binaries";
-import { Installer, type InstallProgress } from "./binary/installer";
 import { BinaryUnavailable, CommandFailed, describeFailure, EngineError, InternalError, InvalidCommand, PlaybackFailed, SettingsFailed, safeCause, safeFailure, type PlayerFailure } from "./errors";
 import { currentMedia, isCurrentEvent, isFiniteNonNegative, isHeldPaused, isSettled, withDuration, withoutError, withPosition } from "./model";
 import { applyQueue, currentEntry, retainsCurrent, type Correlation } from "./queue";
@@ -32,7 +31,8 @@ export interface PlayerService {
 }
 export class Player extends Context.Service<Player, PlayerService>()("@muswag/player/Player") {}
 
-type Operation = PlayerCommand | { readonly _tag: "Credentials"; readonly credentials: PlayerCredentials | null };
+/** What the worker runs, one at a time. Opening a terminal is not among them: see `openInstallTerminal`. */
+type Operation = Exclude<PlayerCommand, { readonly _tag: "OpenInstallTerminal" }> | { readonly _tag: "Credentials"; readonly credentials: PlayerCredentials | null };
 const sameCredentials = (a: PlayerCredentials | null, b: PlayerCredentials | null) =>
   a === b || (a !== null && b !== null && a.url === b.url && a.username === b.username && a.salt === b.salt && Redacted.value(a.token) === Redacted.value(b.token));
 
@@ -44,7 +44,6 @@ type Message =
   | { readonly _tag: "Position"; readonly event: SessionEvent }
   | { readonly _tag: "EngineFailed"; readonly error: EngineError; readonly generation: number }
   | { readonly _tag: "LoadTimeout"; readonly token: number }
-  | { readonly _tag: "Install"; readonly progress: InstallProgress }
   | { readonly _tag: "SettingsWriteFailed" };
 
 /** A running mpv session and the state that is only meaningful while it lives. */
@@ -75,7 +74,6 @@ export const PlayerLive = Layer.effect(
   Effect.gen(function* () {
     const sessions = yield* MpvSession;
     const binaries = yield* Binaries;
-    const installer = yield* Installer;
     const store = yield* SettingsStore;
     const stateMirror = yield* MemoryMirror;
     const owner = yield* Effect.scope;
@@ -117,24 +115,19 @@ export const PlayerLive = Layer.effect(
 
     // ---- State publication ----
 
-    /** The snapshot renderers last saw, through the state mirror. */
-    let mirrored: PlayerSnapshot | null = null;
-    /** Writes the rows of `next` that changed. The install output is rewritten only when it is a new list. */
+    /** Writes the rows of `next`. */
     const mirror = (next: PlayerSnapshot) =>
-      Effect.suspend(() => {
-        const previous = mirrored;
-        mirrored = next;
-        return stateMirror.write(
+      stateMirror
+        .write(
           Effect.gen(function* () {
             yield* stateMirror.upsert(playerTable, playerRow(next));
             yield* stateMirror.upsert(playerPosition, playerPositionRow(next));
-            if (previous?.installOutput !== next.installOutput) yield* stateMirror.replace(playerInstallOutput, installOutputRows(next));
           }),
+        )
+        .pipe(
+          // Renderers would miss this state, but playback itself must not stop over it.
+          Effect.catchCause((cause) => Effect.logError("Mirroring the player state failed", cause)),
         );
-      }).pipe(
-        // Renderers would miss this state, but playback itself must not stop over it.
-        Effect.catchCause((cause) => Effect.logError("Mirroring the player state failed", cause)),
-      );
     yield* mirror(initial);
 
     const publish = (next: PlayerSnapshot) =>
@@ -393,10 +386,6 @@ export const PlayerLive = Layer.effect(
             return setBinaryPath(operation.path);
           case "ClearBinaryPath":
             return setBinaryPath(null);
-          case "StartInstall":
-            return Effect.asVoid(installer.start(operation.method));
-          case "CancelInstall":
-            return installer.cancel(operation.jobId);
           case "DismissError":
             return publish(withoutError(state));
         }
@@ -482,12 +471,6 @@ export const PlayerLive = Layer.effect(
         if (!current || event.type !== "property" || typeof event.data !== "number" || !Number.isFinite(event.data) || !isSettled(state.playback)) return Effect.void;
         return publish(withPosition(state, event.data));
       });
-    const applyInstallProgress = Effect.fn("Player.applyInstallProgress")(function* ({ state: install, output }: InstallProgress) {
-      const previous = state.install;
-      yield* publish({ ...state, install, installOutput: output });
-      const newlySucceeded = install._tag === "Succeeded" && !(previous._tag === "Succeeded" && previous.jobId === install.jobId);
-      if (newlySucceeded) yield* refreshBinary();
-    });
 
     // ---- Failure reporting ----
 
@@ -554,8 +537,6 @@ export const PlayerLive = Layer.effect(
           return engine?.session.generation === message.generation ? report(message.error, "engine") : Effect.void;
         case "LoadTimeout":
           return message.token === loadToken && state.playback._tag === "Loading" ? failPlayback(new PlaybackFailed({ operation: "load", message: "The track did not finish loading." })) : Effect.void;
-        case "Install":
-          return applyInstallProgress(message.progress);
         case "SettingsWriteFailed":
           return publish({ ...state, error: { message: "Playback preferences could not be saved.", fix: null } });
       }
@@ -591,15 +572,14 @@ export const PlayerLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    // Install output can be chatty; the worker only needs the latest progress.
-    yield* installer.changes.pipe(
-      Stream.buffer({ capacity: 1, strategy: "sliding" }),
-      Stream.runForEach((progress) => Queue.offer(mailbox, { _tag: "Install", progress })),
-      Effect.forkScoped,
-    );
 
     // ---- Public API ----
 
+    /**
+     * Opening a terminal changes nothing of the player's, so it does not wait behind playback, which it
+     * could hold up for seconds, nor become the player's error: the one who asked is told what went wrong.
+     */
+    const openInstallTerminal = (method: MpvInstallMethod) => binaries.openTerminal(method).pipe(Effect.mapError((error) => new CommandFailed({ message: error.message })));
     const submit = Effect.fn("Player.submit")(function* (operation: Operation) {
       if (closing) return yield* new CommandFailed({ message: "The player is unavailable." });
       const reply = yield* Deferred.make<void, CommandFailed>();
@@ -613,7 +593,6 @@ export const PlayerLive = Layer.effect(
       closing = true;
       yield* Fiber.interrupt(worker);
       yield* failPendingReplies("The player is shutting down.");
-      if (state.install._tag === "Running" || state.install._tag === "Cancelling") yield* installer.cancel(state.install.jobId);
       yield* closeEngine();
       yield* settingsWriter.flush;
       yield* publish({ ...state, playback: { _tag: "Idle" } });
@@ -621,7 +600,7 @@ export const PlayerLive = Layer.effect(
     yield* Effect.addFinalizer(() => shutdown);
 
     return {
-      execute: submit,
+      execute: (command) => (command._tag === "OpenInstallTerminal" ? openInstallTerminal(command.method) : submit(command)),
       setCredentials: (next) => submit({ _tag: "Credentials", credentials: next }),
       snapshot: SubscriptionRef.get(published),
       changes: SubscriptionRef.changes(published),

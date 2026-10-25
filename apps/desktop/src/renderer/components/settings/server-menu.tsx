@@ -9,13 +9,11 @@ import { useUser, Session } from "#/session/session";
 import { LibraryActions } from "#/library/actions";
 import { useLibrarySyncStatus } from "#/library/queries";
 import { AppUpdateDialog } from "#/components/settings/app-update-dialog";
-import { MpvInfoDialog, mpvStatusLabels } from "#/components/settings/mpv-info-dialog";
+import { mpvStatusLabels, openMpvDialog } from "#/components/settings/mpv-info-dialog";
 import { ThemeMenuControl } from "#/components/settings/theme-switcher";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "#/components/ui/menu";
 import { SidebarMenuButton } from "#/components/ui/sidebar";
 import { cn } from "#/lib/utils";
-
-type SettingsDialog = "mpv" | "update";
 
 const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
@@ -43,7 +41,7 @@ export function ServerMenu() {
   const playerError = usePlayerError();
   const appUpdate = useAppUpdate();
 
-  const [dialog, setDialog] = useState<SettingsDialog | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const logoutMutation = useMutation({
     mutationFn: () => Session.logout(),
@@ -53,8 +51,7 @@ export function ServerMenu() {
     mutationFn: (mode: SyncMode) => LibraryActions.sync(mode),
   });
 
-  const closeDialog = useCallback(() => setDialog(null), []);
-  const setMpvDialogOpen = useCallback((open: boolean) => setDialog(open ? "mpv" : null), []);
+  const closeUpdateDialog = useCallback(() => setUpdateDialogOpen(false), []);
 
   const hostName = useMemo(() => {
     if (!userStateQuery.data) {
@@ -129,7 +126,7 @@ export function ServerMenu() {
             Sync everything again
           </MenuItem>
 
-          <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={() => setDialog("mpv")}>
+          <MenuItem className={cn(playbackBroken && "bg-destructive/10 text-destructive data-highlighted:bg-destructive/20 data-highlighted:text-destructive")} onClick={openMpvDialog}>
             {playbackBroken ? <WarningIcon className="size-4" /> : <WaveformIcon className="size-4 text-muted-foreground" />}
             <span className="flex-1 truncate">Playback engine</span>
             {playbackBroken ? (
@@ -139,7 +136,7 @@ export function ServerMenu() {
             )}
           </MenuItem>
 
-          <MenuItem onClick={() => setDialog("update")}>
+          <MenuItem onClick={() => setUpdateDialogOpen(true)}>
             <PackageIcon className="size-4 text-muted-foreground" />
             <span className="flex-1 truncate">
               Muswag <span className="font-mono tabular-nums">v{appUpdate?.currentVersion ?? "…"}</span>
@@ -163,8 +160,7 @@ export function ServerMenu() {
         </MenuContent>
       </Menu>
 
-      <MpvInfoDialog onOpenChange={setMpvDialogOpen} open={dialog === "mpv"} />
-      <AppUpdateDialog onOpenChange={closeDialog} open={dialog === "update"} state={appUpdate} />
+      <AppUpdateDialog onOpenChange={closeUpdateDialog} open={updateDialogOpen} state={appUpdate} />
     </>
   );
 }

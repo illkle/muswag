@@ -1,14 +1,14 @@
 import { useSelector } from "@tanstack/react-store";
 
 import { playerState } from "#/data/state";
-import { collectionStore, rowStore } from "#/data/stores";
+import { rowStore } from "#/data/stores";
 import { useQueueSelector } from "#/queue/queue";
-import type { BinaryState, InstallState, PlayerError } from "#shared/commands/player";
+import type { BinaryState, PlayerError } from "#shared/commands/player";
 import { getQueueCanGoNext, getQueueCanGoPrevious, getQueueCanStart } from "#shared/queue-state";
 import type { PlayerPositionRow, PlayerRow } from "#shared/state/player";
 
 // ---- Rows ----
-// Each player table has one row, keyed "player", except the install output. Each hook selects what it
+// Each player table has one row, keyed "player". Each hook selects what it
 // needs from them, so a component re-renders only when that changes: the position changes twice a second.
 
 /** `undefined` until the state mirror has loaded. */
@@ -68,11 +68,5 @@ export function usePlayerCanGoBack() {
 // ---- mpv ----
 
 const CHECKING: BinaryState = { _tag: "Checking" };
-const INSTALL_IDLE: InstallState = { _tag: "Idle" };
 
 export const usePlayerMpvBinary = (): BinaryState => usePlayer((row) => row?.binary ?? CHECKING);
-export const usePlayerMpvInstall = (): InstallState => usePlayer((row) => row?.install ?? INSTALL_IDLE);
-
-/** The output of the running or last mpv installation, oldest line first. Main keeps only its tail, so sorting it here is cheap. */
-const installOutput = collectionStore([playerState.installOutput], () => playerState.installOutput.toArray.sort((left, right) => left.sequence - right.sequence).map(({ line }) => line));
-export const usePlayerInstallOutput = (): string[] => useSelector(installOutput);
