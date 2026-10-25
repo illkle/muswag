@@ -18,6 +18,8 @@ const selected = (() => {
 })();
 
 const dockerAvailable = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
+// CI sets `MUSWAG_REQUIRE_DOCKER`, so that a runner without Docker fails rather than passes with every test skipped.
+if (!dockerAvailable && process.env["MUSWAG_REQUIRE_DOCKER"]) throw new Error("MUSWAG_REQUIRE_DOCKER is set, and Docker is not available.");
 if (!dockerAvailable) console.warn("Skipping the server tests: Docker is not available.");
 
 /**
