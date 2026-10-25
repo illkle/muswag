@@ -31,7 +31,7 @@ const player = {
   subscribe: () => () => {},
 } as unknown as PlayerHandle;
 let updateChecks = 0;
-const updates = { check: async () => void updateChecks++, install: () => {} };
+const updates = { check: async () => void updateChecks++, install: () => {}, setChannel: async () => {} };
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
 const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, stateMirror: stateMirror.mirror, searchWorkerPath });
 

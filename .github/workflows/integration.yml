@@ -1,0 +1,42 @@
+name: Integration tests
+
+# Against Navidrome, gonic and LMS in Docker (`packages/tests/README.md`). Run by hand for a branch,
+# from the Actions tab or with `gh workflow run integration.yml --ref <branch>`; every release runs
+# them too.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  servers:
+    name: Integration (${{ matrix.server }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - navidrome
+          - gonic
+          - lms
+    env:
+      MUSWAG_TEST_SERVERS: ${{ matrix.server }}
+      MUSWAG_REQUIRE_DOCKER: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up workspace
+        uses: ./.github/actions/setup
+
+      - name: Test against ${{ matrix.server }}
+        run: pnpm test:integration

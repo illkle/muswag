@@ -23,6 +23,7 @@ import {
 import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 import { Schema } from "effect";
 
+import { UpdateChannel } from "../state/app-update";
 import { RendererCommand, type CommandResult } from "./player";
 
 /**
@@ -69,6 +70,7 @@ export const AppCommandArgs = {
   "player:locate": Schema.Tuple([]),
   "appUpdate:check": Schema.Tuple([]),
   "appUpdate:install": Schema.Tuple([]),
+  "appUpdate:setChannel": Schema.Tuple([UpdateChannel]),
 } as const;
 
 /** A library write that renderers can wait for with `collection.utils.awaitPosition`. */
@@ -125,6 +127,8 @@ export type AppCommandResults = {
   "appUpdate:check": void;
   /** Quits and installs a downloaded update. Does nothing until the status is `ready`. */
   "appUpdate:install": void;
+  /** Updates from another channel from now on, and checks it. */
+  "appUpdate:setChannel": void;
 };
 
 export type AppCommandName = keyof typeof AppCommandArgs;

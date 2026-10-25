@@ -1,48 +1,147 @@
 name: Release desktop app
 
+# Two channels, which the app's update setting chooses between:
+# - stable: a `vX.Y.Z` tag. Its release is the one GitHub marks as the latest.
+# - nightly: master at 06:00 UTC, when it has moved since the last nightly. Its version is the patch
+#   after the latest stable one, as in `0.5.2-nightly.20261025.142`, so it sorts above that stable
+#   release and below the next. Its release is a prerelease, and only the newest few are kept.
+# Either way the release is published only once the checks and the integration tests have passed.
+#
+# The macOS app is signed with muswag's own certificate, kept in 1Password and in the
+# MACOS_SIGNING_P12 and MACOS_SIGNING_PASSWORD secrets. macOS does not know it, so it does not make
+# the first install any easier, but it stays the same from release to release, which is what
+# Squirrel.Mac checks before it installs an update. A build signed with another certificate could not
+# update the installed apps, so the build fails unless the app is signed with this one.
+
 on:
   push:
     tags:
       - "v*"
+      # The nightly tags are made by this workflow, which tags do not trigger; this keeps it so.
+      - "!v*-nightly.*"
+  schedule:
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
+      channel:
+        description: Channel to release
+        type: choice
+        options:
+          - nightly
+          - stable
+        default: nightly
       tag:
-        description: Existing release tag (for example, v0.1.14)
-        required: true
+        description: "Stable only: the existing tag to build, for example v0.5.1"
         type: string
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-release-${{ inputs.tag || github.ref_name }}
+  group: desktop-release-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'nightly' }}
   cancel-in-progress: false
+
+env:
+  NIGHTLIES_KEPT: 5
+  # The SHA-1 fingerprint of the signing certificate.
+  MACOS_SIGNING_SHA1: 7341BDEE4BFD60D3F17072BE8F6A2038C67808F1
 
 jobs:
   prepare:
-    name: Validate release tag
+    name: Work out the release
     runs-on: ubuntu-latest
     outputs:
+      skip: ${{ steps.release.outputs.skip }}
+      channel: ${{ steps.release.outputs.channel }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
-    env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      sha: ${{ steps.release.outputs.sha }}
+      notes_from: ${{ steps.release.outputs.notes_from }}
     steps:
-      - name: Validate version tag
+      # A nightly is always of master, whichever branch it was started from.
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_type != 'tag' && github.event.repository.default_branch || '' }}
+          fetch-depth: 0
+
+      - name: Work out channel, version and commit
         id: release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
-            echo "Release tag must look like v0.1.14; got: $RELEASE_TAG" >&2
-            exit 1
+          set -euo pipefail
+
+          stable_tags() { git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; }
+
+          case "$EVENT" in
+            push) channel=stable; tag="$GITHUB_REF_NAME" ;;
+            schedule) channel=nightly; tag="" ;;
+            *) channel="$INPUT_CHANNEL"; tag="$INPUT_TAG" ;;
+          esac
+          skip=false
+
+          if [[ "$channel" == stable ]]; then
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "A stable release tag must look like v0.5.1; got: '$tag'" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            sha="$(git rev-list -n 1 "$tag")"
+            # The notes cover what changed since the stable release before this one.
+            notes_from="$(stable_tags | awk -v tag="$tag" 'found { print; exit } $0 == tag { found = 1 }')"
+          else
+            sha="$(git rev-parse HEAD)"
+            latest_stable="$(stable_tags | head -n 1)"
+            IFS=. read -r major minor patch <<< "${latest_stable#v}"
+            version="${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))-nightly.$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
+            tag="v$version"
+            last_nightly="$(gh release list --limit 100 --exclude-drafts --json tagName,createdAt \
+              --jq '[.[] | select(.tagName | contains("-nightly."))] | sort_by(.createdAt) | last | .tagName // ""')"
+            notes_from="${last_nightly:-$latest_stable}"
+            # A nightly started by hand is built even when master has not moved.
+            if [[ "$EVENT" == schedule && -n "$last_nightly" && "$(git rev-list -n 1 "$last_nightly")" == "$sha" ]]; then
+              echo "master is where $last_nightly was built; no nightly today."
+              skip=true
+            fi
           fi
 
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          {
+            echo "skip=$skip"
+            echo "channel=$channel"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "sha=$sha"
+            echo "notes_from=$notes_from"
+          } >> "$GITHUB_OUTPUT"
+          echo "$channel $version at $sha (notes from ${notes_from:-the start}), skip=$skip"
 
+  checks:
+    name: Checks
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  integration:
+    name: Integration tests
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    uses: ./.github/workflows/integration.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  # The builds run alongside the checks; only publishing waits for them.
   build:
     name: Build (${{ matrix.platform }})
     needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -54,7 +153,6 @@ jobs:
             artifact_paths: |
               apps/desktop/dist/*.AppImage
               apps/desktop/dist/*.deb
-              apps/desktop/dist/latest-linux.yml
           - platform: macos
             os: macos-latest
             electron_builder_target: --mac
@@ -63,49 +161,107 @@ jobs:
               apps/desktop/dist/*.dmg.blockmap
               apps/desktop/dist/*.zip
               apps/desktop/dist/*.zip.blockmap
-              apps/desktop/dist/latest-mac.yml
           - platform: windows
             os: windows-latest
             electron_builder_target: --win
             artifact_paths: |
               apps/desktop/dist/*.exe
               apps/desktop/dist/*.exe.blockmap
-              apps/desktop/dist/latest.yml
 
     env:
       APP_VERSION: ${{ needs.prepare.outputs.version }}
+      # The name of the update files, `latest*.yml` or `nightly*.yml`. The packaged app is told it too,
+      # in `app-update.yml`.
+      UPDATE_CHANNEL: ${{ needs.prepare.outputs.channel == 'nightly' && 'nightly' || 'latest' }}
       CSC_IDENTITY_AUTO_DISCOVERY: false
 
     steps:
-      - name: Check out release tag
-        uses: actions/checkout@v4
+      - name: Check out the release commit
+        uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.sha }}
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up workspace
+        uses: ./.github/actions/setup
         with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm --filter muswag --filter '@muswag/desktop...' install --frozen-lockfile
+          filter: --filter muswag --filter '@muswag/desktop...'
 
       - name: Build application
         run: pnpm --filter '@muswag/desktop...' --if-present run build
 
+      # electron-builder signs only with an identity macOS trusts, and its own import of CSC_LINK
+      # unlocks its keychain with the wrong password (26.15.3). So the certificate goes into a keychain
+      # made here, and the runner, which is thrown away after the job, trusts it.
+      - name: Import the signing certificate
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24)"
+          printf %s "$MACOS_SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$MACOS_SIGNING_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          read -r -a keychains <<< "$(security list-keychains -d user | tr -d '"')"
+          security list-keychains -d user -s "$keychain" "${keychains[@]}"
+
+          imported="$(security find-certificate -a -Z "$keychain" | awk '/SHA-1 hash:/ { print $3 }')"
+          if [[ "$imported" != "$MACOS_SIGNING_SHA1" ]]; then
+            echo "The certificate in MACOS_SIGNING_P12 is $imported, not $MACOS_SIGNING_SHA1." >&2
+            exit 1
+          fi
+          security find-certificate -Z "$keychain" -p > "$RUNNER_TEMP/signing.pem"
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing.pem"
+          security find-identity -v -p codesigning "$keychain"
+
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      # On macOS, `forceCodeSigning` fails the build rather than leaving the app unsigned.
       - name: Package application
         working-directory: apps/desktop
-        run: pnpm exec electron-builder ${{ matrix.electron_builder_target }} --publish never --config.extraMetadata.version=${{ env.APP_VERSION }}
+        run: >-
+          pnpm exec electron-builder ${{ matrix.electron_builder_target }} --publish never
+          --config.extraMetadata.version=${{ env.APP_VERSION }}
+          --config.publish.channel=${{ env.UPDATE_CHANNEL }}
+          ${{ matrix.platform == 'macos' && format('--config.mac.identity={0} --config.forceCodeSigning=true', env.MACOS_SIGNING_SHA1) || '' }}
+
+      - name: Check the app's signature
+        if: matrix.platform == 'macos'
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          fingerprint="$(printf %s "$MACOS_SIGNING_SHA1" | tr '[:upper:]' '[:lower:]')"
+          for app in dist/mac*/muswag.app; do
+            codesign --verify --deep --strict "$app"
+            requirement="$(codesign -d -r- "$app" 2>&1)"
+            echo "$requirement"
+            if [[ "$requirement" != *"certificate leaf = H\"$fingerprint\""* ]]; then
+              echo "$app is not signed with the muswag certificate." >&2
+              exit 1
+            fi
+          done
+
+      - name: Remove the signing keychain
+        if: always() && matrix.platform == 'macos' && env.CSC_KEYCHAIN != ''
+        shell: bash
+        run: security delete-keychain "$CSC_KEYCHAIN"
 
       - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
-          path: ${{ matrix.artifact_paths }}
+          path: |
+            ${{ matrix.artifact_paths }}
+            apps/desktop/dist/${{ env.UPDATE_CHANNEL }}*.yml
           if-no-files-found: error
           retention-days: 7
 
@@ -113,23 +269,62 @@ jobs:
     name: Publish GitHub release
     needs:
       - prepare
+      - checks
+      - integration
       - build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      NOTES_FROM: ${{ needs.prepare.outputs.notes_from }}
     steps:
       - name: Download packaged artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: release-assets
           merge-multiple: true
 
+      # The release is a draft until every file is on it, so the update feed never offers a release
+      # with files missing.
       - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.version }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: release-assets/*
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A draft left by an earlier attempt would be in the way. A published release is not replaced.
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || true)" == true ]]; then
+            gh release delete "$TAG" --yes
+          fi
+
+          create=(--draft --target "$SHA" --title "$VERSION" --generate-notes)
+          if [[ -n "$NOTES_FROM" ]]; then create+=(--notes-start-tag "$NOTES_FROM"); fi
+          if [[ "$CHANNEL" == nightly ]]; then
+            create+=(--prerelease)
+            latest=--latest=false
+          else
+            latest=--latest
+          fi
+
+          gh release create "$TAG" release-assets/* "${create[@]}"
+          gh release edit "$TAG" --draft=false "$latest"
+
+      # Keeps the newest published nightlies, and drops older ones and drafts left by failed runs.
+      - name: Remove old nightlies
+        if: needs.prepare.outputs.channel == 'nightly'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,isDraft,createdAt \
+            --jq "[.[] | select(.tagName | contains(\"-nightly.\"))] | sort_by(.createdAt) | reverse
+                  | (map(select(.isDraft | not))[${NIGHTLIES_KEPT}:] + map(select(.isDraft))) | .[].tagName" |
+            while read -r tag; do
+              echo "Removing $tag"
+              gh release delete "$tag" --yes --cleanup-tag || echo "::warning::Could not remove $tag"
+            done

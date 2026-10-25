@@ -1,0 +1,25 @@
+name: Set up the workspace
+description: Installs pnpm as `packageManager` pins it, Node as `.node-version` pins it, and the dependencies, with pnpm's store cached.
+
+inputs:
+  filter:
+    description: "`--filter` arguments for `pnpm install`, to install only some packages' dependencies. Empty installs everything."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v6
+      with:
+        cache: true
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .node-version
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm ${{ inputs.filter }} install --frozen-lockfile

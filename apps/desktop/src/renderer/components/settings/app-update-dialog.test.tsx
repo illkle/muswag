@@ -9,6 +9,7 @@ import type { AppUpdateState } from "#shared/state/app-update";
 const mocks = vi.hoisted(() => ({
   check: vi.fn(),
   install: vi.fn(),
+  setChannel: vi.fn(),
 }));
 
 // The update state is read from main's mirror, which a test has no main for.
@@ -32,6 +33,7 @@ import { AppUpdateDialog } from "./app-update-dialog";
 
 const upToDate: AppUpdateState = {
   canCheck: true,
+  channel: "stable",
   currentVersion: "1.2.3",
   error: null,
   latestVersion: "1.2.3",
@@ -49,6 +51,7 @@ describe("AppUpdateDialog", () => {
   beforeEach(() => {
     mocks.check.mockReset().mockResolvedValue(undefined);
     mocks.install.mockReset().mockResolvedValue(undefined);
+    mocks.setChannel.mockReset().mockResolvedValue(undefined);
   });
 
   it("shows the installed version and forces a check when asked", () => {
@@ -80,5 +83,22 @@ describe("AppUpdateDialog", () => {
     expect(screen.getByText("Updates are only checked in packaged builds")).toBeTruthy();
     expect(screen.getByText("Never")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Check for updates/ }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("switches the update channel", () => {
+    render(<AppUpdateDialog onOpenChange={() => undefined} open state={upToDate} />);
+
+    expect(screen.getByRole("radio", { name: "Stable" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Released versions only.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Nightly" }));
+
+    expect(mocks.setChannel).toHaveBeenCalledWith("nightly");
+  });
+
+  it("says a nightly install on the stable channel waits for a newer stable release", () => {
+    render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, currentVersion: "1.2.4-nightly.20261025.7" }} />);
+
+    expect(screen.getByText("This nightly stays until a stable release is newer than it.")).toBeTruthy();
   });
 });

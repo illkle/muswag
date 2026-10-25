@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Schema } from "effect";
 
 import { AppCommandArgs, type AppCommandName, type AppCommandReply, type AppCommandResults } from "#shared/commands/app";
 import { APP_COMMAND_CHANNEL } from "#shared/ipc";
+import type { UpdateChannel } from "#shared/state/app-update";
 import type { AppIpc } from "../app-page";
 import type { PlayerHandle } from "../player/ipc";
 import type { QueueManager } from "../queue/queue-manager";
@@ -16,6 +17,7 @@ type Handlers = { [K in AppCommandName]: (...args: (typeof AppCommandArgs)[K]["T
 export interface AppUpdates {
   readonly check: () => Promise<void>;
   readonly install: () => void;
+  readonly setChannel: (channel: UpdateChannel) => Promise<void>;
 }
 
 /**
@@ -88,6 +90,7 @@ export const serveAppCommands = (options: {
       "player:locate": () => Effect.promise(() => player.locate()),
       "appUpdate:check": () => Effect.promise(() => updates.check()),
       "appUpdate:install": () => Effect.sync(() => updates.install()),
+      "appUpdate:setChannel": (channel) => Effect.promise(() => updates.setChannel(channel)),
     };
 
     const execute = <K extends AppCommandName>(name: K, input: unknown): Effect.Effect<AppCommandReply<K>> =>
