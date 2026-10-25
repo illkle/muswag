@@ -14,7 +14,7 @@ describe("player commands from a renderer", () => {
       { _tag: "SetVolume", percent: 40 },
       { _tag: "ClearBinaryPath" },
       { _tag: "DismissError" },
-      { _tag: "StartInstall", method: "brew" },
+      { _tag: "OpenInstallTerminal", method: "brew" },
     ])
       expect(decode(command)).toMatchObject({ _tag: "Success", value: command });
     expect(decode({ _tag: "Seek", seconds: -1 })._tag).toBe("Failure");

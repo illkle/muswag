@@ -19,12 +19,12 @@ function deps(overrides: Partial<MpvLocatorDeps>): MpvLocatorDeps {
 }
 
 describe("install catalog", () => {
-  it.effect("offers automatic Homebrew only when brew is installed", () =>
+  it.effect("opens a terminal with Homebrew only when brew is installed", () =>
     Effect.gen(function* () {
       const installed = yield* detectInstallCandidates(deps({ platform: "darwin", fileExists: (path) => Effect.succeed(path === "/opt/homebrew/bin/brew") }));
-      expect(installed[0]).toMatchObject({ managerPath: "/opt/homebrew/bin/brew", option: { automatic: true, method: "brew", url: null } });
+      expect(installed[0]).toMatchObject({ managerPath: "/opt/homebrew/bin/brew", option: { terminal: true, method: "brew", url: null } });
       const missing = yield* detectInstallCandidates(deps({ platform: "darwin" }));
-      expect(missing[0]).toMatchObject({ managerPath: null, option: { automatic: false, method: "brew", url: "https://brew.sh" } });
+      expect(missing[0]).toMatchObject({ managerPath: null, option: { terminal: false, method: "brew", url: "https://brew.sh" } });
     }),
   );
 
@@ -32,11 +32,11 @@ describe("install catalog", () => {
     Effect.gen(function* () {
       const candidates = yield* detectInstallCandidates(deps({ fileExists: (path) => Effect.succeed(path === "/usr/bin/flatpak" || path === "/usr/bin/dnf") }));
       expect(candidates).toHaveLength(1);
-      expect(candidates[0]).toMatchObject({ args: ["install", "mpv"], option: { automatic: false, command: "sudo dnf install mpv", method: "dnf" } });
+      expect(candidates[0]).toMatchObject({ args: ["install", "mpv"], option: { terminal: true, command: "sudo dnf install mpv", method: "dnf" } });
     }),
   );
 
-  it.effect("offers an automatic user-scoped WinGet install when WinGet is available", () =>
+  it.effect("offers a user-scoped WinGet install when WinGet is available", () =>
     Effect.gen(function* () {
       const candidates = yield* detectInstallCandidates(
         deps({
@@ -47,9 +47,9 @@ describe("install catalog", () => {
       );
 
       expect(candidates[0]).toMatchObject({
-        args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+        args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements"],
         managerPath: "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe",
-        option: { automatic: true, method: "winget", url: null },
+        option: { terminal: true, method: "winget", url: null },
       });
     }),
   );

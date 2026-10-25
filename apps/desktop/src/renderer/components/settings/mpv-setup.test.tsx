@@ -4,56 +4,57 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BinaryState, InstallState, MpvInstallOption } from "#shared/commands/player";
+import type { BinaryState, MpvInstallOption } from "#shared/commands/player";
 
 const mocks = vi.hoisted(() => ({
-  cancelInstall: vi.fn(async () => {}),
   clearManualPath: vi.fn(),
-  install: vi.fn(),
   locate: vi.fn(),
+  openTerminal: vi.fn(),
+  recheck: vi.fn(),
   playerState: {
     error: null as string | null,
-    install: { _tag: "Idle" } as InstallState,
     binary: { _tag: "Checking" } as BinaryState,
   },
-  recheck: vi.fn(),
-  installOutput: [] as string[],
 }));
 
 vi.mock("#/player/commands", () => ({
   MpvIPC: {
-    cancelInstall: mocks.cancelInstall,
     clearManualPath: mocks.clearManualPath,
-    install: mocks.install,
     locate: mocks.locate,
+    openTerminal: mocks.openTerminal,
     recheck: mocks.recheck,
   },
 }));
 
 vi.mock("#/player/hooks", () => ({
   usePlayerError: () => (mocks.playerState.error ? { message: mocks.playerState.error, fix: null } : null),
-  usePlayerInstallOutput: () => mocks.installOutput,
   usePlayerMpvBinary: () => mocks.playerState.binary,
-  usePlayerMpvInstall: () => mocks.playerState.install,
   usePlayerStatus: () => "idle",
 }));
 
 vi.mock("#/components/ui/dialog", () => ({
   Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
 import { MpvInfoDialog, openMpvDialog } from "./mpv-info-dialog";
-import { MpvSetup } from "./mpv-setup";
+import { MpvInstall, MpvSearch } from "./mpv-setup";
+
+/** Both parts, as the dialog shows them. */
+const MpvSetup = () => (
+  <>
+    <MpvSearch />
+    <MpvInstall />
+  </>
+);
 
 const readyState: BinaryState = { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" };
 
-const unavailable = (message: string, options: readonly MpvInstallOption[] = []): BinaryState => ({ _tag: "Unavailable", message, options });
+const unavailable = (message: string, options: readonly MpvInstallOption[] = []): BinaryState => ({ _tag: "Unavailable", message, options, searched: ["/opt/homebrew/bin/mpv"] });
 
-const missingState = unavailable("mpv was not found. Install it, or select its executable.", [{ automatic: true, command: "brew install mpv", method: "brew", note: null, url: null }]);
+const brew: MpvInstallOption = { terminal: true, command: "brew install mpv", method: "brew", note: null, url: null };
+const missingState = unavailable("mpv was not found. Install it, or select its executable.", [brew]);
 
 // Vitest globals are disabled in this project, so React Testing Library cannot auto-clean.
 afterEach(() => {
@@ -61,57 +62,89 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  mocks.cancelInstall.mockReset();
-  mocks.clearManualPath.mockReset().mockResolvedValue(readyState);
-  mocks.install.mockReset().mockResolvedValue(readyState);
-  mocks.locate.mockReset().mockResolvedValue(readyState);
-  mocks.recheck.mockReset().mockResolvedValue(readyState);
-  mocks.installOutput = [];
+  mocks.clearManualPath.mockReset().mockResolvedValue(undefined);
+  mocks.locate.mockReset().mockResolvedValue(undefined);
+  mocks.openTerminal.mockReset().mockResolvedValue(undefined);
+  mocks.recheck.mockReset().mockResolvedValue(undefined);
   mocks.playerState.error = null;
-  mocks.playerState.install = { _tag: "Idle" };
   mocks.playerState.binary = { _tag: "Checking" };
 });
 
 describe("MpvSetup", () => {
-  it("says it is looking for mpv while main checks", () => {
+  it("says it is searching while main looks for mpv", () => {
     render(<MpvSetup />);
-    expect(screen.getByText("Looking for mpv on this computer…")).toBeTruthy();
+    expect(screen.getByText("Searching…")).toBeTruthy();
   });
 
-  it("shows the resolved binary once mpv is available", () => {
+  it("shows the binary it found, without ways to install another", () => {
     mocks.playerState.binary = readyState;
 
     render(<MpvSetup />);
 
-    expect(screen.getByText("mpv 0.40.0 is ready")).toBeTruthy();
-    expect(screen.getByText("/opt/homebrew/bin/mpv")).toBeTruthy();
-    expect(screen.getByText("Found in a standard install location")).toBeTruthy();
+    expect(screen.getByText("Found mpv 0.40.0")).toBeTruthy();
+    expect(screen.getByText(/Found in a standard install location/)).toBeTruthy();
+    expect(screen.queryByText("Install with a package manager")).toBeNull();
   });
 
-  it("offers a one-click install when mpv is missing", async () => {
+  it("opens a terminal that installs mpv when it is missing", async () => {
     mocks.playerState.binary = missingState;
 
     render(<MpvSetup />);
 
     expect(screen.getByText("mpv was not found. Install it, or select its executable.")).toBeTruthy();
-    expect(screen.getByText("Install with Homebrew")).toBeTruthy();
-    expect(screen.getByText("brew install mpv")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Install" }));
-    await waitFor(() => expect(mocks.install).toHaveBeenCalledWith("brew"));
+    expect(screen.getByText("Homebrew")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Run in terminal" }));
+    await waitFor(() => expect(mocks.openTerminal).toHaveBeenCalledWith("brew"));
   });
 
-  it("explains an unusable binary and lets the user pick another one", async () => {
+  it("says why the terminal could not be opened", async () => {
+    mocks.playerState.binary = missingState;
+    mocks.openTerminal.mockRejectedValue(new Error("No terminal could be found. Copy the command and run it in a terminal."));
+
+    render(<MpvSetup />);
+    fireEvent.click(screen.getByRole("button", { name: "Run in terminal" }));
+
+    expect(await screen.findByText("No terminal could be found. Copy the command and run it in a terminal.")).toBeTruthy();
+  });
+
+  it("only copies a command whose package manager is missing", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mocks.playerState.binary = unavailable("mpv was not found. Install it, or select its executable.", [
+      { terminal: false, command: "brew install mpv", method: "brew", note: "Homebrew is not installed.", url: "https://brew.sh" },
+    ]);
+
+    render(<MpvSetup />);
+
+    expect(screen.queryByRole("button", { name: "Run in terminal" })).toBeNull();
+    expect(screen.getByRole("link", { name: "https://brew.sh" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Copy" })));
+    expect(writeText).toHaveBeenCalledWith("brew install mpv");
+  });
+
+  it("explains an unusable binary and lets the user pick another one or look again", async () => {
     mocks.playerState.binary = unavailable("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.");
 
     render(<MpvSetup />);
 
     expect(screen.getByText("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.")).toBeTruthy();
-
     fireEvent.click(screen.getByRole("button", { name: /Locate mpv/ }));
     await waitFor(() => expect(mocks.locate).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(mocks.recheck).toHaveBeenCalledOnce());
+  });
+
+  it("looks again when the window comes back to the front, while mpv is missing", () => {
+    mocks.playerState.binary = missingState;
+    const view = render(<MpvSetup />);
+
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(mocks.recheck).toHaveBeenCalledOnce();
+
+    mocks.playerState.binary = readyState;
+    view.rerender(<MpvSetup />);
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(mocks.recheck).toHaveBeenCalledOnce();
   });
 
   it("lets the user go back to automatic discovery from a binary they picked", async () => {
@@ -121,49 +154,6 @@ describe("MpvSetup", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset to automatic" }));
     await waitFor(() => expect(mocks.clearManualPath).toHaveBeenCalledOnce());
-  });
-
-  it("copies commands that have to be run in a terminal", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-    mocks.playerState.binary = unavailable("mpv was not found. Install it, or select its executable.", [
-      { automatic: false, command: "sudo apt install mpv", method: "apt", note: "Run this in a terminal, then re-check.", url: null },
-    ]);
-
-    render(<MpvSetup />);
-
-    expect(screen.getByText("Run this in a terminal, then re-check.")).toBeTruthy();
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Copy" })));
-
-    expect(writeText).toHaveBeenCalledWith("sudo apt install mpv");
-    expect(mocks.install).not.toHaveBeenCalled();
-  });
-
-  it("follows a running install and can cancel it", () => {
-    mocks.playerState.binary = missingState;
-    mocks.playerState.install = { _tag: "Running", jobId: "job", method: "brew" };
-    mocks.installOutput = ["==> Fetching mpv"];
-
-    render(<MpvSetup />);
-
-    expect(screen.getByText("Installing mpv with Homebrew…")).toBeTruthy();
-    expect(screen.getByText(/==> Fetching mpv/)).toBeTruthy();
-    // Another install cannot start meanwhile.
-    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel install" }));
-    expect(mocks.cancelInstall).toHaveBeenCalledOnce();
-  });
-
-  it("says why an installation failed, with its output", () => {
-    mocks.playerState.binary = missingState;
-    mocks.playerState.install = { _tag: "Failed", jobId: "job", method: "brew", message: "Package manager exited unsuccessfully. See installation output." };
-    mocks.installOutput = ["Error: No such keg"];
-
-    render(<MpvSetup />);
-
-    expect(screen.getByText("Package manager exited unsuccessfully. See installation output.")).toBeTruthy();
-    expect(screen.getByText(/No such keg/)).toBeTruthy();
   });
 });
 
@@ -178,7 +168,7 @@ describe("MpvInfoDialog", () => {
     act(() => openMpvDialog());
 
     expect(screen.getByText("Playback engine")).toBeTruthy();
-    expect(screen.getByText("mpv 0.40.0 is ready")).toBeTruthy();
+    expect(screen.getByText("Found mpv 0.40.0")).toBeTruthy();
     expect(screen.getByText("The track could not be played after retrying.")).toBeTruthy();
   });
 });

@@ -1,7 +1,7 @@
 import { memoryTable } from "@muswag/tanstack-db-mirror/memory";
 import { Schema } from "effect";
 
-import { BinaryState, InstallOutput, InstallState, PlaybackItemSchema, PlayerError, type Playback, type PlayerSnapshot } from "#shared/commands/player";
+import { BinaryState, PlaybackItemSchema, PlayerError, type Playback, type PlayerSnapshot } from "#shared/commands/player";
 
 /**
  * The player's state as renderers see it: memory tables in the state mirror (`mirror.ts`), which
@@ -31,7 +31,6 @@ export const PlayerRow = Schema.Struct({
   volumePercent: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   muted: Schema.Boolean,
   binary: BinaryState,
-  install: InstallState,
   error: Schema.NullOr(PlayerError),
 });
 export type PlayerRow = typeof PlayerRow.Type;
@@ -41,12 +40,7 @@ export const PlayerPositionRow = Schema.Struct({ id: PlayerId, positionSeconds: 
 export type PlayerPositionRow = typeof PlayerPositionRow.Type;
 export const playerPosition = memoryTable("player_position", PlayerPositionRow, { primaryKey: "id" });
 
-/** The tail of the running or last mpv installation's output. */
-export const InstallOutputRow = Schema.Struct({ id: Schema.String, ...InstallOutput.fields });
-export type InstallOutputRow = typeof InstallOutputRow.Type;
-export const playerInstallOutput = memoryTable("player_install_output", InstallOutputRow, { primaryKey: "id" });
-
-export const PLAYER_TABLES = [player, playerPosition, playerInstallOutput] as const;
+export const PLAYER_TABLES = [player, playerPosition] as const;
 
 // ---- From a player snapshot ----
 
@@ -60,7 +54,6 @@ export function playerRow(snapshot: PlayerSnapshot): PlayerRow {
     volumePercent: snapshot.volumePercent,
     muted: snapshot.muted,
     binary: snapshot.binary,
-    install: snapshot.install,
     error: snapshot.error,
   };
 }
@@ -69,5 +62,3 @@ export function playerPositionRow({ playback }: PlayerSnapshot): PlayerPositionR
   const media = playback._tag === "Idle" ? null : playback.media;
   return { id: PLAYER, positionSeconds: media?.positionSeconds ?? 0, durationSeconds: media?.durationSeconds ?? null };
 }
-
-export const installOutputRows = (snapshot: PlayerSnapshot): InstallOutputRow[] => snapshot.installOutput.map((output) => ({ id: `${output.jobId}:${output.sequence}`, ...output }));

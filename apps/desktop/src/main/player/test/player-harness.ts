@@ -4,7 +4,6 @@ import { songRow, type PlaybackItem } from "@muswag/model";
 import type { PlayerSnapshot } from "#shared/commands/player";
 import { PLAYER_TABLES } from "#shared/state/player";
 import { Binaries } from "../binary/binaries";
-import { Installer } from "../binary/installer";
 import type { EngineError } from "../errors";
 import { isPositionEvent, MpvSession, type SessionEvent, type SessionSinks } from "../mpv/session";
 import type { MpvCommand, MpvEvent } from "../mpv/protocol";
@@ -95,13 +94,14 @@ export function fixture() {
               Effect.andThen(
                 Effect.sync(() => {
                   probes++;
-                  return openFailure ? { _tag: "Unavailable" as const, message: "Missing mpv", options: [] } : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
+                  return openFailure
+                    ? { _tag: "Unavailable" as const, message: "Missing mpv", options: [], searched: [] }
+                    : { _tag: "Ready" as const, path: "/mpv", version: "0.41.0", source: "manual" as const };
                 }),
               ),
             ),
-          candidate: () => Effect.succeed(null),
+          openTerminal: () => Effect.die("unused"),
         }),
-        Layer.succeed(Installer, { start: () => Effect.die("unused"), cancel: () => Effect.void, changes: Stream.empty }),
         Layer.succeed(SettingsStore, { load: Effect.succeed(defaultSettings), save: () => Effect.void }),
       ),
     ),

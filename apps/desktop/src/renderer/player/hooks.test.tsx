@@ -34,7 +34,7 @@ const collections = {
 };
 
 // The factories run at the import below, once the collections are there.
-vi.mock("#/data/state", () => ({ playerState: { player: collections.player, position: collections.position, installOutput: fakeCollection() } }));
+vi.mock("#/data/state", () => ({ playerState: { player: collections.player, position: collections.position } }));
 vi.mock("#/queue/queue", () => ({ useQueueSelector: (select: (queue: QueueManagerState) => unknown) => select(mocks.queue) }));
 
 const { usePlayerCanGoBack, usePlayerCanPlay, usePlayerConnected, usePlayerError } = await import("#/player/hooks");

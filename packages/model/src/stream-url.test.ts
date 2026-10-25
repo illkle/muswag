@@ -10,6 +10,8 @@ describe("normalizeServerUrl", () => {
     expect(normalizeServerUrl("HTTP://Music.Example")).toBe("http://music.example");
     expect(normalizeServerUrl("  https://music.example/// ")).toBe("https://music.example");
     expect(normalizeServerUrl("music.example:4533")).toBe("https://music.example:4533");
+    expect(normalizeServerUrl("music.example")).toBe("https://music.example");
+    expect(normalizeServerUrl("music.example/")).toBe("https://music.example");
     expect(normalizeServerUrl("https://music.example/navidrome/")).toBe("https://music.example/navidrome");
     expect(normalizeServerUrl("https://music.example/?x=1#top")).toBe("https://music.example");
   });

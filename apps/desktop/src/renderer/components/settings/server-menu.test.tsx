@@ -158,7 +158,7 @@ describe("ServerMenu", () => {
   });
 
   it("raises an alert on the button and the mpv row when playback is unavailable", () => {
-    mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [] };
+    mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [], searched: [] };
 
     renderServerMenu();
 
