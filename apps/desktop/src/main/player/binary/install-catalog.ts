@@ -2,7 +2,7 @@ import { Effect } from "effect";
 
 import type { MpvInstallMethod, MpvInstallOption } from "#shared/commands/player";
 import type { MpvLocatorDeps } from "./mpv-locator";
-import { joinWindowsPath, probeLoginShell } from "./mpv-locator";
+import { findOnWindowsPath, joinWindowsPath, probeFreshPath, readWindowsPath } from "./mpv-locator";
 
 const LOOKUP_TIMEOUT_MS = 3_000;
 
@@ -14,7 +14,13 @@ export const detectInstallCandidates = Effect.fn("detectInstallCandidates")(func
   return yield* detectLinux(deps);
 });
 
-const findManager = Effect.fn("findManager")(function* (name: string, known: string[], deps: MpvLocatorDeps): Effect.fn.Return<string | null> {
+/** `probe` looks on the PATH a program started now would get, which the app's own PATH may lag behind. */
+const findManager = Effect.fn("findManager")(function* (
+  name: string,
+  known: string[],
+  deps: MpvLocatorDeps,
+  probe: (name: string) => Effect.Effect<string | null> = (name) => probeFreshPath(name, deps),
+): Effect.fn.Return<string | null> {
   for (const path of known) if (yield* deps.fileExists(path)) return path;
   const result = yield* deps.runCommand(deps.platform === "win32" ? "where" : "which", [name], {
     env: deps.env,
@@ -27,7 +33,7 @@ const findManager = Effect.fn("findManager")(function* (name: string, known: str
       .find(Boolean);
     if (path) return path;
   }
-  return yield* probeLoginShell(name, deps);
+  return yield* probe(name);
 });
 
 const detectMac = Effect.fn("detectMac")(function* (deps: MpvLocatorDeps): Effect.fn.Return<MpvInstallCandidate[]> {
@@ -51,7 +57,10 @@ const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps
   const candidates: MpvInstallCandidate[] = [];
   const profile = deps.env.USERPROFILE ?? deps.homeDirectory;
   const localAppData = deps.env.LOCALAPPDATA;
-  const winget = yield* findManager("winget", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps);
+  // The registry is read once for all three managers, and only if one is not where it usually is.
+  const freshPath = yield* Effect.cached(readWindowsPath(deps));
+  const probe = (fileName: string) => freshPath.pipe(Effect.flatMap((directories) => findOnWindowsPath(fileName, directories, deps)));
+  const winget = yield* findManager("winget.exe", localAppData ? [joinWindowsPath(localAppData, "Microsoft\\WindowsApps\\winget.exe")] : [], deps, probe);
   if (winget)
     candidates.push({
       args: ["install", "--id", "mpv-player.mpv-CI.MSVC", "--exact", "--source", "winget", "--scope", "user", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
@@ -64,14 +73,14 @@ const detectWindows = Effect.fn("detectWindows")(function* (deps: MpvLocatorDeps
         url: null,
       },
     });
-  const scoop = yield* findManager("scoop", [joinWindowsPath(profile, "scoop\\shims\\scoop.cmd")], deps);
+  const scoop = yield* findManager("scoop.cmd", [joinWindowsPath(profile, "scoop\\shims\\scoop.cmd")], deps, probe);
   if (scoop)
     candidates.push({
       args: ["install", "extras/mpv"],
       managerPath: scoop,
       option: { automatic: false, command: "scoop install extras/mpv", method: "scoop", note: "Run this in a terminal, then re-check.", url: null },
     });
-  const choco = yield* findManager("choco", ["C:\\ProgramData\\chocolatey\\bin\\choco.exe"], deps);
+  const choco = yield* findManager("choco.exe", ["C:\\ProgramData\\chocolatey\\bin\\choco.exe"], deps, probe);
   if (choco)
     candidates.push({
       args: ["install", "mpv", "-y"],

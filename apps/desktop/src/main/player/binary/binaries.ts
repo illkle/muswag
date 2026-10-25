@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import type { BinaryState } from "#shared/commands/player";
 import type { MpvInstallMethod } from "#shared/commands/player";
 import { detectInstallCandidates, type MpvInstallCandidate } from "./install-catalog";
-import { collectMpvCandidates, createMpvLocatorDeps, probeLoginShell, type MpvCandidate, type MpvLocatorDeps } from "./mpv-locator";
+import { collectMpvCandidates, createMpvLocatorDeps, probeFreshPath, type MpvCandidate, type MpvLocatorDeps } from "./mpv-locator";
 import { validateMpvBinary } from "./mpv-validator";
 
 export class Binaries extends Context.Service<
@@ -50,7 +50,7 @@ export const makeBinaries = (environment: MpvLocatorDeps): typeof Binaries.Servi
         if (ready) return ready;
         if (candidate.explicit) return yield* unavailable();
       }
-      const shellPath = yield* probeLoginShell("mpv", environment);
+      const shellPath = yield* probeFreshPath(environment.platform === "win32" ? "mpv.exe" : "mpv", environment);
       return (shellPath ? yield* attempt({ binaryPath: shellPath, explicit: false, source: "login-shell" }) : null) ?? (yield* unavailable());
     },
     Effect.timeoutOrElse({
