@@ -65,14 +65,16 @@ export function usePlaylist(playlistId: string) {
   const entries = state?.entries ?? EMPTY_ENTRIES;
 
   // The playlist's songs, which the songs collection reads from main for as long as the page is open.
-  const songIds = useMemo(() => [...new Set(entries.map(({ songId }) => songId))], [entries]);
+  // Sorted, they are the query's key: an edit that only reorders the entries keeps the query and its songs.
+  const songIds = useMemo(() => [...new Set(entries.map(({ songId }) => songId))].sort(), [entries]);
   const songsQuery = useLiveQuery({
     queryKey: ["playlist-songs", songIds],
     query: (q) => q.from({ song: db.songs }).where(({ song }) => inArray(song.id, songIds.length > 0 ? songIds : NO_SONGS)),
   });
 
-  // Every change to the entries is another query, which reads its songs before it is ready. Until it is,
-  // the songs of the last one that was stand in, so an edit does not take the page back to loading.
+  // An edit that adds or removes a song is another query, which reads its songs before it is ready.
+  // Until it is, the songs of the last one that was stand in, so the edit does not take the page back
+  // to loading.
   const [shown, setShown] = useState<{ playlistId: string; songs: typeof songsQuery.data } | null>(null);
   if (songsQuery.isReady && (shown?.songs !== songsQuery.data || shown.playlistId !== playlistId)) setShown({ playlistId, songs: songsQuery.data });
   const songs = songsQuery.isReady ? songsQuery.data : shown?.playlistId === playlistId ? shown.songs : songsQuery.data;

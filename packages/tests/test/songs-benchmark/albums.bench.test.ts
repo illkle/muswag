@@ -49,9 +49,7 @@ describe("albums", () => {
     record(size, "covers of 30 rows' albums", await timed(library, () => library.run(LibraryQueries.albumCoverArts(ids))));
 
     // An album's page and an artist's, through the on-demand albums.
-    const collection = createCollection(
-      mirrorCollectionOptions({ client: library.client, table: albums, readOnly: true, gcTime: 0, defaultIndexType: BasicIndex, syncMode: "on-demand", autoIndex: "eager" }),
-    );
+    const collection = createCollection(mirrorCollectionOptions({ client: library.client, table: albums, gcTime: 0, defaultIndexType: BasicIndex, syncMode: "on-demand", autoIndex: "eager" }));
     const albumTimes: Array<number> = [];
     for (const id of ids.slice(0, 20)) {
       const started = performance.now();

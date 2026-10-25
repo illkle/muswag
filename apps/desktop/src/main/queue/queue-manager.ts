@@ -185,9 +185,11 @@ export class QueueManager {
     });
   }
 
-  removeQueued(key: string): Promise<void> {
+  /** Takes the queued occurrences `keys` out of the queue, all in one edit. */
+  removeQueued(keys: readonly string[]): Promise<void> {
     return this.serial.run(async () => {
-      const next = this.store.state.userQueue.filter((item) => item.key !== key);
+      const removing = new Set(keys);
+      const next = this.store.state.userQueue.filter((item) => !removing.has(item.key));
       if (next.length === this.store.state.userQueue.length) return;
       await this.commitQueueEdit({ ...this.store.state, userQueue: next });
     });
@@ -207,7 +209,8 @@ export class QueueManager {
       this.skipsLeft = UNPLAYABLE_SKIPS;
       if (!this.store.state.nowPlaying) return;
       // A track that is still loading is at its start, so Previous steps back from it.
-      const restarts = this.positionIn(this.store.state) > RESTART_INSTEAD_OF_PREVIOUS_SECONDS;
+      const position = await this.player.position();
+      const restarts = position?.key === this.store.state.nowPlaying.key && position.positionSeconds > RESTART_INSTEAD_OF_PREVIOUS_SECONDS;
       const target = restarts ? undefined : previousTarget(this.store.state);
       this.direction = target ? -1 : 1;
       if (target) await this.moveTo(target.key);
@@ -230,6 +233,20 @@ export class QueueManager {
         await this.player.stop();
       }
     });
+  }
+
+  /**
+   * Stores where playback has got to, then stops as `dispose` does. For quitting: it has to run before
+   * the player shuts down, which is what can say where playback is.
+   */
+  async close(): Promise<void> {
+    if (this.disposed) return;
+    this.cancelTelemetrySave();
+    try {
+      await this.savePosition();
+    } finally {
+      this.dispose();
+    }
   }
 
   dispose(): void {
@@ -386,15 +403,28 @@ export class QueueManager {
     void this.persist(() => this.storage.save(published, resumePositionSeconds));
   }
 
-  /** Saves where playback has got to, once per delay: the player reports its position twice a second, so a save put off by every report would never run. */
+  /**
+   * Saves where playback has got to after a delay, and again after each while the track plays. The player
+   * says nothing while a track only plays on, so the position is asked of it.
+   */
   private scheduleTelemetrySave(): void {
-    if (this.telemetryTimer) return;
+    if (this.telemetryTimer || this.disposed) return;
     this.telemetryTimer = setTimeout(() => {
       this.telemetryTimer = null;
-      const state = this.store.state;
-      const position = this.positionIn(state);
-      void this.persist(() => this.storage.save(state, position));
+      void this.savePosition()
+        .catch((cause) => console.error("[queue] failed to save the playback position", cause))
+        .finally(() => {
+          if (this.runtime?.status === "playing") this.scheduleTelemetrySave();
+        });
     }, TELEMETRY_SAVE_DELAY_MS);
+  }
+
+  /** Stores where the player is in the occurrence playing, unless it has moved on to another meanwhile. */
+  private async savePosition(): Promise<void> {
+    const position = await this.player.position();
+    const state = this.store.state;
+    if (!position || position.key !== state.nowPlaying?.key) return;
+    await this.persist(() => this.storage.save(state, position.positionSeconds));
   }
 
   private cancelTelemetrySave(): void {
@@ -414,7 +444,10 @@ export class QueueManager {
     return this.persist(() => this.storage.clear());
   }
 
-  /** Where the player is in the occurrence playing in `state`, which is where it would resume after a restart. Zero when the player holds another. */
+  /**
+   * Where the player last said it was in the occurrence playing in `state`: where it started the track,
+   * as the queue asks this once it does. Zero when the player holds another.
+   */
   private positionIn(state: QueueManagerState): number {
     return this.runtime && this.runtime.current?.key === state.nowPlaying?.key ? this.runtime.positionSeconds : 0;
   }

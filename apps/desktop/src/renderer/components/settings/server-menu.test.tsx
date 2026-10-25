@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -110,7 +110,7 @@ describe("ServerMenu", () => {
     expect(screen.getByText("v1.2.3")).toBeTruthy();
     expect(screen.getByText("Downloading")).toBeTruthy();
     expect(screen.getByText("theme control")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Log out" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Log out…" })).toBeTruthy();
   });
 
   it("starts a quick sync from the menu, and a full one from the item that syncs everything again", async () => {
@@ -179,11 +179,36 @@ describe("ServerMenu", () => {
     expect(screen.getByText("Error")).toBeTruthy();
   });
 
-  it("logs out", async () => {
+  it("logs out only once it is confirmed that the library will be removed", async () => {
     renderServerMenu();
 
-    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log out…" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("removed from this computer");
+    expect(mocks.logout).not.toHaveBeenCalled();
 
+    fireEvent.click(within(dialog).getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(mocks.logout).toHaveBeenCalledOnce());
+  });
+
+  it("does not log out when the confirmation is cancelled", async () => {
+    renderServerMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Log out…" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.logout).not.toHaveBeenCalled();
+  });
+
+  it("says why logging out failed", async () => {
+    mocks.logout.mockRejectedValue(new Error("The library could not be deleted"));
+    renderServerMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Log out…" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Log out" }));
+
+    await waitFor(() => expect(within(dialog).getByText("The library could not be deleted")).toBeTruthy());
   });
 });

@@ -180,42 +180,10 @@ describe("requests", () => {
     expect(await request<"pull">({ type: "pull", fromSeq: 4 })).toMatchObject({ kind: "changes", batch: { fromSeq: 4, toSeq: 6 } });
   });
 
-  it("applies mutations atomically from encoded values", async () => {
-    const { server, batches, run, request } = await start();
-    await request<"mutate">({
-      type: "mutate",
-      mutations: [
-        { table: "players", type: "insert", value: { ...player("p1"), joined: 9 } },
-        { table: "players", type: "update", key: "p1", changes: { volume: 70 } },
-        { table: "counters", type: "insert", value: { id: 1, count: 0 } },
-      ],
-    });
-    expect(await run(server.get(players, "p1"))).toEqual(player("p1", { joined: new Date(9), volume: 70 }));
-    expect(batches).toHaveLength(1);
-
-    const rejected = [
-      [{ table: "players", type: "insert", value: player("p1") }, "already exists"],
-      [{ table: "players", type: "update", key: "zz", changes: { volume: 1 } }, "does not exist"],
-      [{ table: "players", type: "update", key: "p1", changes: { volume: 500 } }, "Invalid row"],
-      [{ table: "players", type: "update", key: "p1", changes: { id: "p9" } }, "cannot change the key"],
-      [{ table: "nope", type: "delete", key: 1 }, "not mirrored"],
-    ] as const;
-    for (const [mutation, message] of rejected) {
-      const error = await failed(server, { type: "mutate", mutations: [{ table: "counters", type: "delete", key: 1 }, mutation] });
-      expect(error.message).toContain(message);
-    }
-    // Every rejected request also tried to delete the counter, and none of them did.
-    expect(await run(server.rows(counters))).toEqual([{ id: 1, count: 0 }]);
-    expect(batches).toHaveLength(1);
-  });
-
-  it("rejects mutations when read-only", async () => {
-    const { server } = await start({ readOnly: true });
-    expect((await failed(server, { type: "mutate", mutations: [{ table: "counters", type: "delete", key: 1 }] })).message).toContain("read-only");
-  });
-
   it("rejects malformed requests", async () => {
     const { server } = await start();
     expect((await failed(server, { type: "explode" })).name).toBe("MirrorRequestError");
+    // Clients only read: every change goes through the server's own writes.
+    expect((await failed(server, { type: "mutate", mutations: [{ table: "counters", type: "delete", key: 1 }] })).message).toContain("unknown request type mutate");
   });
 });

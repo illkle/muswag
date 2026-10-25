@@ -1,14 +1,14 @@
 import { Schema, type Redacted } from "effect";
 import type { PlaybackItem } from "@muswag/model";
+import type { MirrorPosition } from "@muswag/tanstack-db-mirror/protocol";
 
 /**
  * The main-process player as the rest of the app talks to it. Only what is decoded on arrival is a
- * schema: the commands a renderer may send, the result it gets back, and the parts of the state that
- * reach renderers in the tables of `state/player.ts`. What stays inside main is a plain type.
+ * schema: the commands a renderer may send, and the parts of the state that reach renderers in the
+ * tables of `state/player.ts`. What stays inside main is a plain type.
  */
 
 const Seconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Percent = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 
 // ---- mpv discovery and installation ----
@@ -55,8 +55,8 @@ export type RendererCommand = typeof RendererCommand.Type;
 export type Selection = { readonly key: string; readonly play: boolean; readonly positionSeconds: number };
 /**
  * Every command the player runs. Those a renderer cannot send are main's own: the queue is changed
- * through the queue manager, and the path of a binary to run comes from the native dialog of
- * `player:locate`.
+ * through the queue manager, and the path of a binary to run comes from the native dialog of the
+ * `player:locate` command.
  */
 export type PlayerCommand =
   | RendererCommand
@@ -69,16 +69,10 @@ export type PlayerCommand =
 export type PlayerCredentials = { readonly url: string; readonly username: string; readonly salt: string; readonly token: Redacted.Redacted<string> };
 
 /**
- * Where the state mirror stood once the command was handled; renderers await it to see its outcome.
- * The mirror's protocol does not depend on Effect, so its position is declared again as a schema here.
+ * How a command went, with where the state mirror stood once it was handled; renderers await that
+ * position to see its outcome. The message of a failure is also what the player's state says went wrong.
  */
-const MirrorPosition = Schema.Struct({ epoch: Schema.Finite, seq: Count });
-/** How a command went. The message of a failure is also what the player's state says went wrong. */
-export const CommandResult = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), position: MirrorPosition }),
-  Schema.Struct({ ok: Schema.Literal(false), message: Schema.String, position: MirrorPosition }),
-]);
-export type CommandResult = typeof CommandResult.Type;
+export type CommandResult = { readonly ok: true; readonly position: MirrorPosition } | { readonly ok: false; readonly message: string; readonly position: MirrorPosition };
 
 // ---- State ----
 
@@ -105,7 +99,11 @@ export const PlaybackItemSchema = Schema.declare(
 export const PlayerError = Schema.Struct({ message: Schema.String, fix: Schema.NullOr(Schema.Literals(["retry", "mpv", "login"])) });
 export type PlayerError = typeof PlayerError.Type;
 
-export type Media = { readonly item: PlaybackItem; readonly positionSeconds: number; readonly durationSeconds: number | null };
+/**
+ * `positionSeconds` is where the track was at `positionAt`, in milliseconds since the epoch. While it
+ * plays it moves on from there with the clock: the player sets it again only when it moves otherwise.
+ */
+export type Media = { readonly item: PlaybackItem; readonly positionSeconds: number; readonly positionAt: number; readonly durationSeconds: number | null };
 export type Playback =
   | { readonly _tag: "Idle" }
   | { readonly _tag: "Loading"; readonly media: Media; readonly targetPaused: boolean }

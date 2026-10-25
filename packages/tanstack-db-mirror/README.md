@@ -1,6 +1,6 @@
 # @muswag/tanstack-db-mirror
 
-TanStack DB collections that mirror data owned by another process. In Electron, the main process owns the data and the renderer gets live, optimistic collections on top of it.
+TanStack DB collections that mirror data owned by another process. In Electron, the main process owns the data and the renderer gets live, read-only collections on top of it.
 
 Two kinds of server feed the same client and the same collections:
 
@@ -9,7 +9,7 @@ Two kinds of server feed the same client and the same collections:
 
 What both have in common:
 
-- **Renderer mutations are optimistic.** `collection.insert/update/delete` writes through the main process. It resolves once the resulting change has come back through the stream, so the optimistic state is replaced by synced state in one step, without flicker.
+- **Renderers only read.** The collections have no mutation handlers, so `insert`, `update` and `delete` throw, and the servers answer no request that writes, so a renderer can't change the data even if its code is compromised. Changes go through your own main-process commands, which can return the position of their write for the renderer to wait for.
 - **One schema per table.** Row and key types come from the Drizzle table or the Effect Schema, and values are encoded and decoded with it: booleans, timestamps, JSON and transformed values arrive as JS values.
 - **One query layer.** Collections of either kind are ordinary TanStack DB collections, so a live query can join a memory table with a SQLite one. The two sources are not synchronised with each other: when main changes both at once, a join can briefly see one change before the other.
 
@@ -18,7 +18,7 @@ What both have in common:
 ```
  main process (SqliteMirror or MemoryMirror)          renderer (MirrorClient + collections)
  ┌──────────────────────────────┐   hello/snapshot/   ┌──────────────────────────────┐
- │ tables ─────────────► change │◄── mutate/pull ─────│ mirrorCollectionOptions(...) │
+ │ tables ─────────────► change │◄── query/pull ──────│ mirrorCollectionOptions(...) │
  │                       log    │                     │   eager snapshot, then       │
  │ write(effect) ─commit─► flush├──── change batch ──►│   apply ordered change batch │
  └──────────────────────────────┘                     └──────────────────────────────┘
@@ -30,8 +30,9 @@ Both servers speak the same protocol:
 - **Gap recovery.** The client tracks the last contiguous `seq` it has delivered. If a batch starts after that point, it pulls the missing range. If that range has been pruned, every collection reloads.
 - **Heartbeat.** A connected client asks the server for its position every few seconds (`heartbeatMs`, default 5 000). If the server is ahead, the client pulls what it is missing, so a lost batch is recovered even when nothing later reveals the gap. A restart that sent nothing yet is noticed the same way.
 - **Restarts.** Each server start takes a new `epoch`, seeded from the clock so that it still moves forward across processes and replaced database files. Clients reload when they see a newer epoch. A lower one is usually a replaced server answering late; the client checks with `hello` and only reconnects if that server is actually the live one.
-- **Loading.** A collection subscribes to the stream, takes a snapshot of its table at a known `seq`, then applies only the changes after it. Collections are eager: the whole table is held in memory.
-- **Mutations.** A request's mutations are applied in one write. The server returns the resulting position, and the handler waits until the collection has synced up to it. If the stream hasn't caught up shortly afterwards, the client pulls the missing range.
+- **Loading.** A collection subscribes to the stream, takes a snapshot of its table at a known `seq`, then applies only the changes after it. Collections are eager by default: the whole table is held in memory.
+- **On demand.** A collection with `syncMode: "on-demand"` holds only the rows its live queries ask for, read from the server as queries. After a change it runs again the queries the change may concern: a query that asks for rows by key (`eq` or `inArray` on the key) only when one of its keys changed, and at once; any other once the table has been quiet for a moment, and every couple of seconds while changes keep coming.
+- **Waiting for a write.** A command returns the position of its write, and `collection.utils.awaitPosition(position)` resolves once the collection has synced up to it. A collection that was garbage-collected starts again to do so. If the stream hasn't caught up shortly afterwards, the client pulls the missing range.
 
 How each server produces its changes:
 
@@ -102,23 +103,11 @@ const client = createMirrorClient({ transport: createElectronRendererTransport({
 
 export const albumsCollection = createCollection(mirrorCollectionOptions({ client, table: albums }));
 // Collection<{ id: string; name: string; starred: boolean | null; extra: { tags: string[] } | null }, string>
-
-albumsCollection.update("a1", (draft) => {
-  draft.starred = true;
-}); // optimistic; persisted when the change syncs back
-```
-
-To write to several collections atomically, use `client.applyTransaction` as the transaction's mutation function:
-
-```ts
-const tx = createTransaction({ mutationFn: ({ transaction }) => client.applyTransaction(transaction) });
-tx.mutate(() => {
-  albumsCollection.insert(album);
-  songsCollection.insert(songs);
-});
 ```
 
 When a main-process command returns the position from its `write`, as `starAlbum` does, the renderer can wait for its effects with `collection.utils.awaitPosition(position)`.
+
+To follow a table without holding its rows, such as a key-only one, listen to the client: `client.onTableChange(["albums"], (changes) => ...)` is called with each batch's changes to those tables, and with `null` when the stream starts over.
 
 ### Memory tables
 
@@ -145,7 +134,7 @@ import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 const StateLive = Layer.effect(
   MemoryMirror,
   Effect.gen(function* () {
-    const mirror = yield* MemoryMirror.make({ tables: [playback], readOnly: true });
+    const mirror = yield* MemoryMirror.make({ tables: [playback] });
     yield* mirror.serve(createElectronMainTransport({ ipcMain, channel: "app-state" }));
     return mirror;
   }),
@@ -166,19 +155,10 @@ Renderer: a second client on the same channel; collections are created the same 
 
 ```ts
 const stateClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer, channel: "app-state" }) });
-export const playbackCollection = createCollection(mirrorCollectionOptions({ client: stateClient, table: playback, readOnly: true }));
+export const playbackCollection = createCollection(mirrorCollectionOptions({ client: stateClient, table: playback }));
 ```
 
 A position belongs to the server that returned it: await it on a collection of that server's client.
-
-### Read-only mirrors
-
-If every change should go through your own main-process commands, turn off renderer writes on both sides. The server then rejects `mutate` requests, so a renderer can't write to mirrored tables even if its code is compromised. The collections leave out their mutation handlers, so `insert`, `update` and `delete` throw in the renderer instead of reaching the server. Commands return a position for `awaitPosition` as above.
-
-```ts
-SqliteMirror.make({ tables: [albums, songs], readOnly: true }); // main
-mirrorCollectionOptions({ client, table: albums, readOnly: true }); // renderer
-```
 
 ### Omitted columns
 
@@ -197,7 +177,6 @@ mirrorCollectionOptions({ client, table: songs, omit: MAIN_ONLY }); // renderer
 - **Data lives as long as the server.** A restarted process starts with empty tables, and clients reload to match.
 - **No isolation between writes.** When two concurrent writes change the same row, the one that finishes last wins.
 - **Keys** are one string or finite-number property of the row.
-- **Mutations from the renderer** send whole encoded rows, because a schema cannot encode part of a row. An update merges them into the stored row and decodes the result, so it must still satisfy the schema.
 
 ### SQLite tables
 
@@ -207,7 +186,6 @@ mirrorCollectionOptions({ client, table: songs, omit: MAIN_ONLY }); // renderer
 - **Supported columns:** text, JSON text, integer, boolean, timestamp, real and numeric (string or number mode). Custom column types are allowed but must not store blobs. Blob and bigint columns are rejected at startup. At most 63 columns per table, because of SQLite's limit on function arguments.
 - **Integers** must stay within `Number.MAX_SAFE_INTEGER`. Larger keys are skipped with an error log, and larger values in other columns are rounded.
 - **Column names** come from the Drizzle table definition. Drizzle's database-level `casing` option is not applied, so name columns explicitly instead of relying on it.
-- **Runtime defaults:** `$defaultFn` and `$onUpdateFn` are applied to mutations from the renderer. Defaults written as SQL expressions are not.
 - **One connection.** The server relies on Effect's single-connection SQLite client: it turns on `PRAGMA recursive_triggers` (so rows removed by `REPLACE` produce delete events), and it detects open transactions through `sql.withTransaction`. Raw `BEGIN` statements, other connections and other processes writing the same file aren't covered. `recursive_triggers` also applies to your own triggers on that connection.
 - **Schema changes:** capture triggers are temporary. They live on the server's connection, are created from the table definitions at every start and are never stored in the database file, so a migration that runs before the server starts doesn't meet them. Exclude `__mirror_changes` and `__mirror_changes_meta` from drizzle-kit (`tablesFilter`). Capture triggers are named `__mirror_changes__<table>_<op>`.
 
@@ -218,14 +196,15 @@ mirrorCollectionOptions({ client, table: songs, omit: MAIN_ONLY }); // renderer
 
 ## Testing
 
-`@muswag/tanstack-db-mirror/testing` provides `createMemoryTransport()`. It's an in-process transport with IPC-like behavior: structured cloning, FIFO requests and batches, latency you can configure, and the ability to pause or drop batches.
+`src/test/memory-transport.ts` provides `createMemoryTransport()`, which the package's own tests use. It's an in-process transport with IPC-like behavior: structured cloning, FIFO requests and batches, latency you can configure, and the ability to pause or drop batches.
 
 The package's own suite covers the following:
 
 - **Change capture:** every SQL write path, and memory writes, rollbacks and nesting.
-- **Request handling:** request validation and atomic mutations, for both servers.
+- **Request handling:** request validation, for both servers.
 - **Stream recovery:** gaps, pruning, the heartbeat and server restarts.
-- **Optimistic updates:** no flicker while a mutation round-trips.
+- **Waiting for positions:** lost batches, timeouts, restarts and garbage-collected collections.
+- **On-demand collections:** windows, joins, lookups by key and how often changes read them again.
 - **Mixed sources:** a live query joining a memory table with a SQLite one.
 - **Electron transports:** tested over a fake IPC bus.
-- **Seeded fuzz tests, one per server:** concurrent server writes, client mutations, dropped batches, reloads and restarts across three clients. To soak locally, run `MIRROR_FUZZ_SEEDS=40 MIRROR_FUZZ_STEPS=600 pnpm test`.
+- **Seeded fuzz tests, one per server:** concurrent server writes, commands that wait for their position, dropped batches, reloads and restarts across three clients. To soak locally, run `MIRROR_FUZZ_SEEDS=40 MIRROR_FUZZ_STEPS=600 pnpm test`.

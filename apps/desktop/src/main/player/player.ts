@@ -1,11 +1,11 @@
-import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
+import { Cause, Clock, Context, Deferred, Effect, Exit, Fiber, FiberHandle, Layer, Queue, Redacted, Result, Scope, Stream, SubscriptionRef } from "effect";
 import { clonePlaybackItem, type PlaybackItem } from "@muswag/model";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
 import { initialSnapshot, type Media, type MpvInstallMethod, type Playback, type PlayerCommand, type PlayerCredentials, type PlayerSnapshot, type Selection } from "#shared/commands/player";
-import { player as playerTable, playerPosition, playerPositionRow, playerRow } from "#shared/state/player";
+import { player as playerTable, playerPosition, playerPositionRow, playerRow, positionAt } from "#shared/state/player";
 import { Binaries } from "./binary/binaries";
 import { BinaryUnavailable, CommandFailed, describeFailure, EngineError, InternalError, InvalidCommand, PlaybackFailed, SettingsFailed, safeCause, safeFailure, type PlayerFailure } from "./errors";
-import { currentMedia, isCurrentEvent, isFiniteNonNegative, isHeldPaused, isSettled, withDuration, withoutError, withPosition } from "./model";
+import { currentMedia, isCurrentEvent, isFiniteNonNegative, isHeldPaused, isSettled, withDuration, withoutError, withPosition, withPositionAt } from "./model";
 import { applyQueue, currentEntry, retainsCurrent, type Correlation } from "./queue";
 import { booleanProperty, command, numberProperty, type MpvCommand } from "./mpv/protocol";
 import { MpvSession, type SessionEvent, type SessionHandle } from "./mpv/session";
@@ -19,12 +19,21 @@ import { resolveStreamUrls } from "./stream-source";
  */
 const LOAD_TIMEOUT = "2 minutes";
 const QUEUE_TIMEOUT = "15 seconds";
-const POSITION_INTERVAL = "500 millis";
+/** How long `position` waits for mpv before answering with where the state says playback is. Quitting gives saving it two seconds. */
+const POSITION_READ_TIMEOUT = "1 second";
+
+/** Where the player is in the occurrence `key`. */
+export type PlayerPosition = { readonly key: string; readonly positionSeconds: number };
 
 export interface PlayerService {
   /** Runs `command` after those sent before it. What it fails with is also the `error` of the state. */
   readonly execute: (command: PlayerCommand) => Effect.Effect<void, CommandFailed>;
   readonly setCredentials: (credentials: PlayerCredentials | null) => Effect.Effect<void, CommandFailed>;
+  /**
+   * Where the player is in the occurrence it holds, read from mpv while the track is loaded. The state
+   * says where the track was at a moment, which is all renderers need; this is where it is now.
+   */
+  readonly position: Effect.Effect<PlayerPosition | null>;
   readonly snapshot: Effect.Effect<PlayerSnapshot>;
   readonly changes: Stream.Stream<PlayerSnapshot>;
   readonly shutdown: Effect.Effect<void>;
@@ -41,7 +50,7 @@ type Request = { readonly operation: Operation; readonly reply: Deferred.Deferre
 type Message =
   | { readonly _tag: "Request"; readonly request: Request }
   | SessionEvent
-  | { readonly _tag: "Position"; readonly event: SessionEvent }
+  | { readonly _tag: "ReadPosition"; readonly reply: Deferred.Deferred<PlayerPosition | null> }
   | { readonly _tag: "EngineFailed"; readonly error: EngineError; readonly generation: number }
   | { readonly _tag: "LoadTimeout"; readonly token: number }
   | { readonly _tag: "SettingsWriteFailed" };
@@ -81,8 +90,6 @@ export const PlayerLive = Layer.effect(
     // Unbounded: sessions offer their events without waiting, and one that could not be taken would be lost.
     const mailbox = yield* Queue.unbounded<Message>();
     const post = (message: Message) => Queue.offerUnsafe(mailbox, message);
-    /** Positions arrive many times per second: keep only the latest and publish it at a bounded rate. */
-    const positions = yield* Queue.sliding<SessionEvent>(1);
 
     const initial = initialSnapshot(crypto.randomUUID());
     const published = yield* SubscriptionRef.make(initial);
@@ -112,6 +119,7 @@ export const PlayerLive = Layer.effect(
     let closing = false;
     let shutdownStarted = false;
     const replies = new Set<Deferred.Deferred<void, CommandFailed>>();
+    const positionReplies = new Set<Deferred.Deferred<PlayerPosition | null>>();
 
     // ---- State publication ----
 
@@ -136,9 +144,13 @@ export const PlayerLive = Layer.effect(
         // Mirrored first, so whoever reacts to the change finds renderers' view up to date.
         return mirror(state).pipe(Effect.andThen(SubscriptionRef.set(published, state)));
       });
+    /** `next` with the current track at `positionSeconds` as of now. */
+    const positioned = (next: PlayerSnapshot, positionSeconds: number) => Effect.map(Clock.currentTimeMillis, (now) => withPosition(next, positionSeconds, now));
+    /** The current media, at where it has got to by now: for a state in which it no longer moves on by itself. */
+    const haltedMedia = Effect.map(Clock.currentTimeMillis, (now) => currentMedia(withPositionAt(state, now)));
     /** Ends playback of the current track over `failure`, which becomes the state's error. mpv is closed, so Play starts anew. */
     const failPlayback = Effect.fn("Player.failPlayback")(function* (failure: PlayerFailure | EngineError) {
-      const media = currentMedia(state);
+      const media = yield* haltedMedia;
       const error = describeFailure(failure);
       yield* closeEngine();
       yield* publish({
@@ -193,7 +205,7 @@ export const PlayerLive = Layer.effect(
       const { binary } = state;
       if (binary._tag !== "Ready") return yield* new BinaryUnavailable({ operation: "playback", message: binary._tag === "Unavailable" ? binary.message : "mpv is still being checked." });
       const scope = yield* Scope.fork(owner, "sequential");
-      const session = yield* sessions.open(binary.path, { events: mailbox, positions }).pipe(
+      const session = yield* sessions.open(binary.path, mailbox).pipe(
         Scope.provide(scope),
         Effect.onError(() => Scope.close(scope, Exit.void)),
       );
@@ -218,6 +230,22 @@ export const PlayerLive = Layer.effect(
       const value = yield* active.session.execute(read);
       active.propertyFence = active.session.sequence();
       return value;
+    });
+    /** Where mpv is in the current track. Before playback starts it may not say, and then it is where the state says. */
+    const readPosition = (active: Engine) =>
+      Effect.gen(function* () {
+        const estimate = positionAt(playerPositionRow(state), yield* Clock.currentTimeMillis);
+        return yield* active.session.execute(numberProperty("time-pos")).pipe(
+          Effect.catchIf(
+            (error) => !error.uncertain,
+            () => Effect.succeed(estimate),
+          ),
+        );
+      });
+    /** Publishes the loaded track as playing or paused, at where mpv is in it: from there renderers move it on with the clock. */
+    const publishSettled = Effect.fn("Player.publishSettled")(function* (active: Engine, paused: boolean, media: Media, patch: Partial<PlayerSnapshot> = {}) {
+      const position = yield* readPosition(active);
+      yield* publish(yield* positioned({ ...state, ...patch, playback: settled(paused, media) }, position));
     });
 
     // ---- Queue and playback ----
@@ -255,13 +283,17 @@ export const PlayerLive = Layer.effect(
         }
       }
       items = next;
-      /** The selected occurrence as mpv already has it open, loading or loaded; `null` when mpv has to start it. */
-      const opened = selection && correlation && currentEntry(correlation)?.key === selection.key && retainsCurrent(correlation, next) ? openMedia(selection.key) : null;
-      const loaded = opened !== null && isSettled(state.playback);
+      const current = selection && correlation && currentEntry(correlation)?.key === selection.key && retainsCurrent(correlation, next) ? openMedia(selection.key) : null;
+      const loaded = current !== null && isSettled(state.playback);
+      /**
+       * The selected occurrence as mpv already has it open, loading or loaded; `null` when mpv has to start
+       * it. A load cannot be moved, so one that would start elsewhere is started again.
+       */
+      const opened = loaded || current?.positionSeconds === selection?.positionSeconds ? current : null;
       if (selection && item && !loaded) {
         // From here the player holds the selected occurrence, also when it then fails to start it.
         applying = true;
-        const media = { item, positionSeconds: selection.positionSeconds, durationSeconds: opened?.durationSeconds ?? null };
+        const media: Media = { item, positionSeconds: selection.positionSeconds, positionAt: yield* Clock.currentTimeMillis, durationSeconds: opened?.durationSeconds ?? null };
         // An error about the occurrence before is not about this one, and its Retry would not retry anything.
         const error = currentMedia(state)?.item.key === item.key ? state.error : null;
         yield* publish({ ...state, error, playback: { _tag: "Loading", media, targetPaused: !selection.play } });
@@ -269,8 +301,8 @@ export const PlayerLive = Layer.effect(
       const urls = yield* resolveStreamUrls(credentials, next);
       applying = true;
       const active = yield* ensureEngine();
-      // A load stays paused until its position is restored, so nothing before it is heard.
-      if (selection && !loaded) yield* active.session.execute(command("set_property", "pause", !selection.play || selection.positionSeconds > 0));
+      // A load starts where the selection asks (see `load`): it is only to be paused or not.
+      if (selection && !loaded) yield* active.session.execute(command("set_property", "pause", !selection.play));
       active.correlation = yield* applyQueue(active.session, active.correlation, next, opened ? null : selection, urls).pipe(
         Effect.timeoutOrElse({ duration: QUEUE_TIMEOUT, orElse: () => Effect.fail(new EngineError({ reason: "timeout", operation: "queue", uncertain: true })) }),
       );
@@ -282,17 +314,20 @@ export const PlayerLive = Layer.effect(
       } else if (loaded) {
         const position = yield* writeAndConfirm(active, command("seek", Math.min(selection.positionSeconds, opened.durationSeconds ?? Infinity), "absolute+exact"), numberProperty("time-pos"));
         const paused = yield* writeAndConfirm(active, command("set_property", "pause", !selection.play), booleanProperty("pause"));
-        yield* publish(withPosition({ ...state, playback: settled(paused, { ...opened, item }) }, position));
+        yield* publish(yield* positioned({ ...state, playback: settled(paused, { ...opened, item }) }, position));
       }
     });
     const reload = (media: Media, positionSeconds: number, play: boolean) => apply(items, { key: media.item.key, positionSeconds, play });
 
     const pause = Effect.fn("Player.pause")(function* (paused: boolean) {
-      const media = currentMedia(state);
-      if (!engine || !media) return yield* new InvalidCommand({ operation: "pause", message: "Select a playable track first." });
+      const { playback } = state;
+      if (!engine || !currentMedia(state)) return yield* new InvalidCommand({ operation: "pause", message: "Select a playable track first." });
+      // A track that has ended, stopped or failed is one mpv plays nothing of, so there is nothing to pause.
+      // mpv would take the pause all the same, and Play would then resume nothing.
+      if (playback._tag !== "Loading" && !isSettled(playback)) return;
       const confirmed = yield* writeAndConfirm(engine, command("set_property", "pause", paused), booleanProperty("pause"));
-      if (state.playback._tag === "Loading") yield* publish({ ...state, playback: { ...state.playback, targetPaused: confirmed } });
-      else yield* publish({ ...state, playback: settled(confirmed, media) });
+      if (playback._tag === "Loading") yield* publish({ ...state, playback: { ...playback, targetPaused: confirmed } });
+      else yield* publishSettled(engine, confirmed, playback.media);
     });
     /**
      * Play resumes a track mpv holds. One it does not hold is loaded again: an ended track from its
@@ -316,7 +351,7 @@ export const PlayerLive = Layer.effect(
       const media = currentMedia(state);
       if (!engine || !media || !isSettled(state.playback)) return yield* new InvalidCommand({ operation: "seek", message: "Wait until the track has loaded." });
       const position = yield* writeAndConfirm(engine, command("seek", Math.min(seconds, media.durationSeconds ?? Infinity), "absolute+exact"), numberProperty("time-pos"));
-      yield* publish(withPosition(state, position));
+      yield* publish(yield* positioned(state, position));
     });
     const setVolume = Effect.fn("Player.setVolume")(function* (percent: number) {
       if (engine) yield* engine.session.execute(command("set_property", "volume", percent));
@@ -340,7 +375,7 @@ export const PlayerLive = Layer.effect(
       const next = { ...settings, manualPath: path, cachedPath: null };
       yield* settingsWriter.save(next).pipe(Effect.mapError(() => new SettingsFailed({ operation: "path", message: "Unable to save the mpv path." })));
       settings = next;
-      const media = currentMedia(state);
+      const media = yield* haltedMedia;
       const play = state.playback._tag === "Playing";
       yield* closeEngine();
       yield* refreshBinary();
@@ -348,7 +383,7 @@ export const PlayerLive = Layer.effect(
     });
     const changeCredentials = Effect.fn("Player.changeCredentials")(function* (next: PlayerCredentials | null) {
       if (sameCredentials(credentials, next)) return;
-      const media = currentMedia(state);
+      const media = yield* haltedMedia;
       const play = state.playback._tag === "Playing";
       credentials = next;
       if (credentials && state.error?.fix === "login") yield* publish(withoutError(state));
@@ -402,22 +437,20 @@ export const PlayerLive = Layer.effect(
       const selected = playback._tag === "Loading" && playback.media.item.key === entry.key ? playback.media : null;
       // Otherwise mpv advanced by itself: follow it from the start, keeping the play/pause intent.
       if (currentMedia(state)?.item.key !== entry.key) retried = false;
-      const media = { item: clonePlaybackItem(entry), positionSeconds: selected?.positionSeconds ?? 0, durationSeconds: null };
+      const media: Media = { item: clonePlaybackItem(entry), positionSeconds: selected?.positionSeconds ?? 0, positionAt: yield* Clock.currentTimeMillis, durationSeconds: null };
       yield* publish({ ...state, playback: { _tag: "Loading", media, targetPaused: isHeldPaused(playback) } });
       yield* armLoadDeadline;
     });
-    /** Restores the position the load was to start at and its pause state; only then is the track reported as playing or paused. */
+    /** Reports the loaded track as playing or paused. mpv started it where the load asked, and paused or not as it was told. */
     const onFileLoaded = Effect.fn("Player.onFileLoaded")(function* (active: Engine) {
       if (state.playback._tag !== "Loading") return;
       const { media, targetPaused } = state.playback;
-      if (media.positionSeconds > 0) yield* active.session.execute(command("seek", media.positionSeconds, "absolute+exact"));
-      const paused = yield* writeAndConfirm(active, command("set_property", "pause", targetPaused), booleanProperty("pause"));
       yield* clearLoadDeadline;
       // A track that loads is the end of whatever went wrong before it.
-      yield* publish({ ...state, playback: settled(paused, media), error: null });
+      yield* publishSettled(active, targetPaused, media, { error: null });
     });
     const onEndFile = Effect.fn("Player.onEndFile")(function* (correlation: Correlation, entryId: number, reason: string) {
-      const media = currentMedia(state);
+      const media = yield* haltedMedia;
       if (reason === "eof") {
         // Only the last entry ending exhausts the window; otherwise mpv advances by itself.
         if (media && correlation.entries.at(-1)?.entryId === entryId)
@@ -432,14 +465,13 @@ export const PlayerLive = Layer.effect(
         yield* reload(media, media.positionSeconds, play);
       }
     });
-    const onPropertyChange = (name: string, data: unknown, fresh: boolean) =>
-      Effect.suspend(() => {
-        const media = currentMedia(state);
-        if (!media) return Effect.void;
-        if (name === "duration" && isFiniteNonNegative(data)) return publish(withDuration(state, data));
-        if (name === "pause" && fresh && typeof data === "boolean" && isSettled(state.playback)) return publish({ ...state, playback: settled(data, media) });
-        return Effect.void;
-      });
+    const onPropertyChange = Effect.fn("Player.onPropertyChange")(function* (active: Engine, name: string, data: unknown, fresh: boolean) {
+      const { playback } = state;
+      if (playback._tag === "Idle") return;
+      if (name === "duration" && isFiniteNonNegative(data)) return yield* publish(withDuration(state, data));
+      // mpv also reports the pause it was told, which the state already has.
+      if (name === "pause" && fresh && typeof data === "boolean" && isSettled(playback) && data !== (playback._tag === "Paused")) yield* publishSettled(active, data, playback.media);
+    });
     const handleEvent = Effect.fn("Player.handleEvent")(function* (message: SessionEvent) {
       const active = engine;
       const correlation = active?.correlation;
@@ -455,22 +487,21 @@ export const PlayerLive = Layer.effect(
       if (event.type === "property" && (event.name === "seeking" || event.name === "paused-for-cache")) {
         if (event.name === "seeking") active.seeking = event.data === true;
         else active.pausedForCache = event.data === true;
-        if (state.playback._tag === "Playing" && state.playback.buffering !== isBuffering()) yield* publish({ ...state, playback: settled(false, state.playback.media) });
+        // The position holds while mpv waits, and moves on from where mpv is once it plays again.
+        if (state.playback._tag === "Playing" && state.playback.buffering !== isBuffering()) yield* publishSettled(active, false, state.playback.media);
         return;
       }
       if (active.awaiting !== null || !isCurrentEvent(message, active.session.generation, correlation.currentId)) return;
       if (event.type === "file-loaded") yield* onFileLoaded(active);
       else if (event.type === "end-file") yield* onEndFile(correlation, event.entryId, event.reason);
-      else if (event.type === "property") yield* onPropertyChange(event.name, event.data, fresh);
+      else if (event.type === "property") yield* onPropertyChange(active, event.name, event.data, fresh);
     });
-    // Deliberately untraced: this runs twice a second.
-    const publishPosition = (message: SessionEvent) =>
-      Effect.suspend(() => {
-        const { event } = message;
-        const current = engine && message.sequence > engine.propertyFence && isCurrentEvent(message, engine.session.generation, engine.correlation?.currentId ?? null);
-        if (!current || event.type !== "property" || typeof event.data !== "number" || !Number.isFinite(event.data) || !isSettled(state.playback)) return Effect.void;
-        return publish(withPosition(state, event.data));
-      });
+    const heldPosition = Effect.fn("Player.heldPosition")(function* () {
+      const media = currentMedia(state);
+      if (!media) return null;
+      // Anything but a loaded track stands still where the state has it.
+      return { key: media.item.key, positionSeconds: engine && isSettled(state.playback) ? yield* readPosition(engine) : media.positionSeconds };
+    });
 
     // ---- Failure reporting ----
 
@@ -531,8 +562,13 @@ export const PlayerLive = Layer.effect(
           );
         case "SessionEvent":
           return handleEvent(message).pipe(Effect.catch((error) => report(error, "event")));
-        case "Position":
-          return publishPosition(message.event);
+        case "ReadPosition":
+          return heldPosition().pipe(
+            // mpv going away is reported as such; the position is only not known.
+            Effect.orElseSucceed(() => null),
+            Effect.flatMap((position) => Deferred.succeed(message.reply, position)),
+            Effect.ensuring(Effect.sync(() => positionReplies.delete(message.reply))),
+          );
         case "EngineFailed":
           return engine?.session.generation === message.generation ? report(message.error, "engine") : Effect.void;
         case "LoadTimeout":
@@ -545,6 +581,8 @@ export const PlayerLive = Layer.effect(
       Effect.gen(function* () {
         for (const reply of replies) yield* Deferred.fail(reply, new CommandFailed({ message }));
         replies.clear();
+        for (const reply of positionReplies) yield* Deferred.succeed(reply, null);
+        positionReplies.clear();
       });
 
     const initialize = Effect.fn("Player.initialize")(function* () {
@@ -566,12 +604,6 @@ export const PlayerLive = Layer.effect(
       ),
       Effect.forkScoped,
     );
-    yield* Queue.take(positions).pipe(
-      Effect.flatMap((event) => Queue.offer(mailbox, { _tag: "Position", event })),
-      Effect.andThen(Effect.sleep(POSITION_INTERVAL)),
-      Effect.forever,
-      Effect.forkScoped,
-    );
 
     // ---- Public API ----
 
@@ -587,6 +619,22 @@ export const PlayerLive = Layer.effect(
       yield* Queue.offer(mailbox, { _tag: "Request", request: { operation, reply } });
       return yield* Deferred.await(reply);
     });
+    /** Where the state says the held track has got to, worked out from when it was last read. */
+    const estimatedPosition = Effect.map(Clock.currentTimeMillis, (now): PlayerPosition | null => {
+      const media = currentMedia(state);
+      return media ? { key: media.item.key, positionSeconds: positionAt(playerPositionRow(state), now) } : null;
+    });
+    const position = Effect.gen(function* () {
+      if (closing) return null;
+      const reply = yield* Deferred.make<PlayerPosition | null>();
+      positionReplies.add(reply);
+      yield* Queue.offer(mailbox, { _tag: "ReadPosition", reply });
+      return yield* Deferred.await(reply);
+    }).pipe(
+      // Quitting waits for it, so an mpv slow to answer, or work ahead of the read, does not hold it up:
+      // the position the state gives stands in, which is off by no more than mpv has drifted from the clock.
+      Effect.timeoutOrElse({ duration: POSITION_READ_TIMEOUT, orElse: () => estimatedPosition }),
+    );
     const shutdown = Effect.gen(function* () {
       if (shutdownStarted) return;
       shutdownStarted = true;
@@ -602,6 +650,7 @@ export const PlayerLive = Layer.effect(
     return {
       execute: (command) => (command._tag === "OpenInstallTerminal" ? openInstallTerminal(command.method) : submit(command)),
       setCredentials: (next) => submit({ _tag: "Credentials", credentials: next }),
+      position,
       snapshot: SubscriptionRef.get(published),
       changes: SubscriptionRef.changes(published),
       shutdown,

@@ -1,15 +1,12 @@
-import type { PendingMutation } from "@tanstack/db";
-
 import {
   MIRROR_PROTOCOL_VERSION,
+  type MirrorChange,
   type MirrorChangeBatch,
   type MirrorClientTransport,
-  type MirrorMutation,
   type MirrorPosition,
   type MirrorRequestPayloads,
   type MirrorRequestType,
   type MirrorResults,
-  type MirrorRow,
 } from "../protocol.js";
 
 /** An error raised by the server while handling a request. */
@@ -40,39 +37,14 @@ export interface MirrorClientOptions {
   readonly transport: MirrorClientTransport;
   /** Defaults to 60 seconds. Snapshots of large tables go through the same request path. */
   readonly requestTimeoutMs?: number | undefined;
-  /** How long a mutation waits for its changes to come back through the stream. Defaults to 30 seconds. */
-  readonly mutationTimeoutMs?: number | undefined;
+  /** How long `awaitPosition` waits for a position to sync when it is not given a timeout. Defaults to 30 seconds. */
+  readonly positionTimeoutMs?: number | undefined;
   /**
    * How often a connected client asks the server how far its stream has got, to recover a lost batch
    * that no later batch revealed, or a restart it missed. Defaults to 5 seconds; `0` turns it off.
    */
   readonly heartbeatMs?: number | undefined;
 }
-
-/** @internal Links a mirror collection to its client and table. */
-export interface MirrorCollectionHandle {
-  readonly client: MirrorClient;
-  readonly table: string;
-  /** Turns a row into what the server accepts; `null` when rows are sent as they are. */
-  readonly encode: ((row: MirrorRow) => MirrorRow) | null;
-  readonly waitFor: (position: MirrorPosition, timeoutMs: number) => Promise<void>;
-}
-
-type MutationCollection = { readonly id: string; readonly utils?: Record<string, unknown>; preload: () => Promise<void> };
-
-// Keyed by the collection's `utils.awaitPosition` function: collection ids are not unique across
-// clients, and the function survives however TanStack DB copies the utils object.
-const handles = new WeakMap<object, MirrorCollectionHandle>();
-
-/** @internal */
-export function attachCollectionHandle(key: object, handle: MirrorCollectionHandle): void {
-  handles.set(key, handle);
-}
-
-const handleOf = (collection: MutationCollection) => {
-  const key = collection.utils?.awaitPosition;
-  return typeof key === "function" ? handles.get(key) : undefined;
-};
 
 const STALE_HELLO_ATTEMPTS = 20;
 const STALE_HELLO_RETRY_MS = 10;
@@ -84,7 +56,7 @@ const CATCH_UP_DELAY_MS = 250;
  */
 export class MirrorClient {
   readonly requestTimeoutMs: number;
-  readonly mutationTimeoutMs: number;
+  readonly positionTimeoutMs: number;
 
   private readonly transport: MirrorClientTransport;
   private readonly listeners = new Set<(event: MirrorClientEvent) => void>();
@@ -108,7 +80,7 @@ export class MirrorClient {
   constructor(options: MirrorClientOptions) {
     this.transport = options.transport;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
-    this.mutationTimeoutMs = options.mutationTimeoutMs ?? 30_000;
+    this.positionTimeoutMs = options.positionTimeoutMs ?? 30_000;
     this.unsubscribeTransport = this.transport.subscribe((batch) => {
       if (this.disposed) return;
       this.pending.push(batch);
@@ -161,48 +133,16 @@ export class MirrorClient {
   }
 
   /**
-   * Writes every mutation of a TanStack DB transaction to the server in one SQLite transaction and
-   * resolves once the resulting changes are synced into each affected collection. Use it as the
-   * `mutationFn` of transactions that span several mirror collections.
+   * Calls `listener` with the changes of each batch that touches one of `tables`, and with `null` when
+   * the stream starts over, after which any of their rows may have changed.
    */
-  async applyTransaction(transaction: { readonly mutations: ReadonlyArray<PendingMutation<any>> }): Promise<void> {
-    const mutations: Array<MirrorMutation> = [];
-    const involved = new Map<MirrorCollectionHandle, MutationCollection>();
-
-    for (const mutation of transaction.mutations) {
-      const collection = mutation.collection as MutationCollection;
-      const handle = handleOf(collection);
-      if (handle?.client !== this) {
-        throw new Error(`Collection "${collection.id}" is not a mirror collection of this client`);
-      }
-      involved.set(handle, collection);
-
-      const key = mutation.key as string | number;
-      // A schema cannot encode part of a row, so updates to an encoded table send the whole row.
-      const encoded = handle.encode && mutation.type !== "delete" ? handle.encode(withoutVirtual(mutation.modified as MirrorRow)) : null;
-      switch (mutation.type) {
-        case "insert":
-          mutations.push({ table: handle.table, type: "insert", value: encoded ?? (mutation.modified as MirrorRow) });
-          break;
-        case "update":
-          mutations.push({ table: handle.table, type: "update", key, changes: encoded ?? (mutation.changes as MirrorRow) });
-          break;
-        case "delete":
-          mutations.push({ table: handle.table, type: "delete", key });
-          break;
-      }
-    }
-    if (mutations.length === 0) return;
-
-    // A collection that is not loaded yet would buffer the echo and drop the optimistic state too early.
-    await Promise.all(Array.from(involved.values(), (collection) => collection.preload()));
-    const position = await this.request("mutate", { mutations });
-    this.observeEpoch(position.epoch);
-    // A lower epoch is either a replaced server answering late or a live server whose epoch went
-    // backwards; only the latter needs a reconnect before the position can be awaited.
-    if (this.connectedEpoch !== null && position.epoch < this.connectedEpoch) await this.verifyEpoch();
-    this.expect(position);
-    await Promise.all(Array.from(involved.keys(), (handle) => handle.waitFor(position, this.mutationTimeoutMs)));
+  onTableChange(tables: ReadonlyArray<string>, listener: (changes: ReadonlyArray<MirrorChange> | null) => void): () => void {
+    const names = new Set(tables);
+    return this.subscribe((event) => {
+      if (event.type === "reset") return listener(null);
+      const changes = event.batch.changes.filter((change) => names.has(change.table));
+      if (changes.length > 0) listener(changes);
+    });
   }
 
   /** Drops the stream position; collections reload from fresh snapshots. */
@@ -377,9 +317,6 @@ export class MirrorClient {
 export function createMirrorClient(options: MirrorClientOptions): MirrorClient {
   return new MirrorClient(options);
 }
-
-// `$`-prefixed keys are TanStack DB virtual properties.
-const withoutVirtual = (row: MirrorRow): MirrorRow => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("$")));
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

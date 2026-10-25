@@ -86,12 +86,11 @@ forEachServer((server, traits) => {
     const serverId = (await record(created.id))!.serverId!;
 
     const [, second, , fourth, last] = created.local!.entries;
-    await run(commands.removeEntry(created.id, second!.id));
-    await run(commands.removeEntry(created.id, fourth!.id));
+    await run(commands.removeEntries(created.id, [second!.id, fourth!.id]));
     await sync();
     expect(await serverSongs(serverId)).toEqual([songs.a, songs.a, songs.c]);
 
-    await run(commands.moveEntry(created.id, last!.id, created.local!.entries[0]!.id));
+    await run(commands.moveEntries(created.id, [last!.id], created.local!.entries[0]!.id));
     await sync();
     expect(await serverSongs(serverId)).toEqual([songs.c, songs.a, songs.a]);
   });

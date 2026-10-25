@@ -128,6 +128,23 @@ describe("PlaylistCommands", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("removes several entries as one revision", () =>
+    Effect.gen(function* () {
+      const commands = yield* PlaylistCommands;
+      const playlist = yield* commands.create({ name: "Trim", songIds: ["song-a", "song-b", "song-a", "song-c"] });
+      const [first, second, third, last] = playlist.local!.entries;
+
+      yield* commands.removeEntries(playlist.id, [third!.id, first!.id]);
+      const row = yield* saved(playlist.id);
+      // Of the two entries of one song, only the one named goes.
+      expect(row.local!.entries).toEqual([second, last]);
+      expect(row.revision).toBe(1);
+
+      yield* commands.removeEntries(playlist.id, []);
+      expect((yield* saved(playlist.id)).revision).toBe(1);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("does not mint entry ids that collide across revisions", () =>
     Effect.gen(function* () {
       const commands = yield* PlaylistCommands;
@@ -148,7 +165,7 @@ describe("PlaylistCommands", () => {
       const playlist = yield* commands.create({ name: "Intact", songIds: ["song-a", "song-b"] });
 
       const errors = yield* Effect.all([
-        Effect.flip(commands.removeEntry(playlist.id, "nope")),
+        Effect.flip(commands.removeEntries(playlist.id, [playlist.local!.entries[0]!.id, "nope"])),
         Effect.flip(commands.moveEntries(playlist.id, ["nope"], null)),
         Effect.flip(commands.moveEntries(playlist.id, [playlist.local!.entries[0]!.id], "nope")),
         Effect.flip(commands.addEntries(playlist.id, ["song-c"], "nope")),

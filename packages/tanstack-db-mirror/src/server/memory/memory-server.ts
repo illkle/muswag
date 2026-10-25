@@ -1,19 +1,14 @@
 import { Context, Effect, Layer, Scope } from "effect";
 
 import { MirrorSchemaError } from "../../errors.js";
-import type { MirrorChange, MirrorChangeBatch, MirrorKey, MirrorMutation, MirrorPosition, MirrorRequest, MirrorResponse, MirrorResults, MirrorRow, MirrorServerTransport } from "../../protocol.js";
+import type { MirrorChange, MirrorChangeBatch, MirrorKey, MirrorPosition, MirrorRequest, MirrorResponse, MirrorResults, MirrorRow, MirrorServerTransport } from "../../protocol.js";
 import type { AnyMemoryTable, MemoryTable } from "../../table.js";
-import { handleRequest, makeListeners, MirrorRequestError, readOnlyError, serveWith } from "../shared.js";
+import { handleRequest, makeListeners, MirrorRequestError, serveWith } from "../shared.js";
 
 export interface MemoryMirrorOptions {
   readonly tables: ReadonlyArray<AnyMemoryTable>;
   /** How many already-broadcast changes to keep for clients recovering from a gap. Defaults to 10 000. */
   readonly retainChanges?: number | undefined;
-  /**
-   * Rejects `mutate` requests, so clients can only read and every change goes through this server.
-   * Pair it with `readOnly` collections on the client.
-   */
-  readonly readOnly?: boolean | undefined;
 }
 
 export interface MemoryMirrorService {
@@ -171,43 +166,6 @@ export const make = Effect.fnUntraced(function* (options: MemoryMirrorOptions) {
   const get = <Row extends object, Key extends MirrorKey>(table: MemoryTable<Row, Key>, key: Key) => Effect.map(view, (stage) => read(stage, owned(table).name, key)?.row as Row | undefined);
   const rows = <Row extends object>(table: MemoryTable<Row, any>) => Effect.map(view, (stage) => Array.from(visibleKeys(stage, owned(table).name), (key) => read(stage, table.name, key)!.row as Row));
 
-  const decodeRow = (table: AnyMemoryTable, value: unknown) =>
-    Effect.try({
-      try: () => table.decode(value) as object,
-      catch: (cause) => new MirrorRequestError({ message: `Invalid row for "${table.name}": ${cause instanceof Error ? cause.message : String(cause)}` }),
-    });
-
-  const applyMutation = (stage: Staged, mutation: MirrorMutation) =>
-    Effect.gen(function* () {
-      const table = requireTable(mutation.table);
-      switch (mutation.type) {
-        case "insert": {
-          const row = yield* decodeRow(table, mutation.value);
-          const key = table.keyOf(row);
-          if (read(stage, table.name, key)) return yield* new MirrorRequestError({ message: `Row ${JSON.stringify(key)} already exists in "${table.name}"` });
-          return stageChange(stage, table.name, key, store(table, row));
-        }
-        case "update": {
-          const existing = read(stage, table.name, mutation.key);
-          if (!existing) return yield* new MirrorRequestError({ message: `Row ${JSON.stringify(mutation.key)} does not exist in "${table.name}"` });
-          const row = yield* decodeRow(table, { ...existing.encoded, ...mutation.changes });
-          if (table.keyOf(row) !== mutation.key) return yield* new MirrorRequestError({ message: `An update cannot change the key of a row in "${table.name}"` });
-          return stageChange(stage, table.name, mutation.key, store(table, row));
-        }
-        case "delete":
-          // Deleting a row that is already gone is a no-op: the requested end state holds.
-          return stageChange(stage, table.name, mutation.key, null);
-      }
-    });
-
-  const mutate = (mutations: ReadonlyArray<MirrorMutation>) =>
-    write(
-      Effect.gen(function* () {
-        const stage = (yield* CurrentWrites).get(id)!;
-        for (const mutation of mutations) yield* applyMutation(stage, mutation);
-      }),
-    ).pipe(Effect.map(() => ({ epoch, seq })));
-
   const snapshot = (name: string) => Effect.sync(() => ({ epoch, seq, rows: Array.from(data.get(requireTable(name).name)!.values(), (stored) => stored.encoded) }));
 
   const pull = (fromSeq: number) =>
@@ -223,12 +181,9 @@ export const make = Effect.fnUntraced(function* (options: MemoryMirrorOptions) {
         return Effect.sync(() => ({ epoch, seq }));
       case "snapshot":
         return snapshot(request.table);
-      case "mutate":
-        return options.readOnly ? Effect.fail(readOnlyError()) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
       case "query":
-      case "count":
         return Effect.fail(new MirrorRequestError({ message: "Memory mirrors load whole tables; they do not answer queries" }));
     }
   };

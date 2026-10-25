@@ -1,13 +1,13 @@
 import { useSelector } from "@tanstack/react-store";
 
-import { mainIpc } from "#/data/ipc";
+import { appCommand } from "#/data/app-command";
 import { appState } from "#/data/state";
 import { rowStore } from "#/data/stores";
 import type { AppUpdateState, AppUpdateStatus } from "#shared/state/app-update";
 
 export const AppUpdateIPC = {
-  check: () => mainIpc.invoke("appUpdate:check"),
-  install: () => mainIpc.invoke("appUpdate:install"),
+  check: () => appCommand("appUpdate:check"),
+  install: () => appCommand("appUpdate:install"),
 };
 
 const appUpdateRow = rowStore(appState.appUpdate, "app_update");

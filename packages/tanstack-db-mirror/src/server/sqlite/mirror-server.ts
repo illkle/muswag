@@ -1,24 +1,10 @@
-import { is, SQL } from "drizzle-orm";
 import { Context, Duration, Effect, FiberSet, Layer, Option, Schedule, Scope, Semaphore } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
-import type {
-  MirrorChange,
-  MirrorChangeBatch,
-  MirrorExpression,
-  MirrorKey,
-  MirrorMutation,
-  MirrorPosition,
-  MirrorQuery,
-  MirrorRequest,
-  MirrorResponse,
-  MirrorResults,
-  MirrorRow,
-  MirrorServerTransport,
-} from "../../protocol.js";
-import { decodeRow, decodeValue, describeTable, encodeValue, MirrorSchemaError, type SqliteMirrorTable, type MirrorTableInfo } from "../../drizzle.js";
-import { handleRequest, makeListeners, MirrorRequestError, readOnlyError, serveWith } from "../shared.js";
+import type { MirrorChange, MirrorChangeBatch, MirrorKey, MirrorPosition, MirrorQuery, MirrorRequest, MirrorResponse, MirrorResults, MirrorServerTransport } from "../../protocol.js";
+import { decodeRow, decodeValue, describeTable, MirrorSchemaError, type SqliteMirrorTable, type MirrorTableInfo } from "../../drizzle.js";
+import { handleRequest, makeListeners, MirrorRequestError, serveWith } from "../shared.js";
 import { orderBySql, whereSql } from "./query-sql.js";
 import { createChangeLogSql, createTriggerSql, quoteIdentifier, rowJson, triggerPrefix } from "./sql.js";
 
@@ -36,11 +22,6 @@ export interface SqliteMirrorOptions {
    * the next flush.
    */
   readonly autoFlushInterval?: Duration.Input | undefined;
-  /**
-   * Rejects `mutate` requests, so clients can only read and every change goes through `write` in the
-   * server process. Pair it with `readOnly` collections on the client.
-   */
-  readonly readOnly?: boolean | undefined;
   /**
    * Columns that stay with the server, by table name, as row property names. Snapshots and changes
    * leave them out, and an update that changes nothing else is not mirrored. Type the client's
@@ -97,8 +78,8 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
   const retainChanges = options.retainChanges ?? DEFAULT_RETAIN_CHANGES;
   const metaSql = quoteIdentifier(`${changeLog}_meta`);
 
-  // `info` describes the whole table, which mutations write; `mirrored` only the columns clients get.
-  const tables = new Map<string, { readonly info: MirrorTableInfo; readonly mirrored: MirrorTableInfo; readonly keyOnly: boolean }>();
+  // Each table as clients get it, without the columns the server keeps to itself.
+  const tables = new Map<string, { readonly mirrored: MirrorTableInfo; readonly keyOnly: boolean }>();
   const keyOnlyTables = new Set(options.keyOnlyTables ?? []);
   for (const table of options.tables) {
     const info = yield* Effect.try({ try: () => describeTable(table), catch: (cause) => cause as MirrorSchemaError });
@@ -106,7 +87,7 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
       return yield* Effect.fail(new MirrorSchemaError(`Table "${info.name}" is registered twice`));
     }
     const mirrored = yield* Effect.try({ try: () => withoutColumns(info, options.omitColumns?.[info.name] ?? []), catch: (cause) => cause as MirrorSchemaError });
-    tables.set(info.name, { info, mirrored, keyOnly: keyOnlyTables.has(info.name) });
+    tables.set(info.name, { mirrored, keyOnly: keyOnlyTables.has(info.name) });
   }
   for (const name of Object.keys(options.omitColumns ?? {})) {
     if (!tables.has(name)) return yield* Effect.fail(new MirrorSchemaError(`Columns are omitted from "${name}", which is not mirrored`));
@@ -268,61 +249,6 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
       );
     });
 
-  const count = (tableName: string, expression: MirrorExpression | undefined) =>
-    Effect.suspend(() => {
-      const info = requireTable(tableName).mirrored;
-      const where = expression ? whereSql(info, expression) : undefined;
-      return internal(
-        sql.withTransaction(
-          Effect.gen(function* () {
-            const [row] = yield* sql.unsafe<{ count: number }>(`SELECT count(*) AS count FROM ${quoteIdentifier(info.name)}${where ? ` WHERE ${where.sql}` : ""}`, where?.params ?? []);
-            const seq = yield* currentSeq;
-            return { epoch, seq, count: row?.count ?? 0 };
-          }),
-        ),
-      );
-    });
-
-  const applyMutation = (mutation: MirrorMutation) =>
-    Effect.suspend(() => {
-      const { info } = requireTable(mutation.table);
-      const table = quoteIdentifier(info.name);
-      const pk = info.primaryKey;
-
-      switch (mutation.type) {
-        case "insert": {
-          const { names, values } = encodeInsert(info, mutation.value);
-          const statement = names.length === 0 ? `INSERT INTO ${table} DEFAULT VALUES` : `INSERT INTO ${table} (${names.map(quoteIdentifier).join(", ")}) VALUES (${names.map(() => "?").join(", ")})`;
-          return Effect.asVoid(sql.unsafe(statement, values));
-        }
-        case "update": {
-          const { names, values } = encodeUpdate(info, mutation.changes);
-          if (names.length === 0) return Effect.void;
-          const assignments = names.map((name) => `${quoteIdentifier(name)} = ?`).join(", ");
-          const statement = `UPDATE ${table} SET ${assignments} WHERE ${quoteIdentifier(pk.name)} = ? RETURNING 1 AS found`;
-          return sql
-            .unsafe(statement, [...values, encodeValue(pk.column, mutation.key)])
-            .pipe(
-              Effect.flatMap((rows) => (rows.length === 0 ? Effect.fail(new MirrorRequestError({ message: `Row ${JSON.stringify(mutation.key)} does not exist in "${info.name}"` })) : Effect.void)),
-            );
-        }
-        case "delete": {
-          // Deleting a row that is already gone is a no-op: the requested end state holds.
-          return Effect.asVoid(sql.unsafe(`DELETE FROM ${table} WHERE ${quoteIdentifier(pk.name)} = ?`, [encodeValue(pk.column, mutation.key)]));
-        }
-      }
-    });
-
-  const mutate = (mutations: ReadonlyArray<MirrorMutation>) =>
-    write(
-      Effect.gen(function* () {
-        for (const mutation of mutations) {
-          yield* applyMutation(mutation);
-        }
-        return yield* currentSeq;
-      }),
-    ).pipe(Effect.map((seq) => ({ epoch, seq })));
-
   const pull = (fromSeq: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -338,14 +264,10 @@ export const make = Effect.fnUntraced(function* (options: SqliteMirrorOptions) {
         return Effect.succeed({ epoch, seq: lastFlushedSeq });
       case "snapshot":
         return snapshot(request.table);
-      case "mutate":
-        return options.readOnly ? Effect.fail(readOnlyError()) : mutate(request.mutations);
       case "pull":
         return pull(request.fromSeq);
       case "query":
         return query(request);
-      case "count":
-        return count(request.table, request.where);
     }
   };
 
@@ -379,56 +301,4 @@ function withoutColumns(info: MirrorTableInfo, omit: ReadonlyArray<string>): Mir
   }
   const columns = info.columns.filter(({ key }) => !omit.includes(key));
   return { ...info, columns, columnsByKey: new Map(columns.map((column) => [column.key, column])) };
-}
-
-function encodeInsert(info: MirrorTableInfo, value: MirrorRow) {
-  assertKnownColumns(info, value);
-  const names: Array<string> = [];
-  const values: Array<unknown> = [];
-  for (const { key, name, column } of info.columns) {
-    if (column.generated) continue;
-    let next = value[key];
-    if (next === undefined) {
-      const runtimeDefault = column.defaultFn ?? column.onUpdateFn;
-      if (!runtimeDefault) continue;
-      next = runtimeDefault();
-    }
-    names.push(name);
-    values.push(encodeColumnValue(info, name, column, next));
-  }
-  return { names, values };
-}
-
-function encodeUpdate(info: MirrorTableInfo, changes: MirrorRow) {
-  assertKnownColumns(info, changes);
-  const names: Array<string> = [];
-  const values: Array<unknown> = [];
-  for (const { key, name, column } of info.columns) {
-    if (column.generated || !(key in changes)) continue;
-    names.push(name);
-    values.push(encodeColumnValue(info, name, column, changes[key]));
-  }
-  if (names.length === 0) return { names, values };
-  for (const { key, name, column } of info.columns) {
-    if (key in changes || !column.onUpdateFn) continue;
-    names.push(name);
-    values.push(encodeColumnValue(info, name, column, column.onUpdateFn()));
-  }
-  return { names, values };
-}
-
-function encodeColumnValue(info: MirrorTableInfo, name: string, column: MirrorTableInfo["columns"][number]["column"], value: unknown) {
-  if (is(value, SQL)) {
-    throw new MirrorRequestError({ message: `Column "${info.name}.${name}" produced a SQL expression; mirrored writes only support plain values` });
-  }
-  return encodeValue(column, value);
-}
-
-// `$`-prefixed keys are TanStack DB virtual properties.
-function assertKnownColumns(info: MirrorTableInfo, row: MirrorRow) {
-  for (const key of Object.keys(row)) {
-    if (!key.startsWith("$") && !info.columnsByKey.has(key)) {
-      throw new MirrorRequestError({ message: `Unknown column "${key}" for table "${info.name}"` });
-    }
-  }
 }

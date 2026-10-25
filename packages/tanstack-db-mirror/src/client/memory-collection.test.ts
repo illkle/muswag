@@ -5,7 +5,7 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { memoryTable } from "../memory/index.js";
 import { album, createHarness, eventually, rowsOf, song, type Harness } from "../test/harness.js";
 import { counters, createMemoryHarness, expectMemoryInSync, player, Player, players, type MemoryHarness } from "../test/memory-harness.js";
-import { mirrorCollectionOptions, MirrorRemoteError, type MirrorKeyOf, type MirrorRowOf } from "./index.js";
+import { mirrorCollectionOptions, type MirrorKeyOf, type MirrorRowOf } from "./index.js";
 
 let harness: MemoryHarness;
 let sqlite: Harness | undefined;
@@ -48,47 +48,10 @@ describe("memory tables", () => {
     for (const client of clients) await expectMemoryInSync(harness, client);
   });
 
-  it("writes optimistic mutations to the server in their encoded form", async () => {
-    harness = await createMemoryHarness();
-    const client = harness.connect();
-    await client.players.preload();
-
-    await client.players.insert(player("p1", { joined: new Date(1_000) })).isPersisted.promise;
-    await client.players.update("p1", (draft) => {
-      draft.volume = 80;
-      draft.status = { _tag: "Playing", track: "x", positionSeconds: 1 };
-    }).isPersisted.promise;
-    expect(await harness.run(harness.server.get(players, "p1"))).toEqual(player("p1", { joined: new Date(1_000), volume: 80, status: { _tag: "Playing", track: "x", positionSeconds: 1 } }));
-    expect(client.players.get("p1")?.$synced).toBe(true);
-
-    await client.players.delete("p1").isPersisted.promise;
-    expect(await harness.run(harness.server.rows(players))).toEqual([]);
-  });
-
-  it("rolls back mutations that do not satisfy the schema or that the server rejects", async () => {
+  it("throws on local writes, and follows the server", async () => {
     harness = await createMemoryHarness();
     await harness.run(harness.server.upsert(players, player("p1")));
     const client = harness.connect();
-    await client.players.preload();
-
-    const invalid = client.players.update("p1", (draft) => void (draft.volume = 500));
-    await expect(invalid.isPersisted.promise).rejects.toThrow(/volume/);
-    expect(client.players.get("p1")?.volume).toBe(50);
-
-    // The client has not seen the delete yet when it updates the row.
-    client.connection.pause();
-    await harness.run(harness.server.delete(players, "p1"));
-    const stale = client.players.update("p1", (draft) => void (draft.volume = 1));
-    await expect(stale.isPersisted.promise).rejects.toBeInstanceOf(MirrorRemoteError);
-    client.connection.resume();
-    await expectMemoryInSync(harness, client);
-    expect(client.players.size).toBe(0);
-  });
-
-  it("follows the server through a read-only collection", async () => {
-    harness = await createMemoryHarness({ server: { readOnly: true } });
-    await harness.run(harness.server.upsert(players, player("p1")));
-    const client = harness.connect({ readOnly: true });
     await client.players.preload();
 
     expect(() => client.players.insert(player("p2"))).toThrow(/handler/i);

@@ -31,22 +31,14 @@ export type MirrorChangeBatch = {
   readonly changes: ReadonlyArray<MirrorChange>;
 };
 
-export type MirrorMutation =
-  | { readonly table: string; readonly type: "insert"; readonly value: MirrorRow }
-  | { readonly table: string; readonly type: "update"; readonly key: MirrorKey; readonly changes: MirrorRow }
-  | { readonly table: string; readonly type: "delete"; readonly key: MirrorKey };
-
 export type MirrorRequestPayloads = {
   /** Opens the change stream: returns the last seq the server has broadcast. */
   readonly hello: {};
   readonly snapshot: { readonly table: string };
-  readonly mutate: { readonly mutations: ReadonlyArray<MirrorMutation> };
   /** Fetches every change after `fromSeq`, used to recover from a gap in the stream. */
   readonly pull: { readonly fromSeq: number };
   /** Reads the rows of a table that `where` matches, in `orderBy`, a window of them when `limit` is given. */
   readonly query: MirrorQuery;
-  /** Counts the rows of a table that `where` matches. */
-  readonly count: { readonly table: string; readonly where?: MirrorExpression | undefined };
 };
 
 /**
@@ -72,15 +64,12 @@ export type MirrorQuery = {
 export type MirrorResults = {
   readonly hello: { readonly epoch: number; readonly seq: number };
   readonly snapshot: { readonly epoch: number; readonly seq: number; readonly rows: ReadonlyArray<MirrorRow> };
-  /** `seq` is the last change produced by the mutation; clients wait for it to come back through the stream. */
-  readonly mutate: { readonly epoch: number; readonly seq: number };
   readonly pull:
     | { readonly epoch: number; readonly kind: "changes"; readonly batch: MirrorChangeBatch }
     /** The requested range is no longer retained; the client must reload its collections. */
     | { readonly epoch: number; readonly kind: "reset" };
   /** The rows as of `seq`: a change after it may have changed them. */
   readonly query: { readonly epoch: number; readonly seq: number; readonly rows: ReadonlyArray<MirrorRow> };
-  readonly count: { readonly epoch: number; readonly seq: number; readonly count: number };
 };
 
 export type MirrorRequestType = keyof MirrorRequestPayloads;

@@ -27,8 +27,7 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
             const ended = yield* Deferred.make<void, EngineError>();
             const starts: number[] = [];
             const events = yield* Queue.unbounded<SessionEvent>();
-            const positions = yield* Queue.sliding<SessionEvent>(1);
-            const session = yield* service.open(process.env.MUSWAG_MPV_PATH ?? "mpv", { events, positions });
+            const session = yield* service.open(process.env.MUSWAG_MPV_PATH ?? "mpv", events);
             yield* Stream.fromQueue(events).pipe(
               Stream.runForEach(({ event }) =>
                 Effect.gen(function* () {
@@ -47,10 +46,12 @@ describe.runIf(process.env.MUSWAG_MPV_INTEGRATION === "1")("real mpv session", (
             const [a, b, c, d] = ["a", "b", "c", "d"].map((key) => ({ key, track: songRow({ id: "same", title: key }) }));
             const items = [a!, b!, c!];
             const urls = new Map([...items, d!].map((item) => [item.key, Redacted.make(file)]));
-            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0 }, urls);
+            const mirrored = yield* applyQueue(session, null, items, { key: "a", play: false, positionSeconds: 0.5 }, urls);
             expect(mirrored.entries.map((entry) => entry.key)).toEqual(["a", "b", "c"]);
             yield* Deferred.await(loaded);
             expect(yield* session.execute(booleanProperty("pause"))).toBe(true);
+            // Loaded where the selection asked, without a seek.
+            expect(yield* session.execute(numberProperty("time-pos"))).toBeCloseTo(0.5, 1);
             yield* session.execute(command("seek", 0.2, "absolute+exact"));
             expect(yield* session.execute(numberProperty("time-pos"))).toBeGreaterThanOrEqual(0);
             // mpv starts an occurrence it already holds without a new playlist, and an edit only sends its difference.

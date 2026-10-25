@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import type { MirrorChangeBatch } from "@muswag/tanstack-db-mirror/protocol";
 import { MemoryMirror } from "@muswag/tanstack-db-mirror/server/memory";
-import { Deferred, Effect, Fiber, Redacted, Stream } from "effect";
+import { Clock, Deferred, Effect, Fiber, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import type { PlayerCommand } from "#shared/commands/player";
@@ -35,18 +35,21 @@ describe("Effect player", () => {
       yield* Fiber.join(refresh);
     }).pipe(Effect.provide(test.layer));
   });
-  it.effect("commits a duplicate-media queue while events arrive before replies; restores only after load", () => {
+  it.effect("commits a duplicate-media queue while events arrive before replies, and loads the selection where it starts", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
       yield* login(player);
       yield* player.execute(select("b", 12));
       expect((yield* player.snapshot).playback._tag).toBe("Loading");
-      expect(test.commands.filter((command) => command[0] === "loadfile")).toHaveLength(3);
-      expect(test.commands.some((command) => command[0] === "seek")).toBe(false);
+      const loads = test.commands.filter((command) => command[0] === "loadfile");
+      expect(loads).toHaveLength(3);
+      expect(loads[0]).toEqual(["loadfile", expect.anything(), "replace", -1, { start: "12" }]);
+      // Playing from the first moment: mpv starts there, so nothing before it is heard.
+      expect(test.commands).toContainEqual(["set_property", "pause", false]);
       test.emit({ type: "file-loaded" });
-      yield* until(player, (state) => state.playback._tag === "Playing");
-      expect(test.commands).toContainEqual(["seek", 12, "absolute+exact"]);
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { positionSeconds: 12 } });
+      expect(test.commands.some((command) => command[0] === "seek")).toBe(false);
       yield* player.shutdown;
       expect(test.closes).toBe(1);
     }).pipe(Effect.provide(test.layer));
@@ -55,6 +58,7 @@ describe("Effect player", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
+      const mirror = yield* MemoryMirror;
       yield* login(player);
       yield* player.execute(select("a"));
       test.emit({ type: "file-loaded" });
@@ -62,12 +66,18 @@ describe("Effect player", () => {
       yield* player.execute({ _tag: "Seek", seconds: 1800 });
       test.emit({ type: "property", name: "seeking", data: true });
       yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.buffering);
+      // Waiting for data, the position holds where mpv is.
+      expect(yield* mirror.get(playerPosition, "player")).toMatchObject({ positionSeconds: 1800, advancing: false });
       yield* player.execute({ _tag: "Pause" });
       expect((yield* player.snapshot).playback._tag).toBe("Paused");
       yield* player.execute({ _tag: "Play" });
       expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Playing", buffering: true });
+      yield* TestClock.adjust("3 seconds");
+      test.position = 1801;
       test.emit({ type: "property", name: "seeking", data: false });
       yield* until(player, (state) => state.playback._tag === "Playing" && !state.playback.buffering);
+      // Playing again, it moves on from where mpv has got to.
+      expect(yield* mirror.get(playerPosition, "player")).toMatchObject({ positionSeconds: 1801, at: yield* Clock.currentTimeMillis, advancing: true });
       test.emit({ type: "property", name: "paused-for-cache", data: true });
       yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.buffering);
       test.emit({ type: "property", name: "paused-for-cache", data: undefined });
@@ -75,7 +85,7 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
-  it.effect("mirrors its state for renderers, with position updates apart from everything else", () => {
+  it.effect("mirrors its state for renderers, with the position apart from everything else and only where it jumps", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
@@ -88,11 +98,15 @@ describe("Effect player", () => {
 
       const batches: MirrorChangeBatch[] = [];
       const unsubscribe = mirror.subscribe((batch) => batches.push(batch));
-      test.emit({ type: "property", name: "time-pos", data: 12 });
-      yield* until(player, (state) => state.playback._tag === "Playing" && state.playback.media.positionSeconds === 12);
+      // Playing on is no change: renderers move the position on with the clock.
+      yield* TestClock.adjust("10 seconds");
+      yield* player.execute({ _tag: "SetVolume", percent: 80 });
+      expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player"]);
+      const at = yield* Clock.currentTimeMillis;
+      yield* player.execute({ _tag: "Seek", seconds: 12 });
       unsubscribe();
-      expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player_position"]);
-      expect(yield* mirror.get(playerPosition, "player")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null });
+      expect(batches.flatMap((batch) => batch.changes.map((change) => change.table))).toEqual(["player", "player_position"]);
+      expect(yield* mirror.get(playerPosition, "player")).toEqual({ id: "player", positionSeconds: 12, durationSeconds: null, at, advancing: true });
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
@@ -131,17 +145,16 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
-  it.effect("a failed restore seek is visible and never reports playing", () => {
+  it.effect("a loaded track whose position mpv cannot say yet plays from where it was asked to start", () => {
     const test = fixture();
     return Effect.gen(function* () {
       const player = yield* Player;
       yield* login(player);
       yield* player.execute(select("a", 12));
-      test.override((command) => (command.name === "seek" ? Effect.fail(new EngineError({ reason: "rejected", operation: "seek", uncertain: false })) : undefined));
+      test.override((command) => (command.name === "time-pos" ? Effect.fail(new EngineError({ reason: "rejected", operation: "time-pos", uncertain: false })) : undefined));
       test.emit({ type: "file-loaded" });
-      const failed = yield* until(player, (state) => state.playback._tag === "Failed");
-      expect(failed).toMatchObject({ playback: { reason: "player" }, error: { message: "The playback engine could not complete the operation.", fix: "retry" } });
-      expect(test.closes).toBe(1);
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { positionSeconds: 12 } });
+      expect(test.closes).toBe(0);
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
@@ -286,6 +299,87 @@ describe("Effect player", () => {
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
+  it.effect("refuses Pause with no track selected", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+
+      expect((yield* player.execute({ _tag: "Pause" }).pipe(Effect.flip)).message).toBe("Select a playable track first.");
+      expect(test.commands).not.toContainEqual(["set_property", "pause", true]);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("ignores Pause once the queue has run out, so Play starts the track again", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute(select("c"));
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      test.emit({ type: "end-file", entryId: test.currentId, reason: "eof" });
+      yield* until(player, (state) => state.playback._tag === "Ended");
+      const before = test.commands.length;
+
+      yield* player.execute({ _tag: "Pause" });
+      expect((yield* player.snapshot).playback._tag).toBe("Ended");
+      expect(test.commands.slice(before)).toEqual([]);
+      yield* player.execute({ _tag: "Play" });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "c" }, positionSeconds: 0 } });
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("reads where a loaded track is from mpv, and has a track that is not loaded where the state says", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      expect(yield* player.position).toBeNull();
+      yield* player.execute(select("a", 30));
+      expect(yield* player.position).toEqual({ key: "a", positionSeconds: 30 });
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      test.position = 95.5;
+      expect(yield* player.position).toEqual({ key: "a", positionSeconds: 95.5 });
+      yield* player.shutdown;
+      expect(yield* player.position).toBeNull();
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("answers with where the state says a track is when mpv is slow to say, so quitting is not held up", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute(select("a", 30));
+      test.emit({ type: "file-loaded" });
+      yield* until(player, (state) => state.playback._tag === "Playing");
+      test.override((command) => (command.name === "time-pos" ? Effect.never : undefined));
+
+      const reading = yield* Effect.forkChild(player.position);
+      yield* TestClock.adjust("1 second");
+
+      // Playing since 30 s, a second ago.
+      expect(yield* Fiber.join(reading)).toEqual({ key: "a", positionSeconds: 31 });
+      test.override(undefined);
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
+  it.effect("restarts a track that is still loading elsewhere by loading it again from its start", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      const player = yield* Player;
+      yield* login(player);
+      yield* player.execute(select("a", 30));
+      const before = test.commands.length;
+      yield* player.execute({ _tag: "Restart" });
+      expect(test.commands.slice(before)).toContainEqual(["loadfile", expect.anything(), "replace", -1]);
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "a" }, positionSeconds: 0 } });
+      test.emit({ type: "file-loaded" });
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { positionSeconds: 0 } });
+      yield* player.shutdown;
+    }).pipe(Effect.provide(test.layer));
+  });
   it.effect("retries media once with a new session and ignores stale generation events", () => {
     const test = fixture();
     return Effect.gen(function* () {
@@ -338,6 +432,8 @@ describe("Effect player", () => {
       test.emit({ type: "file-loaded" });
       yield* until(player, (state) => state.playback._tag === "Playing");
       yield* player.execute({ _tag: "Seek", seconds: 1800 });
+      // mpv says nothing as the track plays on, and cannot say once it has failed: the player works it out.
+      yield* TestClock.adjust("10 seconds");
       test.emit({ type: "end-file", entryId: test.currentId, reason: "error" });
       yield* until(player, (state) => state.playback._tag === "Recovering");
       yield* player.execute(barrier);
@@ -346,10 +442,10 @@ describe("Effect player", () => {
       const before = test.commands.length;
 
       yield* player.execute({ _tag: "Play" });
-      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "a" }, positionSeconds: 1800 }, targetPaused: false });
+      expect((yield* player.snapshot).playback).toMatchObject({ _tag: "Loading", media: { item: { key: "a" }, positionSeconds: 1810 }, targetPaused: false });
+      expect(test.commands.slice(before)).toContainEqual(["loadfile", expect.anything(), "replace", -1, { start: "1810" }]);
       test.emit({ type: "file-loaded" });
-      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { positionSeconds: 1800 } });
-      expect(test.commands.slice(before)).toContainEqual(["seek", 1800, "absolute+exact"]);
+      expect((yield* until(player, (state) => state.playback._tag === "Playing")).playback).toMatchObject({ media: { positionSeconds: 1810 } });
       yield* player.shutdown;
     }).pipe(Effect.provide(test.layer));
   });
@@ -472,9 +568,7 @@ describe("Effect player", () => {
       const player = yield* Player;
       yield* login(player);
       yield* player.execute(select("a"));
-      test.override((command) =>
-        command.args[0] === "get_property" && command.args[1] === "pause" ? Effect.fail(new EngineError({ reason: "timeout", operation: "pause", uncertain: true })) : undefined,
-      );
+      test.override((command) => (command.name === "time-pos" ? Effect.fail(new EngineError({ reason: "timeout", operation: "time-pos", uncertain: true })) : undefined));
       test.emit({ type: "file-loaded" });
       yield* until(player, (state) => state.playback._tag === "Failed");
 

@@ -19,7 +19,6 @@ import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
 
 import { SubsonicAPI, WRONG_CREDENTIALS } from "../api/subsonic-api.js";
-import { MiniFs, removeCoverFiles } from "../covers/cover-manager.js";
 import { Db, write } from "../db/database.js";
 import { chunks, STATEMENT_IDS, STATEMENT_ROWS, upsertChanged } from "../db/upsert.js";
 
@@ -38,7 +37,7 @@ type ReportProgress = (progress: Progress) => Effect.Effect<void>;
 /** Downloads the library from the server into the database and keeps it up to date. */
 export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend/LibrarySync", {
   make: Effect.gen(function* () {
-    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror | MiniFs>();
+    const context = yield* Effect.context<Db | SubsonicAPI | SqliteMirror>();
     // Syncs belong to the session: closing it, e.g. on logout, interrupts the one running.
     const scope = yield* Effect.scope;
     const db = yield* Db;
@@ -79,21 +78,27 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
         Effect.provide(context),
       );
 
-    /** Runs a sync, or joins the one running when that does as much. */
+    /**
+     * Runs a sync, or joins the one running when that does as much. A sync is made current and
+     * started in one step that cannot be interrupted: made current but never started, it would keep
+     * every caller after waiting. Only the wait for it can be interrupted.
+     */
     const sync = (mode: SyncMode): Effect.Effect<void, SyncError> =>
-      Effect.suspend(() => {
-        if (current) {
-          if (mode === "quick" || current.mode === "full") return Deferred.await(current.done);
-          // A full sync asked for during a quick one runs once that one is over, however it ended.
-          return Deferred.await(current.done).pipe(Effect.ignore, Effect.andThen(sync(mode)));
-        }
-        const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
-        current = running;
-        return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, progress: null, error: null })).pipe(
-          Effect.andThen(Effect.forkIn(run(running), scope)),
-          Effect.andThen(Deferred.await(running.done)),
-        );
-      });
+      Effect.uninterruptibleMask((restore) =>
+        Effect.suspend(() => {
+          if (current) {
+            if (mode === "quick" || current.mode === "full") return restore(Deferred.await(current.done));
+            // A full sync asked for during a quick one runs once that one is over, however it ended.
+            return restore(Deferred.await(current.done).pipe(Effect.ignore, Effect.andThen(sync(mode))));
+          }
+          const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
+          current = running;
+          return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, progress: null, error: null })).pipe(
+            Effect.andThen(Effect.forkIn(run(running), scope)),
+            Effect.andThen(restore(Deferred.await(running.done))),
+          );
+        }),
+      );
 
     /** A quick sync, unless one is running or the last ended less than `maxAgeMs` ago. Its failures are in the status. */
     const syncIfStale = (maxAgeMs: number) =>
@@ -130,6 +135,8 @@ const failureMessage = (cause: Cause.Cause<unknown>) => {
 
 const ALBUM_PAGE_SIZE = 500;
 const SONG_PAGE_SIZE = 500;
+/** `search3` pages asked for at once in a sync that reads every song. */
+const SONG_PAGE_CONCURRENCY = 4;
 /** Albums whose songs are read before they are written, in one transaction. */
 const ALBUM_WRITE_GROUP = 50;
 const ALBUM_FETCH_CONCURRENCY = 10;
@@ -234,7 +241,8 @@ const syncArtists = Effect.gen(function* () {
   const incomingIds = new Set(incoming.map(({ id }) => id));
   const stale = (yield* db.select({ id: artists.id }).from(artists)).map(({ id }) => id).filter((id) => !incomingIds.has(id));
 
-  const removed = yield* write(
+  // The cover files of the artists removed go with the sweep of the cover directory after the sync.
+  yield* write(
     Effect.gen(function* () {
       for (const rows of chunks(
         incoming.map((artist) => toRow(artists, artist)),
@@ -245,15 +253,9 @@ const syncArtists = Effect.gen(function* () {
           .values([...rows])
           .onConflictDoUpdate(upsertArtists);
       }
-      return yield* Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) =>
-        db
-          .delete(artists)
-          .where(inArray(artists.id, [...ids]))
-          .returning({ cover: artists.coverArtPath }),
-      );
+      yield* Effect.forEach(chunks(stale, STATEMENT_IDS), (ids) => db.delete(artists).where(inArray(artists.id, [...ids])), { discard: true });
     }),
   );
-  yield* removeCoverFiles(removed.flat().map(({ cover }) => cover));
 });
 
 /** What an album that looks changed is told by. Fields such as its play count change without its songs. */
@@ -301,20 +303,19 @@ const syncAlbumList = Effect.gen(function* () {
   }
 
   const removed = [...before.keys()].filter((id) => !listed.has(id));
+  // Their cover files go with the sweep of the cover directory after the sync.
   if (removed.length > 0) {
-    const gone = yield* write(
-      Effect.forEach(chunks(removed, STATEMENT_IDS), (ids) =>
-        Effect.gen(function* () {
-          const covers = yield* db
-            .delete(albums)
-            .where(inArray(albums.id, [...ids]))
-            .returning({ cover: albums.coverArtPath });
-          yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
-          return covers;
-        }),
+    yield* write(
+      Effect.forEach(
+        chunks(removed, STATEMENT_IDS),
+        (ids) =>
+          Effect.gen(function* () {
+            yield* db.delete(albums).where(inArray(albums.id, [...ids]));
+            yield* db.delete(songs).where(inArray(songs.albumId, [...ids]));
+          }),
+        { discard: true },
       ),
     );
-    yield* removeCoverFiles(gone.flat().map(({ cover }) => cover));
   }
 
   const changed = [...listed.values()].filter((album) => {
@@ -381,28 +382,40 @@ const syncEverySong = (listed: ReadonlyArray<Album>, fallback: ReadonlyArray<Alb
     const seen = new Set<string>();
     const seenOf = new Map<string, number>();
     const listedSongs = new Set<string>();
-    yield* reportProgress({ done: 0, total });
-    for (let offset = 0; ;) {
-      const result = yield* api.search3({ query: "", artistCount: 0, albumCount: 0, songCount: SONG_PAGE_SIZE, songOffset: offset }).pipe(
+    const readPage = (offset: number) =>
+      api.search3({ query: "", artistCount: 0, albumCount: 0, songCount: SONG_PAGE_SIZE, songOffset: offset }).pipe(
+        Effect.map(({ searchResult3 }) => searchResult3.song ?? []),
         // A server that will not search for nothing answers as one that finds nothing.
         Effect.catchIf(
           (error) => offset === 0 && (error._tag === "SubsonicHttpError" || error._tag === "SubsonicDecodeError" || (error._tag === "SubsonicApiError" && error.code !== WRONG_CREDENTIALS)),
-          () => Effect.succeed({ searchResult3: {} as { song?: ReadonlyArray<Child> } }),
+          () => Effect.succeed<ReadonlyArray<Child>>([]),
         ),
       );
-      const page = result.searchResult3.song ?? [];
-      // A page of only songs listed before is the end too: a server that ignores the offset answers with the same page again.
-      if (!page.some(({ id }) => !listedSongs.has(id))) break;
-      for (const { id } of page) listedSongs.add(id);
-      offset += page.length;
-      // Songs of albums the list did not have would only be removed again.
-      const rows = page.filter((song) => song.albumId !== undefined && albumIds.has(song.albumId) && !seen.has(song.id)).map(toSongRow);
-      for (const { id, albumId } of rows) {
-        seen.add(id);
-        seenOf.set(albumId!, (seenOf.get(albumId!) ?? 0) + 1);
+
+    yield* reportProgress({ done: 0, total });
+    // The first page says how many songs the server gives a page, which may be fewer than asked for.
+    // The pages after it are asked for a few at once, each at the offset it starts at when the ones
+    // before it are as long, and taken in order.
+    let pageLength = 0;
+    let offset = 0;
+    for (let more = true; more;) {
+      const offsets = pageLength === 0 ? [0] : Array.from({ length: SONG_PAGE_CONCURRENCY }, (_, index) => offset + index * pageLength);
+      for (const page of yield* Effect.forEach(offsets, readPage, { concurrency: "unbounded" })) {
+        // A page of only songs listed before is the end too: a server that ignores the offset answers with the same page again.
+        more = page.some(({ id }) => !listedSongs.has(id));
+        if (!more) break;
+        for (const { id } of page) listedSongs.add(id);
+        pageLength ||= page.length;
+        offset += pageLength;
+        // Songs of albums the list did not have would only be removed again.
+        const rows = page.filter((song) => song.albumId !== undefined && albumIds.has(song.albumId) && !seen.has(song.id)).map(toSongRow);
+        for (const { id, albumId } of rows) {
+          seen.add(id);
+          seenOf.set(albumId!, (seenOf.get(albumId!) ?? 0) + 1);
+        }
+        yield* write(writeSongs(rows));
+        yield* reportProgress({ done: seen.size, total });
       }
-      yield* write(writeSongs(rows));
-      yield* reportProgress({ done: seen.size, total });
     }
 
     if (seen.size === 0 && total > 0) return yield* syncAlbumSongs(fallback, reportProgress);

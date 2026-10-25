@@ -2,15 +2,20 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { json } from "node:stream/consumers";
 
 import type { WebContentsLike } from "@muswag/tanstack-db-mirror/electron/main";
-import type { IpcMain } from "electron";
 
 import { coverSizeOf } from "#shared/cover";
+import type { AppIpc } from "./app-page";
 import type { ServeCover } from "./cover-protocol";
 
 type Handler = (event: { readonly sender: WebContentsLike }, ...args: Array<unknown>) => unknown;
 
 export interface DevBridgeOptions {
-  readonly ipcMain: IpcMain;
+  /**
+   * What the handlers are registered with. Given `guardIpc`'s, the bridge keeps each handler as it was
+   * registered, inside the check of where a message comes from: a browser tab has no frame of the
+   * window to show, and the bridge answers only what reaches it on loopback.
+   */
+  readonly ipcMain: AppIpc;
   readonly port: number;
   readonly serveCover: ServeCover;
 }

@@ -11,8 +11,8 @@ import { auth, librarySync, playlistSync } from "#shared/state/session";
 /** Main's in-memory state, mirrored over its own channel; the library has a client of its own (`library.ts`). */
 export const stateClient = createMirrorClient({ transport: createElectronRendererTransport({ ipcRenderer: window.electron.ipcRenderer, channel: STATE_MIRROR_CHANNEL }) });
 
-/** Read-only: main changes this state, renderers ask it to through commands. */
-const options = { client: stateClient, defaultIndexType: BasicIndex, readOnly: true } as const;
+/** Main changes this state; renderers ask it to through commands. */
+const options = { client: stateClient, defaultIndexType: BasicIndex } as const;
 
 /** The session, the sync status and the app's updates, one row each, and the tracks that could not be played. */
 export const appState = {

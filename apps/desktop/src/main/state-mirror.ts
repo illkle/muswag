@@ -13,7 +13,7 @@ export async function startStateMirror(ipcMain: IpcMainLike) {
   const scope = Effect.runSync(Scope.make());
   const mirror = await Effect.runPromise(
     Effect.gen(function* () {
-      const mirror = yield* MemoryMirror.make({ tables: STATE_TABLES, readOnly: true });
+      const mirror = yield* MemoryMirror.make({ tables: STATE_TABLES });
       yield* mirror.serve(createElectronMainTransport({ ipcMain, channel: STATE_MIRROR_CHANNEL }));
       return mirror;
     }).pipe(Scope.provide(scope)),

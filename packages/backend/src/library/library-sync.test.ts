@@ -3,19 +3,14 @@ import { albums, artists, songs, SubsonicApiError, SubsonicHttpError, syncState,
 import { eq } from "drizzle-orm";
 import type { MirrorChange } from "@muswag/tanstack-db-mirror/protocol";
 import { SqliteMirror } from "@muswag/tanstack-db-mirror/server/sqlite";
-import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
 
 import type { SubsonicApiService } from "../api/subsonic-api.js";
-import { MiniFs } from "../covers/cover-manager.js";
 import { Db, position } from "../db/database.js";
 import { apiAlbum as album, apiLayer, apiPlaylist as playlist, apiSong as song, idsOf, rowOf, seed, TestDatabase } from "../test/index.js";
 import { LibrarySync } from "./library-sync.js";
 
-/** `removed` collects the cover files the sync removes. */
-const layer = (api: Partial<SubsonicApiService>, removed: string[] = []) => {
-  const fs = Layer.succeed(MiniFs, { writeFile: () => Effect.void, remove: (path) => Effect.sync(() => void removed.push(path)), exists: () => Effect.succeed(true) });
-  return LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), apiLayer(api), fs)));
-};
+const layer = (api: Partial<SubsonicApiService>) => LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), apiLayer(api))));
 
 const ok = { status: "ok", version: "1.16.1" } as const;
 
@@ -28,6 +23,8 @@ interface Server {
   search?: "all" | "none" | "error";
   /** The most albums the server gives a page, whatever is asked for. */
   albumPageLimit?: number;
+  /** The most songs `search3` gives a page, whatever is asked for. */
+  songPageLimit?: number;
 }
 
 /** A fake server over `server`, which tests may change between syncs, recording the calls made. */
@@ -54,7 +51,7 @@ const fakeServer = (server: Server) => {
         calls.search3.push(songOffset);
         if (server.search === "error") return Effect.fail(new SubsonicApiError({ method: "search3", code: 10, message: "Required parameter is missing: query" }));
         const every: Child[] = server.search === "none" ? [] : (server.albums ?? []).flatMap((album) => album.song ?? []);
-        return Effect.succeed({ ...ok, searchResult3: { song: every.slice(songOffset, songOffset + songCount) } });
+        return Effect.succeed({ ...ok, searchResult3: { song: every.slice(songOffset, songOffset + Math.min(songCount, server.songPageLimit ?? songCount)) } });
       }),
   };
   return { api, calls };
@@ -78,8 +75,8 @@ describe("LibrarySync.sync", () => {
       const sync = yield* LibrarySync;
       yield* sync.sync("quick");
 
-      // Until a page comes back empty.
-      expect(calls.search3).toEqual([0, 3]);
+      // Until a page comes back empty, a few at once after the first.
+      expect(calls.search3).toEqual([0, 3, 6, 9, 12]);
       expect(calls.getAlbum).toEqual([]);
       expect(yield* idsOf(songs)).toEqual(["a-song-0", "a-song-1", "b-song-0"]);
       expect(yield* savedState).toMatchObject({ serverScan: "scan-1 1", lastSyncedAt: expect.any(String) });
@@ -155,6 +152,23 @@ describe("LibrarySync.sync", () => {
     }).pipe(Effect.provide(layer(api)));
   });
 
+  it.effect("reads the pages after the first a few at once, as long as the first, and reports each in order", () => {
+    const { api, calls } = fakeServer({ scan: "scan-1", albums: [withSongs("a", 5), withSongs("b", 4)], songPageLimit: 2 });
+    const reported: Array<number | undefined> = [];
+
+    return Effect.gen(function* () {
+      const sync = yield* LibrarySync;
+      yield* Effect.forkChild(Stream.runForEach(sync.changes, ({ progress }) => Effect.sync(() => void reported.push(progress?.done))));
+      yield* Effect.yieldNow;
+      yield* sync.sync("full");
+
+      expect(calls.search3).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16]);
+      expect(calls.getAlbum).toEqual([]);
+      expect(yield* idsOf(songs)).toHaveLength(9);
+      expect(reported.filter((done) => done !== undefined)).toEqual([0, 2, 4, 6, 8, 9]);
+    }).pipe(Effect.provide(layer(api)));
+  });
+
   it.effect("stops paging a server that ignores the offset and answers with the same page again", () => {
     const { api, calls } = fakeServer({ scan: "scan-1", albums: [withSongs("a", 2)] });
     const getAlbumList2 = api.getAlbumList2!;
@@ -164,7 +178,7 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       yield* (yield* LibrarySync).sync("full");
-      expect(calls.search3).toEqual([0, 0]);
+      expect(calls.search3).toEqual([0, 0, 0, 0, 0]);
       expect(yield* idsOf(albums)).toEqual(["a"]);
       expect(yield* idsOf(songs)).toEqual(["a-song-0", "a-song-1"]);
     }).pipe(Effect.provide(layer(api)));
@@ -183,7 +197,7 @@ describe("LibrarySync.sync", () => {
       expect(calls.getAlbum).toEqual([]);
 
       yield* sync.sync("full");
-      expect(calls.search3).toEqual([0, 1]);
+      expect(calls.search3).toEqual([0, 1, 2, 3, 4]);
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -394,25 +408,6 @@ describe("LibrarySync.sync", () => {
       expect(yield* rowOf(artists, "artist-changed")).toMatchObject({ coverArt: "ar-2", coverArtPath: null });
       expect(yield* rowOf(artists, "artist-same")).toMatchObject({ coverArt: "ar-1", coverArtPath: "covers/same" });
     }).pipe(Effect.provide(layer(api)));
-  });
-
-  it.effect("removes the cover files of the albums and artists it deletes", () => {
-    const removed: string[] = [];
-    const { api } = fakeServer({ albums: [withSongs("kept", 0)], artists: [{ id: "artist-kept", name: "Kept" }] });
-
-    return Effect.gen(function* () {
-      yield* seed({ albums: [album("kept", { songCount: 0 }), album("gone"), album("gone-without-cover")], artists: [{ id: "artist-kept", name: "Kept" }] });
-      const db = yield* Db;
-      yield* db.update(albums).set({ coverArtPath: "covers/album-kept" }).where(eq(albums.id, "kept"));
-      yield* db.update(albums).set({ coverArtPath: "covers/album-gone" }).where(eq(albums.id, "gone"));
-      yield* db.insert(artists).values({ id: "artist-gone", name: "Gone", coverArtPath: "covers/artist-gone" });
-
-      yield* (yield* LibrarySync).sync("full");
-
-      expect(yield* idsOf(albums)).toEqual(["kept"]);
-      expect(yield* idsOf(artists)).toEqual(["artist-kept"]);
-      expect(removed.sort()).toEqual(["covers/album-gone", "covers/artist-gone"]);
-    }).pipe(Effect.provide(layer(api, removed)));
   });
 
   it.effect("joins a running sync that does as much, and runs a full one asked for during a quick one after it", () => {

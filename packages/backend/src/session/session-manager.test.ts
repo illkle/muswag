@@ -30,6 +30,8 @@ type Answer = Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientErr
 function makeLayer(
   options: {
     removed?: string[];
+    /** What the cover directory holds. */
+    covers?: string[];
     /** Whether the credentials of a login can be stored, asked at each login. */
     storing?: () => boolean;
     playlistsGate?: Promise<void>;
@@ -78,6 +80,7 @@ function makeLayer(
           options.removed?.push(path);
         }),
       exists: () => Effect.succeed(false),
+      list: () => Effect.succeed(options.covers ?? []),
     }),
     Layer.succeed(HttpClient.HttpClient, http),
     Layer.succeed(Crypto.Crypto, crypto),
@@ -172,6 +175,28 @@ describe("SessionManager", () => {
         expect([...params.values()]).not.toContain(goodCredentials.password);
       }
     }).pipe(Effect.provide(layer));
+  });
+
+  it.live("sweeps the cover directory once a sync has ended, however it went", () => {
+    const removed: string[] = [];
+    const { layer } = makeLayer({ removed, covers: ["album_3a_gone", "album_3a_gone.thumb"] });
+
+    return Effect.gen(function* () {
+      const manager = yield* SessionManager;
+      yield* manager.login(goodCredentials);
+      // The server of this test answers with nothing to sync, so the sync ends in an error.
+      yield* manager.use(({ library }) =>
+        library.changes.pipe(
+          Stream.filter(({ running, error }) => running === null && error !== null),
+          Stream.runHead,
+        ),
+      );
+      // The first login also clears the whole directory, finding no account to keep the data of.
+      const swept = () => removed.filter((path) => path !== "covers").sort();
+      while (swept().length < 2) yield* Effect.sleep("5 millis");
+
+      expect(swept()).toEqual(["covers/album_3a_gone", "covers/album_3a_gone.thumb"]);
+    }).pipe(Effect.timeout("5 seconds"), Effect.provide(layer));
   });
 
   it.effect("deletes the library, playlists and the cover directory on logout", () => {

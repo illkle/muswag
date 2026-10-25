@@ -20,6 +20,7 @@ export type PlayerRuntimeState = {
   /** The occurrence the player holds, whatever it is doing with it: loading it, playing it, or failed at it. */
   current: PlaybackItem | null;
   status: PlayerStatus;
+  /** Where `current` was when the player last said: it started there, or was paused or moved there. `position` reads where it is now. */
   positionSeconds: number;
   paused: boolean;
   /**
@@ -34,6 +35,8 @@ export interface QueuePlayerPort {
   /** With a selection, the player holds that occurrence from the moment it takes the command, also when it then fails to start it. */
   applyQueue(input: ApplyQueueInput): Promise<void>;
   restartCurrent(): Promise<void>;
+  /** Where the player is in the occurrence it holds, as mpv says; `null` when it holds none or cannot say. */
+  position(): Promise<{ key: string; positionSeconds: number } | null>;
   stop(): Promise<void>;
   /** The state as it is now, which is at least as late as any command that has settled. */
   getState(): Promise<PlayerRuntimeState>;

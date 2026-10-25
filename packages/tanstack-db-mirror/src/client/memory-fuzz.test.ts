@@ -1,12 +1,12 @@
-import { createTransaction, type Transaction } from "@tanstack/db";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { mulberry32, sleep } from "../test/harness.js";
 import { counters, createMemoryHarness, expectMemoryInSync, player, players, type MemoryClient, type MemoryHarness } from "../test/memory-harness.js";
-import { MirrorClientDisposedError, MirrorRemoteError, MirrorTimeoutError } from "./index.js";
+import { MirrorClientDisposedError, MirrorTimeoutError } from "./index.js";
 
-const EXPECTED_ERRORS = [MirrorRemoteError, MirrorTimeoutError, MirrorClientDisposedError];
+// A wait times out when its batch is held back long enough, and ends when its collection is cleaned up.
+const EXPECTED_ERRORS = [MirrorTimeoutError, MirrorClientDisposedError];
 
 let harness: MemoryHarness;
 
@@ -22,7 +22,7 @@ async function runScenario(seed: number, steps: number) {
   const counterIds = Array.from({ length: 10 }, (_, i) => i);
 
   harness = await createMemoryHarness({ latency: () => random() * 4, server: { retainChanges: 15 } });
-  const clients: Array<MemoryClient> = [0, 1, 2].map(() => harness.connect({ mutationTimeoutMs: 2_000, heartbeatMs: 100 }));
+  const clients: Array<MemoryClient> = [0, 1, 2].map(() => harness.connect({ positionTimeoutMs: 2_000, heartbeatMs: 100 }));
 
   const unexpected: Array<unknown> = [];
   const consoleErrors: Array<unknown> = [];
@@ -30,17 +30,25 @@ async function runScenario(seed: number, steps: number) {
   console.error = (...args: Array<unknown>) => consoleErrors.push(args);
 
   const pending: Array<Promise<unknown>> = [];
-  const track = (tx: Transaction<any>) => {
-    pending.push(
-      tx.isPersisted.promise.catch((error: unknown) => {
-        if (!EXPECTED_ERRORS.some((type) => error instanceof type)) unexpected.push(error);
-      }),
-    );
-  };
   const background = (effect: Effect.Effect<unknown, unknown>) => {
     pending.push(harness.run(effect).catch((error: unknown) => unexpected.push(error)));
   };
   const server = () => harness.server;
+  /** Runs `effect` as one write, the way a main-process command does, and has a collection of a client wait for its position. */
+  const command = (effect: Effect.Effect<unknown>) => {
+    const client = pick(clients);
+    const collection = chance(0.5) ? client.players : client.counters;
+    const current = server();
+    pending.push(
+      harness.run(Effect.andThen(current.write(effect), current.position)).then(
+        (position) =>
+          collection.utils.awaitPosition(position).catch((error: unknown) => {
+            if (!EXPECTED_ERRORS.some((type) => error instanceof type)) unexpected.push(error);
+          }),
+        (error: unknown) => unexpected.push(error),
+      ),
+    );
+  };
 
   const ops: Array<[weight: number, run: () => void | Promise<void>]> = [
     [4, () => background(server().upsert(players, player(pick(playerIds), { name: `server ${random()}`, volume: Math.floor(random() * 100) })))],
@@ -82,51 +90,22 @@ async function runScenario(seed: number, steps: number) {
           ),
         ),
     ],
+    [4, () => command(server().upsert(players, player(pick(playerIds), { name: `command ${random()}`, joined: new Date(seed) })))],
     [
       4,
-      () => {
-        const client = pick(clients);
-        const id = pick(playerIds);
-        if (client.players.status === "ready" && !client.players.has(id)) track(client.players.insert(player(id, { name: `client ${random()}`, joined: new Date(seed) })));
-      },
+      () =>
+        command(
+          server().upsert(
+            players,
+            player(pick(playerIds), {
+              volume: Math.floor(random() * 100),
+              status: chance(0.5) ? { _tag: "Idle" } : { _tag: "Playing", track: `t${seed}`, positionSeconds: random() * 60 },
+            }),
+          ),
+        ),
     ],
-    [
-      4,
-      () => {
-        const client = pick(clients);
-        const id = pick(playerIds);
-        if (!client.players.has(id)) return;
-        track(
-          client.players.update(id, (draft) => {
-            draft.volume = Math.floor(random() * 100);
-            draft.status = chance(0.5) ? { _tag: "Idle" } : { _tag: "Playing", track: `t${seed}`, positionSeconds: random() * 60 };
-          }),
-        );
-      },
-    ],
-    [
-      2,
-      () => {
-        const client = pick(clients);
-        const id = pick(playerIds);
-        if (client.players.has(id)) track(client.players.delete(id));
-      },
-    ],
-    [
-      2,
-      () => {
-        const client = pick(clients);
-        const id = pick(playerIds);
-        const counter = pick(counterIds);
-        if (client.players.status !== "ready" || client.counters.status !== "ready" || client.players.has(id) || client.counters.has(counter)) return;
-        const tx = createTransaction({ mutationFn: ({ transaction }) => client.client.applyTransaction(transaction) });
-        tx.mutate(() => {
-          client.players.insert(player(id));
-          client.counters.insert({ id: counter, count: 0 });
-        });
-        track(tx);
-      },
-    ],
+    [2, () => command(server().delete(players, pick(playerIds)))],
+    [2, () => command(Effect.andThen(server().upsert(players, player(pick(playerIds))), server().upsert(counters, { id: pick(counterIds), count: 0 })))],
     [1, () => pick(clients).connection.dropNextBatches(1)],
     [
       1,

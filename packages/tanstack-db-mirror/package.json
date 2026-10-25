@@ -67,15 +67,6 @@
       "types": "./dist/electron/renderer.d.ts",
       "import": "./dist/electron/renderer.js",
       "default": "./dist/electron/renderer.js"
-    },
-    "./testing": {
-      "source": {
-        "types": "./src/testing/index.ts",
-        "default": "./src/testing/index.ts"
-      },
-      "types": "./dist/testing/index.d.ts",
-      "import": "./dist/testing/index.js",
-      "default": "./dist/testing/index.js"
     }
   },
   "scripts": {

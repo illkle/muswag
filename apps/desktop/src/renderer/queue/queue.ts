@@ -17,7 +17,8 @@ export const QueueActions = {
   enqueue: (songIds: readonly string[], beforeKey: string | null = null) => appCommand("queue:enqueue", songIds, beforeKey),
   /** Moves queued occurrences before the queued occurrence `beforeKey`, or to the end. */
   moveQueued: (keys: readonly string[], beforeKey: string | null) => appCommand("queue:moveQueued", keys, beforeKey),
-  removeQueued: (key: string) => appCommand("queue:removeQueued", key),
+  /** Takes queued occurrences out of the queue. */
+  removeQueued: (keys: readonly string[]) => appCommand("queue:removeQueued", keys),
   next: () => appCommand("queue:next"),
   previous: () => appCommand("queue:previous"),
 };

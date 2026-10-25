@@ -31,18 +31,15 @@
     "lint:fix": "oxlint . --fix",
     "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run --config vitest.config.ts",
-    "test:coverage": "vitest run --coverage --config vitest.config.ts",
-    "postinstall": "electron-builder install-app-deps"
+    "test:coverage": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@base-ui/react": "catalog:",
-    "@effect/platform-browser": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@electron-toolkit/typed-ipc": "catalog:",
     "@electron-toolkit/utils": "catalog:",
     "@muswag/backend": "workspace:*",
     "@muswag/model": "workspace:*",

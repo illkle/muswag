@@ -62,10 +62,6 @@ const QUEUE_LIST = "queue";
 /** The queue keys of the selected rows that the user queued, which are the ones that can be removed. */
 const queuedKeys = (selection: TrackSelection) => selection.items.flatMap(({ key }) => (key.startsWith(`${USER_SECTION}:`) ? [occurrenceKey(key)] : []));
 
-async function removeQueued(keys: readonly string[]) {
-  for (const key of keys) await QueueActions.removeQueued(key);
-}
-
 /**
  * Puts dragged songs into the user queue before its occurrence `beforeKey`, or after the last. Occurrences
  * dragged from the user queue itself move there; anything else is queued, again if it is queued already.
@@ -174,7 +170,7 @@ function QueuePanelContent() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   disabled={queued.length === 0}
-                  onClick={() => void removeQueued(queued).catch(failureNotice(`The ${queued.length === 1 ? "track" : "tracks"} could not be removed from the queue.`))}
+                  onClick={() => void QueueActions.removeQueued(queued).catch(failureNotice(`The ${queued.length === 1 ? "track" : "tracks"} could not be removed from the queue.`))}
                 >
                   Remove from queue
                 </ContextMenuItem>

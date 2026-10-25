@@ -1,6 +1,6 @@
 import { md5 } from "@noble/hashes/legacy.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import { Context, Effect, Schema } from "effect";
+import { Context, Data, Effect, Schedule, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 import {
   type AlbumList2,
@@ -36,22 +36,39 @@ import {
   pingResponseSchema,
   responseEnvelopeSchema,
   search3ResponseSchema,
+  SUBSONIC_API_VERSION,
+  SUBSONIC_CLIENT_NAME,
   subsonicRestUrl,
 } from "@muswag/model";
-const API_VERSION = "1.16.1";
-const CLIENT_NAME = "muswag";
 /**
  * How long the server has to start answering. Headers normally arrive within a second and a server
  * that first wakes its disks needs ten to fifteen, so half a minute means it is not answering.
  * `fetch` on its own would give the headers five minutes.
  */
 const RESPONSE_TIMEOUT_SECONDS = 30;
-/** Further attempts at a request that only reads, after a transport error. */
-const READ_RETRIES = 2;
+/** Further attempts at a request that only reads, after a transport error or an answer of `RETRY_STATUSES`. */
+const READ_RETRIES = 3;
+/**
+ * The waits before them: half a second, then doubled each time, every one jittered so that clients a
+ * restarting server turned away do not all come back at once. Together they take about three and a
+ * half seconds of `RESPONSE_TIMEOUT_SECONDS`.
+ */
+const RETRY_BACKOFF = Schedule.exponential("500 millis").pipe(Schedule.jittered);
+/** What a server answers when it failed, is starting or is behind a proxy that lost it, or asks for fewer requests. */
+const RETRY_STATUSES: ReadonlyArray<number> = [429, 500, 502, 503, 504];
 /** Redirects followed while looking for the server at login. */
 const MAX_REDIRECTS = 5;
 /** Subsonic's code for a wrong username or password. */
 export const WRONG_CREDENTIALS = 40;
+
+/**
+ * Reads what is left of an answer nobody reads, so that its connection goes back to the pool rather
+ * than waiting for the garbage collector. One read already, or cut off, has nothing to give.
+ */
+const discardBody = (response: HttpClientResponse.HttpClientResponse) => Effect.exit(response.arrayBuffer);
+
+/** An answer to a request that may get another the next time it is sent. */
+class RetryableAnswer extends Data.TaggedError("RetryableAnswer")<{ readonly response: HttpClientResponse.HttpClientResponse }> {}
 
 type RequestParams = Record<string, string | number | boolean | Array<string | number | boolean> | null | undefined>;
 
@@ -128,8 +145,8 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
     const requestUrl = (method: string, params: RequestParams): URL => {
       const url = new URL(`${method}.view`, baseUrl);
       setSearchParams(url, {
-        v: API_VERSION,
-        c: CLIENT_NAME,
+        v: SUBSONIC_API_VERSION,
+        c: SUBSONIC_CLIENT_NAME,
         f: "json",
         ...params,
         u: config.auth.username,
@@ -148,10 +165,20 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
       Effect.gen(function* () {
         const url = requestUrl(method, params);
         const outgoing = HttpClientRequest.post(new URL(url.pathname, url.origin)).pipe(HttpClientRequest.bodyUrlParams(url.searchParams));
+        // An answer worth asking again for fails the attempt, so that it is retried as a lost one is.
+        // The last one is answered with as it is.
+        const attempt = httpClient
+          .execute(outgoing)
+          .pipe(
+            Effect.flatMap((response) =>
+              retries > 0 && RETRY_STATUSES.includes(response.status) ? discardBody(response).pipe(Effect.andThen(Effect.fail(new RetryableAnswer({ response })))) : Effect.succeed(response),
+            ),
+          );
 
-        // The time limit covers every attempt, and ends with the headers: a cover or a long album
-        // list streams after them for as long as it takes.
-        const response = yield* Effect.retry(httpClient.execute(outgoing), { times: retries }).pipe(
+        // The time limit covers every attempt and wait, and ends with the headers: a cover or a long
+        // album list streams after them for as long as it takes.
+        const response = yield* Effect.retry(attempt, { schedule: RETRY_BACKOFF, times: retries }).pipe(
+          Effect.catchTag("RetryableAnswer", ({ response }) => Effect.succeed(response)),
           Effect.timeoutOrElse({
             duration: `${RESPONSE_TIMEOUT_SECONDS} seconds`,
             orElse: () =>
@@ -161,40 +188,54 @@ export const makeSubsonicAPI = (config: SubsonicApiConfig) =>
           }),
         );
         if (response.status < 200 || response.status >= 300) {
+          yield* discardBody(response);
           const location = response.headers["location"];
           return yield* new SubsonicHttpError({ method, status: response.status, message: `${method} failed: HTTP ${response.status}`, ...(location !== undefined && { location }) });
         }
         return response;
       });
 
-    const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T, retries: number) =>
+    const json = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, parse: ResponseParser<T>, retries: number) =>
       Effect.gen(function* () {
         const response = yield* request(method, params, retries);
-        const payload = withoutNulls(yield* response.json);
-        return yield* parseResponse(method, schema, payload);
+        const text = yield* response.text;
+        const payload = yield* Effect.try({
+          try: () => (text === "" ? null : JSON.parse(text)),
+          catch: (cause) => new HttpClientError.HttpClientError({ reason: new HttpClientError.DecodeError({ request: response.request, response, cause }) }),
+        });
+        // Only an answer with a null in it has one to take out, which saves walking a long list again.
+        return yield* parse(NULL_VALUE.test(text) ? withoutNulls(payload) : payload);
       }).pipe(
         // The one place every decoded answer passes, so the one place refused credentials are noticed.
         Effect.tapError((error) => (error._tag === "SubsonicApiError" && error.code === WRONG_CREDENTIALS ? (config.onCredentialsRejected ?? Effect.void) : Effect.void)),
         Effect.withSpan(`SubsonicAPI.${method}`),
       );
 
-    const read = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) => json(method, params, schema, READ_RETRIES);
-    const change = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, params: RequestParams, schema: T) => json(method, params, schema, 0);
+    // Each method's parser is made once, here, rather than with every request.
+    const read = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, schema: T, retries = READ_RETRIES) => {
+      const parse = responseParser(method, schema);
+      return (params: RequestParams = {}) => json(method, params, parse, retries);
+    };
+    const change = <T extends Schema.Struct<Schema.Struct.Fields>>(method: string, schema: T) => {
+      const parse = responseParser(method, schema);
+      return (params: RequestParams) => json(method, params, parse, 0);
+    };
 
     return {
       username: config.auth.username,
-      ping: read("ping", {}, pingResponseSchema),
-      getAlbum: (args) => read("getAlbum", args, getAlbumResponseSchema),
-      getAlbumList2: (args) => read("getAlbumList2", args, getAlbumList2ResponseSchema),
-      getArtists: (args = {}) => read("getArtists", args, getArtistsResponseSchema),
-      getScanStatus: read("getScanStatus", {}, getScanStatusResponseSchema),
-      search3: (args) => read("search3", args, search3ResponseSchema),
+      // Asked once: it checks an address someone has just typed in, whose mistakes they should hear of at once.
+      ping: read("ping", pingResponseSchema, 0)(),
+      getAlbum: read("getAlbum", getAlbumResponseSchema),
+      getAlbumList2: read("getAlbumList2", getAlbumList2ResponseSchema),
+      getArtists: read("getArtists", getArtistsResponseSchema),
+      getScanStatus: read("getScanStatus", getScanStatusResponseSchema)(),
+      search3: read("search3", search3ResponseSchema),
       getCoverArt: (args) => request("getCoverArt", args, READ_RETRIES).pipe(Effect.withSpan("SubsonicAPI.getCoverArt")),
-      getPlaylists: read("getPlaylists", {}, getPlaylistsResponseSchema),
-      getPlaylist: (args) => read("getPlaylist", args, getPlaylistResponseSchema),
-      createPlaylist: (args) => change("createPlaylist", args, createPlaylistResponseSchema),
-      updatePlaylist: (args) => change("updatePlaylist", args, pingResponseSchema),
-      deletePlaylist: (args) => change("deletePlaylist", args, pingResponseSchema),
+      getPlaylists: read("getPlaylists", getPlaylistsResponseSchema)(),
+      getPlaylist: read("getPlaylist", getPlaylistResponseSchema),
+      createPlaylist: change("createPlaylist", createPlaylistResponseSchema),
+      updatePlaylist: change("updatePlaylist", pingResponseSchema),
+      deletePlaylist: change("deletePlaylist", pingResponseSchema),
     } satisfies SubsonicApiService;
   });
 
@@ -234,6 +275,9 @@ function redirectedServer(from: string, location: string | undefined): string | 
   return normalizeServerUrl(new URL(".", new URL(location, requested)).href);
 }
 
+/** A field sent as `null`, as JSON writes it. A string that holds the same text costs a walk for nothing. */
+const NULL_VALUE = /:\s*null\b/;
+
 /**
  * `value` without the fields it has as `null`, at any depth. gonic writes a field it has no value for
  * as `null`, as `"replayGain": null` on a song without ReplayGain tags, where others leave it out.
@@ -246,32 +290,33 @@ function withoutNulls(value: unknown): unknown {
   return kept;
 }
 
-function parseResponse<T extends Schema.Struct<Schema.Struct.Fields>>(
-  method: string,
-  payloadSchema: T,
-  payload: unknown,
-): Effect.Effect<SubsonicBaseResponse & T["Type"], SubsonicDecodeError | SubsonicApiError> {
-  return Effect.gen(function* () {
-    const envelope = yield* Schema.decodeUnknownEffect(responseEnvelopeSchema)(payload).pipe(
-      Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid response envelope`, cause })),
-    );
-    const response = yield* Schema.decodeUnknownEffect(baseResponseSchema)(envelope["subsonic-response"]).pipe(
-      Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned invalid Subsonic metadata`, cause })),
-    );
+type ResponseParser<T extends Schema.Struct<Schema.Struct.Fields>> = (payload: unknown) => Effect.Effect<SubsonicBaseResponse & T["Type"], SubsonicDecodeError | SubsonicApiError>;
 
-    if (response.status !== "ok") {
-      return yield* new SubsonicApiError({
-        method,
-        ...(response.error?.code === undefined ? {} : { code: response.error.code }),
-        ...(response.type === undefined ? {} : { server: response.type }),
-        ...(response.error?.helpUrl === undefined ? {} : { helpUrl: response.error.helpUrl }),
-        message: response.error?.message ?? `${method} failed: Subsonic status ${response.status}`,
-      });
-    }
+const decodeEnvelope = Schema.decodeUnknownEffect(responseEnvelopeSchema);
+const decodeBase = Schema.decodeUnknownEffect(baseResponseSchema);
 
-    const responseSchema = Schema.Struct({ ...baseResponseSchema.fields, ...payloadSchema.fields });
-    return (yield* Schema.decodeUnknownEffect(responseSchema)(envelope["subsonic-response"]).pipe(
-      Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid payload`, cause })),
-    )) as SubsonicBaseResponse & T["Type"];
-  });
+/** Reads `method`'s answer: an error the server sent, or the response with the fields of `payloadSchema`. */
+function responseParser<T extends Schema.Struct<Schema.Struct.Fields>>(method: string, payloadSchema: T): ResponseParser<T> {
+  const decodeResponse = Schema.decodeUnknownEffect(Schema.Struct({ ...baseResponseSchema.fields, ...payloadSchema.fields }));
+  return (payload) =>
+    Effect.gen(function* () {
+      const envelope = yield* decodeEnvelope(payload).pipe(Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid response envelope`, cause })));
+      const response = yield* decodeBase(envelope["subsonic-response"]).pipe(
+        Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned invalid Subsonic metadata`, cause })),
+      );
+
+      if (response.status !== "ok") {
+        return yield* new SubsonicApiError({
+          method,
+          ...(response.error?.code === undefined ? {} : { code: response.error.code }),
+          ...(response.type === undefined ? {} : { server: response.type }),
+          ...(response.error?.helpUrl === undefined ? {} : { helpUrl: response.error.helpUrl }),
+          message: response.error?.message ?? `${method} failed: Subsonic status ${response.status}`,
+        });
+      }
+
+      return (yield* decodeResponse(envelope["subsonic-response"]).pipe(
+        Effect.mapError((cause) => new SubsonicDecodeError({ method, message: `${method} returned an invalid payload`, cause })),
+      )) as SubsonicBaseResponse & T["Type"];
+    });
 }

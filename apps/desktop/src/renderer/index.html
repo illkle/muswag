@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The page loads only what the app ships, the covers main serves (`muswag-cover:`, or the dev
+      bridge's `/__bridge/cover` in a browser) and images it makes itself. Development adds nothing
+      but Vite's websocket, which `'self'` covers, and react-scan's worker. Vite adds the hash of each
+      inline script to script-src, in development too (scripts/inline-script-hashes.ts).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: muswag-cover:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>Muswag</title>
     <!--
       Runs before the first paint, so the window never opens in the wrong theme. It reads what

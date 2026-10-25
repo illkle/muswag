@@ -10,7 +10,7 @@ import { DatabaseLive, Db, write } from "../db/database.js";
 export const TestDatabase = () => DatabaseLive(":memory:");
 
 /** Cover files that are never written: for tests that sync a library and do not look at covers. */
-export const NoCoverFiles = Layer.succeed(MiniFs, { writeFile: () => Effect.void, remove: () => Effect.void, exists: () => Effect.succeed(false) });
+export const NoCoverFiles = Layer.succeed(MiniFs, { writeFile: () => Effect.void, remove: () => Effect.void, exists: () => Effect.succeed(false), list: () => Effect.succeed([]) });
 
 const unexpected = (method: string): Effect.Effect<never> => Effect.die(new Error(`Unexpected ${method} call`));
 

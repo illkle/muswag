@@ -1,5 +1,5 @@
 import type { AppCommandArgs, AppCommandName, AppCommandReply, AppCommandResults } from "#shared/commands/app";
-import { mainIpc } from "./ipc";
+import { APP_COMMAND_CHANNEL } from "#shared/ipc";
 
 /** A command main rejected; `message` is main's own description of the failure. */
 export class AppCommandError extends Error {
@@ -14,7 +14,7 @@ export class AppCommandError extends Error {
 
 /** Runs a command in main and returns its result. */
 export async function appCommand<K extends AppCommandName>(name: K, ...args: AppCommandArgs<K>): Promise<AppCommandResults[K]> {
-  const reply = (await mainIpc.invoke("app:command", name, args)) as AppCommandReply<K>;
+  const reply = (await window.electron.ipcRenderer.invoke(APP_COMMAND_CHANNEL, name, args)) as AppCommandReply<K>;
   if (!reply.ok) throw new AppCommandError(reply.error.tag, reply.error.message);
   return reply.value;
 }

@@ -1,9 +1,9 @@
-import { createCollection, createTransaction } from "@tanstack/db";
+import { createCollection } from "@tanstack/db";
 import { Effect } from "effect";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { album, albums, createHarness, eventually, expectInSync, rowsOf, sleep, song, stripVirtual, unmirrored, type AlbumRow, type Harness } from "../test/harness.js";
-import { createMirrorClient, MirrorRemoteError, MirrorTimeoutError, mirrorCollectionOptions, type MirrorCollectionUtils } from "./index.js";
+import { createMirrorClient, MirrorTimeoutError, mirrorCollectionOptions, type MirrorCollectionUtils } from "./index.js";
 
 let harness: Harness;
 
@@ -170,201 +170,11 @@ describe("live changes", () => {
     const second = harness.connect();
     await Promise.all([first.albums.preload(), second.albums.preload(), first.songs.preload(), second.songs.preload()]);
 
-    await first.albums.insert(album("a1")).isPersisted.promise;
-    await second.songs.insert(song(1, "a1")).isPersisted.promise;
-    await harness.insertAlbums([album("a2")]);
+    await harness.insertAlbums([album("a1"), album("a2")]);
+    await harness.insertSongs([song(1, "a1")]);
 
     await expectInSync(harness, first);
     await expectInSync(harness, second);
-  });
-});
-
-describe("mutations", () => {
-  it("writes optimistic inserts to SQLite without flicker", async () => {
-    harness = await createHarness({ latency: 5 });
-    const client = harness.connect();
-    await client.albums.preload();
-    const watch = watchKey(client.albums, "a1");
-
-    const tx = client.albums.insert(album("a1", { starred: true }));
-    expect(client.albums.get("a1")?.$synced).toBe(false);
-    await tx.isPersisted.promise;
-    watch.stop();
-
-    expect(client.albums.get("a1")?.$synced).toBe(true);
-    expect(await harness.dbRows("albums")).toEqual([album("a1", { starred: true })]);
-    expect(watch.states.every((state) => state !== undefined)).toBe(true);
-  });
-
-  it("writes updates and deletes", async () => {
-    harness = await createHarness({ latency: 2 });
-    await harness.insertAlbums([album("a1"), album("a2")]);
-    const client = harness.connect();
-    await client.albums.preload();
-    const watch = watchKey(client.albums, "a1");
-
-    await client.albums.update("a1", (draft) => {
-      draft.name = "Renamed";
-      draft.extra = { tags: ["new"] };
-    }).isPersisted.promise;
-    watch.stop();
-    await client.albums.delete("a2").isPersisted.promise;
-
-    expect(await harness.dbRows("albums")).toEqual([album("a1", { name: "Renamed", extra: { tags: ["new"] } })]);
-    expect(rowsOf(client.albums)).toEqual(await harness.dbRows("albums"));
-    // Never reverts to the old name while the update round-trips.
-    expect(watch.states.map((state) => state?.name)).not.toContain("Album a1");
-  });
-
-  it("syncs values the server fills in", async () => {
-    harness = await createHarness();
-    await harness.insertAlbums([album("a1")]);
-    const client = harness.connect();
-    await client.songs.preload();
-
-    await client.songs.insert({ id: 1, albumId: "a1", title: "S", rating: null, updatedAt: null }).isPersisted.promise;
-    await client.songs.update(1, (draft) => {
-      draft.title = "S2";
-    }).isPersisted.promise;
-
-    const row = client.songs.get(1);
-    expect(row?.title).toBe("S2");
-    expect(typeof row?.updatedAt).toBe("number");
-    expect(rowsOf(client.songs)).toEqual(await harness.dbRows("songs"));
-  });
-
-  it("rolls back mutations the server rejects", async () => {
-    harness = await createHarness();
-    await harness.insertAlbums([album("a1")]);
-    const client = harness.connect();
-    await client.albums.preload();
-
-    // Not visible to the client yet, so the optimistic insert conflicts on the server.
-    await harness.run(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a2', 'Server')`));
-    const tx = client.albums.insert(album("a2", { name: "Client" }));
-
-    await expect(tx.isPersisted.promise).rejects.toBeInstanceOf(MirrorRemoteError);
-    expect(client.albums.has("a2")).toBe(false);
-
-    await harness.run(harness.server.flush);
-    await eventually(() => expect(client.albums.get("a2")?.name).toBe("Server"));
-  });
-
-  it("rolls back an update of a row the server already deleted", async () => {
-    harness = await createHarness();
-    await harness.insertAlbums([album("a1")]);
-    const client = harness.connect();
-    await client.albums.preload();
-    client.connection.pause();
-    await harness.exec(`DELETE FROM albums WHERE id = 'a1'`);
-
-    const tx = client.albums.update("a1", (draft) => {
-      draft.name = "Too late";
-    });
-    await expect(tx.isPersisted.promise).rejects.toThrow(/does not exist/);
-    expect(client.albums.get("a1")?.name).toBe("Album a1");
-
-    client.connection.resume();
-    await eventually(() => expect(client.albums.has("a1")).toBe(false));
-  });
-
-  it("writes a transaction across collections atomically", async () => {
-    harness = await createHarness({ latency: 2 });
-    const client = harness.connect();
-    await Promise.all([client.albums.preload(), client.songs.preload()]);
-
-    const tx = createTransaction({ mutationFn: ({ transaction }) => client.client.applyTransaction(transaction) });
-    tx.mutate(() => {
-      client.albums.insert(album("a1"));
-      client.songs.insert(song(1, "a1"));
-      client.songs.insert(song(2, "a1"));
-    });
-    await tx.isPersisted.promise;
-
-    expect(rowsOf(client.albums)).toEqual([album("a1")]);
-    expect(rowsOf(client.songs)).toEqual([song(1, "a1"), song(2, "a1")]);
-    await expectInSync(harness, client);
-
-    const failing = createTransaction({ mutationFn: ({ transaction }) => client.client.applyTransaction(transaction) });
-    failing.mutate(() => {
-      client.albums.insert(album("a2"));
-      client.songs.insert(song(3, "missing-album"));
-    });
-    await expect(failing.isPersisted.promise).rejects.toThrow(/FOREIGN KEY/);
-
-    expect(client.albums.has("a2")).toBe(false);
-    expect(client.songs.has(3)).toBe(false);
-    expect(await harness.dbRows("albums")).toEqual([album("a1")]);
-  });
-
-  it("rejects transactions that touch collections of another client", async () => {
-    harness = await createHarness();
-    const first = harness.connect();
-    const second = harness.connect();
-    await Promise.all([first.albums.preload(), second.albums.preload()]);
-
-    const tx = createTransaction({ mutationFn: ({ transaction }) => first.client.applyTransaction(transaction) });
-    tx.mutate(() => {
-      second.albums.insert(album("a1"));
-    });
-
-    await expect(tx.isPersisted.promise).rejects.toThrow(/not a mirror collection of this client/);
-    expect(await harness.dbRows("albums")).toEqual([]);
-  });
-
-  it("waits for a collection that is still loading before writing", async () => {
-    harness = await createHarness({ latency: 10 });
-    const client = harness.connect();
-
-    const tx = client.albums.insert(album("a1"));
-    await tx.isPersisted.promise;
-
-    expect(client.albums.status).toBe("ready");
-    expect(rowsOf(client.albums)).toEqual([album("a1")]);
-  });
-
-  it("starts a lazily synced collection before writing", async () => {
-    harness = await createHarness();
-    const client = harness.connect();
-    const lazy = createCollection(mirrorCollectionOptions({ client: client.client, table: albums, id: "lazy-albums", startSync: false }));
-    expect(lazy.status).toBe("idle");
-
-    await lazy.insert(album("a1")).isPersisted.promise;
-
-    expect(lazy.status).toBe("ready");
-    expect(rowsOf(lazy)).toEqual([album("a1")]);
-    await lazy.cleanup();
-  });
-
-  it("times out when the change never comes back", async () => {
-    harness = await createHarness();
-    const client = harness.connect({ mutationTimeoutMs: 50 });
-    await client.albums.preload();
-    client.connection.pause();
-
-    const tx = client.albums.insert(album("a1"));
-
-    await expect(tx.isPersisted.promise).rejects.toBeInstanceOf(MirrorTimeoutError);
-    // The write itself committed; the row shows up once the stream catches up.
-    client.connection.resume();
-    await eventually(() => expect(client.albums.get("a1")?.$synced).toBe(true));
-  });
-
-  it("serializes concurrent mutations on the same row", async () => {
-    harness = await createHarness({ latency: () => Math.random() * 5 });
-    await harness.insertAlbums([album("a1")]);
-    const client = harness.connect();
-    await client.albums.preload();
-
-    const txs = Array.from({ length: 10 }, (_, i) =>
-      client.albums.update("a1", (draft) => {
-        draft.plays = i + 1;
-      }),
-    );
-    await Promise.all(txs.map((tx) => tx.isPersisted.promise));
-
-    await expectInSync(harness, client);
-    expect(client.albums.get("a1")?.plays).toBe(10);
   });
 });
 
@@ -402,21 +212,76 @@ describe("server commands", () => {
     expect(client.albums.has("a1")).toBe(true);
   });
 
-  it("throws on local writes to a read-only collection, which still follows the server", async () => {
-    harness = await createHarness({ server: { readOnly: true } });
+  it("times out when the position never arrives", async () => {
+    harness = await createHarness();
+    const client = harness.connect();
+    await client.albums.preload();
+    client.connection.pause();
+
+    const position = await harness.write(Effect.andThen(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a1', 'A')`), harness.server.position));
+
+    await expect(client.albums.utils.awaitPosition(position, 50)).rejects.toBeInstanceOf(MirrorTimeoutError);
+    // The write committed; the row shows up once the stream catches up.
+    client.connection.resume();
+    await eventually(() => expect(client.albums.has("a1")).toBe(true));
+  });
+
+  it("starts a garbage-collected collection again to wait for a position", async () => {
+    harness = await createHarness();
+    const client = harness.connect();
+    const collection = createCollection(mirrorCollectionOptions({ client: client.client, table: albums, id: "collected-albums", gcTime: 1 }));
+    collection.subscribeChanges(() => undefined).unsubscribe();
+    await eventually(() => expect(collection.status).toBe("cleaned-up"));
+
+    const position = await harness.write(Effect.andThen(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a1', 'A')`), harness.server.position));
+    await collection.utils.awaitPosition(position, 2_000);
+
+    expect(collection.status).toBe("ready");
+    expect(collection.has("a1")).toBe(true);
+    await collection.cleanup();
+  });
+
+  it("does not wait on a collection that has never started", async () => {
+    harness = await createHarness();
+    const client = harness.connect();
+    const lazy = createCollection(mirrorCollectionOptions({ client: client.client, table: albums, id: "lazy-albums", startSync: false }));
+
+    const position = await harness.write(Effect.andThen(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a1', 'A')`), harness.server.position));
+    await lazy.utils.awaitPosition(position, 50);
+
+    // Whatever reads it later loads it from after the write.
+    expect(lazy.status).toBe("idle");
+    await lazy.preload();
+    expect(lazy.has("a1")).toBe(true);
+    await lazy.cleanup();
+  });
+
+  it("waits for a position across a server restart", async () => {
+    harness = await createHarness({ latency: 5 });
+    const client = harness.connect();
+    await client.albums.preload();
+
+    await harness.startServer();
+    const position = await harness.write(Effect.andThen(harness.sql.unsafe(`INSERT INTO albums (id, name) VALUES ('a1', 'A')`), harness.server.position));
+    await client.albums.utils.awaitPosition(position);
+
+    expect(client.albums.has("a1")).toBe(true);
+    expect(client.client.epoch).toBe(harness.server.epoch);
+  });
+
+  it("throws on local writes, and follows the server", async () => {
+    harness = await createHarness();
     await harness.insertAlbums([album("a1")]);
     const client = harness.connect();
-    const collection = createCollection(mirrorCollectionOptions({ client: client.client, table: albums, id: "read-only-albums", readOnly: true }));
-    await collection.preload();
+    await client.albums.preload();
 
-    expect(() => collection.insert(album("a2"))).toThrow(/handler/i);
-    expect(() => collection.update("a1", (draft) => void (draft.name = "Changed"))).toThrow(/handler/i);
-    expect(() => collection.delete("a1")).toThrow(/handler/i);
-    expect(rowsOf(collection)).toEqual([album("a1")]);
+    expect(() => client.albums.insert(album("a2"))).toThrow(/handler/i);
+    expect(() => client.albums.update("a1", (draft) => void (draft.name = "Changed"))).toThrow(/handler/i);
+    expect(() => client.albums.delete("a1")).toThrow(/handler/i);
+    expect(rowsOf(client.albums)).toEqual([album("a1")]);
 
     await harness.exec(`UPDATE albums SET name = 'Server' WHERE id = 'a1'`);
-    await eventually(() => expect(collection.get("a1")?.name).toBe("Server"));
-    await collection.cleanup();
+    await eventually(() => expect(client.albums.get("a1")?.name).toBe("Server"));
   });
 });
 
@@ -448,18 +313,6 @@ describe("stream recovery", () => {
     await harness.insertAlbums([album("a1")]);
 
     await eventually(() => expect(rowsOf(client.albums)).toEqual([album("a1")]));
-    expect(client.connection.requests.filter((request) => request.type === "pull")).toHaveLength(1);
-  });
-
-  it("pulls a lost batch when a mutation reveals the stream is behind", async () => {
-    harness = await createHarness();
-    const client = harness.connect({ mutationTimeoutMs: 5_000 });
-    await client.albums.preload();
-
-    client.connection.dropNextBatches(1);
-    await client.albums.insert(album("a1")).isPersisted.promise;
-
-    expect(client.albums.get("a1")?.$synced).toBe(true);
     expect(client.connection.requests.filter((request) => request.type === "pull")).toHaveLength(1);
   });
 
@@ -539,7 +392,7 @@ describe("stream recovery", () => {
   it("follows a restarted server whose epoch went backwards", async () => {
     harness = await createHarness();
     await harness.insertAlbums([album("a1")]);
-    const client = harness.connect({ mutationTimeoutMs: 5_000 });
+    const client = harness.connect();
     await client.albums.preload();
     const before = client.client.epoch!;
 
@@ -557,20 +410,6 @@ describe("stream recovery", () => {
     await harness.insertAlbums([album("a2")]);
     await expectInSync(harness, client);
     expect(client.client.epoch).toBe(harness.server.epoch);
-
-    await client.albums.insert(album("a3")).isPersisted.promise;
-    await expectInSync(harness, client);
-  });
-
-  it("completes mutations across a server restart", async () => {
-    harness = await createHarness({ latency: 5 });
-    const client = harness.connect();
-    await client.albums.preload();
-
-    await harness.startServer();
-    await client.albums.insert(album("a1")).isPersisted.promise;
-
-    await expectInSync(harness, client);
   });
 
   it("retries the initial load until the server is reachable", async () => {

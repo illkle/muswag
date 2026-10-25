@@ -3,6 +3,7 @@ import { it as effectIt } from "@effect/vitest";
 import {
   playlists,
   SubsonicApiError,
+  SubsonicDecodeError,
   type CreatePlaylistArgs,
   type CreatePlaylistInput,
   type DeletePlaylistArgs,
@@ -418,6 +419,103 @@ describe("playlist sync manager", () => {
     api.refusals.clear();
     expect((await manager.sync()).error).toBeNull();
     expect(api.playlists.get("server-1")?.name).toBe("One, renamed");
+    manager.destroy();
+  });
+
+  it("pushes the other playlists when one cannot be read, and keeps that one", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Unreadable", comment: "", public: false, songIds: ["song-a"] });
+    api.playlists.set("server-2", { id: "server-2", name: "Two", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-2", "Two, renamed");
+    const read = api.getPlaylist.bind(api);
+    api.getPlaylist = ((args) =>
+      args.id === "server-1" ? Effect.fail(new SubsonicDecodeError({ method: "getPlaylist", message: "getPlaylist returned an invalid payload", cause: null })) : read(args)) as typeof api.getPlaylist;
+    const status = await manager.sync();
+
+    expect(api.playlists.get("server-2")?.name).toBe("Two, renamed");
+    // Taken to be as it was, not deleted on the server.
+    expect((await db.get("server-1"))?.local).toMatchObject({ name: "Unreadable", entries: [{ songId: "song-a" }] });
+    // The pass failed, so it is retried until the playlist can be read.
+    expect(status).toMatchObject({ state: "error", error: "getPlaylist returned an invalid payload" });
+
+    api.getPlaylist = read;
+    expect((await manager.sync()).error).toBeNull();
+    manager.destroy();
+  });
+
+  it("pushes nothing to a playlist it cannot read, and sends the change once it can", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.rename("server-1", "Mix, renamed here");
+    // Renamed on the server too, and unreadable since.
+    api.playlists.set("server-1", { ...api.playlists.get("server-1")!, name: "Mix, renamed there" });
+    const read = api.getPlaylist.bind(api);
+    api.getPlaylist = (() => Effect.fail(new SubsonicDecodeError({ method: "getPlaylist", message: "getPlaylist returned an invalid payload", cause: null }))) as unknown as typeof api.getPlaylist;
+    expect((await manager.sync()).state).toBe("error");
+
+    expect(api.playlists.get("server-1")?.name).toBe("Mix, renamed there");
+    expect((await db.get("server-1"))?.local?.name).toBe("Mix, renamed here");
+
+    api.getPlaylist = read;
+    expect((await manager.sync()).error).toBeNull();
+    manager.destroy();
+  });
+
+  it("leaves out a song the library no longer has when the server does not find it, and sends the rest", async () => {
+    const db = await createDb();
+    await db.runtime.runPromise(seed({ songs: ["song-a", "song-b"].map((id) => ({ id, title: id, isDir: false })) }));
+    const api = new FakePlaylistApi();
+    // The server's playlist has a song the library does not have yet; that one stays.
+    api.playlists.set("server-9", { id: "server-9", name: "Mix", comment: "", public: false, songIds: ["song-new", "song-a"] });
+    const notFound = (method: string) => Effect.fail(new SubsonicApiError({ method, code: 70, message: "Song not found" }));
+    const [create, update] = [api.createPlaylist.bind(api), api.updatePlaylist.bind(api)];
+    api.createPlaylist = ((args) => (args.songId?.includes("song-gone") ? notFound("createPlaylist") : create(args))) as typeof api.createPlaylist;
+    api.updatePlaylist = ((args) => (args.songIdToAdd?.includes("song-gone") ? notFound("updatePlaylist") : update(args))) as typeof api.updatePlaylist;
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    const created = await db.create({ name: "New", songIds: ["song-a", "song-gone"] });
+    await db.rename("server-9", "Mix, renamed");
+    await db.addEntry("server-9", "song-gone");
+    await db.addEntry("server-9", "song-b");
+    const status = await manager.sync();
+
+    expect(status).toMatchObject({ state: "idle", error: null });
+    expect(api.playlists.get("server-9")).toMatchObject({ name: "Mix, renamed", songIds: ["song-new", "song-a", "song-b"] });
+    expect((await db.get(created.id))?.local?.entries.map(({ songId }) => songId)).toEqual(["song-a"]);
+    expect([...api.playlists.values()].find(({ name }) => name === "New")?.songIds).toEqual(["song-a"]);
+    manager.destroy();
+  });
+
+  it("takes a playlist the server no longer has as deleted", async () => {
+    const db = await createDb();
+    const api = new FakePlaylistApi();
+    api.playlists.set("server-1", { id: "server-1", name: "Mix", comment: "", public: false, songIds: [] });
+    const manager = createManager(db, api);
+    await waitForCompletedSync(manager);
+    await settle();
+
+    await db.delete("server-1");
+    // Deleted elsewhere just before the request.
+    api.deletePlaylist = (() =>
+      Effect.sync(() => api.playlists.clear()).pipe(
+        Effect.andThen(Effect.fail(new SubsonicApiError({ method: "deletePlaylist", code: 70, message: "Playlist not found" }))),
+      )) as typeof api.deletePlaylist;
+    const status = await manager.sync();
+
+    expect(status).toMatchObject({ state: "idle", error: null });
+    expect(await db.get("server-1")).toBeUndefined();
     manager.destroy();
   });
 

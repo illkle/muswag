@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Scope } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { MirrorChange, MirrorChangeBatch, MirrorMutation, MirrorResponse, MirrorResults } from "../../protocol.js";
+import type { MirrorChange, MirrorChangeBatch, MirrorResponse, MirrorResults } from "../../protocol.js";
 import { album, albums, createHarness, song, type Harness } from "../../test/harness.js";
 import { MirrorSchemaError, SqliteMirror } from "./index.js";
 
@@ -32,8 +32,6 @@ const pulledBatch = (response: MirrorResponse) => {
   if (result?.kind !== "changes") throw new Error(`expected pulled changes, got ${JSON.stringify(response)}`);
   return result.batch;
 };
-
-const mutate = (h: Harness, mutations: ReadonlyArray<MirrorMutation>) => request(h, { type: "mutate", mutations });
 
 const expectError = (response: MirrorResponse, name: string, message?: RegExp) => {
   expect(response.ok).toBe(false);
@@ -243,10 +241,20 @@ describe("change capture", () => {
     const batches: Array<MirrorChangeBatch> = [];
     server.subscribe((batch) => batches.push(batch));
 
-    await harness.run(server.handle({ v: 1, type: "mutate", mutations: [{ table: "tagged", type: "insert", value: { id: "t1", tags: ["a", "b"] } }] }));
-
-    expect(await harness.run(harness.sql.unsafe(`SELECT tags FROM tagged`))).toEqual([{ tags: "a,b" }]);
+    await harness.run(server.write(harness.sql.unsafe(`INSERT INTO tagged (id, tags) VALUES ('t1', 'a,b')`)));
     expect(withoutSeq(batches.flatMap((batch) => batch.changes))).toEqual([{ table: "tagged", type: "upsert", key: "t1", value: { id: "t1", tags: ["a", "b"] } }]);
+
+    // Values a query compares with the column are encoded as it stores them.
+    const where = {
+      type: "func",
+      name: "eq",
+      args: [
+        { type: "ref", path: ["tags"] },
+        { type: "val", value: ["a", "b"] },
+      ],
+    };
+    const queried = await harness.run(server.handle({ v: 1, type: "query", table: "tagged", where }));
+    expect(queried.ok && (queried.result as MirrorResults["query"]).rows).toEqual([{ id: "t1", tags: ["a", "b"] }]);
     await harness.run(Scope.close(scope, Exit.void));
   });
 
@@ -361,7 +369,7 @@ describe("key-only tables", () => {
     expect(withoutSeq(log.changes())).toEqual([{ table: "songs", type: "changed", key: 1 }]);
   });
 
-  it("are refused as snapshots but answer queries and counts", async () => {
+  it("are refused as snapshots but answer queries", async () => {
     harness = await createHarness({ server: { keyOnlyTables: ["songs"] } });
     await harness.insertAlbums([album("a1"), album("a2")]);
     await harness.insertSongs([song(1, "a1", { title: "C" }), song(2, "a2", { title: "B" }), song(3, "a1", { title: "A" }), song(4, "a1", { title: "D" })]);
@@ -380,10 +388,9 @@ describe("key-only tables", () => {
       ok: true,
       result: { ...position, rows: [song(1, "a1", { title: "C" }), song(4, "a1", { title: "D" })] },
     });
-    expect(await request(harness, { type: "count", table: "songs", where })).toEqual({ ok: true, result: { ...position, count: 3 } });
     // A row read from the table holds null, never undefined, for a missing value, as the client sees it too.
     const undefinedRating = { type: "func", name: "isUndefined", args: [{ type: "ref", path: ["updatedAt"] }] };
-    expect(await request(harness, { type: "count", table: "songs", where: undefinedRating })).toEqual({ ok: true, result: { ...position, count: 0 } });
+    expect(await request(harness, { type: "query", table: "songs", where: undefinedRating })).toEqual({ ok: true, result: { ...position, rows: [] } });
   });
 
   it("must be mirrored", async () => {
@@ -604,105 +611,11 @@ describe("requests", () => {
     ["an unknown type", { v: 1, type: "explode" }, /unknown request type/],
     ["a snapshot without a table", { v: 1, type: "snapshot" }, /table must be a string/],
     ["a pull without a position", { v: 1, type: "pull" }, /fromSeq/],
-    ["a mutation list that is not an array", { v: 1, type: "mutate", mutations: {} }, /must be an array/],
-    ["an insert without a value", { v: 1, type: "mutate", mutations: [{ table: "albums", type: "insert" }] }, /malformed/],
-    ["an update without changes", { v: 1, type: "mutate", mutations: [{ table: "albums", type: "update", key: "a" }] }, /malformed/],
-    ["a delete without a key", { v: 1, type: "mutate", mutations: [{ table: "albums", type: "delete" }] }, /malformed/],
+    // Clients only read: every change goes through `write` in the server's process.
+    ["a write", { v: 1, type: "mutate", mutations: [{ table: "albums", type: "insert", value: { id: "a1", name: "A" } }] }, /unknown request type mutate/],
   ])("rejects %s", async (_name, payload, message) => {
     harness = await createHarness();
     expectError(await harness.run(harness.server.handle(payload)), "MirrorRequestError", message);
-  });
-});
-
-describe("mutate", () => {
-  it("applies mutations, runtime defaults and $onUpdate functions", async () => {
-    harness = await createHarness();
-    const log = record(harness);
-
-    const inserted = await mutate(harness, [
-      { table: "albums", type: "insert", value: { id: "a1", name: "A", starred: true, created: new Date("2024-01-01T00:00:00Z"), extra: { tags: ["t"] } } },
-      { table: "songs", type: "insert", value: { id: 1, albumId: "a1", title: "S" } },
-    ]);
-    expect(inserted).toEqual({ ok: true, result: { epoch: harness.server.epoch, seq: log.batches.at(-1)!.toSeq } });
-
-    const [insertedSong] = await harness.dbRows("songs");
-    expect(insertedSong).toMatchObject({ id: 1, rating: 3 });
-    expect(typeof insertedSong!.updatedAt).toBe("number");
-
-    await mutate(harness, [{ table: "songs", type: "update", key: 1, changes: { title: "S2" } }]);
-    const [updatedSong] = await harness.dbRows("songs");
-    expect(updatedSong).toMatchObject({ title: "S2", rating: 3 });
-    expect(updatedSong!.updatedAt as number).toBeGreaterThan(insertedSong!.updatedAt as number);
-
-    expect(await harness.dbRows("albums")).toEqual([album("a1", { name: "A", starred: true, created: new Date("2024-01-01T00:00:00Z"), extra: { tags: ["t"] } })]);
-
-    await mutate(harness, [{ table: "albums", type: "delete", key: "a1" }]);
-    expect(await harness.dbRows("albums")).toEqual([]);
-    expect(await harness.dbRows("songs")).toEqual([]);
-  });
-
-  it("ignores TanStack DB virtual properties", async () => {
-    harness = await createHarness();
-    expect((await mutate(harness, [{ table: "albums", type: "insert", value: { id: "a1", name: "A", $synced: false, $origin: "local" } }])).ok).toBe(true);
-    expect((await mutate(harness, [{ table: "albums", type: "update", key: "a1", changes: { name: "B", $synced: false } }])).ok).toBe(true);
-    expect(await harness.dbRows("albums")).toEqual([album("a1", { name: "B" })]);
-  });
-
-  it("applies a batch atomically", async () => {
-    harness = await createHarness();
-    const log = record(harness);
-
-    const response = await mutate(harness, [
-      { table: "albums", type: "insert", value: { id: "a1", name: "A" } },
-      { table: "albums", type: "update", key: "missing", changes: { name: "B" } },
-    ]);
-
-    expectError(response, "MirrorRequestError", /does not exist/);
-    expect(await harness.dbRows("albums")).toEqual([]);
-    expect(log.batches).toEqual([]);
-  });
-
-  it("surfaces constraint violations", async () => {
-    harness = await createHarness();
-    await harness.insertAlbums([album("a1")]);
-
-    const response = await mutate(harness, [{ table: "albums", type: "insert", value: { id: "a1", name: "Again" } }]);
-
-    expectError(response, "SqlError");
-  });
-
-  it("rejects unknown columns and tables", async () => {
-    harness = await createHarness();
-    expectError(await mutate(harness, [{ table: "albums", type: "insert", value: { id: "a1", name: "A", nope: 1 } }]), "MirrorRequestError", /Unknown column "nope"/);
-    expectError(await mutate(harness, [{ table: "unmirrored", type: "insert", value: { id: "x" } }]), "MirrorRequestError", /not mirrored/);
-  });
-
-  it("treats deleting a missing row as done", async () => {
-    harness = await createHarness();
-    expect((await mutate(harness, [{ table: "albums", type: "delete", key: "missing" }])).ok).toBe(true);
-  });
-
-  it("skips updates without changes", async () => {
-    harness = await createHarness();
-    await harness.insertAlbums([album("a1")]);
-    const log = record(harness);
-
-    expect((await mutate(harness, [{ table: "albums", type: "update", key: "a1", changes: {} }])).ok).toBe(true);
-    expect(log.batches).toEqual([]);
-  });
-
-  it("rejects mutations on a read-only server, which still writes through `write`", async () => {
-    harness = await createHarness({ server: { readOnly: true } });
-    await harness.insertAlbums([album("a1")]);
-    const log = record(harness);
-
-    expectError(await mutate(harness, [{ table: "albums", type: "update", key: "a1", changes: { name: "Changed" } }]), "MirrorRequestError", /read-only/);
-    expectError(await mutate(harness, [{ table: "albums", type: "delete", key: "a1" }]), "MirrorRequestError", /read-only/);
-    expect(log.batches).toEqual([]);
-    expect(await harness.dbRows("albums")).toEqual([album("a1")]);
-
-    await harness.exec(`UPDATE albums SET name = 'Server' WHERE id = 'a1'`);
-    expect(log.batches).toHaveLength(1);
   });
 });
 
