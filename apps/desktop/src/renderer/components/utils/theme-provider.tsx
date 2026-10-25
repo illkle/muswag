@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-export type Theme = "dark" | "light" | "system";
+import { appCommand } from "#/data/app-command";
+import type { Theme } from "#shared/theme";
+
+export type { Theme };
 
 type ThemeProviderState = {
   theme: Theme;
@@ -16,6 +19,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(STORAGE_KEY) as Theme) || "system");
 
   useEffect(() => {
+    // What the OS draws of the window follows too, such as its controls over the top bar on Windows.
+    appCommand("window:setTheme", theme).catch((cause: unknown) => console.warn("The window could not take the theme", cause));
+
     const root = window.document.documentElement;
     const apply = (resolved: "dark" | "light") => {
       root.classList.remove("light", "dark");

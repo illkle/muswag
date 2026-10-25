@@ -12,7 +12,7 @@ import { appUpdates, initializeAutoUpdater, publishAppUpdates } from "./app-upda
 import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
 import { startDevBridge } from "./dev-bridge";
 import { setApplicationMenu } from "./menu";
-import { APP_PAGE_URL, createWindow } from "./window";
+import { APP_PAGE_URL, createWindow, setWindowTheme } from "./window";
 
 import { Effect } from "effect";
 
@@ -105,6 +105,7 @@ app.whenReady().then(async () => {
     ipcMain: appIpc,
     player,
     updates: appUpdates,
+    setTheme: setWindowTheme,
     appState,
     renderers,
     onWindowFocus: (listener) => {

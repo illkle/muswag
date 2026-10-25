@@ -4,6 +4,9 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider, useTheme, type Theme } from "#/components/utils/theme-provider";
+import { appCommand } from "#/data/app-command";
+
+vi.mock("#/data/app-command", () => ({ appCommand: vi.fn(async () => undefined) }));
 
 /** The OS setting, as `matchMedia` reports it and announces its changes. */
 const system = {
@@ -24,6 +27,7 @@ const Probe = () => {
 const classes = () => [...document.documentElement.classList].sort();
 
 beforeEach(() => {
+  vi.mocked(appCommand).mockClear();
   system.dark = false;
   system.listeners.clear();
   localStorage.clear();
@@ -78,5 +82,17 @@ describe("ThemeProvider", () => {
     renderProvider();
 
     expect(classes()).toEqual(["dark"]);
+  });
+
+  it("has the window drawn in the theme chosen, or the OS's while it is System", () => {
+    renderProvider();
+    act(() => setTheme("dark"));
+    act(() => setTheme("system"));
+
+    expect(vi.mocked(appCommand).mock.calls).toEqual([
+      ["window:setTheme", "system"],
+      ["window:setTheme", "dark"],
+      ["window:setTheme", "system"],
+    ]);
   });
 });

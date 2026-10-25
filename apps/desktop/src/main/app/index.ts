@@ -6,6 +6,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
 import { FetchHttpClient } from "effect/http";
 
+import type { Theme } from "#shared/theme";
+
 import type { AppIpc } from "../app-page";
 import type { AppStateHub } from "../app-state";
 import type { PlayerHandle } from "../player/ipc";
@@ -23,6 +25,8 @@ export interface AppOptions {
   readonly ipcMain: AppIpc;
   readonly player: PlayerHandle;
   readonly updates: AppUpdates;
+  /** Draws the windows' native parts in the theme the user picked in a renderer. */
+  readonly setTheme: (theme: Theme) => void;
   /** Where renderers see the session, the sync status and the queue. */
   readonly appState: AppStateHub;
   /** The renderers that have connected, which hear of changes to the library. */
@@ -94,7 +98,15 @@ const makeApp = (options: AppOptions) =>
       (search) => Effect.promise(() => search.dispose()),
     );
 
-    yield* serveAppCommands({ ipcMain: options.ipcMain, queue, player: options.player, updates: options.updates, songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)), search: search.search });
+    yield* serveAppCommands({
+      ipcMain: options.ipcMain,
+      queue,
+      player: options.player,
+      updates: options.updates,
+      setTheme: options.setTheme,
+      songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)),
+      search: search.search,
+    });
 
     // Coming back to the app catches up with the server, unless a sync did a moment ago.
     const { onWindowFocus } = options;

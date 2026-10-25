@@ -13,7 +13,7 @@ import { usePlayerMpvBinary } from "#/player/hooks";
 import { Session } from "#/session/session";
 import { TOP_HEIGHT } from "#/styles";
 
-/** The window has no title bar on macOS, so a screen without the app's top bar brings its own strip to drag it by. */
+/** The window has no title bar on macOS and Windows, so a screen without the app's top bar brings its own strip to drag it by. */
 const DragStrip = () => <div className="app-drag-region fixed inset-x-0 top-0 z-10" style={{ height: TOP_HEIGHT }} />;
 
 function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
