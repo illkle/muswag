@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 
 import { LibrarySync, PlaylistCommands, PlaylistEdits, subsonicToken } from "@muswag/backend";
 import { NoCoverFiles, SubsonicAPILive, TestDatabase } from "@muswag/backend/testing";
-import type { SyncMode } from "@muswag/model";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { FetchHttpClient } from "effect/http";
 
@@ -33,18 +32,31 @@ export function createLibrary() {
 
 export type Library = ReturnType<typeof createLibrary>;
 
+/** The library sync of `library` against `server`, as the app runs it. */
+const librarySyncOf = (library: Library, server: TestServer) => ManagedRuntime.make(LibrarySync.layer.pipe(Layer.provide(Layer.mergeAll(library.layer, subsonicLayerFor(server), NoCoverFiles))));
+
 /** Syncs `library` with `server` as the app does, and answers with the problem the sync reports. */
-export async function syncLibrary(library: Library, server: TestServer, mode: SyncMode): Promise<string | null> {
-  const runtime = ManagedRuntime.make(LibrarySync.layer.pipe(Layer.provide(Layer.mergeAll(library.layer, subsonicLayerFor(server), NoCoverFiles))));
+export async function syncLibrary(library: Library, server: TestServer): Promise<string | null> {
+  const runtime = librarySyncOf(library, server);
   try {
     return await runtime.runPromise(
       LibrarySync.use((sync) =>
-        sync.sync(mode).pipe(
+        sync.sync.pipe(
           Effect.andThen(sync.status),
           Effect.map(({ error }) => error),
         ),
       ),
     );
+  } finally {
+    await runtime.dispose();
+  }
+}
+
+/** When `server` says it last scanned its files, as the sync settings ask it; `null` when it does not say. */
+export async function lastScan(library: Library, server: TestServer): Promise<string | null> {
+  const runtime = librarySyncOf(library, server);
+  try {
+    return await runtime.runPromise(LibrarySync.use((sync) => sync.lastScan));
   } finally {
     await runtime.dispose();
   }

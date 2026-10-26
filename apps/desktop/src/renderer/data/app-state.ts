@@ -16,6 +16,7 @@ export const appState: AppStateStores = {
   playerPosition: createStore<AppStateValues["playerPosition"] | undefined>(undefined),
   auth: createStore<AppStateValues["auth"] | undefined>(undefined),
   librarySync: createStore<AppStateValues["librarySync"] | undefined>(undefined),
+  syncSettings: createStore<AppStateValues["syncSettings"] | undefined>(undefined),
   playlistSync: createStore<AppStateValues["playlistSync"] | undefined>(undefined),
   appUpdate: createStore<AppStateValues["appUpdate"] | undefined>(undefined),
   unplayable: createStore<AppStateValues["unplayable"] | undefined>(undefined),

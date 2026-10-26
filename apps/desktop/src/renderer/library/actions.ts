@@ -1,10 +1,14 @@
-import type { AlbumPageRequest, AlbumSort, LibrarySort, QueueSourceRef, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
+import type { AlbumPageRequest, AlbumSort, LibrarySort, QueueSourceRef, RefreshTarget, SongPageRequest, SongRange } from "@muswag/model";
 
 import { appCommand } from "#/data/app-command";
+import type { SyncSettings } from "#shared/state/sync-settings";
 
 /** Library sync and page refreshes, both of which main runs. Sync status is in `appState.librarySync`. */
 export const LibraryActions = {
-  sync: (mode: SyncMode) => appCommand("library:sync", mode),
+  sync: () => appCommand("library:sync"),
+  /** When the server says it last scanned its files, which main asks it now; `null` when it does not say. */
+  lastScan: () => appCommand("library:lastScan"),
+  setSyncSettings: (settings: SyncSettings) => appCommand("library:setSyncSettings", settings),
   refresh: (target: RefreshTarget) => appCommand("library:refresh", target),
   /** Where an artist appears on other artists' albums, which main finds in the credits of every song. */
   artistAppearances: (artistId: string) => appCommand("library:artistAppearances", artistId),

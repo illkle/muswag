@@ -13,9 +13,9 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn<() => Promise<void>>(),
   openMpvDialog: vi.fn(),
   playerError: null as string | null,
-  librarySync: { running: null, progress: null, error: null, lastSyncedAt: null } as LibrarySyncStatus,
+  librarySync: { running: false, progress: null, error: null, lastSyncedAt: null } as LibrarySyncStatus,
   binary: { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" } as BinaryState,
-  sync: vi.fn<(mode: "full" | "quick") => Promise<void>>(),
+  sync: vi.fn<() => Promise<void>>(),
   user: { id: 1, password: "secret", url: "https://music.example.com/", username: "tester" } as { id: number; password: string; url: string; username: string } | undefined,
 }));
 
@@ -28,8 +28,10 @@ vi.mock("#/library/actions", () => ({
   LibraryActions: { sync: mocks.sync },
 }));
 
-vi.mock("#/library/queries", () => ({
+vi.mock("#/library/queries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#/library/queries")>()),
   useLibrarySyncStatus: () => mocks.librarySync,
+  useSyncSettings: () => ({ syncAfter: { amount: 1, unit: "weeks" } }),
 }));
 
 vi.mock("#/player/hooks", () => ({
@@ -97,7 +99,7 @@ describe("ServerMenu", () => {
     mocks.logout.mockReset().mockResolvedValue(undefined);
     mocks.sync.mockReset().mockResolvedValue(undefined);
     mocks.playerError = null;
-    mocks.librarySync = { running: null, progress: null, error: null, lastSyncedAt: null };
+    mocks.librarySync = { running: false, progress: null, error: null, lastSyncedAt: null };
     mocks.binary = { _tag: "Ready", path: "/opt/homebrew/bin/mpv", source: "well-known", version: "0.40.0" };
   });
 
@@ -113,29 +115,28 @@ describe("ServerMenu", () => {
     expect(screen.getByRole("button", { name: "Log out…" })).toBeTruthy();
   });
 
-  it("starts a quick sync from the menu, and a full one from the item that syncs everything again", async () => {
+  it("syncs the library from the menu, and has one item to sync with", async () => {
     renderServerMenu();
 
     fireEvent.click(screen.getByRole("button", { name: "Sync library" }));
-    await waitFor(() => expect(mocks.sync).toHaveBeenCalledWith("quick"));
-
-    fireEvent.click(screen.getByRole("button", { name: "Sync everything again" }));
-    await waitFor(() => expect(mocks.sync).toHaveBeenCalledWith("full"));
+    await waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: "Sync everything again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sync settings" })).toBeTruthy();
   });
 
   it("says when the library was last synced, and how far a running sync has got", () => {
-    mocks.librarySync = { running: null, progress: null, error: null, lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString() };
+    mocks.librarySync = { running: false, progress: null, error: null, lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString() };
     renderServerMenu();
     expect(screen.getByRole("button", { name: /^Sync library/ }).textContent).toContain("5 minutes ago");
     cleanup();
 
-    mocks.librarySync = { running: "quick", progress: { done: 30, total: 120 }, error: null, lastSyncedAt: null };
+    mocks.librarySync = { running: true, progress: { done: 30, total: 120 }, error: null, lastSyncedAt: null };
     renderServerMenu();
     expect(screen.getByRole("button", { name: "Syncing library… 25%" })).toBeTruthy();
   });
 
   it("shows a sync running in main that this menu did not start, and does not start another", () => {
-    mocks.librarySync = { running: "full", progress: null, error: null, lastSyncedAt: null };
+    mocks.librarySync = { running: true, progress: null, error: null, lastSyncedAt: null };
 
     renderServerMenu();
 
@@ -147,12 +148,12 @@ describe("ServerMenu", () => {
   });
 
   it("says why the last sync failed, until another one runs", () => {
-    mocks.librarySync = { running: null, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
+    mocks.librarySync = { running: false, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
     renderServerMenu();
     expect(screen.getByRole("alert").textContent).toBe("Last sync: Unable to reach the server");
     cleanup();
 
-    mocks.librarySync = { running: "full", progress: null, error: "Unable to reach the server", lastSyncedAt: null };
+    mocks.librarySync = { running: true, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
     renderServerMenu();
     expect(screen.queryByRole("alert")).toBeNull();
   });

@@ -137,27 +137,6 @@ describe("SessionManager", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.live("starts a library sync with each session, and reports how it went in the sync's status", () => {
-    const requested: string[] = [];
-    const { layer } = makeLayer({ requested });
-
-    return Effect.gen(function* () {
-      const manager = yield* SessionManager;
-      yield* manager.login(goodCredentials);
-      const status = yield* manager.use(({ library }) =>
-        library.changes.pipe(
-          Stream.filter(({ running, error }) => running === null && error !== null),
-          Stream.runHead,
-        ),
-      );
-
-      // The server of this test answers with nothing to sync, which the sync reports and login does not.
-      expect(requested).toContain("/rest/getArtists.view");
-      expect(Option.getOrThrow(status).error).toEqual(expect.any(String));
-      expect(yield* manager.snapshot).toMatchObject({ _tag: "LoggedIn" });
-    }).pipe(Effect.provide(layer));
-  });
-
   it.effect("signs every request of a session with the token of its login, and never sends the password", () => {
     const sent: URLSearchParams[] = [];
     const { layer } = makeLayer({ sent });
@@ -185,12 +164,7 @@ describe("SessionManager", () => {
       const manager = yield* SessionManager;
       yield* manager.login(goodCredentials);
       // The server of this test answers with nothing to sync, so the sync ends in an error.
-      yield* manager.use(({ library }) =>
-        library.changes.pipe(
-          Stream.filter(({ running, error }) => running === null && error !== null),
-          Stream.runHead,
-        ),
-      );
+      yield* manager.use(({ library }) => library.sync).pipe(Effect.ignore);
       // The first login also clears the whole directory, finding no account to keep the data of.
       const swept = () => removed.filter((path) => path !== "covers").sort();
       while (swept().length < 2) yield* Effect.sleep("5 millis");

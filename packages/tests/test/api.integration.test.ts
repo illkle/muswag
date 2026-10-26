@@ -97,7 +97,7 @@ forEachServer((server, traits) => {
     });
     const covers = ManagedRuntime.make(CoverManagerLive("covers").pipe(Layer.provide(Layer.mergeAll(library.layer, subsonicLayerFor(server()), fs, PathLayer))));
     try {
-      expect(await syncLibrary(library, server(), "full")).toBeNull();
+      expect(await syncLibrary(library, server())).toBeNull();
       /** What came of asking for the album's cover. */
       const outcome = async (id: string) => {
         const exit = await covers.runPromiseExit(CoverManager.use((manager) => manager.ensure({ type: "album", id })));

@@ -149,7 +149,7 @@ const sweepCoversAfterSyncs = (context: Context.Context<LibrarySync | CoverManag
     Stream.changes,
     // The first is the state the session starts in, before any sync.
     Stream.drop(1),
-    Stream.filter((running) => running === null),
+    Stream.filter((running) => !running),
     Stream.runForEach(() =>
       Context.get(context, CoverManager).sweep.pipe(
         Effect.tap((removed) => (removed > 0 ? Effect.logDebug(`Removed ${removed} cover files nothing shows`) : Effect.void)),
@@ -239,14 +239,9 @@ const makeSessionManager = (options: SessionManagerOptions) =>
         }),
       );
 
-    // Every session starts by catching up with the server, as its playlists do on their own. The
-    // sync's status says how it went, and the session ending interrupts it.
-    const startLibrarySync = use((session) => session.library.sync("quick")).pipe(Effect.ignore, Effect.forkIn(scope), Effect.asVoid);
-
     const install = (credentials: SessionCredentials, persist: boolean) =>
       ScopedRef.set(current, acquire(credentials).pipe(Effect.tap(() => (persist ? credentialsStore.save(credentials) : Effect.void)))).pipe(
         Effect.andThen(SubscriptionRef.set(publicState, loggedInSnapshot(credentials))),
-        Effect.andThen(startLibrarySync),
         Effect.as(loggedInSnapshot(credentials)),
       );
 

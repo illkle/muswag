@@ -9,6 +9,7 @@ import { serveRenderers } from "./renderers";
 import { LibraryDatabaseError, resetLibrary, startApp, type AppOptions } from "./app";
 import { guardIpc } from "./app-page";
 import { appUpdates, initializeAutoUpdater, publishAppUpdates } from "./app-updater";
+import { publishSyncSettings } from "./sync-settings";
 import { handleCoverProtocol, registerCoverScheme } from "./cover-protocol";
 import { startDevBridge } from "./dev-bridge";
 import { setApplicationMenu } from "./menu";
@@ -91,6 +92,7 @@ app.whenReady().then(async () => {
   const appState = new AppStateHub();
   renderers = serveRenderers(appIpc, appState);
   publishAppUpdates(appState, join(userDataPath, "update-settings.json"));
+  const syncSettings = publishSyncSettings(appState, join(userDataPath, "sync-settings.json"));
   player = startPlayer({
     ipcPath: getDefaultMpvIpcPath(app.getPath("temp")),
     settingsPath: join(userDataPath, "player-settings.json"),
@@ -105,13 +107,10 @@ app.whenReady().then(async () => {
     ipcMain: appIpc,
     player,
     updates: appUpdates,
+    syncSettings,
     setTheme: setWindowTheme,
     appState,
     renderers,
-    onWindowFocus: (listener) => {
-      app.on("browser-window-focus", listener);
-      return () => app.off("browser-window-focus", listener);
-    },
   });
   if (!mainApp) {
     app.quit();

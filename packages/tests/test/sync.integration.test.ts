@@ -3,7 +3,7 @@ import { albums, artists, songs } from "@muswag/model";
 import { Effect } from "effect";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-import { createLibrary, type Library, syncLibrary } from "./helpers/effect-runtime.js";
+import { createLibrary, lastScan, type Library, syncLibrary } from "./helpers/effect-runtime.js";
 import { type AlbumFixture, largeLibrary, librarySetA, librarySetB, songCount, variedLibrary } from "./library/fixtures.js";
 import { forEachServer } from "./servers/index.js";
 
@@ -36,7 +36,7 @@ forEachServer((server, traits) => {
 
   it("syncs every album, song and artist", async () => {
     await server().setLibrary(librarySetA);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     const state = await readLibrary(library);
     expect(state.albums.map(({ name }) => name).sort()).toEqual(librarySetA.map(({ title }) => title).sort());
@@ -57,7 +57,7 @@ forEachServer((server, traits) => {
 
   it("keeps the artist of each song of a compilation", async () => {
     await server().setLibrary(librarySetA);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     const compilation = (await readLibrary(library)).songs.filter(({ album }) => album === "Summer Sampler");
     expect(compilation.map(({ artist }) => artist).sort()).toEqual(["June Pixel", "Mira Holt"]);
@@ -66,7 +66,7 @@ forEachServer((server, traits) => {
 
   it("syncs songs with and without ReplayGain, by several artists, on two discs and named outside ASCII", async () => {
     await server().setLibrary(variedLibrary);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     expect(await titles(library)).toEqual(expectedTitles(variedLibrary));
     const { songs } = await readLibrary(library);
@@ -80,27 +80,25 @@ forEachServer((server, traits) => {
     expect(duet?.albumArtists?.map(({ name }) => name)).toEqual(["The Projectionists"]);
   });
 
-  for (const mode of ["full", "quick"] as const) {
-    it(`takes in a library the server replaced, with a ${mode} sync`, async () => {
-      await server().setLibrary(librarySetA);
-      expect(await syncLibrary(library, server(), "full")).toBeNull();
-
-      await server().setLibrary(librarySetB);
-      expect(await syncLibrary(library, server(), mode)).toBeNull();
-
-      const state = await readLibrary(library);
-      expect(state.albums.map(({ name }) => name).sort()).toEqual(librarySetB.map(({ title }) => title).sort());
-      expect(await titles(library)).toEqual(expectedTitles(librarySetB));
-    });
-  }
-
-  it("removes a song deleted on the server, with a quick sync", async () => {
+  it("takes in a library the server replaced", async () => {
     await server().setLibrary(librarySetA);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
+
+    await server().setLibrary(librarySetB);
+    expect(await syncLibrary(library, server())).toBeNull();
+
+    const state = await readLibrary(library);
+    expect(state.albums.map(({ name }) => name).sort()).toEqual(librarySetB.map(({ title }) => title).sort());
+    expect(await titles(library)).toEqual(expectedTitles(librarySetB));
+  });
+
+  it("removes a song deleted on the server", async () => {
+    await server().setLibrary(librarySetA);
+    expect(await syncLibrary(library, server())).toBeNull();
 
     const withoutLateBus = librarySetA.map((album) => ({ ...album, songs: album.songs.filter(({ title }) => title !== "Late Bus") }));
     await server().setLibrary(withoutLateBus);
-    expect(await syncLibrary(library, server(), "quick")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     expect(await titles(library)).toEqual(expectedTitles(withoutLateBus));
   });
@@ -108,29 +106,26 @@ forEachServer((server, traits) => {
   // The same file with another title: the album looks as it did.
   const retagged = librarySetA.map((album) => ({ ...album, songs: album.songs.map((song) => (song.title === "Morning Grid" ? { ...song, title: "Morning Grid (Remastered)" } : song)) }));
 
-  it("takes in a song the server retagged, with a full sync", async () => {
+  // The server that reports its scans has scanned since the last sync; the others have every song read.
+  it("takes in a song the server retagged in an album that looks the same", async () => {
     await server().setLibrary(librarySetA);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     await server().setLibrary(retagged);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
     expect(await titles(library)).toEqual(expectedTitles(retagged));
   });
 
-  // A quick sync reads every song only when the server says it scanned since the last sync that did.
-  it.runIf(traits.reportsLastScan)("takes in a song the server retagged, with a quick sync", async () => {
+  it("says when the server last scanned only where it reports its scans", async () => {
     await server().setLibrary(librarySetA);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
-
-    await server().setLibrary(retagged);
-    expect(await syncLibrary(library, server(), "quick")).toBeNull();
-    expect(await titles(library)).toEqual(expectedTitles(retagged));
+    const scanned = await lastScan(library, server());
+    expect({ reports: scanned !== null, aTime: scanned === null || !Number.isNaN(Date.parse(scanned)) }).toEqual({ reports: traits.reportsLastScan, aTime: true });
   });
 
   it("reads a library of more albums and songs than a page holds", async () => {
     const large = largeLibrary(520, 2);
     await server().setLibrary(large);
-    expect(await syncLibrary(library, server(), "full")).toBeNull();
+    expect(await syncLibrary(library, server())).toBeNull();
 
     const state = await readLibrary(library);
     expect(state.albums).toHaveLength(large.length);

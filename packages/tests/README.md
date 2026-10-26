@@ -34,8 +34,9 @@ Docker is all the tests need. They skip themselves when it is not running.
 | Reads every artist of a song with several             | yes                    | only the first, unless `GONIC_MULTI_VALUE_ARTIST` is set | yes                                                          |
 | An album's `songCount` after a song's file is deleted | still counts it        | counts the songs left                                    | counts the songs left                                        |
 
-Without the time of the last scan, a quick sync cannot tell that a song changed in an album that looks
-the same; a full sync takes the change in.
+Without the time of the last scan, muswag cannot tell which songs changed, so every sync reads every
+song again. With it, a sync reads every song only after a scan, and otherwise only the albums that look
+changed.
 
 LMS has no way to make a user or an API key but its web interface, so the tests start an LMS once,
 let it make its database, and write both users and their keys into it (`seededDatabase` in `lms.ts`).

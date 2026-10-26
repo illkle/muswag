@@ -187,7 +187,7 @@ export const syncState = sqliteTable("sync_state", {
   id: integer().primaryKey(),
   /**
    * What the server said of its last scan when a sync last brought every song up to date. While the
-   * server says the same, no song has changed since, and a quick sync need not read them all.
+   * server says the same, no song has changed since, and a sync need not read them all.
    */
   serverScan: text(),
   lastSyncedAt: text(),

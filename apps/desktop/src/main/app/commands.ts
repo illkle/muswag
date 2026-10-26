@@ -8,6 +8,7 @@ import type { UpdateChannel } from "#shared/state/app-update";
 import type { Theme } from "#shared/theme";
 import type { AppIpc } from "../app-page";
 import type { PlayerHandle } from "../player/ipc";
+import type { SyncSettingsStore } from "../sync-settings";
 import type { QueueManager } from "../queue/queue-manager";
 import type { LibrarySearch } from "../search/library-search";
 
@@ -29,6 +30,7 @@ export const serveAppCommands = (options: {
   readonly queue: QueueManager;
   readonly player: Pick<PlayerHandle, "execute" | "locate">;
   readonly updates: AppUpdates;
+  readonly syncSettings: SyncSettingsStore;
   readonly songsByIds: (ids: readonly string[]) => Promise<Song[]>;
   readonly search: LibrarySearch["search"];
   /** Draws the windows' native parts in a theme (`window.ts`). */
@@ -54,7 +56,9 @@ export const serveAppCommands = (options: {
       // Logging in as someone else deletes what the database holds of the account before; the queue goes with it.
       "session:login": (credentials) => session.login(credentials, { beforeDataIsDeleted: clearQueue }),
       "session:logout": () => clearQueue.pipe(Effect.andThen(session.logout)),
-      "library:sync": (mode) => session.use((active) => active.library.sync(mode)),
+      "library:sync": () => session.use((active) => active.library.sync),
+      "library:lastScan": () => session.use((active) => active.library.lastScan),
+      "library:setSyncSettings": (settings) => Effect.promise(() => options.syncSettings.set(settings)),
       "library:refresh": (target) => session.use((active) => active.library.refresh(target)),
       "library:artistAppearances": (artistId) => LibraryQueries.artistAppearances(artistId).pipe(Effect.provideService(Db, db)),
       "library:songPage": (sort, request, withTotal) => LibraryQueries.songPage(sort, request, withTotal).pipe(Effect.provideService(Db, db)),
