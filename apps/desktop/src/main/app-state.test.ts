@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AppStateUpdate } from "#shared/state/app-state";
 import { AppStateHub } from "./app-state";
 
-const idle = { running: null, progress: null, error: null, lastSyncedAt: null };
+const idle = { running: false, progress: null, error: null, lastSyncedAt: null };
 
 describe("AppStateHub", () => {
   it("counts every change, tells its listeners, and leaves out what was never set", () => {
@@ -35,7 +35,7 @@ describe("AppStateHub", () => {
     const hub = new AppStateHub();
     hub.set("librarySync", idle);
     const before = hub.snapshot();
-    hub.set("librarySync", { ...idle, running: "full" });
+    hub.set("librarySync", { ...idle, running: true });
     expect(before).toEqual({ version: 1, values: { librarySync: idle } });
   });
 });

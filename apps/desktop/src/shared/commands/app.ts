@@ -10,7 +10,6 @@ import {
   SongPageRequest,
   SongRanges,
   LoginCredentials,
-  SyncMode,
   Text,
   type AlbumDetail,
   type AlbumPage,
@@ -31,6 +30,7 @@ import {
 import { Schema } from "effect";
 
 import { UpdateChannel } from "../state/app-update";
+import { SyncSettings } from "../state/sync-settings";
 import { Theme } from "../theme";
 import { RendererCommand, type CommandResult } from "./player";
 
@@ -46,7 +46,9 @@ import { RendererCommand, type CommandResult } from "./player";
 export const AppCommandArgs = {
   "session:login": Schema.Tuple([LoginCredentials]),
   "session:logout": Schema.Tuple([]),
-  "library:sync": Schema.Tuple([SyncMode]),
+  "library:sync": Schema.Tuple([]),
+  "library:lastScan": Schema.Tuple([]),
+  "library:setSyncSettings": Schema.Tuple([SyncSettings]),
   "library:refresh": Schema.Tuple([RefreshTarget]),
   "library:artistAppearances": Schema.Tuple([Id]),
   "library:search": Schema.Tuple([Text, Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 }))]),
@@ -92,7 +94,15 @@ export const AppCommandArgs = {
 export type AppCommandResults = {
   "session:login": AuthSnapshot;
   "session:logout": AuthSnapshot;
+  /**
+   * Syncs the library, or waits for the sync running. It reads every song again unless the server says
+   * it has not scanned its files since the last sync that did.
+   */
   "library:sync": void;
+  /** When the server says it last scanned its files, asked now; `null` when it does not say. */
+  "library:lastScan": string | null;
+  /** Keeps the settings of when the app syncs on its own, and goes by them from the next check on. */
+  "library:setSyncSettings": void;
   "library:refresh": void;
   /** Read when asked: it is as current as the library was then. */
   "library:artistAppearances": ArtistAppearances;

@@ -12,7 +12,7 @@ export type ServerName = "navidrome" | "gonic" | "lms";
 
 /** What a server does that the others do not, for tests to expect it of that server. */
 export interface ServerTraits {
-  /** `getScanStatus` says when the server last scanned, so a quick sync can tell that a song changed in an album that looks the same. */
+  /** `getScanStatus` says when the server last scanned, so a sync reads every song only after a scan. The others have every sync read them all. */
   readonly reportsLastScan: boolean;
   /** The server keeps a playlist's comment. LMS takes no comment and sends none. */
   readonly keepsPlaylistComments: boolean;

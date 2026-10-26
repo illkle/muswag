@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { LibraryActions } from "#/library/actions";
 
-/** Reads the album and its songs from the server again when its page opens, which catches what a quick sync passed over. */
+/** Reads the album and its songs from the server again when its page opens, which catches what a sync passed over. */
 export function useAlbumRefresh(albumId: string): void {
   useEffect(() => {
     void LibraryActions.refresh({ type: "album", id: albumId }).catch((error: unknown) => {

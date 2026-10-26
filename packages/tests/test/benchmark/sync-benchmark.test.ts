@@ -22,7 +22,7 @@ describe("sync storage benchmark", () => {
     const startedAt = performance.now();
     const stored = await Effect.runPromise(
       Effect.gen(function* () {
-        yield* LibrarySync.use((library) => library.sync("full"));
+        yield* LibrarySync.use((library) => library.sync);
         return { albums: yield* idsOf(albums), songs: yield* idsOf(songs) };
       }).pipe(Effect.provide(LibrarySync.layer.pipe(Layer.provideMerge(Layer.mergeAll(TestDatabase(), api, NoCoverFiles))))),
     );

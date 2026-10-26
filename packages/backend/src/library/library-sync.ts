@@ -13,7 +13,6 @@ import {
   type LibrarySyncStatus,
   type RefreshTarget,
   type Song,
-  type SyncMode,
 } from "@muswag/model";
 import { count, eq, inArray, sql } from "drizzle-orm";
 import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Layer, SubscriptionRef } from "effect";
@@ -29,9 +28,6 @@ export class AlbumWithoutSongs extends Data.TaggedError("AlbumWithoutSongs")<{
   readonly message: string;
 }> {}
 
-/** How often a session catches up with the server on its own. */
-const SYNC_INTERVAL_MS = 30 * 60_000;
-
 type Progress = LibrarySyncStatus["progress"];
 type ReportProgress = (progress: Progress) => Effect.Effect<void>;
 
@@ -44,21 +40,21 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
     const db = yield* Db;
     const [saved] = yield* db.select({ lastSyncedAt: syncState.lastSyncedAt }).from(syncState).where(eq(syncState.id, 1));
     const status = yield* SubscriptionRef.make<LibrarySyncStatus>({ ...IDLE_LIBRARY_SYNC, lastSyncedAt: saved?.lastSyncedAt ?? null });
-    type Running = { readonly mode: SyncMode; readonly done: Deferred.Deferred<void, SyncError> };
+    type Running = Deferred.Deferred<void, SyncError>;
     let current: Running | null = null;
 
     const reportProgress: ReportProgress = (progress) => SubscriptionRef.update(status, (previous) => ({ ...previous, progress }));
 
     const run = (running: Running) =>
-      syncLibrary(running.mode, reportProgress).pipe(
+      syncLibrary(reportProgress).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit)
-            ? SubscriptionRef.set(status, { running: null, progress: null, error: exit.value.problem, lastSyncedAt: exit.value.syncedAt })
+            ? SubscriptionRef.set(status, { running: false, progress: null, error: exit.value.problem, lastSyncedAt: exit.value.syncedAt })
             : Cause.hasInterruptsOnly(exit.cause)
-              ? SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, progress: null, error: null }))
+              ? SubscriptionRef.update(status, (previous) => ({ ...previous, running: false, progress: null, error: null }))
               : // The status has room for one line; the log keeps the rest.
                 Effect.logError("Library sync failed", exit.cause).pipe(
-                  Effect.andThen(SubscriptionRef.update(status, (previous) => ({ ...previous, running: null, progress: null, error: failureMessage(exit.cause) }))),
+                  Effect.andThen(SubscriptionRef.update(status, (previous) => ({ ...previous, running: false, progress: null, error: failureMessage(exit.cause) }))),
                 ),
         ),
         Effect.exit,
@@ -66,58 +62,56 @@ export class LibrarySync extends Context.Service<LibrarySync>()("@muswag/backend
           Effect.suspend(() => {
             // Before its waiters go on, so that what they ask for next is not taken for this one.
             if (current === running) current = null;
-            return Deferred.done(running.done, Exit.asVoid(exit));
+            return Deferred.done(running, Exit.asVoid(exit));
           }),
         ),
         Effect.ensuring(
           Effect.suspend(() => {
             if (current === running) current = null;
             // Waiters of an interrupted sync are interrupted too; a no-op once it completed.
-            return Deferred.interrupt(running.done);
+            return Deferred.interrupt(running);
           }),
         ),
         Effect.provide(context),
       );
 
     /**
-     * Runs a sync, or joins the one running when that does as much. A sync is made current and
-     * started in one step that cannot be interrupted: made current but never started, it would keep
-     * every caller after waiting. Only the wait for it can be interrupted.
+     * Runs a sync, or joins the one running. A sync is made current and started in one step that
+     * cannot be interrupted: made current but never started, it would keep every caller after
+     * waiting. Only the wait for it can be interrupted.
      */
-    const sync = (mode: SyncMode): Effect.Effect<void, SyncError> =>
-      Effect.uninterruptibleMask((restore) =>
-        Effect.suspend(() => {
-          if (current) {
-            if (mode === "quick" || current.mode === "full") return restore(Deferred.await(current.done));
-            // A full sync asked for during a quick one runs once that one is over, however it ended.
-            return restore(Deferred.await(current.done).pipe(Effect.ignore, Effect.andThen(sync(mode))));
-          }
-          const running: Running = { mode, done: Deferred.makeUnsafe<void, SyncError>() };
-          current = running;
-          return SubscriptionRef.update(status, (previous) => ({ ...previous, running: mode, progress: null, error: null })).pipe(
-            Effect.andThen(Effect.forkIn(run(running), scope)),
-            Effect.andThen(restore(Deferred.await(running.done))),
-          );
-        }),
-      );
+    const sync: Effect.Effect<void, SyncError> = Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        if (current) return restore(Deferred.await(current));
+        const running: Running = Deferred.makeUnsafe<void, SyncError>();
+        current = running;
+        return SubscriptionRef.update(status, (previous) => ({ ...previous, running: true, progress: null, error: null })).pipe(
+          Effect.andThen(Effect.forkIn(run(running), scope)),
+          Effect.andThen(restore(Deferred.await(running))),
+        );
+      }),
+    );
 
-    /** A quick sync, unless one is running or the last ended less than `maxAgeMs` ago. Its failures are in the status. */
+    /** A sync, unless one is running or the last ended less than `maxAgeMs` ago. Its failures are in the status. */
     const syncIfStale = (maxAgeMs: number) =>
       Effect.gen(function* () {
         if (current) return;
         const { lastSyncedAt } = yield* SubscriptionRef.get(status);
         if (lastSyncedAt !== null && Date.now() - Date.parse(lastSyncedAt) < maxAgeMs) return;
-        yield* sync("quick").pipe(Effect.ignore);
+        yield* sync.pipe(Effect.ignore);
       });
-
-    // Albums added on the server show up without a restart. A quick sync that finds nothing changed costs a few requests.
-    yield* Effect.forkIn(Effect.forever(Effect.sleep(SYNC_INTERVAL_MS).pipe(Effect.andThen(syncIfStale(SYNC_INTERVAL_MS)))), scope);
 
     return {
       status: SubscriptionRef.get(status),
       changes: SubscriptionRef.changes(status),
       sync,
       syncIfStale,
+      /** When the server says it last scanned its files, or `null` when it does not say. */
+      lastScan: SubsonicAPI.use((api) => api.getScanStatus).pipe(
+        Effect.map(({ scanStatus }) => scanStatus.lastScan ?? null),
+        Effect.catchTags(withoutScanStatus),
+        Effect.provide(context),
+      ),
       // In the session's scope like a sync, so that logging out stops it before the data is deleted, and it cannot write after.
       refresh: (target: RefreshTarget) => Effect.forkIn(refresh(target).pipe(Effect.provide(context)), scope).pipe(Effect.flatMap(Fiber.join)),
     } as const;
@@ -180,17 +174,19 @@ const replaceAlbumSongs = (albumId: string, rows: ReadonlyArray<Song>) =>
     yield* writeSongs(rows);
   });
 
+/** A server without `getScanStatus` may answer with an error, an HTTP status or something else entirely. */
+const withoutScanStatus = { SubsonicApiError: () => Effect.succeed(null), SubsonicHttpError: () => Effect.succeed(null), SubsonicDecodeError: () => Effect.succeed(null) };
+
 /**
  * What the server says of its last scan, or `null` when it does not say or is scanning now. While it
  * says the same, no file has changed.
  */
 const serverScan = SubsonicAPI.use((api) => api.getScanStatus).pipe(
   Effect.map(({ scanStatus }) => (scanStatus.scanning || scanStatus.lastScan === undefined ? null : `${scanStatus.lastScan} ${scanStatus.count ?? ""}`)),
-  // A server without the method may answer with an error, an HTTP status or something else entirely.
-  Effect.catchTags({ SubsonicApiError: () => Effect.succeed(null), SubsonicHttpError: () => Effect.succeed(null), SubsonicDecodeError: () => Effect.succeed(null) }),
+  Effect.catchTags(withoutScanStatus),
 );
 
-const syncLibrary = (mode: SyncMode, reportProgress: ReportProgress) =>
+const syncLibrary = (reportProgress: ReportProgress) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const [state] = yield* db.select().from(syncState).where(eq(syncState.id, 1));
@@ -200,10 +196,10 @@ const syncLibrary = (mode: SyncMode, reportProgress: ReportProgress) =>
     const { listed, changed, before } = yield* syncAlbumList;
 
     // While the server has not scanned since the last sync that read every song, the songs of an album
-    // that looks the same are the same, and a quick sync reads only the others.
-    const readEverySong = mode === "full" || (scan !== null && scan !== (state?.serverScan ?? null));
-    // Without search3 a full sync reads every album with getAlbum, and a quick one only those that look changed.
-    const failures = readEverySong ? yield* syncEverySong(listed, mode === "full" ? listed : changed, reportProgress) : yield* syncAlbumSongs(changed, reportProgress);
+    // that looks the same are the same, and only the others are read. A server that does not say when
+    // it scanned has every song read, as its songs may have changed in albums that look the same.
+    const readEverySong = scan === null || scan !== (state?.serverScan ?? null);
+    const failures = readEverySong ? yield* syncEverySong(listed, reportProgress) : yield* syncAlbumSongs(changed, reportProgress);
     // An album whose songs could not be read goes back to what it was compared by, so that the next
     // sync finds it changed again, whether or not the server reports its scans.
     yield* write(
@@ -371,9 +367,9 @@ const syncAlbumSongs = (targets: ReadonlyArray<Album>, reportProgress: ReportPro
  * matches them all on Navidrome and most servers. Of an album it listed every song of, the songs it
  * did not list are removed. The others, as when the library changed between pages, are read with
  * `getAlbum`, which leaves their songs as they were when it fails. A server that lists no songs that
- * way has the `fallback` albums read with `getAlbum` instead.
+ * way has every album read with `getAlbum` instead.
  */
-const syncEverySong = (listed: ReadonlyArray<Album>, fallback: ReadonlyArray<Album>, reportProgress: ReportProgress) =>
+const syncEverySong = (listed: ReadonlyArray<Album>, reportProgress: ReportProgress) =>
   Effect.gen(function* () {
     const api = yield* SubsonicAPI;
     const db = yield* Db;
@@ -419,7 +415,7 @@ const syncEverySong = (listed: ReadonlyArray<Album>, fallback: ReadonlyArray<Alb
       }
     }
 
-    if (seen.size === 0 && total > 0) return yield* syncAlbumSongs(fallback, reportProgress);
+    if (seen.size === 0 && total > 0) return yield* syncAlbumSongs(listed, reportProgress);
 
     const complete = new Set(listed.filter((album) => (seenOf.get(album.id) ?? 0) === album.songCount).map(({ id }) => id));
     const stale = (yield* db.select({ id: songs.id, albumId: songs.albumId }).from(songs)).filter(({ id, albumId }) => !seen.has(id) && albumId !== null && complete.has(albumId)).map(({ id }) => id);

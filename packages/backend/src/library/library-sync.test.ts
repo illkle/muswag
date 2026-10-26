@@ -72,7 +72,7 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
-      yield* sync.sync("quick");
+      yield* sync.sync;
 
       // Until a page comes back empty, a few at once after the first.
       expect(calls.search3).toEqual([0, 3, 6, 9, 12]);
@@ -83,7 +83,7 @@ describe("LibrarySync.sync", () => {
       // The same scan: album b changed its name, a only its play count.
       server.albums = [{ ...withSongs("a", 2), playCount: 5 }, withSongs("b", 1, { name: "Renamed", song: [song("b-song-0", "b", { title: "Retitled" })] })];
       calls.search3.length = 0;
-      yield* sync.sync("quick");
+      yield* sync.sync;
 
       expect(calls.search3).toEqual([]);
       expect(calls.getAlbum).toEqual(["b"]);
@@ -102,7 +102,7 @@ describe("LibrarySync.sync", () => {
     return Effect.gen(function* () {
       yield* seed({ albums: [album("a", { songCount: 2 })], songs: [song("gone", "a"), song("a-song-0", "a")] });
 
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
 
       expect(calls.getAlbum).toEqual(["a"]);
       expect(yield* idsOf(songs)).toEqual(["a-song-0", "a-song-1"]);
@@ -114,7 +114,7 @@ describe("LibrarySync.sync", () => {
       for (const search of ["none", "error"] as const) {
         const { api, calls } = fakeServer({ scan: "scan-1", search, albums: [withSongs("a", 1), withSongs("b", 1)] });
         yield* Effect.gen(function* () {
-          yield* (yield* LibrarySync).sync("quick");
+          yield* (yield* LibrarySync).sync;
           expect(calls.getAlbum.sort()).toEqual(["a", "b"]);
           expect(yield* idsOf(songs)).toEqual(["a-song-0", "b-song-0"]);
         }).pipe(Effect.provide(layer(api)));
@@ -122,8 +122,9 @@ describe("LibrarySync.sync", () => {
     }),
   );
 
-  it.effect("reads only the albums that look changed after a scan when search3 cannot list every song, and all of them in a full sync", () => {
-    const { api, calls } = fakeServer({ scan: "scan-2", search: "error", albums: [withSongs("same", 1), withSongs("renamed", 1, { name: "New name" })] });
+  it.effect("reads every album with getAlbum after a scan when search3 cannot list every song, and only those that look changed while the scan is the same", () => {
+    const server: Server = { scan: "scan-2", search: "error", albums: [withSongs("same", 1), withSongs("renamed", 1, { name: "New name" })] };
+    const { api, calls } = fakeServer(server);
 
     return Effect.gen(function* () {
       yield* seed({ albums: [album("same"), album("renamed", { name: "Old name" })], songs: [song("same-song-0", "same"), song("renamed-song-0", "renamed")] });
@@ -131,12 +132,13 @@ describe("LibrarySync.sync", () => {
       yield* db.insert(syncState).values({ id: 1, serverScan: "scan-1 1" });
       const sync = yield* LibrarySync;
 
-      yield* sync.sync("quick");
-      expect(calls.getAlbum).toEqual(["renamed"]);
+      yield* sync.sync;
+      expect(calls.getAlbum.sort()).toEqual(["renamed", "same"]);
 
       calls.getAlbum.length = 0;
-      yield* sync.sync("full");
-      expect(calls.getAlbum.sort()).toEqual(["renamed", "same"]);
+      server.albums = [withSongs("same", 1), withSongs("renamed", 1, { name: "Newer name" })];
+      yield* sync.sync;
+      expect(calls.getAlbum).toEqual(["renamed"]);
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -145,7 +147,7 @@ describe("LibrarySync.sync", () => {
     api.getScanStatus = Effect.fail(new SubsonicHttpError({ method: "getScanStatus", status: 501, message: "getScanStatus failed: HTTP 501" }));
 
     return Effect.gen(function* () {
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
       expect(yield* idsOf(songs)).toEqual(["a-song-0"]);
       expect((yield* savedState)?.serverScan).toBeNull();
     }).pipe(Effect.provide(layer(api)));
@@ -159,7 +161,7 @@ describe("LibrarySync.sync", () => {
       const sync = yield* LibrarySync;
       yield* Effect.forkChild(Stream.runForEach(sync.changes, ({ progress }) => Effect.sync(() => void reported.push(progress?.done))));
       yield* Effect.yieldNow;
-      yield* sync.sync("full");
+      yield* sync.sync;
 
       expect(calls.search3).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16]);
       expect(calls.getAlbum).toEqual([]);
@@ -176,14 +178,14 @@ describe("LibrarySync.sync", () => {
     api.search3 = (args) => search3({ ...args, songOffset: 0 });
 
     return Effect.gen(function* () {
-      yield* (yield* LibrarySync).sync("full");
+      yield* (yield* LibrarySync).sync;
       expect(calls.search3).toEqual([0, 0, 0, 0, 0]);
       expect(yield* idsOf(albums)).toEqual(["a"]);
       expect(yield* idsOf(songs)).toEqual(["a-song-0", "a-song-1"]);
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("relies on how the albums look when the server does not report its scans, and reads every song in a full sync", () => {
+  it.effect("reads every song in every sync from a server that does not report its scans, as songs change in albums that look the same", () => {
     const server: Server = { albums: [withSongs("a", 1)] };
     const { api, calls } = fakeServer(server);
 
@@ -191,12 +193,15 @@ describe("LibrarySync.sync", () => {
       yield* seed({ albums: [album("a")], songs: [song("a-song-0", "a")] });
       const sync = yield* LibrarySync;
 
-      yield* sync.sync("quick");
-      expect(calls.search3).toEqual([]);
-      expect(calls.getAlbum).toEqual([]);
-
-      yield* sync.sync("full");
+      yield* sync.sync;
       expect(calls.search3).toEqual([0, 1, 2, 3, 4]);
+
+      server.albums = [withSongs("a", 1, { song: [song("a-song-0", "a", { title: "Retitled" })] })];
+      calls.search3.length = 0;
+      yield* sync.sync;
+      expect(calls.search3).toEqual([0, 1, 2, 3, 4]);
+      expect(calls.getAlbum).toEqual([]);
+      expect((yield* rowOf(songs, "a-song-0"))?.title).toBe("Retitled");
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -205,10 +210,10 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
-      yield* sync.sync("full");
+      yield* sync.sync;
       const changes: Array<LibraryChange> = [];
       (yield* LibraryChanges).subscribe((written) => changes.push(...written));
-      yield* sync.sync("full");
+      yield* sync.sync;
       expect(changes).toEqual([]);
     }).pipe(Effect.provide(layer(api)));
   });
@@ -233,7 +238,7 @@ describe("LibrarySync.sync", () => {
         songs: [song("keep-song-0", "keep"), song("removed-song", "removed"), song("orphan", "never-listed")],
       });
 
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
 
       expect(yield* rowOf(artists, "artist-keep")).toMatchObject({ name: "New name", albumCount: 1 });
       expect(yield* idsOf(artists)).toEqual(["artist-keep", "artist-new"]);
@@ -247,7 +252,7 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       yield* seed({ albums: [album("a")], songs: [song("a-song-0", "a"), song("orphan", "elsewhere")] });
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
       expect(yield* idsOf(songs)).toEqual(["a-song-0"]);
     }).pipe(Effect.provide(layer(api)));
   });
@@ -257,7 +262,7 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       yield* seed({ albums: [album("removed")], artists: [{ id: "artist", name: "Artist" }], songs: [song("removed-song", "removed")] });
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
       expect(yield* idsOf(artists)).toEqual([]);
       expect(yield* idsOf(albums)).toEqual([]);
       expect(yield* idsOf(songs)).toEqual([]);
@@ -269,7 +274,7 @@ describe("LibrarySync.sync", () => {
     const { api, calls } = fakeServer({ albums: listed, albumPageLimit: 100 });
 
     return Effect.gen(function* () {
-      yield* (yield* LibrarySync).sync("quick");
+      yield* (yield* LibrarySync).sync;
       expect(calls.albumList).toEqual(Array.from({ length: 13 }, (_, index) => index * 100));
       expect(yield* idsOf(albums)).toHaveLength(1_200);
     }).pipe(Effect.provide(layer(api)));
@@ -280,7 +285,7 @@ describe("LibrarySync.sync", () => {
     const { api } = fakeServer({ albums: [listed], search: "none" });
 
     return Effect.gen(function* () {
-      yield* (yield* LibrarySync).sync("full");
+      yield* (yield* LibrarySync).sync;
       expect(yield* idsOf(albums)).toEqual([listed.id]);
       expect(yield* idsOf(songs)).toEqual([]);
     }).pipe(Effect.provide(layer(api)));
@@ -297,16 +302,16 @@ describe("LibrarySync.sync", () => {
     return Effect.gen(function* () {
       yield* seed({ albums: [album("empty")], songs: [song("empty-song-0", "empty")] });
       const sync = yield* LibrarySync;
-      yield* sync.sync("quick");
+      yield* sync.sync;
 
       expect(yield* idsOf(albums)).toEqual(["broken", "empty", "fine"]);
       // What the empty answer would have removed is kept.
       expect(yield* idsOf(songs)).toEqual(["empty-song-0", "fine-song-0"]);
-      expect(yield* sync.status).toMatchObject({ running: null, progress: null, error: expect.stringContaining("2 albums could not be synced"), lastSyncedAt: expect.any(String) });
+      expect(yield* sync.status).toMatchObject({ running: false, progress: null, error: expect.stringContaining("2 albums could not be synced"), lastSyncedAt: expect.any(String) });
       expect((yield* savedState)?.serverScan).toBeNull();
 
       calls.search3.length = 0;
-      yield* sync.sync("quick");
+      yield* sync.sync;
       expect(calls.search3.length).toBeGreaterThan(0);
     }).pipe(Effect.provide(layer(api)));
   });
@@ -319,13 +324,13 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       yield* seed({ albums: [album("a", { songCount: 2 })], songs: [song("a-song-0", "a"), song("a-song-1", "a")] });
-      yield* (yield* LibrarySync).sync("full");
+      yield* (yield* LibrarySync).sync;
       expect(yield* idsOf(songs)).toEqual(["a-song-0", "a-song-1"]);
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("tries an album that looked changed again on the next sync after reading it failed, from a server that does not report its scans", () => {
-    const server: Server = { albums: [withSongs("a", 1, { name: "New name", song: [song("a-song-0", "a", { title: "New title" })] })] };
+  it.effect("tries an album that looked changed again on the next sync after reading it failed, and keeps how it looked until then", () => {
+    const server: Server = { search: "none", albums: [withSongs("a", 1, { name: "New name", song: [song("a-song-0", "a", { title: "New title" })] })] };
     const { api, calls } = fakeServer(server);
     const getAlbum = api.getAlbum!;
     let failing = true;
@@ -338,15 +343,15 @@ describe("LibrarySync.sync", () => {
       yield* seed({ albums: [album("a", { name: "Old name" })], songs: [song("a-song-0", "a")] });
       const sync = yield* LibrarySync;
 
-      yield* sync.sync("quick");
+      yield* sync.sync;
       expect(calls.getAlbum).toEqual(["a"]);
       expect((yield* rowOf(albums, "a"))?.name).toBe("Old name");
 
-      yield* sync.sync("quick");
+      yield* sync.sync;
       expect(calls.getAlbum).toEqual(["a", "a"]);
 
       failing = false;
-      yield* sync.sync("quick");
+      yield* sync.sync;
       expect((yield* rowOf(albums, "a"))?.name).toBe("New name");
       expect((yield* rowOf(songs, "a-song-0"))?.title).toBe("New title");
       expect((yield* sync.status).error).toBeNull();
@@ -359,9 +364,9 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
-      const error = yield* Effect.flip(sync.sync("quick"));
+      const error = yield* Effect.flip(sync.sync);
       expect(error).toMatchObject({ _tag: "SubsonicApiError" });
-      expect(yield* sync.status).toMatchObject({ running: null, error: "The server failed", lastSyncedAt: null });
+      expect(yield* sync.status).toMatchObject({ running: false, error: "The server failed", lastSyncedAt: null });
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -374,7 +379,7 @@ describe("LibrarySync.sync", () => {
       const db = yield* Db;
       yield* db.update(albums).set({ coverArtPath: "covers/a" });
 
-      yield* (yield* LibrarySync).sync("full");
+      yield* (yield* LibrarySync).sync;
 
       expect(yield* rowOf(albums, listed.id)).toMatchObject({ starred: null, coverArt: "c1", coverArtPath: "covers/a" });
     }).pipe(Effect.provide(layer(api)));
@@ -400,7 +405,7 @@ describe("LibrarySync.sync", () => {
         { id: "artist-same", name: "Same", coverArt: "ar-1", coverArtPath: "covers/same" },
       ]);
 
-      yield* (yield* LibrarySync).sync("full");
+      yield* (yield* LibrarySync).sync;
 
       expect(yield* rowOf(albums, changed.id)).toMatchObject({ coverArt: "c2", coverArtPath: null });
       // No cover before and none now is no change either.
@@ -410,7 +415,7 @@ describe("LibrarySync.sync", () => {
     }).pipe(Effect.provide(layer(api)));
   });
 
-  it.effect("joins a running sync that does as much, and runs a full one asked for during a quick one after it", () => {
+  it.effect("joins a running sync", () => {
     const { api, calls } = fakeServer({});
     const gate = Deferred.makeUnsafe<void>();
     const getArtists = api.getArtists!;
@@ -418,23 +423,20 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
-      const quick = yield* Effect.forkChild(sync.sync("quick"));
+      const first = yield* Effect.forkChild(sync.sync);
       yield* Effect.yieldNow;
-      expect(yield* sync.status).toMatchObject({ running: "quick" });
+      expect(yield* sync.status).toMatchObject({ running: true });
 
-      const joined = yield* Effect.forkChild(sync.sync("quick"));
-      const full = yield* Effect.forkChild(sync.sync("full"));
+      const joined = yield* Effect.forkChild(sync.sync);
       yield* Effect.yieldNow;
       expect(calls.albumList).toEqual([]);
 
       yield* Deferred.succeed(gate, undefined);
-      yield* Fiber.join(quick);
+      yield* Fiber.join(first);
       yield* Fiber.join(joined);
-      yield* Fiber.join(full);
 
-      // The quick sync and the one that joined it list the albums once; the full one after them again.
-      expect(calls.albumList).toEqual([0, 0]);
-      expect(yield* sync.status).toMatchObject({ running: null, error: null, lastSyncedAt: expect.any(String) });
+      expect(calls.albumList).toEqual([0]);
+      expect(yield* sync.status).toMatchObject({ running: false, error: null, lastSyncedAt: expect.any(String) });
     }).pipe(Effect.provide(layer(api)));
   });
 
@@ -443,13 +445,26 @@ describe("LibrarySync.sync", () => {
 
     return Effect.gen(function* () {
       const sync = yield* LibrarySync;
-      yield* sync.sync("quick");
+      yield* sync.sync;
       yield* sync.syncIfStale(60_000);
       expect(calls.albumList).toEqual([0]);
       yield* sync.syncIfStale(-1);
       expect(calls.albumList).toEqual([0, 0]);
     }).pipe(Effect.provide(layer(api)));
   });
+
+  it.effect("says when the server last scanned, and nothing for a server that does not say or has no getScanStatus", () =>
+    Effect.gen(function* () {
+      const reports = fakeServer({ scan: "2026-10-25T15:05:06Z" });
+      const silent = fakeServer({});
+      const missing = fakeServer({});
+      missing.api.getScanStatus = Effect.fail(new SubsonicHttpError({ method: "getScanStatus", status: 501, message: "getScanStatus failed: HTTP 501" }));
+
+      expect(yield* LibrarySync.use((sync) => sync.lastScan).pipe(Effect.provide(layer(reports.api)))).toBe("2026-10-25T15:05:06Z");
+      expect(yield* LibrarySync.use((sync) => sync.lastScan).pipe(Effect.provide(layer(silent.api)))).toBeNull();
+      expect(yield* LibrarySync.use((sync) => sync.lastScan).pipe(Effect.provide(layer(missing.api)))).toBeNull();
+    }),
+  );
 
   it.effect("reports the time of the last sync of an earlier session", () =>
     Effect.gen(function* () {

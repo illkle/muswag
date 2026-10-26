@@ -4,6 +4,7 @@ import type { QueueManagerState } from "#shared/queue-state";
 import type { AppUpdateState } from "./app-update";
 import type { PlayerPositionRow, PlayerRow } from "./player";
 import type { UnplayableTrack } from "./queue";
+import type { SyncSettings } from "./sync-settings";
 
 /**
  * Main's state as renderers see it, a value of each kind, which main publishes whole whenever it
@@ -17,6 +18,8 @@ export type AppStateValues = {
   readonly playerPosition: PlayerPositionRow;
   readonly auth: AuthSnapshot;
   readonly librarySync: LibrarySyncStatus;
+  /** When the app syncs the library on its own. */
+  readonly syncSettings: SyncSettings;
   readonly playlistSync: PlaylistSyncStatus;
   readonly appUpdate: AppUpdateState;
   /** The tracks the queue started and the player could not play, until they play or the queue is cleared. */

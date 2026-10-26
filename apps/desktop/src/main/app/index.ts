@@ -3,9 +3,10 @@ import { join } from "node:path";
 
 import { BackendLive, LibraryChanges, LibraryQueries, SessionManager, type CoverOwner, type Db } from "@muswag/backend";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Scope, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
 
+import { syncAfterMs } from "#shared/state/sync-settings";
 import type { Theme } from "#shared/theme";
 
 import type { AppIpc } from "../app-page";
@@ -15,6 +16,7 @@ import { libraryChangedEvent, type Renderers } from "../renderers";
 import { createQueue } from "../queue";
 import { startLibrarySearch } from "../search/library-search";
 import type { SourceDb } from "../queue/source";
+import type { SyncSettingsStore } from "../sync-settings";
 import { serveAppCommands, type AppUpdates } from "./commands";
 import { coverDirectoryOf, MiniFsLive } from "./platform";
 import { makePlayerCredentialsSync, publishSession } from "./session";
@@ -25,6 +27,8 @@ export interface AppOptions {
   readonly ipcMain: AppIpc;
   readonly player: PlayerHandle;
   readonly updates: AppUpdates;
+  /** When the library syncs on its own. */
+  readonly syncSettings: SyncSettingsStore;
   /** Draws the windows' native parts in the theme the user picked in a renderer. */
   readonly setTheme: (theme: Theme) => void;
   /** Where renderers see the session, the sync status and the queue. */
@@ -33,12 +37,10 @@ export interface AppOptions {
   readonly renderers: Renderers;
   /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
   readonly searchWorkerPath: string;
-  /** Calls `listener` whenever a window of the app gains focus, until the returned function is called. */
-  readonly onWindowFocus?: (listener: () => void) => () => void;
 }
 
-/** A library sync younger than this is not repeated when a window gains focus. */
-const SYNC_ON_FOCUS_AFTER_MS = 10 * 60_000;
+/** How often main looks whether the library is due a sync. */
+const SYNC_CHECK_INTERVAL = "5 minutes";
 
 /**
  * Main's side of the app: the library database and the changes to it, the session with its sync
@@ -103,20 +105,21 @@ const makeApp = (options: AppOptions) =>
       queue,
       player: options.player,
       updates: options.updates,
+      syncSettings: options.syncSettings,
       setTheme: options.setTheme,
       songsByIds: (ids) => run(LibraryQueries.songsByIds(ids)),
       search: search.search,
     });
 
-    // Coming back to the app catches up with the server, unless a sync did a moment ago.
-    const { onWindowFocus } = options;
-    if (onWindowFocus) {
-      const syncIfStale = session.use((active) => active.library.syncIfStale(SYNC_ON_FOCUS_AFTER_MS)).pipe(Effect.ignore);
-      yield* Effect.acquireRelease(
-        Effect.sync(() => onWindowFocus(() => void Effect.runFork(syncIfStale))),
-        (unsubscribe) => Effect.sync(unsubscribe),
-      );
-    }
+    // A session syncs as it starts, and while it lasts, once its last sync is older than the settings
+    // allow. Each sync is waited for apart: logging out interrupts it, which must not stop the checks.
+    const syncIfDue = session.use((active) => active.library.syncIfStale(syncAfterMs(options.syncSettings.get().syncAfter))).pipe(Effect.ignore, Effect.forkDetach, Effect.asVoid);
+    yield* session.changes.pipe(
+      Stream.filter((snapshot) => snapshot._tag === "LoggedIn"),
+      Stream.runForEach(() => syncIfDue),
+      Effect.forkScoped,
+    );
+    yield* Effect.sleep(SYNC_CHECK_INTERVAL).pipe(Effect.andThen(syncIfDue), Effect.forever, Effect.forkScoped);
     return { queue };
   });
 
