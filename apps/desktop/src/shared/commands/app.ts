@@ -1,5 +1,6 @@
 import {
   AlbumPageRequest,
+  AlbumSort,
   CreatePlaylistInput,
   Id,
   Ids,
@@ -15,9 +16,9 @@ import {
   type AlbumPage,
   type ArtistAppearances,
   type ArtistDetail,
+  type ArtistIndex,
   type Discography,
   type LibraryAlbum,
-  type LibraryArtist,
   type PlaylistDetail,
   type AuthSnapshot,
   type PlaylistEntry,
@@ -52,8 +53,8 @@ export const AppCommandArgs = {
   "library:songPage": Schema.Tuple([LibrarySort, SongPageRequest, Schema.Boolean]),
   "library:songIds": Schema.Tuple([LibrarySort, SongRanges]),
   "library:songPosition": Schema.Tuple([LibrarySort, Text]),
-  "library:albumPage": Schema.Tuple([AlbumPageRequest, Schema.Boolean]),
-  "library:artistsWithAlbums": Schema.Tuple([]),
+  "library:albumPage": Schema.Tuple([AlbumSort, AlbumPageRequest, Schema.Boolean]),
+  "library:artistIndex": Schema.Tuple([]),
   "library:albumCoverArts": Schema.Tuple([Ids]),
   "library:albumSongIds": Schema.Tuple([Ids]),
   "library:album": Schema.Tuple([Id]),
@@ -103,10 +104,10 @@ export type AppCommandResults = {
   "library:songIds": string[];
   /** Where in the songs list the first song is whose title, artist or album, as the order goes by, starts at or after the text. */
   "library:songPosition": number;
-  /** A page of the albums page, newest first, with how many albums there are when the last argument asks. */
+  /** A page of the albums page in an order, with how many albums there are when the last argument asks. */
   "library:albumPage": AlbumPage;
-  /** The artists with an album of their own, which the artists page lists, by name. */
-  "library:artistsWithAlbums": LibraryArtist[];
+  /** The artists the artists page lists, by name: those with an album of their own, and those only credited on others'. */
+  "library:artistIndex": ArtistIndex;
   /** The cover art ids of the given albums, leaving out those the library does not have, in no particular order. */
   "library:albumCoverArts": Array<{ id: string; coverArt: string | null }>;
   /** The songs of the given albums, album after album in the order given, each album's in the order its page lists them. */
@@ -115,7 +116,7 @@ export type AppCommandResults = {
   "library:album": AlbumDetail;
   /** An artist's row and its own albums, newest first. */
   "library:artist": ArtistDetail;
-  /** An artist's albums and their songs, in the order the artist plays in. */
+  /** An artist's albums and their songs, then its songs on others' albums, in the order the artist plays in. */
   "library:discography": Discography;
   /** The given albums that the library has, newest first. */
   "library:albumsByIds": LibraryAlbum[];

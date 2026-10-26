@@ -5,11 +5,14 @@ import {
   artistOccurrenceKey,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
+  librarySortParts,
   playlistOccurrenceKey,
   songRow,
   sortKey,
   toSongRow,
+  type AlbumSort,
   type LibrarySort,
+  type PlaylistState,
   type QueueSourceRef,
   type SourceWindow,
 } from "@muswag/model";
@@ -30,7 +33,7 @@ const windowAt = (ref: QueueSourceRef, key: string, size = SIZE) => LibraryQueri
 const idsOf = (items: SourceWindow["next"]) => items.map(({ track }) => track.id);
 const titled = (id: string, title: string) => apiSong(id, "album", { title });
 const number = (index: number) => String(index).padStart(2, "0");
-const SORTS: ReadonlyArray<LibrarySort> = ["title", "artist", "album"];
+const SORTS: ReadonlyArray<LibrarySort> = ["title", "artist", "album", "title-desc", "artist-desc", "album-desc"];
 
 /** A library whose orders all differ: artists and albums with case and accents, shared names, songs without disc or track numbers. */
 const LIBRARY = Array.from({ length: 25 }, (_, index) =>
@@ -43,16 +46,19 @@ const LIBRARY = Array.from({ length: 25 }, (_, index) =>
   }),
 );
 /** The ids of `LIBRARY` in an order, sorted here by the keys `toSongRow` makes, compared as JavaScript strings. */
-const libraryOrder = (sort: LibrarySort) =>
-  LIBRARY.map(toSongRow)
+const libraryOrder = (sort: LibrarySort) => {
+  const { by, descending } = librarySortParts(sort);
+  const ids = LIBRARY.map(toSongRow)
     .sort((left, right) => {
-      for (const column of LIBRARY_ORDERS[sort]) {
+      for (const column of LIBRARY_ORDERS[by]) {
         if (left[column] < right[column]) return -1;
         if (left[column] > right[column]) return 1;
       }
       return 0;
     })
     .map(({ id }) => id);
+  return descending ? ids.reverse() : ids;
+};
 
 describe("LibraryQueries.sourceWindow", () => {
   it.effect("reads an album in disc and track order, around the occurrence asked for", () =>
@@ -394,6 +400,9 @@ describe("LibraryQueries songs list", () => {
       // A text that is a whole artist or album comes before its songs.
       expect(yield* positions("artist", ["abba", "b", "beatles", "beatlesz", "z", "zed", "zz"])).toEqual([0, 2, 2, 3, 3, 3, 5]);
       expect(yield* positions("album", ["abbey road", "m", "u", "under", "v"])).toEqual([0, 1, 3, 3, 5]);
+      // Going down, the songs that start with the text come after those past it.
+      expect(yield* positions("title-desc", ["", "a", "BANANA", "c", "d", "É", "zz"])).toEqual([0, 4, 3, 2, 2, 1, 0]);
+      expect(yield* positions("artist-desc", ["zed", "z", "beatles", "b", "abba"])).toEqual([0, 0, 2, 2, 3]);
     }).pipe(Effect.provide(layer)),
   );
 });
@@ -407,17 +416,41 @@ describe("LibraryQueries albums list", () => {
       const order = ["d", "b", "a", "c", "none-a", "none-b"];
       const pages: string[][] = [];
       for (let offset = 0; offset < order.length; offset += 4) {
-        const page = yield* LibraryQueries.albumPage({ offset, limit: 4 }, offset === 0);
+        const page = yield* LibraryQueries.albumPage("year-desc", { offset, limit: 4 }, offset === 0);
         expect(page.total).toBe(offset === 0 ? order.length : null);
         pages.push(page.albums.map(({ id }) => id));
       }
 
       expect(pages).toEqual([order.slice(0, 4), order.slice(4)]);
-      expect(yield* LibraryQueries.albumPage({ offset: 10, limit: 4 }, true)).toEqual({ albums: [], total: order.length });
+      expect(yield* LibraryQueries.albumPage("year-desc", { offset: 10, limit: 4 }, true)).toEqual({ albums: [], total: order.length });
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("finds the artists with an album of their own, once each, by name with numbers by their value", () =>
+  it.effect("reads the albums oldest first, by artist either way, and the most recently added first, those without a year last", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [
+          apiAlbum("c", { year: 1990, artist: "beta", created: "2026-03-01T00:00:00Z" }),
+          apiAlbum("none", { artist: "Alpha", created: "2026-01-01T00:00:00Z" }),
+          apiAlbum("b", { year: 2001, artist: "Beta", created: "2026-05-01T00:00:00Z" }),
+          apiAlbum("a", { year: 1990, artist: "alpha", created: "2026-02-01T00:00:00Z" }),
+          apiAlbum("anonymous", { year: 2020, artist: undefined, created: "2026-04-01T00:00:00Z" }),
+          apiAlbum("u", { year: 1995, artist: "Ärzte", created: "2026-06-01T00:00:00Z" }),
+          apiAlbum("x", { year: 2000, artist: "баста", created: "2026-07-01T00:00:00Z" }),
+          apiAlbum("y", { year: 2010, artist: "Баста", created: "2026-08-01T00:00:00Z" }),
+        ],
+      });
+      const ids = (sort: AlbumSort) => LibraryQueries.albumPage(sort, { offset: 0, limit: 10 }, false).pipe(Effect.map(({ albums }) => albums.map(({ id }) => id)));
+
+      expect(yield* ids("year")).toEqual(["a", "c", "u", "x", "b", "y", "anonymous", "none"]);
+      // An artist's albums newest first, whatever the case or accents of its name, in any script.
+      expect(yield* ids("artist")).toEqual(["anonymous", "a", "none", "u", "b", "c", "y", "x"]);
+      expect(yield* ids("artist-desc")).toEqual(["y", "x", "b", "c", "u", "a", "none", "anonymous"]);
+      expect(yield* ids("added")).toEqual(["y", "x", "u", "b", "anonymous", "c", "a", "none"]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("finds the artists with an album of their own, once each, by name with numbers by their value, and the rest apart", () =>
     Effect.gen(function* () {
       yield* seed({
         albums: [apiAlbum("one", { artistId: "a" }), apiAlbum("two", { artistId: "a" }), apiAlbum("three", { artistId: "b" }), apiAlbum("four", { artistId: "c" }), apiAlbum("various")],
@@ -426,12 +459,14 @@ describe("LibraryQueries albums list", () => {
           { id: "b", name: "Band 9" },
           { id: "c", name: "Ärzte" },
           { id: "credited", name: "Credited only" },
+          { id: "another", name: "another credit" },
         ],
       });
 
-      const listed = yield* LibraryQueries.artistsWithAlbums();
-      expect(listed.map(({ id }) => id)).toEqual(["c", "b", "a"]);
-      expect(listed[0]).not.toHaveProperty("coverArtPath");
+      const listed = yield* LibraryQueries.artistIndex();
+      expect(listed.withAlbums.map(({ id }) => id)).toEqual(["c", "b", "a"]);
+      expect(listed.withAlbums[0]).not.toHaveProperty("coverArtPath");
+      expect(listed.featured.map(({ id }) => id)).toEqual(["another", "credited"]);
     }).pipe(Effect.provide(layer)),
   );
 
@@ -467,6 +502,7 @@ describe("LibraryQueries albums list", () => {
       const discography = yield* LibraryQueries.discography("artist");
       expect(discography.albums.map(({ id }) => id)).toEqual(["new", "old", "undated"]);
       expect(discography.songs.map(({ id }) => id)).toEqual(["new-1", "new-2", "old-1", "undated-1"]);
+      expect(discography.appearsOn).toEqual([]);
       // What playback goes through is the same order.
       const window = yield* windowAt({ type: "artist", artistId: "artist" }, artistOccurrenceKey("artist", "new-1"));
       expect(idsOf(window.next)).toEqual(["new-2", "old-1", "undated-1"]);
@@ -573,6 +609,30 @@ describe("LibraryQueries queue storage", () => {
   );
 });
 
+describe("LibraryQueries.discography of an artist on others' albums", () => {
+  it.effect("lists the others' albums after its own with only the songs that credit it, and plays through them in that order", () =>
+    Effect.gen(function* () {
+      const guest = { id: "guest", name: "The Guest" };
+      const host = { id: "host", name: "Host" };
+      yield* seed({
+        albums: [apiAlbum("own", { artistId: "guest" }), apiAlbum("old", { artistId: "host", year: 1990 }), apiAlbum("new", { artistId: "host", year: 2020 })],
+        songs: [
+          apiSong("own-1", "own", { artists: [guest] }),
+          apiSong("old-2", "old", { track: 2, artists: [host, guest] }),
+          apiSong("old-1", "old", { track: 1, artists: [host] }),
+          apiSong("new-1", "new", { artists: [guest] }),
+        ],
+      });
+
+      const discography = yield* LibraryQueries.discography("guest");
+      expect(discography.songs.map(({ id }) => id)).toEqual(["own-1"]);
+      expect(discography.appearsOn.map(({ id }) => id)).toEqual(["new-1", "old-2"]);
+      const window = yield* windowAt({ type: "artist", artistId: "guest" }, artistOccurrenceKey("guest", "own-1"));
+      expect(idsOf(window.next)).toEqual(["new-1", "old-2"]);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
 describe("LibraryQueries.artistAppearances", () => {
   it.effect("finds the other artists' albums with a song that credits the artist, and the name a credit gives it", () =>
     Effect.gen(function* () {
@@ -627,6 +687,33 @@ describe("LibraryQueries.searchResults", () => {
       expect(results[0]?.type === "song" && "path" in results[0].song).toBe(false);
       expect(results[1]).toMatchObject({ artist: { name: "Someone" } });
       expect(yield* LibraryQueries.searchResults([])).toEqual([]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads the playlists a search found with the first four albums they draw on, but not those awaiting deletion", () =>
+    Effect.gen(function* () {
+      const state = (name: string, songIds: string[]): PlaylistState => ({
+        name,
+        comment: "",
+        public: false,
+        readonly: false,
+        owner: "someone",
+        entries: songIds.map((songId, index) => ({ id: `entry-${index}`, songId })),
+      });
+      yield* seed({
+        songs: ["a", "b", "c", "d", "e"].flatMap((album) => [apiSong(`${album}-1`, album), apiSong(`${album}-2`, album)]),
+        playlists: [
+          { id: "mix", serverId: "mix", base: null, local: state("Mix", ["a-1", "missing", "a-2", "b-1", "c-1", "d-1", "e-1"]), revision: 0 },
+          { id: "gone", serverId: "gone", base: state("Gone", []), local: null, revision: 0 },
+        ],
+      });
+
+      expect(
+        yield* LibraryQueries.searchResults([
+          { type: "playlist", id: "gone" },
+          { type: "playlist", id: "mix" },
+        ]),
+      ).toEqual([{ type: "playlist", id: "mix", playlist: { id: "mix", name: "Mix", songCount: 7, owner: "someone", albumIds: ["a", "b", "c", "d"] } }]);
     }).pipe(Effect.provide(layer)),
   );
 });

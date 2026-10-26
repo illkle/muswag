@@ -7,6 +7,7 @@ import {
   artists,
   LIBRARY_ORDERS,
   libraryOccurrenceKey,
+  librarySortParts,
   MAIN_ONLY_ALBUM_COLUMNS,
   MAIN_ONLY_ARTIST_COLUMNS,
   MAIN_ONLY_SONG_COLUMNS,
@@ -20,7 +21,9 @@ import {
   type AlbumDetail,
   type AlbumPage,
   type AlbumPageRequest,
+  type AlbumSort,
   type ArtistAppearances,
+  type ArtistIndex,
   type ArtistDetail,
   type Discography,
   type PlaylistDetail,
@@ -29,6 +32,7 @@ import {
   type QueueItemRow,
   type QueueSourceRef,
   type QueueStateRow,
+  type PlaylistSearchResult,
   type SearchHit,
   type SearchResult,
   type SongPage,
@@ -38,20 +42,23 @@ import {
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { asc, desc, eq, getTableColumns, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNotNull, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
 import { Db, type Database } from "../db/database.js";
 import { chunks, STATEMENT_IDS } from "../db/upsert.js";
 
-/** The columns an order of the library sorts by, all ascending. */
-const orderColumns = (sort: LibrarySort) => LIBRARY_ORDERS[sort].map((key) => songs[key]);
+/** The columns an order of the library sorts by, whichever way it goes. */
+const orderColumns = (sort: LibrarySort) => LIBRARY_ORDERS[librarySortParts(sort).by].map((key) => songs[key]);
+
+/** The library in an order, or `backwards` against it. SQLite reads the order's index either way. */
+const ordered = (sort: LibrarySort, backwards = false) => orderColumns(sort).map((column) => (librarySortParts(sort).descending !== backwards ? desc : asc)(column));
 
 /** Where a song is in an order: its values of the order's columns. `undefined` when the library does not have it. */
 const placeOf = (db: Pick<Database, "select">, sort: LibrarySort, id: string) =>
   db
-    .select({ key: songs[LIBRARY_ORDERS[sort][0]], id: songs.id })
+    .select({ key: songs[LIBRARY_ORDERS[librarySortParts(sort).by][0]], id: songs.id })
     .from(songs)
     .where(eq(songs.id, id))
     .pipe(Effect.map(([place]) => place));
@@ -60,8 +67,37 @@ const placeOf = (db: Pick<Database, "select">, sort: LibrarySort, id: string) =>
  * The songs before or after a place in an order, as a row value comparison, which SQLite answers from
  * the index the order sorts by. Spelled out as `key < ? OR (key = ? AND id < ?)` it reads every song.
  */
-const beside = (sort: LibrarySort, operator: "<" | ">", place: { readonly key: string; readonly id: string }) =>
-  sql`(${sql.join(orderColumns(sort), sql`, `)}) ${sql.raw(operator)} (${place.key}, ${place.id})`;
+const beside = (sort: LibrarySort, side: "before" | "after", place: { readonly key: string; readonly id: string }) =>
+  sql`(${sql.join(orderColumns(sort), sql`, `)}) ${sql.raw((side === "before") !== librarySortParts(sort).descending ? "<" : ">")} (${place.key}, ${place.id})`;
+
+/** After every character a sort key has, so text followed by it comes after every key that starts with the text. */
+const PAST_KEYS = "\u{10FFFF}";
+
+/**
+ * The albums page in each of its orders, by id where the rest ties. SQLite puts nulls first going up
+ * and last going down; albums without a year go last either way. An album without an artist has an
+ * empty sort key, which comes first going up and last going down.
+ */
+const ALBUM_ORDERS: Record<AlbumSort, () => SQL[]> = {
+  "year-desc": () => [desc(albums.year), asc(albums.id)],
+  year: () => [sql`${albums.year} ASC NULLS LAST`, asc(albums.id)],
+  artist: () => [asc(albums.artistSortKey), desc(albums.year), asc(albums.id)],
+  "artist-desc": () => [desc(albums.artistSortKey), desc(albums.year), asc(albums.id)],
+  added: () => [desc(albums.created), asc(albums.id)],
+};
+
+/**
+ * The songs that credit `artistId` on albums that are not its own. The credits are JSON on each song,
+ * so this reads every song, which SQLite does far faster than a page. Only the songs whose credits hold
+ * the id as JSON writes it, quoted, are taken apart: the few that might credit it. JSON.stringify wrote
+ * the column, and writes the id the same way here.
+ */
+const creditedOnOthers = (artistId: string) =>
+  and(
+    sql`instr(${songs.artists}, ${JSON.stringify(artistId)}) > 0`,
+    sql`EXISTS (SELECT 1 FROM json_each(${songs.artists}) AS credit WHERE json_extract(credit.value, '$.id') = ${artistId})`,
+    sql`${albums.artistId} IS NOT ${artistId}`,
+  );
 
 /** An artist's albums in `ARTIST_ALBUM_ORDER`. SQLite puts nulls first going up and last going down, as the order asks. */
 const artistAlbumOrder = () => ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column]));
@@ -89,20 +125,24 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
       }),
     );
 
-/** The songs of an artist's albums, album after album, which is how the artists page lists them. A discography is small enough to read whole. */
+/**
+ * The songs of an artist's albums, album after album, then its songs on others' albums, which is how
+ * the artists page lists them. A discography is small enough to read whole.
+ */
 const openArtist = (db: Reads, artistId: string, key: string | null) =>
-  db
-    .select({ track: songs })
-    .from(songs)
-    .innerJoin(albums, eq(albums.id, songs.albumId))
-    .where(eq(albums.artistId, artistId))
-    .orderBy(...artistAlbumOrder(), ...albumSongOrder())
-    .pipe(
-      Effect.map((rows) => {
-        const items = rows.map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
-        return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
-      }),
-    );
+  Effect.forEach([eq(albums.artistId, artistId), creditedOnOthers(artistId)], (where) =>
+    db
+      .select({ track: songs })
+      .from(songs)
+      .innerJoin(albums, eq(albums.id, songs.albumId))
+      .where(where)
+      .orderBy(...artistAlbumOrder(), ...albumSongOrder()),
+  ).pipe(
+    Effect.map((reads) => {
+      const items = reads.flat().map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
+      return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
+    }),
+  );
 
 /** A playlist's entries in order. An entry whose song the library does not have keeps its offset but is left out of what is read. */
 const openPlaylist = (db: Reads, playlistId: string, key: string | null) =>
@@ -146,12 +186,12 @@ const openLibrary = (db: Reads, sort: LibrarySort, key: string | null) =>
     const place = key?.startsWith(prefix) ? yield* placeOf(db, sort, key.slice(prefix.length)) : undefined;
     return {
       length: yield* db.$count(songs),
-      offset: place ? yield* db.$count(songs, beside(sort, "<", place)) : null,
+      offset: place ? yield* db.$count(songs, beside(sort, "before", place)) : null,
       read: (start: number, end: number) =>
         db
           .select()
           .from(songs)
-          .orderBy(...orderColumns(sort).map((column) => asc(column)))
+          .orderBy(...ordered(sort))
           .limit(end - start)
           .offset(start)
           .pipe(Effect.map((rows) => rows.map((track, index): SourceItem => ({ key: libraryOccurrenceKey(track.id), offset: start + index, track })))),
@@ -194,6 +234,28 @@ const LIBRARY_ARTIST_COLUMNS = Object.fromEntries(Object.entries(getTableColumns
 
 /** `column IN` the values of `ids`, as one parameter however many there are: SQLite caps the parameters of a statement. */
 const inIds = (column: SQLiteColumn, ids: ReadonlyArray<string>) => sql`${column} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`;
+
+/** How many songs of a playlist its artwork is looked for among: the first four albums are nearly always in them. */
+const ART_SONGS = 50;
+
+/** The playlists of `ids` as a search shows them, but those awaiting deletion on the server: with the first four albums they draw on, for their artwork. */
+const playlistResults = (db: Database, ids: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select({ id: playlists.id, local: playlists.local })
+      .from(playlists)
+      .where(and(inArray(playlists.id, [...ids]), isNotNull(playlists.local)));
+    const firstSongs = new Map(rows.map(({ id, local }) => [id, local!.entries.slice(0, ART_SONGS).map(({ songId }) => songId)]));
+    const songIds = [...new Set([...firstSongs.values()].flat())];
+    const albumOf = new Map(songIds.length ? (yield* db.select({ id: songs.id, albumId: songs.albumId }).from(songs).where(inIds(songs.id, songIds))).map(({ id, albumId }) => [id, albumId]) : []);
+    return rows.map(({ id, local }): PlaylistSearchResult => ({
+      id,
+      name: local!.name,
+      songCount: local!.entries.length,
+      owner: local!.owner ?? null,
+      albumIds: [...new Set(firstSongs.get(id)!.flatMap((songId) => albumOf.get(songId) ?? []))].slice(0, 4),
+    }));
+  });
 
 /** The songs of `ids` that the library has, as renderers get them, in no particular order. */
 const librarySongsIn = (db: Pick<Database, "select">, ids: ReadonlyArray<string>) =>
@@ -240,12 +302,11 @@ export const LibraryQueries = {
     Db.use((db) =>
       db.transaction((tx) =>
         Effect.gen(function* () {
-          const columns = orderColumns(sort);
           const select = () => tx.select(LIBRARY_SONG_COLUMNS).from(songs);
           let rows;
           if ("offset" in request) {
             rows = yield* select()
-              .orderBy(...columns.map((column) => asc(column)))
+              .orderBy(...ordered(sort))
               .limit(request.limit)
               .offset(request.offset);
           } else {
@@ -255,12 +316,12 @@ export const LibraryQueries = {
             rows =
               "after" in request
                 ? yield* select()
-                    .where(beside(sort, ">", place))
-                    .orderBy(...columns.map((column) => asc(column)))
+                    .where(beside(sort, "after", place))
+                    .orderBy(...ordered(sort))
                     .limit(request.limit)
                 : (yield* select()
-                    .where(beside(sort, "<", place))
-                    .orderBy(...columns.map((column) => desc(column)))
+                    .where(beside(sort, "before", place))
+                    .orderBy(...ordered(sort, true))
                     .limit(request.limit)).reverse();
           }
           const page: SongPage = { songs: rows, total: withTotal ? yield* tx.$count(songs) : null };
@@ -277,7 +338,7 @@ export const LibraryQueries = {
           tx
             .select({ id: songs.id })
             .from(songs)
-            .orderBy(...orderColumns(sort).map((column) => asc(column)))
+            .orderBy(...ordered(sort))
             .limit(end - start)
             .offset(start),
         ),
@@ -287,34 +348,49 @@ export const LibraryQueries = {
   /**
    * Where songs whose title, artist or album, as the order goes by, starts at or after `text` begin:
    * how many come before. The key of each order begins with the sort key of what it goes by, so one
-   * comparison with the sort key of the text answers it for all of them.
+   * comparison with the sort key of the text answers it for all of them. Going down, those before are
+   * the songs whose key comes after every key that starts with the text.
    */
-  songPosition: (sort: LibrarySort, text: string) => Db.use((db) => db.$count(songs, lt(songs[LIBRARY_ORDERS[sort][0]], sortKey(text)))),
+  songPosition: (sort: LibrarySort, text: string) => {
+    const { by, descending } = librarySortParts(sort);
+    const key = songs[LIBRARY_ORDERS[by][0]];
+    return Db.use((db) => db.$count(songs, descending ? gt(key, sortKey(text) + PAST_KEYS) : lt(key, sortKey(text))));
+  },
 
   /**
-   * A page of the albums page, newest first, those without a year last and albums of a year by id,
-   * which the `albums_year` index holds in that order; with how many albums there are when
-   * `withTotal`, from the same transaction.
+   * A page of the albums page in `sort` order; with how many albums there are when `withTotal`, from
+   * the same transaction. Newest first, the `albums_year` index holds them in order.
    */
-  albumPage: (request: AlbumPageRequest, withTotal: boolean) =>
+  albumPage: (sort: AlbumSort, request: AlbumPageRequest, withTotal: boolean) =>
     Db.use((db) =>
       db.transaction((tx) =>
         Effect.gen(function* () {
-          const rows = yield* tx.select().from(albums).orderBy(desc(albums.year), asc(albums.id)).limit(request.limit).offset(request.offset);
+          const rows = yield* tx
+            .select()
+            .from(albums)
+            .orderBy(...ALBUM_ORDERS[sort]())
+            .limit(request.limit)
+            .offset(request.offset);
           const page: AlbumPage = { albums: rows, total: withTotal ? yield* tx.$count(albums) : null };
           return page;
         }),
       ),
     ),
 
-  /** The artists with an album of their own, which are those the artists page lists, by name. */
-  artistsWithAlbums: () =>
-    Db.use((db) =>
-      db
-        .select(LIBRARY_ARTIST_COLUMNS)
-        .from(artists)
-        .where(inArray(artists.id, db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId)))),
-    ).pipe(Effect.map((rows) => rows.sort((left, right) => byName.compare(left.name, right.name)))),
+  /** The artists the artists page lists, by name: those with an album of their own, and the rest, which the server lists for their credits on others' albums. */
+  artistIndex: () =>
+    Db.use((db) => {
+      const owners = db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId));
+      return Effect.all({
+        withAlbums: db.select(LIBRARY_ARTIST_COLUMNS).from(artists).where(inArray(artists.id, owners)),
+        featured: db.select(LIBRARY_ARTIST_COLUMNS).from(artists).where(notInArray(artists.id, owners)),
+      });
+    }).pipe(
+      Effect.map(({ withAlbums, featured }): ArtistIndex => {
+        const byNames = (left: { name: string }, right: { name: string }) => byName.compare(left.name, right.name);
+        return { withAlbums: withAlbums.sort(byNames), featured: featured.sort(byNames) };
+      }),
+    ),
 
   /** An album and its songs in `ALBUM_ORDER`, the order it plays in, from one transaction. */
   album: (albumId: string) =>
@@ -354,25 +430,34 @@ export const LibraryQueries = {
       ),
     ).pipe(Effect.map((detail): ArtistDetail => detail)),
 
-  /** An artist's albums and their songs album after album, in the order the artist plays in (`openArtist`), from one transaction. */
+  /**
+   * An artist's albums and their songs album after album, then the songs that credit it on others'
+   * albums, in the order the artist plays in (`openArtist`), from one transaction.
+   */
   discography: (artistId: string) =>
     Db.use((db) =>
       db.transaction((tx) =>
-        Effect.all({
-          albums: tx
-            .select(LIBRARY_ALBUM_COLUMNS)
-            .from(albums)
-            .where(eq(albums.artistId, artistId))
-            .orderBy(...artistAlbumOrder()),
-          songs: tx
-            .select(LIBRARY_SONG_COLUMNS)
-            .from(songs)
-            .innerJoin(albums, eq(albums.id, songs.albumId))
-            .where(eq(albums.artistId, artistId))
-            .orderBy(...artistAlbumOrder(), ...albumSongOrder()),
+        Effect.gen(function* () {
+          const songsWhere = (where: SQL | undefined) =>
+            tx
+              .select(LIBRARY_SONG_COLUMNS)
+              .from(songs)
+              .innerJoin(albums, eq(albums.id, songs.albumId))
+              .where(where)
+              .orderBy(...artistAlbumOrder(), ...albumSongOrder());
+          const discography: Discography = {
+            albums: yield* tx
+              .select(LIBRARY_ALBUM_COLUMNS)
+              .from(albums)
+              .where(eq(albums.artistId, artistId))
+              .orderBy(...artistAlbumOrder()),
+            songs: yield* songsWhere(eq(albums.artistId, artistId)),
+            appearsOn: yield* songsWhere(creditedOnOthers(artistId)),
+          };
+          return discography;
         }),
       ),
-    ).pipe(Effect.map((discography): Discography => discography)),
+    ),
 
   /** The albums of `ids` that the library has, in `ARTIST_ALBUM_ORDER`. */
   albumsByIds: (ids: ReadonlyArray<string>) =>
@@ -462,22 +547,27 @@ export const LibraryQueries = {
       }),
     ),
 
-  /** The rows of what a search found, in the order it found them, leaving out any that have gone since. Songs come as renderers get them. */
+  /**
+   * The rows of what a search found, in the order it found them, leaving out any that have gone since.
+   * Songs come as renderers get them, and playlists with what their result shows.
+   */
   searchResults: (hits: ReadonlyArray<SearchHit>) =>
     Db.use((db) => {
       const idsOf = (type: SearchHit["type"]) => hits.flatMap((hit) => (hit.type === type ? [hit.id] : []));
-      const [songIds, albumIds, artistIds] = [idsOf("song"), idsOf("album"), idsOf("artist")];
+      const [songIds, albumIds, artistIds, playlistIds] = [idsOf("song"), idsOf("album"), idsOf("artist"), idsOf("playlist")];
       return Effect.all([
         songIds.length ? db.select(LIBRARY_SONG_COLUMNS).from(songs).where(inArray(songs.id, songIds)) : Effect.succeed([]),
         albumIds.length ? db.select().from(albums).where(inArray(albums.id, albumIds)) : Effect.succeed([]),
         artistIds.length ? db.select().from(artists).where(inArray(artists.id, artistIds)) : Effect.succeed([]),
+        playlistIds.length ? playlistResults(db, playlistIds) : Effect.succeed([]),
       ]);
     }).pipe(
-      Effect.map(([songRows, albumRows, artistRows]) => {
+      Effect.map(([songRows, albumRows, artistRows, playlistRows]) => {
         const found = new Map<string, SearchResult>([
           ...songRows.map((song) => [`song:${song.id}`, { type: "song", id: song.id, song }] as const),
           ...albumRows.map((album) => [`album:${album.id}`, { type: "album", id: album.id, album }] as const),
           ...artistRows.map((artist) => [`artist:${artist.id}`, { type: "artist", id: artist.id, artist }] as const),
+          ...playlistRows.map((playlist) => [`playlist:${playlist.id}`, { type: "playlist", id: playlist.id, playlist }] as const),
         ]);
         return hits.flatMap((hit) => found.get(`${hit.type}:${hit.id}`) ?? []);
       }),

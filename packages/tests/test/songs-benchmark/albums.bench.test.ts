@@ -32,7 +32,7 @@ describe("albums", () => {
     const [{ count } = { count: 0 }] = await library.query<{ count: number }>(`SELECT count(*) AS count FROM albums`);
     record(size, "albums", count, "");
 
-    const page = (offset: number, withTotal = false) => library.run(LibraryQueries.albumPage({ offset, limit: PAGE }, withTotal));
+    const page = (offset: number, withTotal = false) => library.run(LibraryQueries.albumPage("year-desc", { offset, limit: PAGE }, withTotal));
     record(size, "albums page: first open (page + count)", await timed(library, () => page(0, true)));
     record(size, "albums page: page by offset, middle", await timed(library, () => page(Math.floor(count / 2))));
     record(size, "albums page: page by offset, end", await timed(library, () => page(Math.max(0, count - PAGE))));
@@ -41,7 +41,7 @@ describe("albums", () => {
     record(size, "renderer heap: 3 pages", heapMb() - heapBefore, "MB");
     held.length = 0;
 
-    record(size, "artists page: artists with albums", await timed(library, () => library.run(LibraryQueries.artistsWithAlbums())));
+    record(size, "artists page: artists with albums", await timed(library, () => library.run(LibraryQueries.artistIndex())));
     const ids = (await library.query<{ id: string }>(`SELECT id FROM albums ORDER BY random() LIMIT 30`)).map(({ id }) => id);
     record(size, "covers of 30 rows' albums", await timed(library, () => library.run(LibraryQueries.albumCoverArts(ids))));
 

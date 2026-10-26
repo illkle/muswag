@@ -36,6 +36,7 @@ beforeEach(async () => {
     CREATE TABLE songs (id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT, album TEXT, year INTEGER, playCount REAL);
     CREATE TABLE albums (id TEXT PRIMARY KEY, name TEXT NOT NULL, artist TEXT, year INTEGER);
     CREATE TABLE artists (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE playlists (id TEXT PRIMARY KEY, local TEXT);
     INSERT INTO albums VALUES ('album-a', 'Harvest', 'Someone', 1972);
     INSERT INTO artists VALUES ('artist-a', 'Harvester');
   `);
@@ -105,6 +106,16 @@ describe("the library search", () => {
 
     expect(found(await search.search("crazy horse", 20))).toEqual(["artist:artist-b"]);
     expect(found(await search.search("harvest", 20))).toEqual(["album:album-a", "song:song-a"]);
+  });
+
+  it("finds playlists by the name this device has for them, and not those awaiting deletion", async () => {
+    database.prepare(`INSERT INTO playlists VALUES ('playlist-a', ?), ('playlist-gone', NULL)`).run(JSON.stringify({ name: "Road trip", entries: [] }));
+    broadcast({ table: "playlists", type: "changed", key: "playlist-a" }, { table: "playlists", type: "changed", key: "playlist-gone" });
+    expect(found(await search.search("road trip", 20))).toEqual(["playlist:playlist-a"]);
+
+    database.prepare(`UPDATE playlists SET local = NULL WHERE id = 'playlist-a'`).run();
+    broadcast({ table: "playlists", type: "changed", key: "playlist-a" });
+    expect(found(await search.search("road trip", 20))).toEqual([]);
   });
 
   it("runs one search at a time, and skips the ones a later search took the place of before they ran", async () => {

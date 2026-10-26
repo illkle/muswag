@@ -7,6 +7,7 @@ import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { useMainRead } from "#/data/main-read";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
+import { dragDetail, startSongDrag } from "#/lib/song-drag";
 import { LibraryActions } from "#/library/actions";
 import { useAlbumRefresh } from "#/library/page-refresh";
 import { creditedAsTheirAlbums, discHeading } from "#/library/album-tracks";
@@ -57,7 +58,7 @@ function RouteComponent() {
   const album = albumQuery.data.album;
   const { genres } = album;
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
-  const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} track${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
+  const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} song${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const columns = creditedAsTheirAlbums(songs, [album]) ? albumColumnsWithoutArtist : albumColumns;
   const firstKey = items.find(isTrackItem)?.key;
@@ -80,14 +81,22 @@ function RouteComponent() {
           <DetailHeader
             title={album.name}
             art={
-              <AlbumCover
-                className="w-full"
-                target={{
-                  type: "album",
-                  id: album.id,
-                  coverArtId: album.coverArt ?? null,
-                }}
-              />
+              // Dragging the cover drags the album's songs.
+              <div
+                className="cursor-grab"
+                draggable
+                onDragStart={(event) => startSongDrag(event, { label: album.name, detail: dragDetail.album(album), songIds: () => Promise.resolve(songs.map(({ id }) => id)) })}
+              >
+                <AlbumCover
+                  className="w-full"
+                  target={{
+                    type: "album",
+                    id: album.id,
+                    coverArtId: album.coverArt ?? null,
+                  }}
+                  placeholder={{ title: album.name, subtitle: album.displayArtist ?? album.artist }}
+                />
+              </div>
             }
           >
             <ArtistLinks

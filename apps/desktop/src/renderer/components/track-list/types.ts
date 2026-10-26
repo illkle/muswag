@@ -1,6 +1,7 @@
 import type { LibrarySong } from "@muswag/model";
 import type { ReactNode } from "react";
 
+import type { TrackColumn } from "#/components/track-list/columns";
 import type { Span } from "#/components/track-list/selection";
 
 /** One occurrence of a song in a list. The same song can appear in several rows, each with its own key. */
@@ -11,6 +12,8 @@ export type TrackItem = {
   song: LibrarySong;
   /** The list references this song but it is not in the synced local library. */
   unavailable?: boolean;
+  /** Draws the row with these columns rather than the list's, as a part of a list that lists tracks another way does. */
+  columns?: readonly TrackColumn[];
 };
 
 /** A row of a track list: a track, a heading over the tracks that follow it, a line of text, or whatever a list draws itself at a height it gives. */

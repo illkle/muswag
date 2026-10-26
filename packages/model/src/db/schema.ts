@@ -31,6 +31,8 @@ export const albums = sqliteTable(
     id: text().primaryKey(),
     name: text().notNull(),
     artist: text(),
+    /** What the albums page's order by artist sorts by, made from the artist by `sortKey`. */
+    artistSortKey: text().notNull().default(""),
     artistId: text(),
     coverArt: text(),
     created: text().notNull(),
@@ -62,6 +64,8 @@ export const albums = sqliteTable(
   (table) => [
     // The order of the albums page, which renderers read by the page: newest first, and SQLite puts a missing year last going down.
     index("albums_year").on(desc(table.year), table.id),
+    // The order by artist, each artist's albums newest first.
+    index("albums_artist_sort").on(table.artistSortKey, desc(table.year), table.id),
     // An artist's page, its discography and the artists that have albums.
     index("albums_artist_id").on(table.artistId),
   ],

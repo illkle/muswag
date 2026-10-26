@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
 import { PageState } from "#/components/page-state";
 import { PlaylistArt } from "#/components/playlist/playlist-art";
-import { PlaylistFormDialog } from "#/components/playlist/playlist-form-dialog";
+import { PlaylistEditDialog } from "#/components/playlist/playlist-edit-dialog";
 import { PlaylistDeleteDialog } from "#/components/playlist/playlist-delete-dialog";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { PlaylistActions } from "#/playlists/actions";
@@ -20,7 +20,8 @@ import { Button } from "#/components/ui/button";
 import { ContextMenuItem, ContextMenuSeparator } from "#/components/ui/context-menu";
 import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
-import type { SongDrag } from "#/lib/song-drag";
+import { dragDetail, startSongDrag, type SongDrag } from "#/lib/song-drag";
+import { cn } from "#/lib/utils";
 import { songRow, playlistOccurrenceKey } from "@muswag/model";
 
 export const Route = createFileRoute("/app/playlists/$playlistId")({
@@ -130,7 +131,21 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
           topPadding={DETAIL_TOP_PADDING}
           bottomPadding={DETAIL_BOTTOM_PADDING}
           topContent={
-            <DetailHeader title={state.name} art={<PlaylistArt albumIds={artAlbumIds} />}>
+            <DetailHeader
+              title={state.name}
+              art={
+                // Dragging the artwork drags the playlist as the sidebar does.
+                <div
+                  draggable={rows.length > 0}
+                  className={cn(rows.length > 0 && "cursor-grab")}
+                  onDragStart={(event) =>
+                    startSongDrag(event, { label: state.name, detail: dragDetail.playlist(rows.length), playlistId, songIds: () => Promise.resolve(rows.map(({ songId }) => songId)) })
+                  }
+                >
+                  <PlaylistArt albumIds={artAlbumIds} />
+                </div>
+              }
+            >
               <p className="text-sm text-muted-foreground">{playlistMeta}</p>
               {state.comment ? <p className="line-clamp-2 text-sm text-muted-foreground">{state.comment}</p> : null}
               {rows.length === 0 ? <p className="text-sm text-muted-foreground">Add songs from any album or the songs list.</p> : null}
@@ -171,18 +186,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
         />
       </div>
 
-      <PlaylistFormDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        title="Playlist details"
-        submitLabel="Save"
-        initialValues={{ name: state.name, comment: state.comment, public: state.public }}
-        onSubmit={async ({ name, comment, public: isPublic }) => {
-          if (name.trim() !== state.name) await PlaylistActions.rename(playlistId, name);
-          if (comment !== state.comment) await PlaylistActions.setComment(playlistId, comment);
-          if (isPublic !== state.public) await PlaylistActions.setVisibility(playlistId, isPublic);
-        }}
-      />
+      <PlaylistEditDialog playlistId={playlistId} details={state} open={editOpen} onOpenChange={setEditOpen} />
 
       <PlaylistDeleteDialog
         open={deleteOpen}

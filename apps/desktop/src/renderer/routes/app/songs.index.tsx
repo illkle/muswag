@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CaretUpIcon, MusicNotesIcon, WarningIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretUpIcon, MusicNotesIcon, WarningIcon } from "@phosphor-icons/react";
 
 import { QueueActions, usePlayingKey } from "#/queue/queue";
-import { LibrarySort } from "@muswag/model";
+import { LibrarySort, librarySortParts, type LibrarySortBy } from "@muswag/model";
 import { Schema } from "effect";
 import { libraryColumns, type TrackColumn } from "#/components/track-list/columns";
 import { TrackList } from "#/components/track-list/track-list";
@@ -22,13 +22,13 @@ export const Route = createFileRoute("/app/songs/")({
   component: RouteComponent,
 });
 
-/** The orders a column of the list can put it in, by the column's id. The title column sorts by title or by the artist under it. */
-const COLUMN_SORTS: Record<string, ReadonlyArray<{ sort: LibrarySort; label: string }>> = {
+/** What a column of the list can sort it by, by the column's id. The title column sorts by title or by the artist under it. */
+const COLUMN_SORTS: Record<string, ReadonlyArray<{ by: LibrarySortBy; label: string }>> = {
   title: [
-    { sort: "title", label: "Title" },
-    { sort: "artist", label: "Artist" },
+    { by: "title", label: "Title" },
+    { by: "artist", label: "Artist" },
   ],
-  album: [{ sort: "album", label: "Album" }],
+  album: [{ by: "album", label: "Album" }],
 };
 
 function RouteComponent() {
@@ -45,23 +45,34 @@ function RouteComponent() {
     return <PageState icon={<MusicNotesIcon />} title="No songs yet" description="Use the server control in the sidebar to fetch your server library." />;
   }
 
+  const { by, descending } = librarySortParts(sort);
+  /** Sorts by what the button of `next` sorts by: the first time going up, and each time again the other way. */
+  const sortBy = (next: LibrarySortBy) => {
+    const nextSort: LibrarySort = next === by && !descending ? `${next}-desc` : next;
+    void navigate({ search: nextSort === "title" ? {} : { sort: nextSort }, replace: true });
+  };
+
   const headerCell = ({ id, label }: TrackColumn) => {
     const sorts = COLUMN_SORTS[id];
     if (!sorts) return label;
+    const sorted = sorts.some((option) => option.by === by);
+    const Caret = descending ? CaretDownIcon : CaretUpIcon;
     return (
-      <span className="flex gap-2">
+      <span className="flex items-center gap-2">
         {sorts.map((option) => (
           <button
-            key={option.sort}
+            key={option.by}
             type="button"
-            aria-pressed={option.sort === sort}
-            className={cn("flex items-center gap-0.5 hover:text-foreground", option.sort === sort && "text-foreground")}
-            onClick={() => void navigate({ search: option.sort === "title" ? {} : { sort: option.sort }, replace: true })}
+            aria-pressed={option.by === by}
+            aria-label={option.by === by ? `${option.label}, ${descending ? "descending" : "ascending"}` : undefined}
+            className={cn("hover:text-foreground", option.by === by && "text-foreground")}
+            onClick={() => sortBy(option.by)}
           >
             {option.label}
-            {option.sort === sort ? <CaretUpIcon weight="bold" className="size-3" /> : null}
           </button>
         ))}
+        {/* One arrow after the column's buttons, which is there for either of them, so that neither moves the other. */}
+        <Caret weight="bold" className={cn("-ml-1.5 size-3 text-foreground", !sorted && "invisible")} />
       </span>
     );
   };

@@ -181,6 +181,12 @@
     margin-top: 0;
   }
 
+  /* In a popup, which is not in a `scrollbar-area`: the thumb shows while it is open, and takes room only when there is something to scroll. */
+  .scrollbar-popup {
+    --sb-thumb-current: var(--sb-thumb-color);
+    scrollbar-gutter: auto;
+  }
+
   @supports not selector(::-webkit-scrollbar) {
     .scrollbar {
       scrollbar-color: var(--sb-thumb-current) transparent;
@@ -192,6 +198,11 @@
 @layer utilities {
   .app-drag-region {
     -webkit-app-region: drag;
+  }
+
+  /* What lies over a drag region and is to be clicked rather than move the window. */
+  .app-no-drag-region {
+    -webkit-app-region: no-drag;
   }
 }
 

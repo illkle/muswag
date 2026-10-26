@@ -4,6 +4,7 @@ import {
   IDLE_LIBRARY_SYNC,
   songs,
   syncState,
+  toAlbumRow,
   toRow,
   toSongRow,
   type Album,
@@ -284,7 +285,7 @@ const syncAlbumList = Effect.gen(function* () {
   // Until a page comes back empty: a server may give fewer albums a page than asked for.
   for (let offset = 0; ;) {
     const { albumList2 } = yield* api.getAlbumList2({ type: "alphabeticalByArtist", size: ALBUM_PAGE_SIZE, offset });
-    const page = (albumList2.album ?? []).map((album) => toRow(albums, album));
+    const page = (albumList2.album ?? []).map(toAlbumRow);
     // A page of only albums listed before is the end too: a server that ignores the offset answers with the same page again.
     if (!page.some(({ id }) => !listed.has(id))) break;
     offset += page.length;
@@ -446,7 +447,7 @@ const refresh = (target: RefreshTarget) =>
         const rows = yield* songsOf(album, album.songCount);
         yield* write(
           Effect.gen(function* () {
-            yield* db.insert(albums).values(toRow(albums, album)).onConflictDoUpdate(upsertAlbums);
+            yield* db.insert(albums).values(toAlbumRow(album)).onConflictDoUpdate(upsertAlbums);
             yield* replaceAlbumSongs(album.id, rows);
           }),
         );

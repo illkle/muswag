@@ -6,7 +6,7 @@ import { XIcon } from "@phosphor-icons/react";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { EMPTY_SELECTION, selectOnClick } from "#/components/track-list/selection";
 import { LibraryActions } from "#/library/actions";
-import { startSongDrag } from "#/lib/song-drag";
+import { dragDetail, startSongDrag } from "#/lib/song-drag";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { scrollMemory } from "#/lib/scroll-memory";
 import { cn } from "#/lib/utils";
@@ -40,7 +40,7 @@ type AlbumListRow =
 
 const SECTION_HEIGHT = 48;
 
-/** Narrowest a tile gets before the grid drops a column. */
+/** Narrowest a tile gets before the grid drops a column, unless the grid is given another width. */
 const MIN_TILE_WIDTH = 180;
 /** Around a tile's content: a border, which keeps apart tiles selected side by side, and padding. Two tiles side by side put twice this between their covers. */
 const TILE_PADDING = 8;
@@ -57,11 +57,10 @@ type SelectAlbum = (id: string, modifiers: { toggle: boolean; range: boolean }) 
  */
 const AlbumItem = memo(function AlbumItem({ album, hideArtist, isSelected, onSelect }: { album: Album; hideArtist: boolean; isSelected: boolean; onSelect: SelectAlbum }) {
   const navigate = useNavigate();
-  const artist = hideArtist
-    ? null
-    : getArtistCredits(album)
-        .map((credit) => credit.name)
-        .join(", ");
+  const credits = getArtistCredits(album)
+    .map((credit) => credit.name)
+    .join(", ");
+  const artist = hideArtist ? null : credits;
 
   return (
     <button
@@ -90,6 +89,7 @@ const AlbumItem = memo(function AlbumItem({ album, hideArtist, isSelected, onSel
           id: album.id,
           coverArtId: album.coverArt ?? null,
         }}
+        placeholder={{ title: album.name, subtitle: credits }}
       />
 
       <div className="mt-2 w-full">
@@ -112,8 +112,8 @@ const LoadingItem = () => (
   </div>
 );
 
-const calcSize = (totalSpace: number) => {
-  const chunks = Math.max(1, Math.floor(totalSpace / MIN_TILE_WIDTH));
+const calcSize = (totalSpace: number, minTileWidth: number) => {
+  const chunks = Math.max(1, Math.floor(totalSpace / minTileWidth));
 
   const fullWidth = totalSpace / chunks;
   const coverSize = fullWidth - 2 * TILE_PADDING;
@@ -153,6 +153,8 @@ type AlbumListProps = {
   bottomPadding?: number;
   /** Rendered above the grid, absolutely positioned inside the scrolled area — reserve room with `topPadding`. */
   topContent?: JSX.Element;
+  /** Narrowest a tile gets before the grid drops a column. */
+  tileWidth?: number;
 } & (
   | {
       albums: Album[];
@@ -172,7 +174,18 @@ type AlbumListProps = {
     }
 );
 
-export function AlbumList({ albums, sections, rows: albumRows, scrollId, rememberScroll = false, className, topPadding = TOP_HEIGHT, bottomPadding = PLAYER_HEIGHT, topContent }: AlbumListProps) {
+export function AlbumList({
+  albums,
+  sections,
+  rows: albumRows,
+  scrollId,
+  rememberScroll = false,
+  className,
+  topPadding = TOP_HEIGHT,
+  bottomPadding = PLAYER_HEIGHT,
+  topContent,
+  tileWidth = MIN_TILE_WIDTH,
+}: AlbumListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   const scrollRestorationId = "album-list-" + scrollId;
@@ -182,7 +195,7 @@ export function AlbumList({ albums, sections, rows: albumRows, scrollId, remembe
   const initialOffset = scrollEntry?.scrollY ?? (rememberScroll ? scrollMemory.get(scrollRestorationId) : undefined);
 
   const contentSize = useContentSize();
-  const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32), [contentSize.width]);
+  const sizes = useMemo(() => calcSize((contentSize.width || 600) - 32, tileWidth), [contentSize.width, tileWidth]);
   const rows = useMemo(
     () =>
       albumRows
@@ -230,8 +243,9 @@ export function AlbumList({ albums, sections, rows: albumRows, scrollId, remembe
     // In grid order. A paged grid keeps selected albums whose pages it has let go of.
     const selected = held.flatMap((album) => (selection.keys.has(album.id) ? [album.id] : []));
     const dragged = selection.keys.has(id) ? [...new Set(albumRows ? [...selected, ...selection.keys] : selected)] : [id];
-    const label = dragged.length === 1 ? (held.find((album) => album.id === id)?.name ?? "1 album") : `${dragged.length} albums`;
-    startSongDrag(event, { label, songIds: () => LibraryActions.albumSongIds(dragged) });
+    const album = dragged.length === 1 ? held.find((album) => album.id === id) : undefined;
+    const songIds = () => LibraryActions.albumSongIds(dragged);
+    startSongDrag(event, album ? { label: album.name, detail: dragDetail.album(album), songIds } : { label: `${dragged.length} ${dragged.length === 1 ? "album" : "albums"}`, songIds });
   };
 
   const onClick = (event: ReactMouseEvent<HTMLDivElement>) => {

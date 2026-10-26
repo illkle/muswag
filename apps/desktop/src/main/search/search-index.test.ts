@@ -4,12 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSearchIndex } from "./search-index";
 import type { SearchedLibrary, SearchedRow } from "./searched-fields";
 
-type Library = { albums: SearchedRow[]; artists: SearchedRow[]; songs: SearchedRow[] };
+type Library = { albums: SearchedRow[]; artists: SearchedRow[]; songs: SearchedRow[]; playlists: SearchedRow[] };
 
 const library = (songs: SearchedRow[] = []): Library => ({
   albums: [{ id: "album-a", name: "Harvest", artist: "Someone", year: null }],
   artists: [{ id: "artist-a", name: "Harvester" }],
   songs,
+  playlists: [{ id: "playlist-a", name: "Harvest time" }],
 });
 const song = (id: string, title: string, fields: Partial<SearchedRow> = {}): SearchedRow => ({ id, title, artist: null, album: null, year: null, ...fields });
 
@@ -27,10 +28,10 @@ afterEach(() => {
 });
 
 describe("the search index", () => {
-  it("finds albums, artists and songs", () => {
+  it("finds albums, artists, songs and playlists", () => {
     const { index } = indexOf(library([song("song-a", "Harvest Moon")]));
 
-    expect(found(index.search("harvest", 20))).toEqual(["album:album-a", "artist:artist-a", "song:song-a"]);
+    expect(found(index.search("harvest", 20))).toEqual(["album:album-a", "artist:artist-a", "playlist:playlist-a", "song:song-a"]);
   });
 
   it("answers a search of one character", () => {
@@ -56,11 +57,13 @@ describe("the search index", () => {
     rows.songs.length = 0;
     rows.albums.length = 0;
     rows.artists.length = 0;
+    rows.playlists.length = 0;
     index.changed([
       { table: "songs", type: "delete", key: "song-a" },
       { table: "songs", type: "delete", key: "song-b" },
       { table: "albums", type: "delete", key: "album-a" },
       { table: "artists", type: "delete", key: "artist-a" },
+      { table: "playlists", type: "delete", key: "playlist-a" },
     ]);
     expect(index.search("cortez", 20)).toEqual([]);
     expect(index.search("harvest", 20)).toEqual([]);
@@ -92,7 +95,7 @@ describe("the search index", () => {
 
     // What main sends holds only the searched fields, so a change to the play count comes as the same ones.
     index.changed([{ table: "songs", type: "upsert", value: song("song-a", "Cortez") }]);
-    index.changed([{ table: "playlists", type: "upsert", value: { id: "playlist", name: "Cortez" } }]);
+    index.changed([{ table: "queue_items", type: "upsert", value: { id: "item", name: "Cortez" } }]);
     index.changed([{ table: "songs", type: "delete", key: "song-never-indexed" }]);
     index.search("cortez", 20);
     expect(built).not.toHaveBeenCalled();

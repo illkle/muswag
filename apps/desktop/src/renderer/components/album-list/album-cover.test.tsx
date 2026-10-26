@@ -48,6 +48,22 @@ describe("AlbumCover", () => {
     expect(screen.queryByAltText("cover art")).toBeNull();
   });
 
+  it("names what a cover without an image is of, and leaves a cover that is loading plain", () => {
+    const placeholder = { title: "Kind of Blue", subtitle: "Miles Davis" };
+    const { rerender } = render(<AlbumCover target={{ ...album, coverArtId: null }} placeholder={placeholder} />);
+    expect(screen.getByText("Kind of Blue")).toBeTruthy();
+    expect(screen.getByText("Miles Davis")).toBeTruthy();
+
+    rerender(<AlbumCover size="icon" target={{ ...album, coverArtId: null }} placeholder={placeholder} />);
+    expect(screen.getByText("K")).toBeTruthy();
+    expect(screen.queryByText("Kind of Blue")).toBeNull();
+
+    rerender(<AlbumCover target={album} placeholder={placeholder} />);
+    expect(screen.queryByText("Kind of Blue")).toBeNull();
+    fireEvent.error(screen.getByAltText("cover art"));
+    expect(screen.getByText("Kind of Blue")).toBeTruthy();
+  });
+
   it("loads again when the cover is another one", () => {
     const { rerender } = render(<AlbumCover target={album} />);
     fireEvent.error(screen.getByAltText("cover art"));
