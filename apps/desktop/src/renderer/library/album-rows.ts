@@ -1,4 +1,4 @@
-import type { LibraryAlbum as Album } from "@muswag/model";
+import type { AlbumSort, LibraryAlbum as Album } from "@muswag/model";
 import { useMemo } from "react";
 
 import { LibraryActions } from "#/library/actions";
@@ -15,19 +15,20 @@ export type AlbumRows = {
   show(start: number, end: number): void;
 };
 
-/** Main reads the albums page by page, newest first. There are far fewer albums than songs, so every page is asked for by its offset. */
-const source: PagedWindowSource<Album> = {
-  page: (request, withTotal) => ("offset" in request ? LibraryActions.albumPage(request, withTotal).then(({ albums, total }) => ({ rows: albums, total })) : Promise.resolve(null)),
+/** Main reads the albums page by page in `sort` order. There are far fewer albums than songs, so every page is asked for by its offset. */
+const sourceFor = (sort: AlbumSort): PagedWindowSource<Album> => ({
+  page: (request, withTotal) => ("offset" in request ? LibraryActions.albumPage(sort, request, withTotal).then(({ albums, total }) => ({ rows: albums, total })) : Promise.resolve(null)),
   byNeighbour: false,
   subscribe: onTableChange("albums"),
-};
+});
 
 /**
- * Every album of the library, newest first, read from main as the grid shows them: `albums` is
+ * Every album of the library in `sort` order, read from main as the grid shows them: `albums` is
  * `undefined` until main has said how many there are, and `isError` while the last page asked for
  * could not be read.
  */
-export function useAlbumRows(): { albums: AlbumRows | undefined; isError: boolean } {
+export function useAlbumRows(sort: AlbumSort): { albums: AlbumRows | undefined; isError: boolean } {
+  const source = useMemo(() => sourceFor(sort), [sort]);
   const { window, view } = usePagedWindow(source);
   const albums = useMemo((): AlbumRows | undefined => {
     if (!window || view?.total === undefined) return undefined;

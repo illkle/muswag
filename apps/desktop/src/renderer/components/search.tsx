@@ -1,4 +1,5 @@
 import { AlbumCover } from "#/components/album-list/album-cover";
+import { PlaylistArt } from "#/components/playlist/playlist-art";
 import { TrackCover } from "#/components/track-list/columns";
 import { LibraryActions } from "#/library/actions";
 import type { SearchResult } from "@muswag/model";
@@ -6,6 +7,8 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { useRef, useState, type ReactNode } from "react";
+import { creditLine } from "#/library/album-tracks";
+import { formatMetaLine } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
@@ -31,9 +34,8 @@ const InnerResult = ({
       <div className="w-10 shrink-0">{cover}</div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{title}</div>
-        <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
+        <div className="truncate text-xs text-muted-foreground">{formatMetaLine([kind, subtitle])}</div>
       </div>
-      <div className="shrink-0 text-xs text-muted-foreground">{kind}</div>
     </div>
   );
 };
@@ -43,7 +45,11 @@ const ArtistResult = ({ artist }: { artist: Found<"artist">["artist"] }) => {
   return (
     <Autocomplete.Item
       render={
-        <InnerResult kind="Artist" title={artist.name} cover={<AlbumCover size="icon" className="rounded-full" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} />} />
+        <InnerResult
+          kind="Artist"
+          title={artist.name}
+          cover={<AlbumCover size="icon" className="rounded-full" target={{ type: "artist", id: artist.id, coverArtId: artist.coverArt ?? null }} placeholder={{ title: artist.name }} />}
+        />
       }
       onClick={() =>
         n({
@@ -63,7 +69,13 @@ const SongResult = ({ song }: { song: Found<"song">["song"] }) => {
     <Autocomplete.Item
       // The cover is the album's, which is read here rather than kept with every song of the index.
       render={
-        <InnerResult kind="Song" title={song.title} subtitle={song.artist} cover={albumId ? <TrackCover albumId={albumId} /> : <AlbumCover size="icon" />} className="data-disabled:opacity-50" />
+        <InnerResult
+          kind="Song"
+          title={song.title}
+          subtitle={creditLine(song)}
+          cover={albumId ? <TrackCover albumId={albumId} placeholder={{ title: song.album ?? song.title }} /> : <AlbumCover size="icon" placeholder={{ title: song.title }} />}
+          className="data-disabled:opacity-50"
+        />
       }
       // A song the server files under no album leads to its artist instead, and one with neither has no page to open.
       disabled={!albumId && !artistId}
@@ -79,7 +91,14 @@ const AlbumResult = ({ album }: { album: Found<"album">["album"] }) => {
   const n = useNavigate();
   return (
     <Autocomplete.Item
-      render={<InnerResult kind="Album" title={album.name} subtitle={album.artist} cover={<AlbumCover size="icon" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} />} />}
+      render={
+        <InnerResult
+          kind="Album"
+          title={album.name}
+          subtitle={creditLine(album)}
+          cover={<AlbumCover size="icon" target={{ type: "album", id: album.id, coverArtId: album.coverArt ?? null }} placeholder={{ title: album.name }} />}
+        />
+      }
       onClick={() =>
         n({
           to: "/app/albums/$albumId",
@@ -87,6 +106,23 @@ const AlbumResult = ({ album }: { album: Found<"album">["album"] }) => {
           resetScroll: true,
         })
       }
+    />
+  );
+};
+
+const PlaylistResult = ({ playlist }: { playlist: Found<"playlist">["playlist"] }) => {
+  const n = useNavigate();
+  return (
+    <Autocomplete.Item
+      render={
+        <InnerResult
+          kind="Playlist"
+          title={playlist.name}
+          subtitle={formatMetaLine([playlist.owner, `${playlist.songCount} song${playlist.songCount === 1 ? "" : "s"}`])}
+          cover={playlist.albumIds.length > 0 ? <PlaylistArt albumIds={playlist.albumIds} size="icon" /> : <AlbumCover size="icon" placeholder={{ title: playlist.name }} />}
+        />
+      }
+      onClick={() => n({ to: "/app/playlists/$playlistId", params: { playlistId: playlist.id }, resetScroll: true })}
     />
   );
 };
@@ -179,13 +215,14 @@ export function MiniSearch() {
       <Autocomplete.Portal>
         <Autocomplete.Positioner className="z-20 outline-hidden" sideOffset={4} align="start">
           <Autocomplete.Popup className="w-(--anchor-width) max-w-(--available-width) rounded-lg surface-raised p-1" aria-busy={query !== searchValue || undefined}>
-            <div className="max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain">
+            <div className="scrollbar scrollbar-slim scrollbar-flush scrollbar-popup max-h-[min(var(--available-height),22.5rem)] overflow-y-auto overscroll-contain">
               <Autocomplete.Empty className="px-2 py-3 text-center text-sm text-muted-foreground empty:hidden">No results for “{query}”</Autocomplete.Empty>
               <Autocomplete.List>
                 {(result: SearchResult) => {
                   const key = `${result.type}:${result.id}`;
                   if (result.type === "song") return <SongResult key={key} song={result.song} />;
                   if (result.type === "album") return <AlbumResult key={key} album={result.album} />;
+                  if (result.type === "playlist") return <PlaylistResult key={key} playlist={result.playlist} />;
                   return <ArtistResult key={key} artist={result.artist} />;
                 }}
               </Autocomplete.List>

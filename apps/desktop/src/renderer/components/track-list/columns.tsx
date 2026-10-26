@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { CoverSize } from "#shared/cover";
-import { AlbumCover } from "#/components/album-list/album-cover";
+import { AlbumCover, type CoverPlaceholder } from "#/components/album-list/album-cover";
 import { ArtistLinks } from "#/components/utils/artist-links";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
 import { formatDuration } from "#/lib/format";
@@ -108,13 +108,15 @@ const PositionCell = ({ item, position, isPlaying, onPlay, tabIndex }: TrackCell
 };
 
 /** The cover of a song's album, the size of a list row's unless `size` says otherwise. */
-export const TrackCover = ({ albumId, className, size = "icon" }: { albumId: string; className?: string; size?: CoverSize }) => {
+export const TrackCover = ({ albumId, className, size = "icon", placeholder }: { albumId: string; className?: string; size?: CoverSize; placeholder?: CoverPlaceholder }) => {
   const coverArtId = useAlbumCoverArt(albumId);
-  return <AlbumCover size={size} className={className} target={{ type: "album", id: albumId, coverArtId }} />;
+  return <AlbumCover size={size} className={className} target={{ type: "album", id: albumId, coverArtId }} placeholder={placeholder} />;
 };
 
 const CoverCell = ({ item }: TrackCellProps) => (
-  <div className="size-10">{!item.unavailable && item.song.albumId ? <TrackCover albumId={item.song.albumId} /> : <div className="size-10 rounded bg-muted" />}</div>
+  <div className="size-10">
+    {!item.unavailable && item.song.albumId ? <TrackCover albumId={item.song.albumId} placeholder={{ title: item.song.album ?? item.song.title }} /> : <div className="size-10 rounded bg-muted" />}
+  </div>
 );
 
 const TitleCell = ({ item, isPlaying }: TrackCellProps) => <p className={cn("truncate text-sm", isPlaying && "text-brand")}>{item.song.title}</p>;
@@ -236,6 +238,14 @@ export const libraryColumns: readonly TrackColumn[] = [
   },
   { id: "duration", width: "48px", label: "Time", className: DURATION, Cell: DurationCell, ghost: [[{ ...SMALL_LINE, x: 50, width: 50 }]] },
 ];
+
+/**
+ * Tracks listed as a playlist lists them, in a list that lists others another way: such as the songs an
+ * artist appears on, under its albums. They are numbered from `first`, where the first of them is among
+ * the list's tracks.
+ */
+export const libraryColumnsFrom = (first: number): readonly TrackColumn[] =>
+  libraryColumns.map((column) => (column.id === "position" ? { ...column, Cell: (props: TrackCellProps) => <PositionCell {...props} position={props.position - first} /> } : column));
 
 /** Tracks in a narrow panel. */
 export const compactColumns: readonly TrackColumn[] = [

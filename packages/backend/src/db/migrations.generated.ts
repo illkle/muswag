@@ -74,5 +74,16 @@ export const migrations: MigrationMeta[] = [
     "folderMillis": 1792446728000,
     "hash": "a4aa2c61bbf14262121742ab0bd91c89596e8a8022c37496c8e8671fb2b7a6e5",
     "name": "20261019215208_albums_orders"
+  },
+  {
+    "sql": [
+      "ALTER TABLE `albums` ADD `artistSortKey` text DEFAULT '' NOT NULL;",
+      "\n-- The albums already stored get keys as near to `sortKey` as SQLite comes: it lowercases only ASCII,\n-- keeps accents and trims only spaces. The next sync lists every album and rewrites each whose key\n-- differs. The keys are written before the index is built.\nUPDATE `albums` SET `artistSortKey` = lower(trim(ifnull(`artist`, '')));",
+      "\nCREATE INDEX `albums_artist_sort` ON `albums` (`artistSortKey`,\"year\" desc,`id`);\n"
+    ],
+    "bps": true,
+    "folderMillis": 1793004722000,
+    "hash": "d0ab81a529b178a46bba642e4245a9f211ed6576a15ea8188055a6f9e0bd249c",
+    "name": "20261026085202_albums_artist_sort"
   }
 ];

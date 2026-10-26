@@ -8,7 +8,7 @@ import type { Album } from "@muswag/model";
 const { navigate, albumSongIds, startSongDrag } = vi.hoisted(() => ({ navigate: vi.fn(), albumSongIds: vi.fn(), startSongDrag: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ useElementScrollRestoration: () => undefined, useNavigate: () => navigate }));
 vi.mock("#/library/actions", () => ({ LibraryActions: { albumSongIds } }));
-vi.mock("#/lib/song-drag", () => ({ startSongDrag }));
+vi.mock("#/lib/song-drag", async (importOriginal) => ({ ...(await importOriginal<object>()), startSongDrag }));
 vi.mock("#/components/utils/app-content-size", () => ({ useContentSize: () => ({ width: 800, height: 600, ready: true }) }));
 
 const { AlbumList } = await import("#/components/album-list/album-list");
@@ -34,9 +34,10 @@ describe("AlbumList of rows it loads as they are shown", () => {
     const rows: AlbumRows = { count: 34_000, at: (position) => (position < 3 ? album(position) : undefined), show: (start, end) => void shown.push([start, end]) };
     render(<AlbumList rows={rows} scrollId="test" />);
 
-    expect(screen.getByText("Album 0")).toBeTruthy();
-    expect(screen.getByText("Album 2")).toBeTruthy();
-    expect(screen.queryByText("Album 3")).toBeNull();
+    // By the names under the covers: a cover without an image names its album as well.
+    expect(screen.getByRole("heading", { name: "Album 0" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Album 2" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Album 3" })).toBeNull();
     // Four columns fit in 800 pixels, so the rows drawn cover whole rows of albums from the first.
     const [start, end] = shown.at(-1)!;
     expect(start).toBe(0);
@@ -48,7 +49,7 @@ describe("AlbumList of rows it loads as they are shown", () => {
 describe("AlbumList selection", () => {
   it("leaves albums that have left a fully loaded grid out of the drag", async () => {
     const { rerender } = render(<AlbumList albums={[0, 1, 2].map(album)} scrollId="test" />);
-    const tile = (index: number) => screen.getByText(`Album ${index}`).closest("button")!;
+    const tile = (index: number) => screen.getByRole("heading", { name: `Album ${index}` }).closest("button")!;
     fireEvent.click(tile(0), { metaKey: true });
     fireEvent.click(tile(2), { metaKey: true });
     rerender(<AlbumList albums={[1, 2].map(album)} scrollId="test" />);
@@ -62,7 +63,7 @@ describe("AlbumList selection", () => {
 
   it("selects with Cmd or Ctrl and Shift, opens an album on a plain click, and drags the selection in grid order", async () => {
     render(<AlbumList albums={[0, 1, 2, 3, 4].map(album)} scrollId="test" />);
-    const tile = (index: number) => screen.getByText(`Album ${index}`).closest("button")!;
+    const tile = (index: number) => screen.getByRole("heading", { name: `Album ${index}` }).closest("button")!;
     const selected = () => [...document.querySelectorAll("[aria-pressed=true]")].map((element) => (element as HTMLElement).dataset.albumId);
 
     fireEvent.click(tile(3), { metaKey: true });

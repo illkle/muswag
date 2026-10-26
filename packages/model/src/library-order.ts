@@ -2,21 +2,38 @@ import { Schema } from "effect";
 
 import type { Album, Song } from "./db/schema.js";
 
-/** The orders the whole library can be listed and played in: by title, by artist, or by album. */
-export const LibrarySort = Schema.Literals(["title", "artist", "album"]);
+/** What the whole library can be listed and played by: title, artist, or album. */
+export type LibrarySortBy = "title" | "artist" | "album";
+
+/** The orders the whole library can be listed and played in: by title, by artist, or by album, each going up or, with `-desc`, down. */
+export const LibrarySort = Schema.Literals(["title", "artist", "album", "title-desc", "artist-desc", "album-desc"]);
 export type LibrarySort = typeof LibrarySort.Type;
 
+/** What an order goes by, and whether it goes down. */
+export const librarySortParts = (sort: LibrarySort): { by: LibrarySortBy; descending: boolean } => ({
+  by: sort.replace(/-desc$/, "") as LibrarySortBy,
+  descending: sort.endsWith("-desc"),
+});
+
 /**
- * The song columns each order sorts by, all ascending. Only SQLite sorts the library, by these, with
- * an index on each pair: the first is a key made by `toSongRow` from what the order goes by, and the
- * id after it keeps two songs from comparing equal. Being one text column, a key compares the same
- * however it is read, and it is never null, so a song's place is found with a row value comparison.
+ * The song columns each order sorts by, all ascending, or all descending for an order that goes down.
+ * Only SQLite sorts the library, by these, with an index on each pair: the first is a key made by
+ * `toSongRow` from what the order goes by, and the id after it keeps two songs from comparing equal.
+ * Being one text column, a key compares the same however it is read, and it is never null, so a
+ * song's place is found with a row value comparison.
  */
 export const LIBRARY_ORDERS = {
   title: ["titleSortKey", "id"],
   artist: ["artistOrderKey", "id"],
   album: ["albumOrderKey", "id"],
-} as const satisfies Record<LibrarySort, readonly [keyof Song, "id"]>;
+} as const satisfies Record<LibrarySortBy, readonly [keyof Song, "id"]>;
+
+/**
+ * The orders of the albums page: by year, newest or oldest first, by artist, either way, or the most
+ * recently added first. Albums are few enough for SQLite to sort them for each page.
+ */
+export const AlbumSort = Schema.Literals(["year-desc", "year", "artist", "artist-desc", "added"]);
+export type AlbumSort = typeof AlbumSort.Type;
 
 /**
  * The song columns an album is listed and played by, all ascending: main reads the album in this

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { albums, artists, songs, toRow, toSongRow } from "@muswag/model";
+import { albums, artists, songs, toAlbumRow, toSongRow } from "@muswag/model";
 import { eq, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
@@ -25,7 +25,7 @@ describe("LibraryChanges", () => {
       const db = yield* Db;
       const writes = yield* announced(
         Effect.gen(function* () {
-          yield* write(db.insert(albums).values([toRow(albums, apiAlbum("a")), toRow(albums, apiAlbum("b"))]));
+          yield* write(db.insert(albums).values([toAlbumRow(apiAlbum("a")), toAlbumRow(apiAlbum("b"))]));
           yield* write(db.update(albums).set({ name: "Renamed" }).where(eq(albums.id, "a")));
           yield* write(db.delete(albums).where(eq(albums.id, "b")));
         }),
@@ -37,7 +37,7 @@ describe("LibraryChanges", () => {
   it.effect("announces nothing for an update that changes nothing, or only columns it ignores", () =>
     Effect.gen(function* () {
       const db = yield* Db;
-      yield* write(db.insert(albums).values(toRow(albums, apiAlbum("a"))));
+      yield* write(db.insert(albums).values(toAlbumRow(apiAlbum("a"))));
       yield* write(db.insert(artists).values({ id: "artist", name: "Artist" }));
       const writes = yield* announced(
         Effect.gen(function* () {

@@ -32,14 +32,25 @@ export const SongRanges = Schema.Array(SongRange).check(Schema.isMaxLength(10_00
 export const AlbumPageRequest = Schema.Struct({ offset: Offset, limit: PageLimit });
 export type AlbumPageRequest = typeof AlbumPageRequest.Type;
 
-/** A page of the albums page, newest first. `total` when it was asked for. */
+/** A page of the albums page, in its order. `total` when it was asked for. */
 export type AlbumPage = { readonly albums: ReadonlyArray<Album>; readonly total: number | null };
 
 /** An album's page: the album, `null` when the library does not have it, and its songs in `ALBUM_ORDER`. */
 export type AlbumDetail = { readonly album: LibraryAlbum | null; readonly songs: ReadonlyArray<LibrarySong> };
 
-/** An artist's albums in `ARTIST_ALBUM_ORDER`, and their songs album after album, as the artists page lists and plays them. */
-export type Discography = { readonly albums: ReadonlyArray<LibraryAlbum>; readonly songs: ReadonlyArray<LibrarySong> };
+/**
+ * An artist's albums in `ARTIST_ALBUM_ORDER`, and their songs album after album, as the artists page
+ * lists and plays them; then the songs that credit the artist on others' albums, album after album in
+ * the same order.
+ */
+export type Discography = {
+  readonly albums: ReadonlyArray<LibraryAlbum>;
+  readonly songs: ReadonlyArray<LibrarySong>;
+  readonly appearsOn: ReadonlyArray<LibrarySong>;
+};
+
+/** The artists of the artists page, by name: those with an album of their own, and those only credited on others' albums. */
+export type ArtistIndex = { readonly withAlbums: ReadonlyArray<LibraryArtist>; readonly featured: ReadonlyArray<LibraryArtist> };
 
 /** An artist's page: its row, `null` for an artist only credited, and its own albums in `ARTIST_ALBUM_ORDER`. */
 export type ArtistDetail = { readonly artist: LibraryArtist | null; readonly albums: ReadonlyArray<LibraryAlbum> };

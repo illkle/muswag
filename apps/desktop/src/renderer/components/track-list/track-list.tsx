@@ -11,7 +11,7 @@ import { useTrackListSelection } from "#/components/track-list/use-selection";
 import { useTypeahead } from "#/components/track-list/use-typeahead";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "#/components/ui/context-menu";
 import { scrollMemory } from "#/lib/scroll-memory";
-import type { SongDrag } from "#/lib/song-drag";
+import { dragDetail, type SongDrag } from "#/lib/song-drag";
 import { cn } from "#/lib/utils";
 import { TOP_HEIGHT } from "#/styles";
 
@@ -54,11 +54,17 @@ function tracksOf(items: readonly TrackListItem[]): { tracks: readonly TrackItem
 
 const NO_TRACKS = { tracks: [] as readonly TrackItem[], positions: null };
 
+/** The grid a set of columns makes, kept for each set so that a row is given the same string each time. */
+const gridTemplates = new WeakMap<readonly TrackColumn[], string>();
+const gridTemplateOf = (columns: readonly TrackColumn[]) => {
+  let template = gridTemplates.get(columns);
+  if (template === undefined) gridTemplates.set(columns, (template = columns.map(({ width }) => width).join(" ")));
+  return template;
+};
+
 /** A drag of the songs of `selection`, which is what a list drags unless it says otherwise. */
-export const songDragOf = ({ items, count, songIds }: TrackSelection): SongDrag => ({
-  label: count === 1 && items.length === 1 ? items[0]!.song.title : `${count} ${count === 1 ? "song" : "songs"}`,
-  songIds,
-});
+export const songDragOf = ({ items, count, songIds }: TrackSelection): SongDrag =>
+  count === 1 && items.length === 1 ? { label: items[0]!.song.title, detail: dragDetail.song(items[0]!.song), songIds } : { label: `${count} ${count === 1 ? "song" : "songs"}`, songIds };
 
 /**
  * The menu for the selected rows. It is drawn only while the menu is open, so the selection is read
@@ -178,7 +184,7 @@ export function TrackList({
   /** Where among the tracks the row at `index` is, or -1 for a row that is not a track. */
   const positionOf = (index: number) => (positions ? positions[index]! : index);
 
-  const gridTemplateColumns = useMemo(() => columns.map(({ width }) => width).join(" "), [columns]);
+  const gridTemplateColumns = gridTemplateOf(columns);
 
   // A list of items selects by key, and the keyboard follows its track by key, which holds wherever its
   // rows move. A list of `TrackRows` does not know every key, and selects by position, where the keyboard
@@ -376,8 +382,8 @@ export function TrackList({
                   rowIndex={rowIndex}
                   item={item}
                   position={position}
-                  columns={columns}
-                  gridTemplateColumns={gridTemplateColumns}
+                  columns={item.columns ?? columns}
+                  gridTemplateColumns={gridTemplateOf(item.columns ?? columns)}
                   isSelected={selection.isSelected(position)}
                   isPlaying={item.key === playingKey}
                   isCursor={isCursor}

@@ -25,10 +25,22 @@ const { databasePath } = workerData as SearchWorkerData;
 const database = new DatabaseSync(databasePath, { readOnly: true });
 const port = parentPort!;
 
-const selectFrom = (table: keyof SearchedLibrary) => `SELECT ${["id", ...SEARCHED_COLUMNS[table]].map((column) => `"${column}"`).join(", ")} FROM "${table}"`;
-const readAll = (table: keyof SearchedLibrary) => database.prepare(selectFrom(table)).all() as unknown as SearchedRow[];
+/**
+ * The rows of a table as a search looks at them. A playlist keeps its fields as JSON, as this device
+ * has it, and one awaiting deletion on the server has none, so it is not there to find.
+ */
+const ROWS: Record<keyof SearchedLibrary, string> = {
+  albums: selectColumns("albums"),
+  artists: selectColumns("artists"),
+  songs: selectColumns("songs"),
+  playlists: `SELECT id, ${SEARCHED_COLUMNS.playlists.map((column) => `json_extract(local, '$.${column}') AS "${column}"`).join(", ")} FROM playlists WHERE local IS NOT NULL`,
+};
+function selectColumns(table: keyof SearchedLibrary) {
+  return `SELECT ${["id", ...SEARCHED_COLUMNS[table]].map((column) => `"${column}"`).join(", ")} FROM "${table}"`;
+}
+const readAll = (table: keyof SearchedLibrary) => database.prepare(ROWS[table]).all() as unknown as SearchedRow[];
 const readIds = (table: keyof SearchedLibrary, ids: ReadonlyArray<string>) =>
-  database.prepare(`${selectFrom(table)} WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as unknown as SearchedRow[];
+  database.prepare(`SELECT * FROM (${ROWS[table]}) WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as unknown as SearchedRow[];
 
 /**
  * The changes as the index takes them. The rows written are read here as they are now, which is after
@@ -54,11 +66,11 @@ const withRows = (changes: ReadonlyArray<SearchWorkerChange>): SearchedChange[] 
   return result;
 };
 
-// The three reads are one transaction, so they see the library as it was at one moment.
+// The reads are one transaction, so they see the library as it was at one moment.
 const read = (): SearchedLibrary => {
   database.exec("BEGIN");
   try {
-    return { albums: readAll("albums"), artists: readAll("artists"), songs: readAll("songs") };
+    return { albums: readAll("albums"), artists: readAll("artists"), songs: readAll("songs"), playlists: readAll("playlists") };
   } finally {
     database.exec("COMMIT");
   }

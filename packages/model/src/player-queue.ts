@@ -35,7 +35,7 @@ export type SourceWindow = {
 export const QueueSourceRef = Schema.Union([
   Schema.Struct({ type: Schema.Literal("playlist"), playlistId: Id }),
   Schema.Struct({ type: Schema.Literal("album"), albumId: Id }),
-  /** Every album of an artist, one after another in `ARTIST_ALBUM_ORDER`. */
+  /** Every album of an artist, one after another in `ARTIST_ALBUM_ORDER`, then its songs on the albums of others (`Discography`). */
   Schema.Struct({ type: Schema.Literal("artist"), artistId: Id }),
   /** Every song of the library, in the given order. */
   Schema.Struct({ type: Schema.Literal("library"), sort: LibrarySort }),

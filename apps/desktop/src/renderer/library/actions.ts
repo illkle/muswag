@@ -1,4 +1,4 @@
-import type { AlbumPageRequest, LibrarySort, QueueSourceRef, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
+import type { AlbumPageRequest, AlbumSort, LibrarySort, QueueSourceRef, RefreshTarget, SongPageRequest, SongRange, SyncMode } from "@muswag/model";
 
 import { appCommand } from "#/data/app-command";
 
@@ -16,10 +16,10 @@ export const LibraryActions = {
   songIds: (sort: LibrarySort, ranges: ReadonlyArray<SongRange>) => appCommand("library:songIds", sort, ranges),
   /** Where the songs whose title, artist or album, as `sort` goes by, starts at or after `text` begin in the songs list. */
   songPosition: (sort: LibrarySort, text: string) => appCommand("library:songPosition", sort, text),
-  /** A page of the albums page, newest first, which main reads from SQLite, with how many albums there are when `withTotal`. */
-  albumPage: (request: AlbumPageRequest, withTotal: boolean) => appCommand("library:albumPage", request, withTotal),
-  /** The artists with an album of their own, which are those the artists page lists, by name. */
-  artistsWithAlbums: () => appCommand("library:artistsWithAlbums"),
+  /** A page of the albums page in `sort` order, which main reads from SQLite, with how many albums there are when `withTotal`. */
+  albumPage: (sort: AlbumSort, request: AlbumPageRequest, withTotal: boolean) => appCommand("library:albumPage", sort, request, withTotal),
+  /** The artists the artists page lists, by name: those with an album of their own, and those only credited on others' albums. */
+  artistIndex: () => appCommand("library:artistIndex"),
   /** The cover art ids of the albums in `ids` that the library has, for the covers of their songs. */
   albumCoverArts: (ids: ReadonlyArray<string>) => appCommand("library:albumCoverArts", ids),
   /** The songs of the albums `ids`, album after album, each album's as its page lists them. */
@@ -28,7 +28,7 @@ export const LibraryActions = {
   album: (id: string) => appCommand("library:album", id),
   /** An artist's row and its own albums, newest first. */
   artist: (id: string) => appCommand("library:artist", id),
-  /** An artist's albums and their songs, in the order the artist plays in. */
+  /** An artist's albums and their songs, then its songs on others' albums, in the order the artist plays in. */
   discography: (id: string) => appCommand("library:discography", id),
   /** The albums of `ids` the library has, newest first. */
   albumsByIds: (ids: ReadonlyArray<string>) => appCommand("library:albumsByIds", ids),

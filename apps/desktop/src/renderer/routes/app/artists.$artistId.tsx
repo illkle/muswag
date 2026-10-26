@@ -70,6 +70,7 @@ function RouteComponent() {
                   id: artistId,
                   coverArtId: artistQuery.data.artist?.coverArt ?? null,
                 }}
+                placeholder={{ title: artistName }}
               />
             }
           >

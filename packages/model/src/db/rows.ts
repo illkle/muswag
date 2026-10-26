@@ -2,7 +2,7 @@ import { getColumns, type InferSelectModel } from "drizzle-orm";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 
 import { albumOrderKey, artistOrderKey, sortKey } from "../library-order.js";
-import { songs, type Song } from "./schema.js";
+import { albums, songs, type Album, type Song } from "./schema.js";
 
 /**
  * Builds a complete row of `table` from an object keyed like it, such as a Subsonic API object:
@@ -23,3 +23,9 @@ export const toSongRow = (value: { title: string }): Song => {
 
 /** A song row with only the given fields set. */
 export const songRow = (fields: Pick<Song, "id" | "title"> & Partial<Song>): Song => toSongRow({ isDir: false, ...fields });
+
+/** A complete album row from an object keyed like the table, with the key the albums page's order by artist sorts by made from it. */
+export const toAlbumRow = (value: object): Album => {
+  const row = toRow(albums, value);
+  return { ...row, artistSortKey: sortKey(row.artist ?? "") };
+};

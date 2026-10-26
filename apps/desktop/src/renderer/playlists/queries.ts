@@ -10,6 +10,7 @@ export type PlaylistSummary = {
   id: string;
   name: string;
   comment: string;
+  public: boolean;
   songCount: number;
   readonly: boolean;
   /** Created offline and not yet pushed to the server. */
@@ -40,6 +41,7 @@ export function usePlaylists() {
                   id,
                   name: local.name,
                   comment: local.comment,
+                  public: local.public,
                   songCount: local.entries.length,
                   readonly: local.readonly,
                   localOnly: serverId === null,
