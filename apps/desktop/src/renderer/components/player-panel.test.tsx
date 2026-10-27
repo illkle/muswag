@@ -44,7 +44,7 @@ vi.mock("#/player/hooks", () => ({
   usePlayerPositionSeconds: () => mocks.positionSeconds,
   usePlayerStatus: () => mocks.status,
 }));
-vi.mock("#/components/settings/mpv-info-dialog", () => ({ openMpvDialog: mocks.openMpvDialog }));
+vi.mock("#/components/settings/mpv-info-dialog", () => ({ openMpvDialog: mocks.openMpvDialog, useMpvDialogOpen: () => false }));
 vi.mock("#/queue/queue", () => ({ QueueActions: { play: mocks.startQueue, next: mocks.next } }));
 vi.mock("#/lib/notify", () => ({ failureNotice: (message: string) => (cause: unknown) => mocks.noticed(message, cause) }));
 vi.mock("#/components/queue-panel", () => ({ QueuePanelToggle: () => null }));

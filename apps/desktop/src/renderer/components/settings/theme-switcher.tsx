@@ -6,7 +6,7 @@ import { cn } from "#/lib/utils";
 
 const themeOptions: { icon: typeof SunIcon; label: string; value: Theme }[] = [
   { icon: SunIcon, label: "Light", value: "light" },
-  { icon: LaptopIcon, label: "System", value: "system" },
+  { icon: LaptopIcon, label: "Follow system", value: "system" },
   { icon: MoonIcon, label: "Dark", value: "dark" },
 ];
 
@@ -22,7 +22,8 @@ export const ThemeMenuControl = ({ className }: { className?: string }) => {
       {themeOptions.map(({ icon: Icon, label, value }) => (
         <MenuRadioItem
           aria-label={label}
-          className="flex-1 justify-center rounded-[calc(var(--radius-md)-2px)] px-0 py-1 text-muted-foreground data-highlighted:bg-accent data-highlighted:text-accent-foreground data-checked:bg-background data-checked:text-foreground data-checked:shadow-sm data-checked:data-highlighted:bg-background data-checked:data-highlighted:text-foreground"
+          title={label}
+          className="flex-1 justify-center rounded-[calc(var(--radius-md)-2px)] px-0 py-1 text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-highlighted:bg-accent data-highlighted:text-accent-foreground data-checked:bg-background data-checked:text-foreground data-checked:shadow-sm data-checked:data-highlighted:bg-background data-checked:data-highlighted:text-foreground dark:data-checked:bg-input dark:data-checked:data-highlighted:bg-input"
           key={value}
           value={value}
         >

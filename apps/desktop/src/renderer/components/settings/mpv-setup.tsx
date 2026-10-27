@@ -8,16 +8,16 @@ import { usePlayerMpvBinary } from "#/player/hooks";
 import { cn } from "#/lib/utils";
 import type { MpvInstallMethod, MpvInstallOption, MpvSource } from "#shared/commands/player";
 
-const mpvSourceLabels: Record<MpvSource, string> = {
+export const mpvSourceLabels: Record<MpvSource, string> = {
   env: "MUSWAG_MPV_PATH",
   manual: "Chosen by you",
-  cache: "Remembered from last launch",
+  cache: "Found at last launch",
   path: "Found on PATH",
   "well-known": "Found in a standard install location",
   "login-shell": "Found on PATH as a new terminal sees it",
 };
 
-const managerNames: Record<MpvInstallMethod, string> = {
+export const managerNames: Record<MpvInstallMethod, string> = {
   brew: "Homebrew",
   winget: "WinGet",
   scoop: "Scoop",
@@ -60,8 +60,10 @@ function StatusLine() {
       return (
         <Line icon={<CheckCircleIcon weight="fill" />} tone="default">
           <span>Found mpv {binary.version}</span>
-          <span className="block text-xs text-muted-foreground">
-            <Command text={binary.path} /> · {mpvSourceLabels[binary.source]}
+          <span className="block text-xs text-muted-foreground">{mpvSourceLabels[binary.source]}</span>
+          {/* A path is one long word: cut short here, whole on hover. */}
+          <span title={binary.path} className="block truncate font-mono text-xs text-muted-foreground">
+            {binary.path}
           </span>
         </Line>
       );
@@ -112,7 +114,8 @@ function SearchedPlaces() {
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+/** Copies `text`, and says so for a moment. */
+export function CopyButton({ size = "default", text, label = "Copy", className }: { size?: "default" | "sm"; text: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -121,57 +124,82 @@ function CopyButton({ text }: { text: string }) {
   }, [copied]);
   return (
     <Button
-      aria-label="Copy"
+      aria-label={label}
       onClick={() => {
         void navigator.clipboard.writeText(text).then(() => setCopied(true));
       }}
+      size={size}
       variant="outline"
+      className={className}
     >
       {copied ? <CheckCircleIcon /> : <CopyIcon />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : label}
     </Button>
   );
 }
 
-function InstallOption({ option, primary }: { option: MpvInstallOption; primary: boolean }) {
+/** A link out of the app, named by its host rather than spelled out. */
+export function HostLink({ url, quiet = false }: { url: string; quiet?: boolean }) {
+  return (
+    <a
+      className={cn(
+        "underline transition-colors",
+        // Quiet inside a muted line, as the dialog's other inline actions are; prominent in a paragraph.
+        quiet
+          ? "decoration-muted-foreground/30 underline-offset-2 hover:text-foreground hover:decoration-foreground"
+          : "font-medium text-foreground decoration-foreground/30 underline-offset-4 hover:decoration-foreground",
+      )}
+      href={url}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {new URL(url).hostname}
+    </a>
+  );
+}
+
+/** One package manager's command, with a way to run or copy it. `size` is the buttons'. */
+/** Opens a terminal that runs `method`'s command, and says why when it cannot. */
+export function useOpenTerminal(method: MpvInstallMethod) {
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const open = () => {
+    setError(null);
+    setOpening(true);
+    void MpvIPC.openTerminal(method)
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The terminal could not be opened."))
+      .finally(() => setOpening(false));
+  };
+  return { error, opening, open };
+}
+
+export function InstallOption({ option, primary, size = "default", title = managerNames[option.method] }: { option: MpvInstallOption; primary: boolean; size?: "default" | "sm"; title?: ReactNode }) {
+  const { error, opening, open } = useOpenTerminal(option.method);
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium">{managerNames[option.method]}</div>
-      <Command className="block rounded-md bg-muted px-2.5 py-1.5" text={option.command} />
-      <div className="flex flex-wrap gap-2">
-        {option.terminal ? (
-          <Button
-            disabled={opening}
-            onClick={() => {
-              setError(null);
-              setOpening(true);
-              void MpvIPC.openTerminal(option.method)
-                .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The terminal could not be opened."))
-                .finally(() => setOpening(false));
-            }}
-            variant={primary ? "default" : "outline"}
-          >
-            <TerminalWindowIcon />
-            Run in terminal
-          </Button>
-        ) : null}
-        <CopyButton text={option.command} />
-      </div>
+      <div className="text-sm font-medium">{title}</div>
+      {/* What to do first, before the command it is about. */}
       {option.note || option.url ? (
         <p className="text-xs text-muted-foreground">
           {option.note}
           {option.url ? (
             <>
               {" "}
-              <a className="[overflow-wrap:anywhere] underline underline-offset-2" href={option.url} rel="noreferrer" target="_blank">
-                {option.url}
-              </a>
+              <HostLink url={option.url} />
             </>
           ) : null}
         </p>
       ) : null}
+      <Command className="block rounded-md bg-muted px-2.5 py-1.5" text={option.command} />
+      <div className="flex flex-wrap gap-2">
+        {option.terminal ? (
+          <Button disabled={opening} onClick={open} size={size} variant={primary ? "default" : "outline"}>
+            <TerminalWindowIcon />
+            Run in terminal
+          </Button>
+        ) : null}
+        <CopyButton size={size} text={option.command} />
+      </div>
       {error ? (
         <Line icon={<WarningCircleIcon weight="fill" />} tone="error">
           {error}
@@ -181,16 +209,18 @@ function InstallOption({ option, primary }: { option: MpvInstallOption; primary:
   );
 }
 
-/** Runs one of the user's commands at a time, and says whether one is running. */
-function useBusy() {
+/** Runs one of the user's commands at a time, and says whether one is running and why the last one failed. */
+export function useBusy() {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const run = (command: () => Promise<unknown>) => {
     setBusy(true);
+    setError(null);
     void command()
-      .catch(() => {})
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "That did not work."))
       .finally(() => setBusy(false));
   };
-  return [busy, run] as const;
+  return [busy, run, error] as const;
 }
 
 /**

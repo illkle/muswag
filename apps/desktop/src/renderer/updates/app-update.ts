@@ -22,7 +22,8 @@ export function isAppUpdateBusy(status: AppUpdateStatus): boolean {
   return status === "checking" || status === "downloading";
 }
 
-/** True when there is a newer version to tell the user about. */
-export function hasAppUpdate(status: AppUpdateStatus): boolean {
-  return status === "downloading" || status === "ready";
+/** A version short enough to read at a glance: "0.5.2-nightly.20261025.142" is "v0.5.2 nightly". */
+export function shortVersion(version: string): string {
+  const [release, pre] = version.split("-", 2);
+  return pre ? `v${release} ${pre.split(".")[0]}` : `v${release}`;
 }

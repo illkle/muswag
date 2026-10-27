@@ -18,6 +18,12 @@ export const SyncAfter = Schema.Struct({ amount: Schema.Int, unit: SyncAfterUnit
 );
 export type SyncAfter = typeof SyncAfter.Type;
 
+/** The whole amounts of `unit` that `SyncAfter` takes. */
+export const syncAfterLimits = (unit: SyncAfterUnit) => ({
+  min: Math.ceil(MIN_MINUTES / SYNC_AFTER_UNIT_MINUTES[unit]),
+  max: Math.floor(MAX_MINUTES / SYNC_AFTER_UNIT_MINUTES[unit]),
+});
+
 /** When the app syncs the library on its own: as it opens, and while it is open, once the last sync is older than `syncAfter`. */
 export const SyncSettings = Schema.Struct({ syncAfter: SyncAfter });
 export type SyncSettings = typeof SyncSettings.Type;

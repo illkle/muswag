@@ -35,6 +35,7 @@ vi.mock("#/player/hooks", () => ({
 vi.mock("#/components/ui/dialog", () => ({
   Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
@@ -117,7 +118,7 @@ describe("MpvSetup", () => {
     render(<MpvSetup />);
 
     expect(screen.queryByRole("button", { name: "Run in terminal" })).toBeNull();
-    expect(screen.getByRole("link", { name: "https://brew.sh" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "brew.sh" })).toBeTruthy();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Copy" })));
     expect(writeText).toHaveBeenCalledWith("brew install mpv");
   });
@@ -155,7 +156,35 @@ describe("MpvInfoDialog", () => {
     act(() => openMpvDialog());
 
     expect(screen.getByText("Playback engine")).toBeTruthy();
-    expect(screen.getByText("Found mpv 0.40.0")).toBeTruthy();
-    expect(screen.getByText("The track could not be played after retrying.")).toBeTruthy();
+    expect(screen.getByText("mpv 0.40.0")).toBeTruthy();
+    expect(screen.getByText("Playback")).toBeTruthy();
+    expect(screen.getByText("The track could not be played after retrying")).toBeTruthy();
+  });
+
+  it("names the mpv that is too old, says what is needed, and offers the command that fixes it", () => {
+    mocks.playerState.binary = unavailable("The mpv on PATH cannot be used. mpv 0.37.0 is too old. Muswag requires mpv 0.38.0 or newer.", [
+      { terminal: true, command: "brew upgrade mpv", method: "brew", note: null, url: null },
+    ]);
+
+    render(<MpvInfoDialog />);
+    act(() => openMpvDialog());
+
+    expect(screen.getByText("mpv 0.37.0")).toBeTruthy();
+    expect(screen.getByText("Too old")).toBeTruthy();
+    expect(screen.getByText("muswag needs 0.38.0 or newer")).toBeTruthy();
+    expect(screen.getByText("On PATH")).toBeTruthy();
+    expect(screen.getByText("Upgrade with Homebrew")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Run in terminal" })).toBeTruthy();
+  });
+  it("offers a way back to automatic discovery when the mpv the user chose no longer works", async () => {
+    mocks.playerState.binary = unavailable("The mpv you selected (/Applications/mpv.app/Contents/MacOS/mpv) cannot be used. It exited before reporting its version.");
+
+    render(<MpvInfoDialog />);
+    act(() => openMpvDialog());
+
+    expect(screen.getByText("Can’t be used")).toBeTruthy();
+    expect(screen.getByText("It exited before reporting its version")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reset to automatic" }));
+    await waitFor(() => expect(mocks.clearManualPath).toHaveBeenCalledOnce());
   });
 });
