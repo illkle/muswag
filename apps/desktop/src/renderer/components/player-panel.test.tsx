@@ -90,7 +90,10 @@ describe("PlayerVolume", () => {
     drag(50);
     expect(mocks.setVolume.mock.calls).toEqual([[40]]);
 
-    act(() => void vi.advanceTimersByTime(100));
+    act(() => void vi.advanceTimersByTime(29));
+    expect(mocks.setVolume.mock.calls).toEqual([[40]]);
+
+    act(() => void vi.advanceTimersByTime(1));
     expect(mocks.setVolume.mock.calls).toEqual([[40], [50]]);
   });
 
