@@ -32,3 +32,15 @@ export function formatAgo(iso: string, now = Date.now()): string {
   if (hours < 24) return relativeTime.format(-hours, "hour");
   return relativeTime.format(-Math.round(hours / 24), "day");
 }
+
+const narrowRelativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "narrow" });
+
+/** `formatAgo` for a tight spot: "just now", "5m ago", "yesterday". */
+export function formatAgoShort(iso: string, now = Date.now()): string {
+  const minutes = Math.round((now - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return narrowRelativeTime.format(-minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return narrowRelativeTime.format(-hours, "hour");
+  return narrowRelativeTime.format(-Math.round(hours / 24), "day");
+}

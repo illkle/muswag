@@ -57,11 +57,10 @@ describe("AppUpdateDialog", () => {
   it("shows the installed version and forces a check when asked", () => {
     render(<AppUpdateDialog onOpenChange={() => undefined} open state={upToDate} />);
 
-    expect(screen.getByText("Muswag v1.2.3")).toBeTruthy();
-    expect(screen.getByText("You’re on the latest version")).toBeTruthy();
-    expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.getByText("v1.2.3")).toBeTruthy();
+    expect(screen.getByText(/^Up to date, checked /)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /Check for updates/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Check now" }));
 
     expect(mocks.check).toHaveBeenCalledOnce();
   });
@@ -69,27 +68,36 @@ describe("AppUpdateDialog", () => {
   it("offers a restart once an update has been downloaded", () => {
     render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, latestVersion: "1.3.0", progressPercent: 100, status: "ready" }} />);
 
-    expect(screen.getByText("Update downloaded, restart to install")).toBeTruthy();
-    expect(screen.getByText("v1.3.0")).toBeTruthy();
+    expect(screen.getByText("Ready to install v1.3.0")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check now" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Restart and install/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Restart and install" }));
 
     expect(mocks.install).toHaveBeenCalledOnce();
   });
 
-  it("disables the check in unpackaged builds", () => {
+  it("offers no check in unpackaged builds, and says the channel waits for a packaged one", () => {
     render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, canCheck: false, latestVersion: null, lastCheckedAt: null, status: "disabled" }} />);
 
-    expect(screen.getByText("Updates are only checked in packaged builds")).toBeTruthy();
-    expect(screen.getByText("Never")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Check for updates/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Updates are off in development builds")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check now" })).toBeNull();
+    expect(screen.getByText("Takes effect in packaged builds")).toBeTruthy();
+  });
+
+  it("says a check or download failed, keeps what the updater said behind details, and offers to try again", () => {
+    render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, error: "net::ERR_INTERNET_DISCONNECTED", status: "error" }} />);
+
+    expect(screen.getByText("Update failed")).toBeTruthy();
+    expect(screen.getByText("net::ERR_INTERNET_DISCONNECTED")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mocks.check).toHaveBeenCalledOnce();
   });
 
   it("switches the update channel", () => {
     render(<AppUpdateDialog onOpenChange={() => undefined} open state={upToDate} />);
 
     expect(screen.getByRole("radio", { name: "Stable" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("Released versions only.")).toBeTruthy();
+    expect(screen.getByText("Stable releases only")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: "Nightly" }));
 
@@ -99,6 +107,6 @@ describe("AppUpdateDialog", () => {
   it("says a nightly install on the stable channel waits for a newer stable release", () => {
     render(<AppUpdateDialog onOpenChange={() => undefined} open state={{ ...upToDate, currentVersion: "1.2.4-nightly.20261025.7" }} />);
 
-    expect(screen.getByText("This nightly stays until a stable release is newer than it.")).toBeTruthy();
+    expect(screen.getByText("This nightly stays until a stable release is newer")).toBeTruthy();
   });
 });

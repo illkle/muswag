@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { dialog } from "electron";
 import { Effect, ManagedRuntime, Stream } from "effect";
 import type { CommandResult, PlayerCommand, PlayerCredentials, PlayerSnapshot } from "#shared/commands/player";
@@ -53,8 +54,10 @@ export function startPlayer(options: Parameters<typeof makePlayerLayer>[0]): Pla
   return {
     execute,
     locate: async () => {
-      const result = await dialog.showOpenDialog({ title: "Locate mpv", buttonLabel: "Use this binary", properties: ["openFile", "showHiddenFiles", "treatPackageAsDirectory"] });
-      const path = result.canceled ? undefined : result.filePaths[0];
+      // An app is chosen as a whole, as people know it, and its mpv is the program inside it.
+      const result = await dialog.showOpenDialog({ title: "Choose mpv", buttonLabel: "Use this mpv", properties: ["openFile", "showHiddenFiles"] });
+      const chosen = result.canceled ? undefined : result.filePaths[0];
+      const path = chosen?.endsWith(".app") ? join(chosen, "Contents", "MacOS", "mpv") : chosen;
       return path ? execute({ _tag: "SetBinaryPath", path }) : null;
     },
     setCredentials: (credentials) => respond(Player.use((player) => player.setCredentials(credentials))),

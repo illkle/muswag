@@ -51,7 +51,7 @@ describe("SyncSettingsDialog", () => {
 
   it("shows how long after the last sync the app syncs, and saves a whole number of any unit", async () => {
     renderDialog();
-    const field = screen.getByLabelText("Auto sync after") as HTMLInputElement;
+    const field = screen.getByLabelText("Sync automatically every") as HTMLInputElement;
     const unit = screen.getByLabelText("Unit") as HTMLSelectElement;
     expect([field.value, unit.value]).toEqual(["1", "weeks"]);
     expect(screen.getByRole("option", { name: "week" })).toBeTruthy();
@@ -68,7 +68,7 @@ describe("SyncSettingsDialog", () => {
     // Main has not saved the first change yet, so the settings it publishes are still a week.
     mocks.setSyncSettings.mockReturnValue(new Promise(() => {}));
     renderDialog();
-    const field = screen.getByLabelText("Auto sync after");
+    const field = screen.getByLabelText("Sync automatically every");
 
     fireEvent.change(field, { target: { value: "2" } });
     fireEvent.change(field, { target: { value: "1" } });
@@ -77,7 +77,7 @@ describe("SyncSettingsDialog", () => {
 
   it("converts the amount to the unit chosen, to the nearest whole one", async () => {
     renderDialog();
-    const field = screen.getByLabelText("Auto sync after") as HTMLInputElement;
+    const field = screen.getByLabelText("Sync automatically every") as HTMLInputElement;
     const unit = screen.getByLabelText("Unit");
 
     fireEvent.change(unit, { target: { value: "days" } });
@@ -99,11 +99,11 @@ describe("SyncSettingsDialog", () => {
 
   it("does not save what it does not take, and says why", () => {
     renderDialog();
-    const field = screen.getByLabelText("Auto sync after");
+    const field = screen.getByLabelText("Sync automatically every");
 
     for (const value of ["0", "1.5", "", "60"]) {
       fireEvent.change(field, { target: { value } });
-      expect(screen.getByText("Enter a whole number, from 5 minutes to a year.")).toBeTruthy();
+      expect(screen.getByText("Enter a whole number of weeks from 1 to 52")).toBeTruthy();
     }
     expect(mocks.setSyncSettings).not.toHaveBeenCalled();
 
@@ -111,43 +111,44 @@ describe("SyncSettingsDialog", () => {
     fireEvent.change(field, { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "minutes" } });
     fireEvent.change(field, { target: { value: "4" } });
-    expect(screen.getByText("Enter a whole number, from 5 minutes to a year.")).toBeTruthy();
+    expect(screen.getByText("Enter a whole number of minutes from 5 to 525600")).toBeTruthy();
     expect(mocks.setSyncSettings).not.toHaveBeenCalled();
   });
 
   it("says when the library last synced, syncs it now, and shows a sync running and why the last one failed", async () => {
     mocks.librarySync = { running: false, progress: null, error: null, lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString() };
     renderDialog();
-    expect(screen.getByText("5 minutes ago")).toBeTruthy();
+    expect(screen.getByText("Synced 5 minutes ago")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
     await waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(1));
     cleanup();
 
     mocks.librarySync = { running: true, progress: { done: 30, total: 120 }, error: null, lastSyncedAt: null };
     renderDialog();
-    expect(screen.getByText("syncing… 25%")).toBeTruthy();
+    expect(screen.getByText("Syncing, 25%")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Sync now" }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
 
     mocks.librarySync = { running: false, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
     renderDialog();
-    expect(screen.getByText("never")).toBeTruthy();
-    expect(screen.getByText("Unable to reach the server")).toBeTruthy();
+    expect(screen.getByText("Never synced")).toBeTruthy();
+    expect(screen.getByText("Last sync failed: Unable to reach the server")).toBeTruthy();
   });
 
-  it("says whether the server reports lastScan, and what that means for a sync", async () => {
+  it("says only when the server does not report lastScan, which makes every sync read every song", async () => {
     mocks.lastScan.mockResolvedValue("2026-10-26T12:00:00Z");
     renderDialog();
-    expect(await screen.findByText(/which lets muswag download only what changed/)).toBeTruthy();
+    await waitFor(() => expect(mocks.lastScan).toHaveBeenCalled());
+    expect(screen.queryByText(/cannot report changes/)).toBeNull();
     cleanup();
 
     mocks.lastScan.mockResolvedValue(null);
     renderDialog();
-    expect(await screen.findByText(/Every sync downloads the full list of songs again/)).toBeTruthy();
+    expect(await screen.findByText("This server cannot report changes, so every sync reads the whole library")).toBeTruthy();
     cleanup();
 
     mocks.lastScan.mockRejectedValue(new Error("Unable to reach the server"));
     renderDialog();
-    expect(await screen.findByText("The server could not be asked: Unable to reach the server")).toBeTruthy();
+    expect(await screen.findByText("Could not reach the server: Unable to reach the server")).toBeTruthy();
   });
 });

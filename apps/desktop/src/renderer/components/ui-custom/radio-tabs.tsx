@@ -13,7 +13,7 @@ function RadioTabItem({ className, children, ...props }: React.ComponentProps<ty
       className={cn(
         "relative inline-flex items-center justify-center rounded-md px-3 text-sm",
         "font-medium whitespace-nowrap transition-all",
-        "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
+        "focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-disabled:pointer-events-none data-disabled:opacity-50",
         "data-checked:text-foreground data-checked:shadow-sm",
         className,
       )}
@@ -21,7 +21,7 @@ function RadioTabItem({ className, children, ...props }: React.ComponentProps<ty
     >
       <div className="relative z-10">{children}</div>
 
-      <RadioPrimitive.Indicator render={<div className="absolute z-1 size-full rounded-md bg-background" />}></RadioPrimitive.Indicator>
+      <RadioPrimitive.Indicator render={<div className="absolute z-1 size-full rounded-md bg-background dark:bg-input" />}></RadioPrimitive.Indicator>
     </RadioPrimitive.Root>
   );
 }

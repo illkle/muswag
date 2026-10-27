@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, buttonVariants } from "#/components/ui/button";
 import { Slider } from "#/components/ui-custom/slider";
 import { PlayerIPC } from "#/player/commands";
-import { openMpvDialog } from "#/components/settings/mpv-info-dialog";
+import { openMpvDialog, useMpvDialogOpen } from "#/components/settings/mpv-info-dialog";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
 import { QueueActions } from "#/queue/queue";
 import {
@@ -453,8 +453,10 @@ export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
 function PlayerErrorBanner() {
   const connected = usePlayerConnected();
   const error = usePlayerError();
+  // The playback engine dialog shows the same error, with more to do about it.
+  const mpvDialogOpen = useMpvDialogOpen();
 
-  if (!error) return null;
+  if (!error || mpvDialogOpen) return null;
 
   return (
     <div role="alert" className="absolute bottom-full left-1/2 mb-2 flex w-max max-w-full -translate-x-1/2 items-center gap-3 rounded-lg surface-raised px-3 py-1.5 text-sm">

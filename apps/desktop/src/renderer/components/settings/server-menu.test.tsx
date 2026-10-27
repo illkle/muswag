@@ -75,6 +75,7 @@ vi.mock("#/components/settings/theme-switcher", () => ({
 vi.mock("#/components/settings/mpv-info-dialog", () => ({
   openMpvDialog: mocks.openMpvDialog,
   mpvStatusLabels: { Checking: "Checking", Ready: "Available", Unavailable: "Not installed" },
+  readUnavailable: () => ({ version: null, verdict: "Not installed", detail: null }),
 }));
 vi.mock("#/components/settings/app-update-dialog", () => ({ AppUpdateDialog: () => null }));
 
@@ -109,8 +110,8 @@ describe("ServerMenu", () => {
     expect(screen.getByRole("button", { name: "music.example.com, server and app settings" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sync library" })).toBeTruthy();
     expect(screen.getByText("Playback engine")).toBeTruthy();
-    expect(screen.getByText("v1.2.3")).toBeTruthy();
-    expect(screen.getByText("Downloading")).toBeTruthy();
+    expect(screen.getByText("Updates")).toBeTruthy();
+    expect(screen.getByText("40%")).toBeTruthy();
     expect(screen.getByText("theme control")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Log out…" })).toBeTruthy();
   });
@@ -121,18 +122,18 @@ describe("ServerMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync library" }));
     await waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("button", { name: "Sync everything again" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Sync settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Library sync settings" })).toBeTruthy();
   });
 
   it("says when the library was last synced, and how far a running sync has got", () => {
     mocks.librarySync = { running: false, progress: null, error: null, lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString() };
     renderServerMenu();
-    expect(screen.getByRole("button", { name: /^Sync library/ }).textContent).toContain("5 minutes ago");
+    expect(screen.getByRole("button", { name: /^Sync library/ }).textContent).toContain("5m ago");
     cleanup();
 
     mocks.librarySync = { running: true, progress: { done: 30, total: 120 }, error: null, lastSyncedAt: null };
     renderServerMenu();
-    expect(screen.getByRole("button", { name: "Syncing library… 25%" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Syncing…\s*25%$/ })).toBeTruthy();
   });
 
   it("shows a sync running in main that this menu did not start, and does not start another", () => {
@@ -141,7 +142,7 @@ describe("ServerMenu", () => {
     renderServerMenu();
 
     expect(screen.getByRole("button", { name: "music.example.com, server and app settings, syncing" })).toBeTruthy();
-    const syncItem = screen.getByRole("button", { name: "Syncing library…" }) as HTMLButtonElement;
+    const syncItem = screen.getByRole("button", { name: "Syncing…" }) as HTMLButtonElement;
     expect(syncItem.disabled).toBe(true);
     fireEvent.click(syncItem);
     expect(mocks.sync).not.toHaveBeenCalled();
@@ -150,7 +151,7 @@ describe("ServerMenu", () => {
   it("says why the last sync failed, until another one runs", () => {
     mocks.librarySync = { running: false, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
     renderServerMenu();
-    expect(screen.getByRole("alert").textContent).toBe("Last sync: Unable to reach the server");
+    expect(screen.getByRole("alert").textContent).toBe("Last sync failed: Unable to reach the server");
     cleanup();
 
     mocks.librarySync = { running: true, progress: null, error: "Unable to reach the server", lastSyncedAt: null };
@@ -158,7 +159,7 @@ describe("ServerMenu", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("raises an alert on the button and the mpv row when playback is unavailable", () => {
+  it("raises an alert on the button, and says it on the mpv row, when playback is unavailable", () => {
     mocks.binary = { _tag: "Unavailable", message: "mpv was not found. Install it, or select its executable.", options: [], searched: [] };
 
     renderServerMenu();
@@ -166,8 +167,9 @@ describe("ServerMenu", () => {
     const trigger = screen.getByRole("button", { name: "music.example.com, server and app settings, playback engine unavailable" });
     expect(trigger.className).toContain("bg-destructive/10");
 
+    // The button is tinted; the row inside only carries the red icon and value, so the alert is loud once.
     const mpvRow = screen.getByText("Playback engine").closest("button");
-    expect(mpvRow?.className).toContain("bg-destructive/10");
+    expect(mpvRow?.className).not.toContain("bg-destructive/10");
     expect(screen.getByText("Not installed")).toBeTruthy();
   });
 
@@ -177,7 +179,7 @@ describe("ServerMenu", () => {
     renderServerMenu();
 
     expect(screen.getByRole("button", { name: "music.example.com, server and app settings, playback engine unavailable" })).toBeTruthy();
-    expect(screen.getByText("Error")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
   });
 
   it("logs out only once it is confirmed that the library will be removed", async () => {
@@ -185,7 +187,7 @@ describe("ServerMenu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Log out…" }));
     const dialog = await screen.findByRole("dialog");
-    expect(dialog.textContent).toContain("removed from this computer");
+    expect(dialog.textContent).toContain("clears the library and queue on this computer");
     expect(mocks.logout).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Log out" }));
