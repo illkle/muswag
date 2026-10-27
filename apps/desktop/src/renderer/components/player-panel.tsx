@@ -311,7 +311,7 @@ const CurrentTrack = (props: React.HTMLAttributes<HTMLDivElement>) => {
 };
 
 /** Volume changes reach main at most this often while the slider moves. */
-const VOLUME_SEND_INTERVAL_MS = 100;
+const VOLUME_SEND_INTERVAL_MS = 30;
 
 export const PlayerVolume = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const muted = usePlayerMuted();
