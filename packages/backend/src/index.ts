@@ -10,3 +10,4 @@ export * from "./playlists/sync-manager.js";
 export * from "./session/credentials-store.js";
 export * from "./session/session-manager.js";
 export * from "./library/queries.js";
+export * from "./library/shuffle-order.js";

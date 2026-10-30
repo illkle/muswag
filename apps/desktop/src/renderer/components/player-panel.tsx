@@ -1,4 +1,4 @@
-import { MusicNotesIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
+import { MusicNotesIcon, PauseIcon, PlayIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, SpinnerGapIcon, WarningIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "#/components/ui/button";
@@ -6,7 +6,7 @@ import { Slider } from "#/components/ui-custom/slider";
 import { PlayerIPC } from "#/player/commands";
 import { openMpvDialog, useMpvDialogOpen } from "#/components/settings/mpv-info-dialog";
 import { useAlbumCoverArt } from "#/library/album-cover-art";
-import { QueueActions } from "#/queue/queue";
+import { QueueActions, useQueueShuffle } from "#/queue/queue";
 import {
   usePlayerCanGoBack,
   usePlayerCanGoForward,
@@ -54,6 +54,7 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
   const canPlay = usePlayerCanPlay();
   const status = usePlayerStatus();
   const buffering = usePlayerBuffering();
+  const shuffled = useQueueShuffle();
 
   const togglePlay = () => {
     if (!canPlay) return;
@@ -81,6 +82,21 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
 
   return (
     <div {...props} className={cn("flex items-center justify-center gap-1", props.className)}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className={cn(shuffled && "text-brand hover:text-brand")}
+        onClick={() => {
+          void QueueActions.setShuffle(!shuffled).catch(failureNotice("The queue could not be shuffled."));
+        }}
+        disabled={shuffled === null}
+        aria-pressed={Boolean(shuffled)}
+        aria-label="Shuffle"
+        title="Shuffle"
+      >
+        <ShuffleIcon className="size-4" />
+      </Button>
+
       <Button
         size="icon-sm"
         variant="ghost"
@@ -116,6 +132,9 @@ const PlayerButtonControls = (props: React.HTMLAttributes<HTMLDivElement>) => {
       >
         <SkipForwardIcon weight="fill" className="size-4" />
       </Button>
+
+      {/* As wide as the button on the other side, which keeps Play in the middle. */}
+      <span aria-hidden className="size-8" />
     </div>
   );
 };

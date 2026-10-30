@@ -8,6 +8,10 @@ import { emptyQueueState, type QueueManagerState } from "#shared/queue-state";
 /** The playback queue lives in main; these send it commands. */
 export const QueueActions = {
   playSource: (ref: QueueSourceRef, key: string) => appCommand("queue:playSource", ref, key),
+  /** Plays a source in a new random order. */
+  shuffleSource: (ref: QueueSourceRef) => appCommand("queue:shuffleSource", ref),
+  /** Puts the source playing in a new random order, or back in its own. */
+  setShuffle: (on: boolean) => appCommand("queue:setShuffle", on),
   /** Plays an occurrence the queue holds: a queued track, or one of those next in its source. */
   select: (key: string) => appCommand("queue:select", key),
   /** Starts the queue when the player holds nothing. */
@@ -28,6 +32,9 @@ const EMPTY = emptyQueueState();
 export const useQueueSelector = <T>(select: (queue: QueueManagerState) => T): T => useSelector(appState.queue, (queue) => select(queue ?? EMPTY));
 
 export const useQueueManagerState = (): QueueManagerState => useQueueSelector((state) => state);
+
+/** Whether the source playing is shuffled; `null` when no source is playing, which leaves nothing to shuffle. */
+export const useQueueShuffle = (): boolean | null => useQueueSelector(({ source }) => (source ? Boolean(source.ref.shuffle) : null));
 
 /**
  * The key of the occurrence playing, when the queue is playing through a source `isSource` accepts, so that a

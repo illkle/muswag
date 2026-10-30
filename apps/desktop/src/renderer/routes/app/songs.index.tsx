@@ -13,8 +13,12 @@ import { failureNotice } from "#/lib/notify";
 import { cn } from "#/lib/utils";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 import { PageState } from "#/components/page-state";
+import { ShuffleButton } from "#/components/shuffle-button";
 
 const isSort = Schema.is(LibrarySort);
+
+/** The row of the button that shuffles the library, over the list's header. */
+const SHUFFLE_ROW_HEIGHT = 40;
 
 export const Route = createFileRoute("/app/songs/")({
   // The order the list is in, which is also the order the library plays in from here.
@@ -91,7 +95,12 @@ function RouteComponent() {
       menu={(selection) => <TrackMenuAddItems selection={selection} />}
       scrollId={`library-screen-songs-${sort}`}
       rememberScroll
-      topPadding={TOP_HEIGHT}
+      topContent={
+        <div style={{ top: TOP_HEIGHT }} className="absolute px-4">
+          <ShuffleButton source={{ type: "library", sort }} small />
+        </div>
+      }
+      topPadding={TOP_HEIGHT + SHUFFLE_ROW_HEIGHT}
       bottomPadding={PLAYER_HEIGHT}
     />
   );

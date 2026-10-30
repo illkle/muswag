@@ -1,6 +1,7 @@
 import { AlbumList } from "#/components/album-list/album-list";
 import { AlbumCover } from "#/components/album-list/album-cover";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { ShuffleButton } from "#/components/shuffle-button";
 import { getArtistCredits } from "#/components/utils/artist-links";
 import { PageState } from "#/components/page-state";
 import { useMainRead } from "#/data/main-read";
@@ -75,6 +76,9 @@ function RouteComponent() {
             }
           >
             <p className="text-sm text-muted-foreground">{artistMeta || "No albums in the synced local library."}</p>
+            <div className="mt-2">
+              <ShuffleButton source={{ type: "artist", artistId }} disabled={!artistMeta} />
+            </div>
           </DetailHeader>
         }
       />

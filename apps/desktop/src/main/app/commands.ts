@@ -88,6 +88,8 @@ export const serveAppCommands = (options: {
       "playlists:delete": (id) => commands.delete(id),
       "playlists:sync": () => session.use((active) => active.playlists.sync),
       "queue:playSource": (ref, key) => Effect.promise(() => queue.playSource({ ...ref }, key)),
+      "queue:shuffleSource": (ref) => Effect.promise(() => queue.shuffleSource({ ...ref })),
+      "queue:setShuffle": (on) => Effect.promise(() => queue.setShuffle(on)),
       "queue:select": (key) => Effect.promise(() => queue.select(key)),
       "queue:play": () => Effect.promise(() => queue.play()),
       "queue:enqueue": (songIds, beforeKey) => Effect.promise(() => songsInOrder(songIds).then((tracks) => queue.enqueue(tracks, beforeKey))),

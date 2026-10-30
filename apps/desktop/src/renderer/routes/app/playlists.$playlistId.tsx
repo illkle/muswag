@@ -3,6 +3,7 @@ import { PencilSimpleIcon, PlayIcon, PlaylistIcon, TrashIcon, WarningIcon } from
 import { useMemo, useState } from "react";
 
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { ShuffleButton } from "#/components/shuffle-button";
 import { PageState } from "#/components/page-state";
 import { PlaylistArt } from "#/components/playlist/playlist-art";
 import { PlaylistEditDialog } from "#/components/playlist/playlist-edit-dialog";
@@ -164,6 +165,7 @@ function PlaylistScreen({ playlistId }: { playlistId: string }) {
                   <PlayIcon weight="fill" className="size-5" />
                   Play
                 </Button>
+                <ShuffleButton source={{ type: "playlist", playlistId }} disabled={!firstPlayableEntryId} />
                 {canEdit ? (
                   <>
                     <Button variant="ghost" size="icon-sm" aria-label="Edit playlist" onClick={() => setEditOpen(true)}>

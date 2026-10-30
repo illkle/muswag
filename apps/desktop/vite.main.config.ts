@@ -16,13 +16,13 @@ function isExternal(id: string): boolean {
 const conditions = ["source", "module", "node", "development|production"];
 
 /**
- * Bundles the search worker (`src/main/search/search-worker.ts`) whole, into `search-worker.cjs` next
- * to main's `index.cjs`. A worker thread loads a script of its own; as a second entry of this build it
- * would share chunks with main, and loading one of them would start main again inside the worker.
+ * Bundles a worker (`entry`) whole, into `fileName` next to main's `index.cjs`. A worker thread loads
+ * a script of its own; as a second entry of this build it would share chunks with main, and loading
+ * one of them would start main again inside the worker.
  */
-function searchWorker(minify: boolean): Plugin {
+function worker(entry: string, fileName: string, minify: boolean): Plugin {
   return {
-    name: "muswag:search-worker",
+    name: `muswag:${fileName}`,
     async buildStart() {
       const result = await build({
         configFile: false,
@@ -30,7 +30,7 @@ function searchWorker(minify: boolean): Plugin {
         resolve: { conditions },
         build: {
           write: false,
-          lib: { entry: "src/main/search/search-worker.ts", fileName: () => "search-worker.cjs", formats: ["cjs"] },
+          lib: { entry, fileName: () => fileName, formats: ["cjs"] },
           minify,
           rollupOptions: { external: isExternal },
           target: "node24",
@@ -48,7 +48,7 @@ function searchWorker(minify: boolean): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [searchWorker(mode !== "development")],
+  plugins: [worker("src/main/search/search-worker.ts", "search-worker.cjs", mode !== "development"), worker("src/main/queue/song-ids-worker.ts", "song-ids-worker.cjs", mode !== "development")],
   resolve: {
     conditions,
   },

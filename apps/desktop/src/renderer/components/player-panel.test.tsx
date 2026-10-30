@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   canGoForward: false,
   startQueue: vi.fn(async () => {}),
   next: vi.fn(async () => {}),
+  setShuffle: vi.fn(async () => {}),
+  shuffled: null as boolean | null,
   noticed: vi.fn<(message: string, cause: unknown) => void>(),
 }));
 
@@ -45,7 +47,7 @@ vi.mock("#/player/hooks", () => ({
   usePlayerStatus: () => mocks.status,
 }));
 vi.mock("#/components/settings/mpv-info-dialog", () => ({ openMpvDialog: mocks.openMpvDialog, useMpvDialogOpen: () => false }));
-vi.mock("#/queue/queue", () => ({ QueueActions: { play: mocks.startQueue, next: mocks.next } }));
+vi.mock("#/queue/queue", () => ({ QueueActions: { play: mocks.startQueue, next: mocks.next, setShuffle: mocks.setShuffle }, useQueueShuffle: () => mocks.shuffled }));
 vi.mock("#/lib/notify", () => ({ failureNotice: (message: string) => (cause: unknown) => mocks.noticed(message, cause) }));
 vi.mock("#/components/queue-panel", () => ({ QueuePanelToggle: () => null }));
 vi.mock("#/components/album-list/album-cover", () => ({ AlbumCover: () => null }));
@@ -258,5 +260,34 @@ describe("PlayerPanel", () => {
     mocks.error = null;
     view.rerender(<PlayerPanel />);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("the shuffle button", () => {
+  beforeEach(() => {
+    mocks.shuffled = null;
+    mocks.setShuffle.mockClear();
+  });
+  afterEach(cleanup);
+
+  const button = () => screen.getByRole("button", { name: "Shuffle" });
+
+  it("is disabled with no source to shuffle", () => {
+    render(<PlayerPanel />);
+    expect(button().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows whether the source is shuffled, and turns that around", () => {
+    mocks.shuffled = false;
+    const view = render(<PlayerPanel />);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(button());
+    expect(mocks.setShuffle).toHaveBeenLastCalledWith(true);
+
+    mocks.shuffled = true;
+    view.rerender(<PlayerPanel />);
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button());
+    expect(mocks.setShuffle).toHaveBeenLastCalledWith(false);
   });
 });

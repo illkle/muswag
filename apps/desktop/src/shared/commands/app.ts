@@ -76,6 +76,8 @@ export const AppCommandArgs = {
   "playlists:delete": Schema.Tuple([Id]),
   "playlists:sync": Schema.Tuple([]),
   "queue:playSource": Schema.Tuple([QueueSourceRef, Id]),
+  "queue:shuffleSource": Schema.Tuple([QueueSourceRef]),
+  "queue:setShuffle": Schema.Tuple([Schema.Boolean]),
   "queue:select": Schema.Tuple([Id]),
   "queue:play": Schema.Tuple([]),
   "queue:enqueue": Schema.Tuple([Ids, Schema.NullOr(Id)]),
@@ -146,6 +148,8 @@ export type AppCommandResults = {
   "playlists:delete": void;
   "playlists:sync": PlaylistSyncStatus;
   "queue:playSource": void;
+  "queue:shuffleSource": void;
+  "queue:setShuffle": void;
   "queue:select": void;
   "queue:play": void;
   "queue:enqueue": void;

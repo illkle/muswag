@@ -40,6 +40,7 @@ import {
   type SongRange,
   type SourceCursor,
   type SourceItem,
+  type SourceShuffle,
   type SourceWindow,
 } from "@muswag/model";
 import { and, asc, desc, eq, getTableColumns, gt, inArray, isNotNull, lt, not, notInArray, sql, type SQL } from "drizzle-orm";
@@ -48,6 +49,7 @@ import { Effect } from "effect";
 
 import { Db, type Database } from "../db/database.js";
 import { chunks, STATEMENT_IDS } from "../db/upsert.js";
+import { shuffleOrder, type SongIdList } from "./shuffle-order.js";
 
 /** The columns an order of the library sorts by, whichever way it goes. */
 const orderColumns = (sort: LibrarySort) => LIBRARY_ORDERS[librarySortParts(sort).by].map((key) => songs[key]);
@@ -126,8 +128,16 @@ const albumSongOrder = () => ALBUM_ORDER.map((column) => asc(songs[column]));
 type Reads = Pick<Database, "select" | "$count">;
 const found = (index: number) => (index < 0 ? null : index);
 
+/** `items` in the order of `shuffle`, which starts from the one `keyOf` says is its first; as they are without one. */
+const arranged = <T>(items: ReadonlyArray<T>, shuffle: SourceShuffle | undefined, keyOf: (item: T) => string): ReadonlyArray<T> => {
+  if (!shuffle) return items;
+  const first = found(items.findIndex((item) => keyOf(item) === shuffle.first));
+  const order = shuffleOrder(shuffle.seed, items.length, first);
+  return items.map((_, position) => items[order.at(position)]!);
+};
+
 /** An album's songs in `ALBUM_ORDER`, which is how the album page lists them. Albums are small, so the whole album is read. */
-const openAlbum = (db: Reads, albumId: string, key: string | null) =>
+const openAlbum = (db: Reads, albumId: string, shuffle: SourceShuffle | undefined, key: string | null) =>
   db
     .select()
     .from(songs)
@@ -135,7 +145,7 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
     .orderBy(...albumSongOrder())
     .pipe(
       Effect.map((rows) => {
-        const items = rows.map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
+        const items = arranged(rows, shuffle, (track) => albumOccurrenceKey(albumId, track.id)).map((track, offset): SourceItem => ({ key: albumOccurrenceKey(albumId, track.id), offset, track }));
         return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
       }),
     );
@@ -144,7 +154,7 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
  * The songs of an artist's albums, album after album, then its songs on others' albums, which is how
  * the artists page lists them. A discography is small enough to read whole.
  */
-const openArtist = (db: Reads, artistId: string, key: string | null) =>
+const openArtist = (db: Reads, artistId: string, shuffle: SourceShuffle | undefined, key: string | null) =>
   Effect.forEach([ownAlbum(artistId), creditedOnOthers(artistId)], (where) =>
     db
       .select({ track: songs })
@@ -154,20 +164,24 @@ const openArtist = (db: Reads, artistId: string, key: string | null) =>
       .orderBy(...artistAlbumOrder(), ...albumSongOrder()),
   ).pipe(
     Effect.map((reads) => {
-      const items = reads.flat().map(({ track }, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
+      const items = arranged(
+        reads.flat().map(({ track }) => track),
+        shuffle,
+        (track) => artistOccurrenceKey(artistId, track.id),
+      ).map((track, offset): SourceItem => ({ key: artistOccurrenceKey(artistId, track.id), offset, track }));
       return { length: items.length, offset: found(items.findIndex((item) => item.key === key)), read: (start: number, end: number) => Effect.succeed(items.slice(start, end)) };
     }),
   );
 
 /** A playlist's entries in order. An entry whose song the library does not have keeps its offset but is left out of what is read. */
-const openPlaylist = (db: Reads, playlistId: string, key: string | null) =>
+const openPlaylist = (db: Reads, playlistId: string, shuffle: SourceShuffle | undefined, key: string | null) =>
   db
     .select()
     .from(playlists)
     .where(eq(playlists.id, playlistId))
     .pipe(
       Effect.map(([record]) => {
-        const entries = record?.local?.entries ?? [];
+        const entries = arranged(record?.local?.entries ?? [], shuffle, ({ id }) => playlistOccurrenceKey(playlistId, id));
         return {
           length: entries.length,
           offset: found(entries.findIndex(({ id }) => playlistOccurrenceKey(playlistId, id) === key)),
@@ -213,16 +227,49 @@ const openLibrary = (db: Reads, sort: LibrarySort, key: string | null) =>
     };
   });
 
-const openSource = (db: Reads, ref: QueueSourceRef, key: string | null) => {
+/**
+ * Every song of the library in the order of `shuffle`, over the ids in `songIds`, which is what makes
+ * it fast: a random order has no index, and `OFFSET` walks the one it uses for every song read.
+ */
+const openShuffledLibrary = (db: Reads, shuffle: SourceShuffle, songIds: SongIdList, key: string | null) => {
+  const prefix = libraryOccurrenceKey("");
+  const placeOfKey = (occurrence: string | null) => found(occurrence?.startsWith(prefix) ? songIds.indexOf(occurrence.slice(prefix.length)) : -1);
+  const order = shuffleOrder(shuffle.seed, songIds.length, placeOfKey(shuffle.first));
+  const place = placeOfKey(key);
+  return Effect.succeed({
+    length: songIds.length,
+    offset: place === null ? null : order.indexOf(place),
+    read: (start: number, end: number) => {
+      const ids = Array.from({ length: Math.max(0, Math.min(end, songIds.length) - start) }, (_, index) => songIds.at(order.at(start + index)));
+      return db
+        .select()
+        .from(songs)
+        .where(inIds(songs.id, ids))
+        .pipe(
+          Effect.map((rows) => {
+            const byId = new Map(rows.map((song) => [song.id, song]));
+            // The ids can be behind the library by a moment: a song that has left it is left out, as a playlist's are.
+            return ids.flatMap((id, index): SourceItem[] => {
+              const track = byId.get(id);
+              return track ? [{ key: libraryOccurrenceKey(id), offset: start + index, track }] : [];
+            });
+          }),
+        );
+    },
+  });
+};
+
+const openSource = (db: Reads, ref: QueueSourceRef, key: string | null, songIds: SongIdList | undefined) => {
   switch (ref.type) {
     case "album":
-      return openAlbum(db, ref.albumId, key);
+      return openAlbum(db, ref.albumId, ref.shuffle, key);
     case "artist":
-      return openArtist(db, ref.artistId, key);
+      return openArtist(db, ref.artistId, ref.shuffle, key);
     case "playlist":
-      return openPlaylist(db, ref.playlistId, key);
+      return openPlaylist(db, ref.playlistId, ref.shuffle, key);
     case "library":
-      return openLibrary(db, ref.sort, key);
+      if (!ref.shuffle) return openLibrary(db, ref.sort, key);
+      return songIds ? openShuffledLibrary(db, ref.shuffle, songIds, key) : Effect.die(new Error("A shuffled library needs the ids of its songs."));
   }
 };
 
@@ -614,13 +661,14 @@ export const LibraryQueries = {
   /**
    * The part of a queue source around `at`: the occurrence `at.key` where the source has it, and
    * otherwise the gap at `at.offset`, which is where that occurrence was. `null` when the source has
-   * neither. Up to `behind` occurrences come before the cursor and up to `ahead` after it.
+   * neither. Up to `behind` occurrences come before the cursor and up to `ahead` after it. A shuffled
+   * library is read through `songIds`, every song id it has.
    */
-  sourceWindow: (ref: QueueSourceRef, at: { readonly key: string | null; readonly offset: number | null }, size: { readonly behind: number; readonly ahead: number }) =>
+  sourceWindow: (ref: QueueSourceRef, at: { readonly key: string | null; readonly offset: number | null }, size: { readonly behind: number; readonly ahead: number }, songIds?: SongIdList) =>
     Db.use((db) =>
       db.transaction((tx) =>
         Effect.gen(function* () {
-          const source = yield* openSource(tx, ref, at.key);
+          const source = yield* openSource(tx, ref, at.key, songIds);
           const cursor: SourceCursor | null =
             at.key !== null && source.offset !== null ? { type: "item", key: at.key, offset: source.offset } : at.offset !== null ? { type: "gap", offset: at.offset } : null;
           if (!cursor) return null;

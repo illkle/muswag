@@ -48,6 +48,7 @@ function start(keys: readonly string[]) {
       const cursor: SourceCursor = found < 0 ? { type: "gap", offset: at.offset! } : { type: "item", key: at.key!, offset: found };
       return { cursor, previous: items.slice(0, cursor.offset), current: items[found] ?? null, next: items.slice(found < 0 ? cursor.offset : found + 1), hasMore: false };
     },
+    songIds: () => Promise.reject(new Error("Not shuffled here.")),
     subscribe: () => () => {},
   };
   const queue = createQueue({
