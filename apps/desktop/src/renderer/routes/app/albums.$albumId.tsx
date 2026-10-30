@@ -21,6 +21,7 @@ import { isTrackItem, type TrackListItem } from "#/components/track-list/types";
 import { albumOccurrenceKey, type LibrarySong } from "@muswag/model";
 import { useMemo } from "react";
 import { DETAIL_BOTTOM_PADDING, DETAIL_TOP_PADDING, DetailHeader } from "#/components/detail-header";
+import { ShuffleButton } from "#/components/shuffle-button";
 
 const NO_SONGS: ReadonlyArray<LibrarySong> = [];
 
@@ -114,6 +115,7 @@ function RouteComponent() {
                 <PlayIcon weight="fill" className="size-5" />
                 Play
               </Button>
+              <ShuffleButton source={{ type: "album", albumId }} disabled={!firstKey} />
             </div>
           </DetailHeader>
         }

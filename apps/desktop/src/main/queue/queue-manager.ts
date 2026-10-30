@@ -1,5 +1,5 @@
 import type { NowPlaying, PlaybackItem, QueueSourceRef, Song, SourceCursor, SourceWindow } from "@muswag/model";
-import { clonePlaybackItem, createUserPlaybackItem } from "@muswag/model";
+import { clonePlaybackItem, createUserPlaybackItem, shuffledSource, unshuffledSource } from "@muswag/model";
 import { createStore } from "@tanstack/store";
 
 import { emptyQueueState, nextTarget, previousTarget, queueStateAt, sourceWindowItems, startTarget, type PlayingQueueState, type QueueManagerState } from "#shared/queue-state";
@@ -114,12 +114,25 @@ export class QueueManager {
     });
   }
 
+  /** Plays `ref` from the occurrence `key`. While the queue is shuffled, what is played next is shuffled too, from there. */
   playSource(ref: QueueSourceRef, key: string): Promise<void> {
+    return this.startSource(() => (this.store.state.source?.ref.shuffle ? shuffledSource(ref, key) : ref), key);
+  }
+
+  /** Plays `ref` in a new random order, from wherever that starts. */
+  shuffleSource(ref: QueueSourceRef): Promise<void> {
+    return this.startSource(() => shuffledSource(ref, null), null);
+  }
+
+  private startSource(order: () => QueueSourceRef, requested: string | null): Promise<void> {
     // A later request, or clearing the queue, replaces this one: it then neither starts nor reports a failure.
     const generation = ++this.sourceGeneration;
 
     return this.serial.run(async () => {
       try {
+        const ref = order();
+        const key = requested ?? (await this.sources.window(ref, { key: null, offset: 0 }))?.next[0]?.key;
+        if (key === undefined) throw new Error("The source has nothing to play.");
         const window = await this.sources.window(ref, { key, offset: null });
         if (generation !== this.sourceGeneration) return;
         if (window?.current?.key !== key) throw new Error(`Source occurrence ${key} is not playable.`);
@@ -129,6 +142,24 @@ export class QueueManager {
       } catch (cause) {
         if (generation === this.sourceGeneration) throw cause;
       }
+    });
+  }
+
+  /**
+   * Puts the source playing in a new random order, or back in its own. The track playing plays on, and
+   * the shuffled order starts from it, so Previous goes to nothing that never played.
+   */
+  setShuffle(on: boolean): Promise<void> {
+    return this.serial.run(async () => {
+      const state = this.store.state;
+      const { nowPlaying, source } = state;
+      if (!source || Boolean(source.ref.shuffle) === on) return;
+      const { cursor } = source.window;
+      const key = nowPlaying?.origin === "source" ? nowPlaying.key : cursor.type === "item" ? cursor.key : null;
+      const ref = on ? shuffledSource(source.ref, key) : unshuffledSource(source.ref);
+      // An offset means nothing in another order: without the occurrence, the source is read from its start.
+      const window = await this.sources.window(ref, { key, offset: 0 });
+      if (window) await this.commitQueueEdit({ ...state, source: { ref, window } });
     });
   }
 

@@ -104,6 +104,7 @@ app.whenReady().then(async () => {
     databasePath: is.dev ? resolve("dev-library.db") : join(userDataPath, "library.db"),
     userDataPath,
     searchWorkerPath: join(__dirname, "search-worker.cjs"),
+    songIdsWorkerPath: join(__dirname, "song-ids-worker.cjs"),
     ipcMain: appIpc,
     player,
     updates: appUpdates,

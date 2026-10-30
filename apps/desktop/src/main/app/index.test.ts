@@ -35,8 +35,9 @@ const player = {
 let updateChecks = 0;
 const updates = { check: async () => void updateChecks++, install: () => {}, setChannel: async () => {} };
 const searchWorkerPath = fileURLToPath(new URL("../search/search-worker.ts", import.meta.url));
+const songIdsWorkerPath = fileURLToPath(new URL("../queue/song-ids-worker.ts", import.meta.url));
 const syncSettings = { get: () => ({ syncAfter: { amount: 1, unit: "weeks" as const } }), set: async () => {} };
-const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, syncSettings, setTheme: () => {}, appState, renderers, searchWorkerPath });
+const options = () => ({ databasePath, userDataPath, ipcMain, player, updates, syncSettings, setTheme: () => {}, appState, renderers, searchWorkerPath, songIdsWorkerPath });
 
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), "muswag-start-"));

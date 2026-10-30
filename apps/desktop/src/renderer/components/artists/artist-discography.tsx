@@ -17,6 +17,7 @@ import { formatDuration, formatMetaLine } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
 import { dragDetail, startSongDrag } from "#/lib/song-drag";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
+import { ShuffleButton } from "#/components/shuffle-button";
 import { PLAYER_HEIGHT, TOP_HEIGHT } from "#/styles";
 
 const COVER_SIZE = 128;
@@ -24,6 +25,8 @@ const COVER_SIZE = 128;
 const ALBUM_GAP = 28;
 const FIRST_ALBUM_GAP = 12;
 const COVER_TO_TRACKS = 12;
+/** The row of the button that shuffles the artist. */
+const SHUFFLE_ROW_HEIGHT = 32;
 /** The heading over the artist's songs on others' albums. */
 const APPEARS_ON_HEIGHT = 72;
 
@@ -148,7 +151,12 @@ export function ArtistDiscography({ artistId }: { artistId: string }) {
       onActivate={(item) => playArtist(artistId, item.key)}
       menu={(selection) => <TrackMenuAddItems selection={selection} />}
       scrollId={"artist-discography-" + artistId}
-      topPadding={TOP_HEIGHT}
+      topContent={
+        <div style={{ top: TOP_HEIGHT }} className="absolute px-4">
+          <ShuffleButton source={{ type: "artist", artistId }} small />
+        </div>
+      }
+      topPadding={TOP_HEIGHT + SHUFFLE_ROW_HEIGHT}
       bottomPadding={PLAYER_HEIGHT + 16}
     />
   );

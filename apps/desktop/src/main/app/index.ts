@@ -14,6 +14,7 @@ import type { AppStateHub } from "../app-state";
 import type { PlayerHandle } from "../player/ipc";
 import { libraryChangedEvent, type Renderers } from "../renderers";
 import { createQueue } from "../queue";
+import { readSongIds } from "../queue/read-song-ids";
 import { startLibrarySearch } from "../search/library-search";
 import type { SourceDb } from "../queue/source";
 import type { SyncSettingsStore } from "../sync-settings";
@@ -37,6 +38,7 @@ export interface AppOptions {
   readonly renderers: Renderers;
   /** The search worker's script (`search/search-worker.ts`), which runs apart from main's. */
   readonly searchWorkerPath: string;
+  readonly songIdsWorkerPath: string;
 }
 
 /** How often main looks whether the library is due a sync. */
@@ -59,7 +61,8 @@ const makeApp = (options: AppOptions) =>
     );
 
     const library: SourceDb = {
-      sourceWindow: (ref, at, size) => run(LibraryQueries.sourceWindow(ref, at, size)),
+      sourceWindow: (ref, at, size, songIds) => run(LibraryQueries.sourceWindow(ref, at, size, songIds)),
+      songIds: () => readSongIds(options.songIdsWorkerPath, options.databasePath),
       subscribe: (listener) => changes.subscribe(listener),
     };
     const queue = yield* Effect.acquireRelease(

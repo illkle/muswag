@@ -25,6 +25,7 @@ import { write } from "../db/database.js";
 import { PlaylistCommands, PlaylistEdits } from "../playlists/commands.js";
 import { apiAlbum, apiSong, seed, TestDatabase } from "../test/index.js";
 import { LibraryQueries } from "./queries.js";
+import type { SongIdList } from "./shuffle-order.js";
 
 const layer = PlaylistCommands.layer.pipe(Layer.provideMerge(PlaylistEdits.layer), Layer.provideMerge(TestDatabase()));
 
@@ -33,6 +34,7 @@ const windowAt = (ref: QueueSourceRef, key: string, size = SIZE) => LibraryQueri
 const idsOf = (items: SourceWindow["next"]) => items.map(({ track }) => track.id);
 const titled = (id: string, title: string) => apiSong(id, "album", { title });
 const number = (index: number) => String(index).padStart(2, "0");
+const songIdList = (ids: ReadonlyArray<string>): SongIdList => ({ length: ids.length, at: (index) => ids[index]!, indexOf: (id) => ids.indexOf(id) });
 const SORTS: ReadonlyArray<LibrarySort> = ["title", "artist", "album", "title-desc", "artist-desc", "album-desc"];
 
 /** A library whose orders all differ: artists and albums with case and accents, shared names, songs without disc or track numbers. */
@@ -745,6 +747,90 @@ describe("LibraryQueries.searchResults", () => {
           { type: "playlist", id: "mix" },
         ]),
       ).toEqual([{ type: "playlist", id: "mix", playlist: { id: "mix", name: "Mix", songCount: 7, owner: "someone", albumIds: ["a", "b", "c", "d"] } }]);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+describe("LibraryQueries.sourceWindow, shuffled", () => {
+  const numbered = Array.from({ length: 60 }, (_, index) => apiSong(number(index), "album", { track: index }));
+  const ids = numbered.map(({ id }) => id);
+  /** Everything `ref` plays, read by walking its window along as the queue does. */
+  const walk = (ref: QueueSourceRef, songIds?: SongIdList) =>
+    Effect.gen(function* () {
+      const start = yield* LibraryQueries.sourceWindow(ref, { key: null, offset: 0 }, { behind: 0, ahead: 1 }, songIds);
+      const played: string[] = [];
+      for (let key = start!.next[0]?.key; key !== undefined;) {
+        const window = yield* LibraryQueries.sourceWindow(ref, { key, offset: null }, { behind: 1, ahead: 1 }, songIds);
+        played.push(window!.current!.track.id);
+        expect(window!.cursor).toMatchObject({ type: "item", key, offset: played.length - 1 });
+        expect(window!.previous.at(-1)?.track.id).toBe(played.at(-2));
+        key = window!.next[0]?.key;
+      }
+      return played;
+    });
+
+  it.effect("plays all of a source once, in an order of its own, whichever kind it is", () =>
+    Effect.gen(function* () {
+      const commands = yield* PlaylistCommands;
+      yield* seed({ albums: [apiAlbum("album", { artistId: "artist" })], songs: numbered });
+      const { id: playlistId } = yield* commands.create({ name: "Mix", songIds: ids });
+
+      const shuffle = { seed: 1234, first: null };
+      const refs: ReadonlyArray<readonly [QueueSourceRef, SongIdList?]> = [
+        [{ type: "album", albumId: "album", shuffle }],
+        [{ type: "artist", artistId: "artist", shuffle }],
+        [{ type: "playlist", playlistId, shuffle }],
+        [{ type: "library", sort: "title", shuffle }, songIdList(ids)],
+      ];
+      for (const [ref, songIds] of refs) {
+        const played = yield* walk(ref, songIds);
+        expect(played).not.toEqual(ids);
+        expect([...played].sort()).toEqual(ids);
+      }
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("starts from the occurrence the shuffle was started from, with nothing before it", () =>
+    Effect.gen(function* () {
+      yield* seed({ songs: numbered });
+
+      const album: QueueSourceRef = { type: "album", albumId: "album", shuffle: { seed: 5, first: albumOccurrenceKey("album", "40") } };
+      const library: QueueSourceRef = { type: "library", sort: "title", shuffle: { seed: 5, first: libraryOccurrenceKey("40") } };
+      const songIds = songIdList(ids);
+
+      for (const [ref, list, key] of [
+        [album, undefined, albumOccurrenceKey("album", "40")],
+        [library, songIds, libraryOccurrenceKey("40")],
+      ] as const) {
+        const window = yield* LibraryQueries.sourceWindow(ref, { key, offset: null }, SIZE, list);
+        expect(window).toMatchObject({ cursor: { type: "item", key, offset: 0 }, previous: [], hasMore: true });
+        expect(window!.next).toHaveLength(SIZE.ahead);
+        expect(yield* walk(ref, list)).toHaveLength(ids.length);
+      }
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reads nothing from a source with nothing left in it", () =>
+    Effect.gen(function* () {
+      const shuffle = { seed: 5, first: null };
+      const album = yield* LibraryQueries.sourceWindow({ type: "album", albumId: "album", shuffle }, { key: null, offset: 0 }, SIZE);
+      const library = yield* LibraryQueries.sourceWindow({ type: "library", sort: "title", shuffle }, { key: null, offset: 0 }, SIZE, songIdList([]));
+
+      expect(album).toMatchObject({ current: null, previous: [], next: [], hasMore: false });
+      expect(library).toMatchObject({ current: null, previous: [], next: [], hasMore: false });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("leaves a song the ids still hold out of the window, and finds nothing for one they do not", () =>
+    Effect.gen(function* () {
+      yield* seed({ songs: numbered.slice(0, 50) });
+      const ref: QueueSourceRef = { type: "library", sort: "title", shuffle: { seed: 5, first: null } };
+      const songIds = songIdList(ids);
+
+      const window = yield* LibraryQueries.sourceWindow(ref, { key: null, offset: 0 }, { behind: 0, ahead: 60 }, songIds);
+      expect(idsOf(window!.next).sort()).toEqual(ids.slice(0, 50));
+
+      expect(yield* LibraryQueries.sourceWindow(ref, { key: libraryOccurrenceKey("nope"), offset: null }, SIZE, songIds)).toBeNull();
     }).pipe(Effect.provide(layer)),
   );
 });

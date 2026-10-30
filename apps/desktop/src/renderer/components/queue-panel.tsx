@@ -1,5 +1,5 @@
 import { QueueIcon } from "@phosphor-icons/react";
-import type { PlaybackItem, QueueSourceRef } from "@muswag/model";
+import { unshuffledSource, type PlaybackItem, type QueueSourceRef } from "@muswag/model";
 import { createStore, useSelector } from "@tanstack/react-store";
 import { useMemo } from "react";
 
@@ -31,7 +31,8 @@ function togglePanel() {
 function useSourceName(ref: QueueSourceRef | null): string | null {
   const named = ref !== null && ref.type !== "library" ? ref : null;
   const nameQuery = useMainRead({
-    queryKey: ["queue-source-name", named],
+    // A new shuffle of the source is called the same.
+    queryKey: ["queue-source-name", named && unshuffledSource(named)],
     tables: ["albums", "artists", "playlists"],
     read: () => (named ? LibraryActions.sourceName(named) : Promise.resolve(null)),
   });
@@ -83,7 +84,8 @@ function useQueueItems(): {
     const start = queue.userQueue.length === 0 ? items.length : items.length + 1;
     section(USER_SECTION, "Next in queue", queue.userQueue);
     const queued = { start, end: items.length };
-    section("source", sourceName ? `Next from ${sourceName}` : "Next up", queue.source?.window.next ?? []);
+    const shuffled = queue.source?.ref.shuffle ? " · shuffled" : "";
+    section("source", (sourceName ? `Next from ${sourceName}` : "Next up") + shuffled, queue.source?.window.next ?? []);
     // Main keeps only a window of the source loaded and moves it along with playback.
     if (queue.source?.window.hasMore) items.push({ type: "note", key: "source-more", label: "More tracks load as playback continues." });
 

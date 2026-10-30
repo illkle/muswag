@@ -76,7 +76,11 @@ class FakeSources implements QueueSources {
   constructor(readonly albums: Record<string, string[]> = { album: ["a", "c"] }) {}
 
   async window(ref: QueueSourceRef, at: SourceAnchor): Promise<SourceWindow | null> {
-    const items = (ref.type === "album" ? (this.albums[ref.albumId] ?? []) : []).map(sourceItem);
+    const keys = ref.type === "album" ? (this.albums[ref.albumId] ?? []) : [];
+    // Shuffled here means backwards, from the first occurrence of the shuffle when it has one.
+    const first = ref.shuffle?.first;
+    const ordered = ref.shuffle ? [...(first != null && keys.includes(first) ? [first] : []), ...[...keys].reverse().filter((key) => key !== first)] : keys;
+    const items = ordered.map(sourceItem);
     const found = items.findIndex(({ key }) => key === at.key);
     if (found < 0 && at.offset === null) return null;
     const cursor: SourceCursor = found < 0 ? { type: "gap", offset: at.offset! } : { type: "item", key: at.key!, offset: found };
@@ -910,5 +914,147 @@ describe("QueueManager", () => {
     expect(manager.store.state).toEqual({ nowPlaying: null, userQueue: [], source: null });
     expect(storage.saved).toBeNull();
     manager.dispose();
+  });
+
+  describe("shuffle", () => {
+    const album: QueueSourceRef = { type: "album", albumId: "album" };
+    const start = async (sources = new FakeSources({ album: ["a", "b", "c", "d"] })) => {
+      const player = new FakePlayer();
+      const storage = new MemoryStorage();
+      const manager = new QueueManager({ player, sources, storage });
+      return { player, storage, manager };
+    };
+    const keys = (items: readonly PlaybackItem[] | undefined) => items?.map(({ key }) => key);
+
+    it("turns on around the track playing, without touching it, and off again", async () => {
+      const { player, manager } = await start();
+      await manager.playSource(album, "b");
+      const applied = player.applies.length;
+
+      await manager.setShuffle(true);
+      const source = manager.store.state.source!;
+      expect(manager.store.state.nowPlaying?.key).toBe("b");
+      expect(source.ref.shuffle).toMatchObject({ first: "b" });
+      expect(source.window).toMatchObject({ previous: [], cursor: { key: "b", offset: 0 } });
+      expect(keys(source.window.next)).toEqual(["d", "c", "a"]);
+      // mpv gets the new order and is told to play nothing else.
+      expect(player.applies.slice(applied)).toEqual([{ items: expect.anything() }]);
+      expect(keys(player.applies.at(-1)!.items)).toEqual(["b", "d", "c", "a"]);
+      expect(selections(player)).toEqual(["b"]);
+
+      await manager.setShuffle(false);
+      expect(manager.store.state.source?.ref).toEqual(album);
+      expect(manager.store.state.source?.window).toMatchObject({ cursor: { key: "b", offset: 1 } });
+      expect(keys(manager.store.state.source?.window.previous)).toEqual(["a"]);
+      expect(keys(manager.store.state.source?.window.next)).toEqual(["c", "d"]);
+      expect(selections(player)).toEqual(["b"]);
+      manager.dispose();
+    });
+
+    it("does nothing without a source, or when it is as asked", async () => {
+      const { player, manager } = await start();
+      await manager.setShuffle(true);
+      expect(manager.store.state.source).toBeNull();
+
+      await manager.playSource(album, "b");
+      const applied = player.applies.length;
+      await manager.setShuffle(false);
+      expect(player.applies).toHaveLength(applied);
+      await manager.setShuffle(true);
+      const { ref } = manager.store.state.source!;
+      await manager.setShuffle(true);
+      expect(manager.store.state.source?.ref).toBe(ref);
+      manager.dispose();
+    });
+
+    it("stays as it was when the player refuses the new order", async () => {
+      const { player, manager } = await start();
+      await manager.playSource(album, "b");
+      const before = manager.store.state;
+
+      player.applyError = new Error("refused");
+      await expect(manager.setShuffle(true)).rejects.toThrow("refused");
+      expect(manager.store.state).toEqual(before);
+      manager.dispose();
+    });
+
+    it("keeps the user queue before the source, and steps through the shuffled order", async () => {
+      const { player, manager } = await start();
+      await manager.playSource(album, "b");
+      await manager.enqueue([song("queued")]);
+      await manager.setShuffle(true);
+      const queued = manager.store.state.userQueue[0]!;
+      expect(keys(player.applies.at(-1)!.items)).toEqual(["b", queued.key, "d", "c", "a"]);
+
+      await manager.next();
+      expect(manager.store.state.nowPlaying).toMatchObject({ key: queued.key, origin: "user" });
+      await manager.next();
+      expect(manager.store.state.nowPlaying).toMatchObject({ key: "d", origin: "source" });
+      await manager.previous();
+      expect(manager.store.state.nowPlaying?.key).toBe("b");
+      manager.dispose();
+    });
+
+    it("with a queued track playing, starts from the track it interrupted", async () => {
+      const { manager } = await start();
+      await manager.playSource(album, "b");
+      await manager.enqueue([song("queued")]);
+      await manager.next();
+
+      await manager.setShuffle(true);
+      expect(manager.store.state.nowPlaying?.origin).toBe("user");
+      expect(manager.store.state.source?.ref.shuffle).toMatchObject({ first: "b" });
+      expect(keys(manager.store.state.source?.window.next)).toEqual(["d", "c", "a"]);
+      manager.dispose();
+    });
+
+    it("plays a source shuffled from wherever the order starts", async () => {
+      const { player, manager } = await start();
+      await manager.shuffleSource(album);
+
+      expect(selections(player)).toEqual(["d"]);
+      expect(manager.store.state.source?.ref.shuffle).toMatchObject({ first: null });
+      expect(manager.store.state.source?.window).toMatchObject({ cursor: { key: "d", offset: 0 }, previous: [] });
+      expect(keys(manager.store.state.source?.window.next)).toEqual(["c", "b", "a"]);
+      manager.dispose();
+    });
+
+    it("says so when there is nothing to shuffle", async () => {
+      const { player, manager } = await start(new FakeSources({ album: [] }));
+      await expect(manager.shuffleSource(album)).rejects.toThrow("nothing to play");
+      expect(player.applies).toEqual([]);
+      manager.dispose();
+    });
+
+    it("stays on when the user plays a track from a list, with a new order from that track", async () => {
+      const { manager } = await start();
+      await manager.shuffleSource(album);
+      const { seed } = manager.store.state.source!.ref.shuffle!;
+
+      await manager.playSource(album, "b");
+      expect(manager.store.state.source?.ref.shuffle).toMatchObject({ first: "b" });
+      expect(manager.store.state.source?.ref.shuffle?.seed).not.toBe(seed);
+      expect(manager.store.state.source?.window).toMatchObject({ cursor: { key: "b", offset: 0 } });
+      manager.dispose();
+    });
+
+    it("restores in the order it was stored in", async () => {
+      const { manager, storage } = await start();
+      await manager.playSource(album, "b");
+      await manager.setShuffle(true);
+      await manager.next();
+      await flush();
+      const { state } = storage.saved!;
+      const { nowPlaying, userQueue, source } = state;
+
+      const restoring = await start();
+      restoring.storage.stored = { nowPlaying, userQueue, source: { ref: source!.ref, cursor: source!.window.cursor }, resumePositionSeconds: 0 };
+      await restoring.manager.restore();
+
+      expect(restoring.manager.store.state.source?.ref).toEqual(source!.ref);
+      expect(restoring.manager.store.state.source?.window).toEqual(source!.window);
+      manager.dispose();
+      restoring.manager.dispose();
+    });
   });
 });
