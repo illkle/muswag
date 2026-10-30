@@ -42,7 +42,7 @@ import {
   type SourceItem,
   type SourceWindow,
 } from "@muswag/model";
-import { and, asc, desc, eq, getTableColumns, gt, inArray, isNotNull, lt, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNotNull, lt, not, notInArray, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
@@ -87,6 +87,21 @@ const ALBUM_ORDERS: Record<AlbumSort, () => SQL[]> = {
 };
 
 /**
+ * Whether `billed`, a credit in `artists` of an album, is a main artist of it. `artistId` on an album holds
+ * only the first of those, and `artists` also those featured on its songs, so the others are the ones
+ * `displayArtist` names as well, which Navidrome joins with " • ".
+ */
+const isMainArtist = sql`instr(' • ' || ${albums.displayArtist} || ' • ', ' • ' || json_extract(billed.value, '$.name') || ' • ') > 0`;
+
+/** The albums that are `artistId`'s own. A set of ids read once, so that a query joining songs finds their songs by album and does not take apart an album for each song. */
+const ownAlbum = (artistId: string) =>
+  sql`${albums.id} IN (
+    SELECT ${albums.id} FROM ${albums} WHERE ${albums.artistId} = ${artistId}
+    UNION
+    SELECT ${albums.id} FROM ${albums}, json_each(${albums.artists}) AS billed WHERE json_extract(billed.value, '$.id') = ${artistId} AND ${isMainArtist}
+  )`;
+
+/**
  * The songs that credit `artistId` on albums that are not its own. The credits are JSON on each song,
  * so this reads every song, which SQLite does far faster than a page. Only the songs whose credits hold
  * the id as JSON writes it, quoted, are taken apart: the few that might credit it. JSON.stringify wrote
@@ -96,7 +111,7 @@ const creditedOnOthers = (artistId: string) =>
   and(
     sql`instr(${songs.artists}, ${JSON.stringify(artistId)}) > 0`,
     sql`EXISTS (SELECT 1 FROM json_each(${songs.artists}) AS credit WHERE json_extract(credit.value, '$.id') = ${artistId})`,
-    sql`${albums.artistId} IS NOT ${artistId}`,
+    not(ownAlbum(artistId)),
   );
 
 /** An artist's albums in `ARTIST_ALBUM_ORDER`. SQLite puts nulls first going up and last going down, as the order asks. */
@@ -130,7 +145,7 @@ const openAlbum = (db: Reads, albumId: string, key: string | null) =>
  * the artists page lists them. A discography is small enough to read whole.
  */
 const openArtist = (db: Reads, artistId: string, key: string | null) =>
-  Effect.forEach([eq(albums.artistId, artistId), creditedOnOthers(artistId)], (where) =>
+  Effect.forEach([ownAlbum(artistId), creditedOnOthers(artistId)], (where) =>
     db
       .select({ track: songs })
       .from(songs)
@@ -380,7 +395,12 @@ export const LibraryQueries = {
   /** The artists the artists page lists, by name: those with an album of their own, and the rest, which the server lists for their credits on others' albums. */
   artistIndex: () =>
     Db.use((db) => {
-      const owners = db.selectDistinct({ artistId: albums.artistId }).from(albums).where(isNotNull(albums.artistId));
+      const owners = sql`(
+        SELECT ${albums.artistId} FROM ${albums} WHERE ${albums.artistId} IS NOT NULL
+        UNION
+        SELECT json_extract(billed.value, '$.id') FROM ${albums}, json_each(${albums.artists}) AS billed
+        WHERE json_extract(billed.value, '$.id') IS NOT NULL AND ${isMainArtist}
+      )`;
       return Effect.all({
         withAlbums: db.select(LIBRARY_ARTIST_COLUMNS).from(artists).where(inArray(artists.id, owners)),
         featured: db.select(LIBRARY_ARTIST_COLUMNS).from(artists).where(notInArray(artists.id, owners)),
@@ -424,7 +444,7 @@ export const LibraryQueries = {
           albums: tx
             .select(LIBRARY_ALBUM_COLUMNS)
             .from(albums)
-            .where(eq(albums.artistId, artistId))
+            .where(ownAlbum(artistId))
             .orderBy(...artistAlbumOrder()),
         }),
       ),
@@ -449,9 +469,9 @@ export const LibraryQueries = {
             albums: yield* tx
               .select(LIBRARY_ALBUM_COLUMNS)
               .from(albums)
-              .where(eq(albums.artistId, artistId))
+              .where(ownAlbum(artistId))
               .orderBy(...artistAlbumOrder()),
-            songs: yield* songsWhere(eq(albums.artistId, artistId)),
+            songs: yield* songsWhere(ownAlbum(artistId)),
             appearsOn: yield* songsWhere(creditedOnOthers(artistId)),
           };
           return discography;
@@ -587,7 +607,7 @@ export const LibraryQueries = {
         JOIN ${albums} ON ${albums.id} = ${songs.albumId}
         JOIN json_each(${songs.artists}) AS credit
         WHERE instr(${songs.artists}, ${JSON.stringify(artistId)}) > 0
-          AND json_extract(credit.value, '$.id') = ${artistId} AND ${albums.artistId} IS NOT ${artistId}
+          AND json_extract(credit.value, '$.id') = ${artistId} AND NOT ${ownAlbum(artistId)}
       `),
     ).pipe(Effect.map((rows): ArtistAppearances => ({ albumIds: [...new Set(rows.map(({ albumId }) => albumId))], name: rows.find(({ name }) => name)?.name ?? null }))),
 

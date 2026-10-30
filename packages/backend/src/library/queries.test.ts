@@ -633,6 +633,37 @@ describe("LibraryQueries.discography of an artist on others' albums", () => {
   );
 });
 
+describe("LibraryQueries of an album with several main artists", () => {
+  it.effect("counts the album as the own of every artist it names, and not of those only featured on it", () =>
+    Effect.gen(function* () {
+      const first = { id: "first", name: "First" };
+      const second = { id: "second", name: "Toxi$" };
+      // A part of a main artist's name, which is not that name.
+      const guest = { id: "guest", name: "Toxi" };
+      yield* seed({
+        albums: [apiAlbum("shared", { artistId: "first", artist: "First • Toxi$", displayArtist: "First • Toxi$", artists: [first, second, guest] })],
+        artists: [first, second, guest],
+        songs: [apiSong("shared-1", "shared", { track: 1, artists: [first] }), apiSong("shared-2", "shared", { track: 2, artists: [second, guest] })],
+      });
+
+      expect((yield* LibraryQueries.artist("second")).albums.map(({ id }) => id)).toEqual(["shared"]);
+      expect(yield* LibraryQueries.artistAppearances("second")).toEqual({ albumIds: [], name: null });
+      const discography = yield* LibraryQueries.discography("second");
+      expect(discography.songs.map(({ id }) => id)).toEqual(["shared-1", "shared-2"]);
+      expect(discography.appearsOn).toEqual([]);
+      const window = yield* windowAt({ type: "artist", artistId: "second" }, artistOccurrenceKey("second", "shared-1"));
+      expect(idsOf(window.next)).toEqual(["shared-2"]);
+
+      const index = yield* LibraryQueries.artistIndex();
+      expect(index.withAlbums.map(({ id }) => id)).toEqual(["first", "second"]);
+      expect(index.featured.map(({ id }) => id)).toEqual(["guest"]);
+
+      expect((yield* LibraryQueries.artist("guest")).albums).toEqual([]);
+      expect(yield* LibraryQueries.artistAppearances("guest")).toEqual({ albumIds: ["shared"], name: "Toxi" });
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
 describe("LibraryQueries.artistAppearances", () => {
   it.effect("finds the other artists' albums with a song that credits the artist, and the name a credit gives it", () =>
     Effect.gen(function* () {

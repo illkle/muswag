@@ -57,10 +57,10 @@ type SelectAlbum = (id: string, modifiers: { toggle: boolean; range: boolean }) 
  */
 const AlbumItem = memo(function AlbumItem({ album, hideArtist, isSelected, onSelect }: { album: Album; hideArtist: boolean; isSelected: boolean; onSelect: SelectAlbum }) {
   const navigate = useNavigate();
-  const credits = getArtistCredits(album)
-    .map((credit) => credit.name)
-    .join(", ");
-  const artist = hideArtist ? null : credits;
+  const creditList = getArtistCredits(album);
+  const credits = creditList.map((credit) => credit.name).join(", ");
+  // On an artist's page its albums need no artist, unless they are shared with another.
+  const artist = hideArtist && creditList.length === 1 ? null : credits;
 
   return (
     <button
