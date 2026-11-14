@@ -1,3 +1,17 @@
+import type { Album } from "@muswag/model";
+
+const releaseMonth = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
+
+/** Release date at the precision the server supplies, falling back to the original date or year. */
+export function formatReleaseDate(album: Pick<Album, "releaseDate" | "originalReleaseDate" | "year">): string | null {
+  const date = [album.releaseDate, album.originalReleaseDate].find((date) => date?.year && date.year > 0);
+  const year = date?.year ?? album.year;
+  if (!year) return null;
+  if (!date?.month || date.month < 1 || date.month > 12) return String(year);
+  const month = releaseMonth.format(new Date(Date.UTC(2000, date.month - 1, 1)));
+  return [String(year), month, ...(date.day ? [String(date.day)] : [])].join(" ");
+}
+
 /** A length in seconds as `m:ss` or `h:mm:ss`, or "-" when it is unknown. A part of a second is dropped. */
 export function formatDuration(totalSeconds: number | null | undefined): string {
   if (totalSeconds === null || totalSeconds === undefined || !Number.isFinite(totalSeconds)) {

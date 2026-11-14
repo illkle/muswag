@@ -410,6 +410,26 @@ describe("LibraryQueries songs list", () => {
 });
 
 describe("LibraryQueries albums list", () => {
+  it.effect("sorts full and partial release dates with original-date and year fallbacks", () =>
+    Effect.gen(function* () {
+      yield* seed({
+        albums: [
+          apiAlbum("day", { year: 1990, releaseDate: { year: 2020, month: 5, day: 20 } }),
+          apiAlbum("earlier", { releaseDate: { year: 2020, month: 5, day: 2 } }),
+          apiAlbum("month", { releaseDate: { year: 2020, month: 5 } }),
+          apiAlbum("year", { year: 2020, releaseDate: {} }),
+          apiAlbum("original", { releaseDate: {}, originalReleaseDate: { year: 2021, month: 1, day: 1 } }),
+          apiAlbum("none"),
+        ],
+      });
+      const descending = ["original", "day", "earlier", "month", "year", "none"];
+      for (const sort of ["year-desc", "artist", "artist-desc"] as const) {
+        expect((yield* LibraryQueries.albumPage(sort, { offset: 0, limit: 20 }, false)).albums.map(({ id }) => id)).toEqual(descending);
+      }
+      expect((yield* LibraryQueries.albumPage("year", { offset: 0, limit: 20 }, false)).albums.map(({ id }) => id)).toEqual(["year", "month", "earlier", "day", "original", "none"]);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("reads the albums newest first, those without a year last, albums of a year by id, with the total when asked for", () =>
     Effect.gen(function* () {
       yield* seed({

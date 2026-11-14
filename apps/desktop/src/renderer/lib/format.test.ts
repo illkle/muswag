@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatAgo, formatDuration } from "#/lib/format";
+import { formatAgo, formatDuration, formatReleaseDate } from "#/lib/format";
 
 describe("formatDuration", () => {
   it("writes minutes and seconds, and hours once there are any", () => {
@@ -29,5 +29,17 @@ describe("formatAgo", () => {
     expect(formatAgo("2026-10-26T11:55:00Z", now)).toBe("5 minutes ago");
     expect(formatAgo("2026-10-26T09:00:00Z", now)).toBe("3 hours ago");
     expect(formatAgo("2026-10-25T12:00:00Z", now)).toBe("yesterday");
+  });
+});
+
+describe("formatReleaseDate", () => {
+  it("preserves date precision and falls back past empty date objects", () => {
+    const album = { year: 1990, originalReleaseDate: { year: 2000 }, releaseDate: { year: 2020, month: 5, day: 2 } };
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2026, month: 11, day: 13 } })).toBe("2026 November 13");
+    expect(formatReleaseDate(album)).toBe("2020 May 2");
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2020, month: 5 } })).toBe("2020 May");
+    expect(formatReleaseDate({ ...album, releaseDate: {} })).toBe("2000");
+    expect(formatReleaseDate({ year: 1990, releaseDate: {}, originalReleaseDate: {} })).toBe("1990");
+    expect(formatReleaseDate({ year: null, releaseDate: null, originalReleaseDate: null })).toBeNull();
   });
 });

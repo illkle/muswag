@@ -5,7 +5,7 @@ import { PageState } from "#/components/page-state";
 import { Button } from "#/components/ui/button";
 import { QueueActions, usePlayingKey } from "#/queue/queue";
 import { useMainRead } from "#/data/main-read";
-import { formatDuration, formatMetaLine } from "#/lib/format";
+import { formatDuration, formatMetaLine, formatReleaseDate } from "#/lib/format";
 import { failureNotice } from "#/lib/notify";
 import { dragDetail, startSongDrag } from "#/lib/song-drag";
 import { LibraryActions } from "#/library/actions";
@@ -59,7 +59,7 @@ function RouteComponent() {
   const album = albumQuery.data.album;
   const { genres } = album;
   const primaryGenre = album.genre ?? genres?.[0]?.name ?? null;
-  const albumMeta = formatMetaLine([album.year ? String(album.year) : null, `${album.songCount} song${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
+  const albumMeta = formatMetaLine([formatReleaseDate(album), `${album.songCount} song${album.songCount === 1 ? "" : "s"}`, formatDuration(album.duration), primaryGenre]);
 
   const columns = creditedAsTheirAlbums(songs, [album]) ? albumColumnsWithoutArtist : albumColumns;
   const firstKey = items.find(isTrackItem)?.key;

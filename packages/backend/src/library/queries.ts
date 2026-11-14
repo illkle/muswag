@@ -1,8 +1,8 @@
 import {
   ALBUM_ORDER,
   albumOccurrenceKey,
-  albums,
   ARTIST_ALBUM_ORDER,
+  albums,
   artistOccurrenceKey,
   artists,
   LIBRARY_ORDERS,
@@ -80,11 +80,21 @@ const PAST_KEYS = "\u{10FFFF}";
  * and last going down; albums without a year go last either way. An album without an artist has an
  * empty sort key, which comes first going up and last going down.
  */
+// Select one date as a whole: an empty OpenSubsonic date must not hide a useful fallback.
+// Missing month/day sort before the known dates in that year/month.
+const albumDate = sql`CASE
+  WHEN json_extract(${albums.releaseDate}, '$.year') > 0 THEN ${albums.releaseDate}
+  WHEN json_extract(${albums.originalReleaseDate}, '$.year') > 0 THEN ${albums.originalReleaseDate}
+  ELSE NULL END`;
+const albumDateOrder = sql`coalesce(json_extract(${albumDate}, '$.year'), nullif(${albums.year}, 0)) * 10000
+  + coalesce(json_extract(${albumDate}, '$.month'), 0) * 100
+  + coalesce(json_extract(${albumDate}, '$.day'), 0)`;
+
 const ALBUM_ORDERS: Record<AlbumSort, () => SQL[]> = {
-  "year-desc": () => [desc(albums.year), asc(albums.id)],
-  year: () => [sql`${albums.year} ASC NULLS LAST`, asc(albums.id)],
-  artist: () => [asc(albums.artistSortKey), desc(albums.year), asc(albums.id)],
-  "artist-desc": () => [desc(albums.artistSortKey), desc(albums.year), asc(albums.id)],
+  "year-desc": () => [desc(albumDateOrder), asc(albums.id)],
+  year: () => [sql`${albumDateOrder} ASC NULLS LAST`, asc(albums.id)],
+  artist: () => [asc(albums.artistSortKey), desc(albumDateOrder), asc(albums.id)],
+  "artist-desc": () => [desc(albums.artistSortKey), desc(albumDateOrder), asc(albums.id)],
   added: () => [desc(albums.created), asc(albums.id)],
 };
 
@@ -117,7 +127,7 @@ const creditedOnOthers = (artistId: string) =>
   );
 
 /** An artist's albums in `ARTIST_ALBUM_ORDER`. SQLite puts nulls first going up and last going down, as the order asks. */
-const artistAlbumOrder = () => ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(albums[column]));
+const artistAlbumOrder = () => ARTIST_ALBUM_ORDER.map(({ column, direction }) => (direction === "desc" ? desc : asc)(column === "year" ? albumDateOrder : albums[column]));
 /** An album's songs in `ALBUM_ORDER`. */
 const albumSongOrder = () => ALBUM_ORDER.map((column) => asc(songs[column]));
 

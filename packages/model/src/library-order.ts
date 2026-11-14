@@ -45,8 +45,8 @@ export const ALBUM_ORDER = ["discNumber", "track", "id"] as const satisfies Read
 
 /**
  * How an artist's albums follow one another on the artists page and when they are played from it:
- * the newest first, those without a year after every dated one, and by id where the years tie. Each
- * album's songs are then in `ALBUM_ORDER`.
+ * the newest release date first, those without a date after every dated one, and by id where dates tie. Each
+ * album's songs are then in `ALBUM_ORDER`. Queries expand `year` to the full release date.
  */
 export const ARTIST_ALBUM_ORDER = [
   { column: "year", direction: "desc" },
