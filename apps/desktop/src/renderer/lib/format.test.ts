@@ -43,3 +43,14 @@ describe("formatReleaseDate", () => {
     expect(formatReleaseDate({ year: null, releaseDate: null, originalReleaseDate: null })).toBeNull();
   });
 });
+
+describe("release date precision", () => {
+  it("uses a compatible original date without combining different editions", () => {
+    const album = { year: 2026, releaseDate: { year: 2026 }, originalReleaseDate: { year: 2026, month: 2, day: 13 } };
+    expect(formatReleaseDate(album)).toBe("2026 February 13");
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2026, month: 2 } })).toBe("2026 February 13");
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2026, month: 3 } })).toBe("2026 March");
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2027 } })).toBe("2027");
+    expect(formatReleaseDate({ ...album, releaseDate: { year: 2026, month: 2, day: 20 } })).toBe("2026 February 20");
+  });
+});

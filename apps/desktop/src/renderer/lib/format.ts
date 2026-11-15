@@ -4,7 +4,12 @@ const releaseMonth = new Intl.DateTimeFormat("en", { month: "long", timeZone: "U
 
 /** Release date at the precision the server supplies, falling back to the original date or year. */
 export function formatReleaseDate(album: Pick<Album, "releaseDate" | "originalReleaseDate" | "year">): string | null {
-  const date = [album.releaseDate, album.originalReleaseDate].find((date) => date?.year && date.year > 0);
+  const release = album.releaseDate;
+  const original = album.originalReleaseDate;
+  // Use a more precise original date only when it agrees with the known release components.
+  const originalRefinesRelease =
+    release?.year && original?.year === release.year && (!release.month || original.month === release.month) && ((!release.month && original.month) || (release.month && !release.day && original.day));
+  const date = [originalRefinesRelease ? original : release, original].find((date) => date?.year && date.year > 0);
   const year = date?.year ?? album.year;
   if (!year) return null;
   if (!date?.month || date.month < 1 || date.month > 12) return String(year);

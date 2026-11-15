@@ -415,8 +415,8 @@ describe("LibraryQueries albums list", () => {
       yield* seed({
         albums: [
           apiAlbum("day", { year: 1990, releaseDate: { year: 2020, month: 5, day: 20 } }),
-          apiAlbum("earlier", { releaseDate: { year: 2020, month: 5, day: 2 } }),
-          apiAlbum("month", { releaseDate: { year: 2020, month: 5 } }),
+          apiAlbum("earlier", { releaseDate: { year: 2020 }, originalReleaseDate: { year: 2020, month: 5, day: 2 } }),
+          apiAlbum("month", { releaseDate: { year: 2020, month: 5 }, originalReleaseDate: { year: 1990, month: 12, day: 31 } }),
           apiAlbum("year", { year: 2020, releaseDate: {} }),
           apiAlbum("original", { releaseDate: {}, originalReleaseDate: { year: 2021, month: 1, day: 1 } }),
           apiAlbum("none"),

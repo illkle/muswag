@@ -80,9 +80,16 @@ const PAST_KEYS = "\u{10FFFF}";
  * and last going down; albums without a year go last either way. An album without an artist has an
  * empty sort key, which comes first going up and last going down.
  */
-// Select one date as a whole: an empty OpenSubsonic date must not hide a useful fallback.
+// Prefer a more precise original date when its known components agree with the release date.
+// Empty OpenSubsonic dates must not hide a useful fallback.
 // Missing month/day sort before the known dates in that year/month.
 const albumDate = sql`CASE
+  WHEN json_extract(${albums.releaseDate}, '$.year') = json_extract(${albums.originalReleaseDate}, '$.year')
+    AND (
+      (coalesce(json_extract(${albums.releaseDate}, '$.month'), 0) = 0 AND json_extract(${albums.originalReleaseDate}, '$.month') > 0)
+      OR (json_extract(${albums.releaseDate}, '$.month') = json_extract(${albums.originalReleaseDate}, '$.month')
+        AND coalesce(json_extract(${albums.releaseDate}, '$.day'), 0) = 0 AND json_extract(${albums.originalReleaseDate}, '$.day') > 0)
+    ) THEN ${albums.originalReleaseDate}
   WHEN json_extract(${albums.releaseDate}, '$.year') > 0 THEN ${albums.releaseDate}
   WHEN json_extract(${albums.originalReleaseDate}, '$.year') > 0 THEN ${albums.originalReleaseDate}
   ELSE NULL END`;
